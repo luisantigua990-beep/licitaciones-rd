@@ -502,8 +502,6 @@ def detalle_proceso(codigo: str):
     proceso = supabase.table("procesos").select("*").eq("codigo_proceso", codigo).single().execute()
     articulos = supabase.table("articulos_proceso").select("*").eq("codigo_proceso", codigo).execute()
     return {"proceso": proceso.data, "articulos": articulos.data}
-```
 
-También agrega `staticfiles` a `requirements.txt` — en realidad ya viene con FastAPI, solo asegúrate de tener `aiofiles`:
-```
-aiofiles
+
+
