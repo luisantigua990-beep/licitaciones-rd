@@ -458,3 +458,52 @@ async def enviar_prueba(payload: dict):
         return {"ok": ok}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+from fastapi.staticfiles import StaticFiles
+
+# Servir frontend
+app.mount("/frontend", StaticFiles(directory=os.path.join(BASE_DIR, "frontend"), html=True), name="frontend")
+
+@app.get("/")
+def root():
+    return FileResponse(os.path.join(BASE_DIR, "frontend", "index.html"))
+
+@app.get("/api/stats")
+def stats():
+    total = supabase.table("procesos").select("*", count="exact").execute()
+    activos = supabase.table("procesos").select("*", count="exact").eq("estado_proceso", "Publicado").execute()
+    arts = supabase.table("articulos_proceso").select("*", count="exact").execute()
+    return {
+        "total_procesos": total.count,
+        "procesos_activos": activos.count,
+        "total_articulos": arts.count
+    }
+
+@app.get("/api/procesos")
+def listar_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: str = "", solo_activos: bool = True):
+    query = supabase.table("procesos").select("*", count="exact")
+    if solo_activos:
+        query = query.eq("estado_proceso", "Publicado")
+    if busqueda:
+        query = query.ilike("titulo", f"%{busqueda}%")
+    if objeto:
+        query = query.eq("objeto_proceso", objeto)
+    offset = (page - 1) * limit
+    result = query.order("fecha_publicacion", desc=True).range(offset, offset + limit - 1).execute()
+    total = result.count or 0
+    return {
+        "procesos": result.data,
+        "total": total,
+        "page": page,
+        "pages": max(1, -(-total // limit))
+    }
+
+@app.get("/api/procesos/{codigo}")
+def detalle_proceso(codigo: str):
+    proceso = supabase.table("procesos").select("*").eq("codigo_proceso", codigo).single().execute()
+    articulos = supabase.table("articulos_proceso").select("*").eq("codigo_proceso", codigo).execute()
+    return {"proceso": proceso.data, "articulos": articulos.data}
+```
+
+También agrega `staticfiles` a `requirements.txt` — en realidad ya viene con FastAPI, solo asegúrate de tener `aiofiles`:
+```
+aiofiles
