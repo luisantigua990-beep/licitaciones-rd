@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from supabase import create_client
 
 from monitor import ejecutar_monitor
+from notifications import enviar_notificacion
 
 load_dotenv()
 
@@ -352,5 +353,83 @@ def estadisticas():
             "ultima_actualizacion": datetime.now().isoformat()
         }
     
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================
+# ENDPOINTS — NOTIFICACIONES WEB PUSH
+# ============================================
+
+@app.get("/api/vapid-public-key")
+def get_vapid_public_key():
+    """El frontend necesita esta clave para suscribirse."""
+    return {"publicKey": os.getenv("VAPID_PUBLIC_KEY")}
+
+
+@app.post("/api/notificaciones/suscribirse")
+async def suscribirse(payload: dict):
+    """Recibe la suscripción del navegador y la guarda en Supabase."""
+    try:
+        data = {
+            "user_id": payload.get("user_id", "anonimo"),
+            "endpoint": payload["subscription"]["endpoint"],
+            "auth": payload["subscription"]["keys"]["auth"],
+            "p256dh": payload["subscription"]["keys"]["p256dh"],
+            "intereses_rubros": payload.get("rubros", []),
+            "active": True
+        }
+        supabase.table("user_subscriptions").upsert(data, on_conflict="endpoint").execute()
+        return {"ok": True, "message": "Suscripción guardada"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/notificaciones/desuscribirse")
+async def desuscribirse(payload: dict):
+    """Desactiva una suscripción."""
+    endpoint = payload.get("endpoint")
+    supabase.table("user_subscriptions")\
+        .update({"active": False})\
+        .eq("endpoint", endpoint)\
+        .execute()
+    return {"ok": True}
+
+
+@app.put("/api/notificaciones/intereses")
+async def actualizar_intereses(payload: dict):
+    """Actualiza los rubros de interés de una suscripción."""
+    endpoint = payload.get("endpoint")
+    rubros = payload.get("rubros", [])
+    supabase.table("user_subscriptions")\
+        .update({"intereses_rubros": rubros})\
+        .eq("endpoint", endpoint)\
+        .execute()
+    return {"ok": True}
+
+
+@app.post("/api/notificaciones/enviar-prueba")
+async def enviar_prueba(payload: dict):
+    """Envía notificación de prueba a un endpoint específico."""
+    endpoint = payload.get("endpoint")
+    try:
+        result = supabase.table("user_subscriptions")\
+            .select("*")\
+            .eq("endpoint", endpoint)\
+            .single()\
+            .execute()
+        
+        sub = result.data
+        subscription_info = {
+            "endpoint": sub["endpoint"],
+            "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}
+        }
+        
+        ok = enviar_notificacion(
+            subscription_info,
+            titulo="🔔 LicitacionLab Test",
+            cuerpo="Notificaciones funcionando correctamente.",
+            url="/"
+        )
+        return {"ok": ok}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
