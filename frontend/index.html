@@ -961,7 +961,12 @@ function switchTab2(tab) {
 
 // ── PUSH ──
 async function checkPushStatus() {
-  if (!('serviceWorker' in navigator)) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    document.getElementById('push-status').textContent = '⚠️ Tu navegador no soporta notificaciones push';
+    document.getElementById('toggle-push').style.opacity = '0.4';
+    document.getElementById('toggle-push').style.pointerEvents = 'none';
+    return;
+  }
   const reg = await navigator.serviceWorker.getRegistration();
   if (!reg) return;
   const sub = await reg.pushManager.getSubscription();
@@ -979,6 +984,12 @@ async function checkPushStatus() {
 async function togglePush() {
   const toggle = document.getElementById('toggle-push');
   const status = document.getElementById('push-status');
+
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    status.textContent = '⚠️ Notificaciones no soportadas en este navegador';
+    return;
+  }
+
   if (toggle.classList.contains('on')) {
     if (pushSubscription) {
       await pushSubscription.unsubscribe();
@@ -995,8 +1006,18 @@ async function togglePush() {
       const keyRes = await fetch(`${API}/api/vapid-public-key`);
       const {publicKey} = await keyRes.json();
       const reg = await navigator.serviceWorker.register('/sw.js');
-      const permission = await Notification.requestPermission();
+
+      // Compatible con Safari iOS y otros navegadores
+      let permission;
+      if (typeof Notification !== 'undefined' && Notification.requestPermission) {
+        permission = await Notification.requestPermission();
+      } else {
+        status.textContent = '⚠️ Este navegador no soporta notificaciones';
+        return;
+      }
+
       if (permission !== 'granted') { status.textContent = '❌ Permiso denegado'; return; }
+
       pushSubscription = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey)
@@ -1032,3 +1053,4 @@ if (savedToken && savedUser) {
 </script>
 </body>
 </html>
+
