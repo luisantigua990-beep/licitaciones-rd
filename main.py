@@ -270,6 +270,24 @@ def listar_clases(familia: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/unspsc/buscar")
+def buscar_unspsc(q: str = ""):
+    if not q or len(q) < 2:
+        return []
+    # Buscar en familia y también en subclase/sinónimos
+    result = supabase.table("catalogo_unspsc")\
+        .select("familia, descripcion_familia")\
+        .or_(f"descripcion_familia.ilike.%{q}%,descripcion_subclase.ilike.%{q}%,sinonimos_subclase.ilike.%{q}%")\
+        .limit(50)\
+        .execute()
+    seen = set()
+    unique = []
+    for r in (result.data or []):
+        if r["familia"] not in seen:
+            seen.add(r["familia"])
+            unique.append(r)
+    return unique[:15]
+
 
 # ============================================
 # ENDPOINTS — FILTROS Y MATCHING
