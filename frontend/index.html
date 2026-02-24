@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f172a">
+<title>LicitacionLab — Alertas de Licitaciones RD</title>
+<link rel="manifest" href="/frontend/manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0f1e;
+    --surface: #111827;
+    --surface2: #1a2235;
+    --border: #1e2d45;
+    --accent: #f59e0b;
+    --accent2: #3b82f6;
+    --text: #f1f5f9;
+    --muted: #64748b;
+    --success: #10b981;
+    --danger: #ef4444;
+    --radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4 { font-family: 'Syne', sans-serif; }
+
+  /* ── SCREENS ── */
+  .screen { display: none; min-height: 100vh; }
+  .screen.active { display: flex; flex-direction: column; }
+
+  /* ── AUTH ── */
+  #screen-auth {
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at 20% 50%, #1e3a5f22 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 20%, #f59e0b11 0%, transparent 50%),
+                var(--bg);
+    padding: 20px;
+  }
+
+  .auth-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 48px 40px;
+    width: 100%;
+    max-width: 420px;
+    animation: slideUp 0.5s ease;
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 32px;
+  }
+
+  .logo-icon {
+    width: 40px; height: 40px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+
+  .logo h1 { font-size: 22px; color: var(--text); }
+  .logo span { font-size: 12px; color: var(--muted); display: block; }
+
+  .auth-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 4px;
+    margin-bottom: 28px;
+  }
+
+  .auth-tab {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .auth-tab.active {
+    background: var(--accent);
+    color: #000;
+  }
+
+  .form-group { margin-bottom: 16px; }
+
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .form-group input {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .form-group input:focus { border-color: var(--accent2); }
+
+  .btn {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: var(--radius);
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+
+  .btn-primary:hover { background: #fbbf24; transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    margin-top: 8px;
+  }
+
+  .auth-msg {
+    margin-top: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    display: none;
+  }
+
+  .auth-msg.error { background: #ef444422; color: #fca5a5; border: 1px solid #ef444433; display: block; }
+  .auth-msg.success { background: #10b98122; color: #6ee7b7; border: 1px solid #10b98133; display: block; }
+
+  /* ── NAVBAR ── */
+  .navbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .nav-logo { display: flex; align-items: center; gap: 8px; }
+  .nav-logo span { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 16px; }
+
+  .nav-actions { display: flex; align-items: center; gap: 12px; }
+
+  .nav-btn {
+    padding: 7px 16px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .nav-btn-ghost {
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .nav-btn-ghost:hover { color: var(--text); background: var(--surface2); }
+
+  .nav-btn-accent {
+    background: var(--accent);
+    color: #000;
+    font-weight: 600;
+  }
+
+  .user-badge {
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .user-dot {
+    width: 8px; height: 8px;
+    background: var(--success);
+    border-radius: 50%;
+  }
+
+  /* ── MAIN CONTENT ── */
+  .main { flex: 1; padding: 28px 24px; max-width: 1100px; margin: 0 auto; width: 100%; }
+
+  /* ── STATS BAR ── */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    transition: border-color 0.2s;
+  }
+
+  .stat-card:hover { border-color: var(--accent2); }
+
+  .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .stat-value { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; }
+  .stat-value.amber { color: var(--accent); }
+  .stat-value.blue { color: var(--accent2); }
+  .stat-value.green { color: var(--success); }
+
+  /* ── FILTERS ── */
+  .filters {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .filter-input {
+    flex: 1;
+    min-width: 200px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    outline: none;
+  }
+
+  .filter-input:focus { border-color: var(--accent2); }
+
+  .filter-select {
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  /* ── PROCESO CARDS ── */
+  .procesos-grid { display: flex; flex-direction: column; gap: 12px; }
+
+  .proceso-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: start;
+  }
+
+  .proceso-card:hover {
+    border-color: var(--accent2);
+    background: var(--surface2);
+    transform: translateX(4px);
+  }
+
+  .proceso-titulo {
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+
+  .proceso-meta {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .proceso-entidad { font-size: 13px; color: var(--accent2); font-weight: 500; }
+  .proceso-fecha { font-size: 12px; color: var(--muted); }
+
+  .proceso-monto {
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--accent);
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  .proceso-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+  .badge {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .badge-green { background: #10b98122; color: #6ee7b7; border: 1px solid #10b98133; }
+  .badge-blue { background: #3b82f622; color: #93c5fd; border: 1px solid #3b82f633; }
+  .badge-amber { background: #f59e0b22; color: #fcd34d; border: 1px solid #f59e0b33; }
+  .badge-red { background: #ef444422; color: #fca5a5; border: 1px solid #ef444433; }
+
+  /* ── PAGINATION ── */
+  .pagination {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 24px;
+  }
+
+  .page-btn {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    transition: all 0.2s;
+  }
+
+  .page-btn:hover, .page-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+  .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── DETALLE ── */
+  .back-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    margin-bottom: 24px;
+    transition: all 0.2s;
+    width: fit-content;
+  }
+
+  .back-btn:hover { color: var(--text); border-color: var(--accent2); }
+
+  .detalle-header {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    margin-bottom: 20px;
+  }
+
+  .detalle-titulo {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    line-height: 1.3;
+  }
+
+  .detalle-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+  }
+
+  .detalle-field label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .detalle-field span { font-size: 14px; font-weight: 500; }
+
+  .detalle-monto {
+    font-family: 'Syne', sans-serif;
+    font-size: 32px;
+    font-weight: 800;
+    color: var(--accent);
+  }
+
+  .articulos-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+
+  .articulos-section h3 {
+    font-size: 16px;
+    margin-bottom: 16px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 12px;
+  }
+
+  .articulo-row {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+  }
+
+  .articulo-row:last-child { border-bottom: none; }
+  .articulo-desc { font-size: 14px; margin-bottom: 4px; }
+  .articulo-meta { font-size: 12px; color: var(--muted); }
+  .articulo-precio { font-family: 'Syne', sans-serif; font-weight: 700; color: var(--accent); font-size: 15px; text-align: right; }
+
+  /* ── PERFIL ── */
+  .perfil-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    margin-bottom: 20px;
+  }
+
+  .perfil-section h2 {
+    font-size: 18px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .notif-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .notif-toggle:last-child { border-bottom: none; }
+  .notif-label { font-size: 14px; }
+  .notif-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .toggle {
+    width: 44px; height: 24px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s;
+  }
+
+  .toggle.on { background: var(--success); border-color: var(--success); }
+
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 18px; height: 18px;
+    background: white;
+    border-radius: 50%;
+    top: 2px; left: 2px;
+    transition: transform 0.2s;
+  }
+
+  .toggle.on::after { transform: translateX(20px); }
+
+  /* ── LOADING ── */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px;
+    color: var(--muted);
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .empty {
+    text-align: center;
+    padding: 60px;
+    color: var(--muted);
+  }
+
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+  /* ── BOTTOM NAV ── */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    padding: 8px 0 env(safe-area-inset-bottom);
+    z-index: 100;
+  }
+
+  .bottom-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 10px;
+    transition: color 0.2s;
+  }
+
+  .bottom-nav-item.active { color: var(--accent); }
+  .bottom-nav-item span { font-size: 20px; }
+
+  .page-with-nav { padding-bottom: 80px; }
+
+  /* ── TABS ── */
+  .section-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 4px;
+    margin-bottom: 20px;
+    width: fit-content;
+  }
+
+  .section-tab {
+    padding: 8px 20px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .section-tab.active { background: var(--surface); color: var(--text); }
+
+  @media (max-width: 600px) {
+    .auth-card { padding: 32px 24px; }
+    .main { padding: 20px 16px; }
+    .stats-bar { grid-template-columns: repeat(2, 1fr); }
+    .proceso-card { grid-template-columns: 1fr; }
+    .proceso-monto { text-align: left; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ AUTH SCREEN ══ -->
+<div id="screen-auth" class="screen active">
+  <div class="auth-card">
+    <div class="logo">
+      <div class="logo-icon">🏗️</div>
+      <div>
+        <h1>LicitacionLab</h1>
+        <span>Alertas de licitaciones RD</span>
+      </div>
+    </div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchTab('login')">Iniciar sesión</button>
+      <button class="auth-tab" onclick="switchTab('register')">Registrarse</button>
+    </div>
+
+    <div id="form-login">
+      <div class="form-group">
+        <label>Correo electrónico</label>
+        <input type="email" id="login-email" placeholder="tu@empresa.com">
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="login-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')login()">
+      </div>
+      <button class="btn btn-primary" onclick="login()" id="btn-login">Entrar</button>
+    </div>
+
+    <div id="form-register" style="display:none">
+      <div class="form-group">
+        <label>Nombre / Empresa</label>
+        <input type="text" id="reg-name" placeholder="Constructora Ejemplo">
+      </div>
+      <div class="form-group">
+        <label>Correo electrónico</label>
+        <input type="email" id="reg-email" placeholder="tu@empresa.com">
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="reg-password" placeholder="Mínimo 6 caracteres">
+      </div>
+      <button class="btn btn-primary" onclick="register()" id="btn-register">Crear cuenta</button>
+    </div>
+
+    <div id="auth-msg" class="auth-msg"></div>
+  </div>
+</div>
+
+<!-- ══ MAIN APP ══ -->
+<div id="screen-app" class="screen">
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-logo">
+      <span>🏗️ LicitacionLab</span>
+    </div>
+    <div class="nav-actions">
+      <div class="user-badge">
+        <div class="user-dot"></div>
+        <span id="user-email-display"></span>
+      </div>
+      <button class="nav-btn nav-btn-ghost" onclick="logout()">Salir</button>
+    </div>
+  </nav>
+
+  <!-- Dashboard Tab -->
+  <div id="tab-dashboard" class="main page-with-nav">
+    <div class="stats-bar" id="stats-bar">
+      <div class="stat-card"><div class="stat-label">Total procesos</div><div class="stat-value blue" id="stat-total">—</div></div>
+      <div class="stat-card"><div class="stat-label">Activos ahora</div><div class="stat-value amber" id="stat-activos">—</div></div>
+      <div class="stat-card"><div class="stat-label">Artículos indexados</div><div class="stat-value green" id="stat-articulos">—</div></div>
+    </div>
+
+    <div class="filters">
+      <input class="filter-input" type="text" id="busqueda" placeholder="🔍  Buscar licitaciones..." oninput="debounceSearch()">
+      <select class="filter-select" id="filtro-objeto" onchange="cargarProcesos(1)">
+        <option value="">Todos los tipos</option>
+        <option value="Obras">Obras</option>
+        <option value="Bienes">Bienes</option>
+        <option value="Servicios">Servicios</option>
+        <option value="Consultoría">Consultoría</option>
+      </select>
+      <select class="filter-select" id="filtro-activos" onchange="cargarProcesos(1)">
+        <option value="true">Solo activos</option>
+        <option value="false">Todos</option>
+      </select>
+    </div>
+
+    <div id="procesos-container" class="procesos-grid">
+      <div class="loading"><div class="spinner"></div><span>Cargando licitaciones...</span></div>
+    </div>
+
+    <div class="pagination" id="pagination"></div>
+  </div>
+
+  <!-- Detalle Tab -->
+  <div id="tab-detalle" class="main page-with-nav" style="display:none">
+    <button class="back-btn" onclick="mostrarDashboard()">← Volver al listado</button>
+    <div id="detalle-container"><div class="loading"><div class="spinner"></div></div></div>
+  </div>
+
+  <!-- Perfil Tab -->
+  <div id="tab-perfil" class="main page-with-nav" style="display:none">
+    <div class="perfil-section">
+      <h2>⚙️ Mi cuenta</h2>
+      <div class="detalle-field" style="margin-bottom:16px">
+        <label>Correo registrado</label>
+        <span id="perfil-email">—</span>
+      </div>
+      <button class="btn btn-secondary" style="width:auto;padding:10px 24px" onclick="logout()">Cerrar sesión</button>
+    </div>
+
+    <div class="perfil-section">
+      <h2>🔔 Notificaciones Push</h2>
+      <div class="notif-toggle">
+        <div>
+          <div class="notif-label">Activar alertas en este dispositivo</div>
+          <div class="notif-desc">Recibe notificaciones cuando haya nuevas licitaciones</div>
+        </div>
+        <div class="toggle" id="toggle-push" onclick="togglePush()"></div>
+      </div>
+      <div id="push-status" style="font-size:12px;color:var(--muted);margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- Bottom Nav -->
+  <nav class="bottom-nav">
+    <button class="bottom-nav-item active" id="nav-dashboard" onclick="switchTab2('dashboard')">
+      <span>📋</span>Licitaciones
+    </button>
+    <button class="bottom-nav-item" id="nav-perfil" onclick="switchTab2('perfil')">
+      <span>👤</span>Mi Perfil
+    </button>
+  </nav>
+</div>
+
+<script>
+const API = '';
+const SUPABASE_URL = 'https://yqmwwwqgtkrxtjxaqyxk.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxbXd3d3FndGtyeHRqeGFxeXhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3ODE2NDYsImV4cCI6MjA4NzM1NzY0Nn0.DbhJpEBYac1DZLUU05lz4rF9qHjDCViaI-FAHtgN2ac';
+let currentUser = null;
+let searchTimer = null;
+let pushSubscription = null;
+
+// ── SUPABASE AUTH ──
+async function supabaseRequest(endpoint, method, body) {
+  const token = localStorage.getItem('sb_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    'apikey': SUPABASE_ANON_KEY,
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
+    method, headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  return res.json();
+}
+
+async function login() {
+  const email = document.getElementById('login-email').value;
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) return showMsg('Ingresa correo y contraseña', 'error');
+  const btn = document.getElementById('btn-login');
+  btn.disabled = true; btn.textContent = 'Entrando...';
+  const data = await supabaseRequest('token?grant_type=password', 'POST', { email, password });
+  btn.disabled = false; btn.textContent = 'Entrar';
+  if (data.error) return showMsg(data.error_description || data.error, 'error');
+  localStorage.setItem('sb_token', data.access_token);
+  localStorage.setItem('sb_user', JSON.stringify(data.user));
+  currentUser = data.user;
+  showApp();
+}
+
+async function register() {
+  const email = document.getElementById('reg-email').value;
+  const password = document.getElementById('reg-password').value;
+  if (!email || !password) return showMsg('Completa todos los campos', 'error');
+  const btn = document.getElementById('btn-register');
+  btn.disabled = true; btn.textContent = 'Creando cuenta...';
+  const data = await supabaseRequest('signup', 'POST', { email, password });
+  btn.disabled = false; btn.textContent = 'Crear cuenta';
+  if (data.error) return showMsg(data.error_description || data.error, 'error');
+  showMsg('¡Cuenta creada! Revisa tu correo para confirmar.', 'success');
+}
+
+function logout() {
+  localStorage.removeItem('sb_token');
+  localStorage.removeItem('sb_user');
+  currentUser = null;
+  document.getElementById('screen-app').classList.remove('active');
+  document.getElementById('screen-auth').classList.add('active');
+}
+
+function showApp() {
+  document.getElementById('screen-auth').classList.remove('active');
+  document.getElementById('screen-app').classList.add('active');
+  document.getElementById('user-email-display').textContent = currentUser?.email?.split('@')[0] || '';
+  document.getElementById('perfil-email').textContent = currentUser?.email || '';
+  cargarStats();
+  cargarProcesos(1);
+  checkPushStatus();
+}
+
+function showMsg(msg, type) {
+  const el = document.getElementById('auth-msg');
+  el.textContent = msg;
+  el.className = `auth-msg ${type}`;
+}
+
+function switchTab(tab) {
+  document.getElementById('form-login').style.display = tab === 'login' ? 'block' : 'none';
+  document.getElementById('form-register').style.display = tab === 'register' ? 'block' : 'none';
+  document.querySelectorAll('.auth-tab').forEach((t, i) => {
+    t.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'register'));
+  });
+  document.getElementById('auth-msg').className = 'auth-msg';
+}
+
+// ── PROCESOS ──
+async function cargarStats() {
+  const res = await fetch(`${API}/api/stats`);
+  const data = await res.json();
+  document.getElementById('stat-total').textContent = data.total_procesos?.toLocaleString() || '0';
+  document.getElementById('stat-activos').textContent = data.procesos_activos?.toLocaleString() || '0';
+  document.getElementById('stat-articulos').textContent = data.total_articulos?.toLocaleString() || '0';
+}
+
+async function cargarProcesos(page = 1) {
+  document.getElementById('procesos-container').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  const busqueda = document.getElementById('busqueda').value;
+  const objeto = document.getElementById('filtro-objeto').value;
+  const soloActivos = document.getElementById('filtro-activos').value;
+  let url = `${API}/api/procesos?page=${page}&limit=15&solo_activos=${soloActivos}`;
+  if (busqueda) url += `&busqueda=${encodeURIComponent(busqueda)}`;
+  if (objeto) url += `&objeto=${encodeURIComponent(objeto)}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  renderProcesos(data.procesos || [], data, page);
+}
+
+function renderProcesos(procesos, data, page) {
+  const container = document.getElementById('procesos-container');
+  if (!procesos.length) {
+    container.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div>No se encontraron licitaciones</div></div>';
+    document.getElementById('pagination').innerHTML = '';
+    return;
+  }
+  container.innerHTML = procesos.map(p => {
+    const monto = p.monto_estimado ? `RD$${Number(p.monto_estimado).toLocaleString('es-DO', {minimumFractionDigits:0})}` : 'Monto N/D';
+    const fecha = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO') : '—';
+    const tipo = p.objeto_proceso || 'General';
+    const tipoBadge = tipo === 'Obras' ? 'badge-amber' : tipo === 'Bienes' ? 'badge-blue' : tipo === 'Servicios' ? 'badge-green' : 'badge-blue';
+    return `
+      <div class="proceso-card" onclick="verDetalle('${p.codigo_proceso}')">
+        <div>
+          <div class="proceso-titulo">${p.titulo || 'Sin título'}</div>
+          <div class="proceso-meta">
+            <span class="proceso-entidad">${p.unidad_compra || '—'}</span>
+            <span class="proceso-fecha">📅 Cierre: ${fecha}</span>
+          </div>
+          <div class="proceso-badges">
+            <span class="badge ${tipoBadge}">${tipo}</span>
+            ${p.modalidad ? `<span class="badge badge-blue">${p.modalidad}</span>` : ''}
+            ${p.dirigido_mipymes ? '<span class="badge badge-green">MIPYMES</span>' : ''}
+          </div>
+        </div>
+        <div class="proceso-monto">${monto}</div>
+      </div>`;
+  }).join('');
+
+  // Pagination
+  const pages = data.pages || 1;
+  if (pages <= 1) { document.getElementById('pagination').innerHTML = ''; return; }
+  let pag = '';
+  if (page > 1) pag += `<button class="page-btn" onclick="cargarProcesos(${page-1})">← Anterior</button>`;
+  pag += `<button class="page-btn active">${page} / ${pages}</button>`;
+  if (page < pages) pag += `<button class="page-btn" onclick="cargarProcesos(${page+1})">Siguiente →</button>`;
+  document.getElementById('pagination').innerHTML = pag;
+}
+
+function debounceSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => cargarProcesos(1), 400);
+}
+
+// ── DETALLE ──
+async function verDetalle(codigo) {
+  document.getElementById('tab-dashboard').style.display = 'none';
+  document.getElementById('tab-detalle').style.display = 'block';
+  document.getElementById('tab-perfil').style.display = 'none';
+  document.getElementById('detalle-container').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+  const res = await fetch(`${API}/api/procesos/${codigo}`);
+  const data = await res.json();
+  const p = data.proceso;
+  const arts = data.articulos || [];
+
+  const monto = p.monto_estimado ? `RD$${Number(p.monto_estimado).toLocaleString('es-DO', {minimumFractionDigits:2})}` : 'No especificado';
+  const fPub = p.fecha_publicacion ? new Date(p.fecha_publicacion).toLocaleDateString('es-DO') : '—';
+  const fCierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO') : '—';
+
+  document.getElementById('detalle-container').innerHTML = `
+    <div class="detalle-header">
+      <div class="proceso-badges" style="margin-bottom:12px">
+        ${p.objeto_proceso ? `<span class="badge badge-amber">${p.objeto_proceso}</span>` : ''}
+        ${p.modalidad ? `<span class="badge badge-blue">${p.modalidad}</span>` : ''}
+        ${p.estado_proceso ? `<span class="badge badge-green">${p.estado_proceso}</span>` : ''}
+      </div>
+      <div class="detalle-titulo">${p.titulo || 'Sin título'}</div>
+      <div class="detalle-monto">${monto}</div>
+      <div class="detalle-grid">
+        <div class="detalle-field"><label>Institución</label><span>${p.unidad_compra || '—'}</span></div>
+        <div class="detalle-field"><label>Código</label><span>${p.codigo_proceso}</span></div>
+        <div class="detalle-field"><label>Publicación</label><span>${fPub}</span></div>
+        <div class="detalle-field"><label>Cierre</label><span>${fCierre}</span></div>
+        <div class="detalle-field"><label>Divisa</label><span>${p.divisa || 'DOP'}</span></div>
+        ${p.duracion_contrato ? `<div class="detalle-field"><label>Duración contrato</label><span>${p.duracion_contrato}</span></div>` : ''}
+      </div>
+      ${p.url ? `<div style="margin-top:16px"><a href="${p.url}" target="_blank" style="color:var(--accent2);font-size:13px">🔗 Ver en portal DGCP</a></div>` : ''}
+    </div>
+    <div class="articulos-section">
+      <h3>Artículos del proceso (${arts.length})</h3>
+      ${arts.length ? arts.map(a => `
+        <div class="articulo-row">
+          <div>
+            <div class="articulo-desc">${a.descripcion_articulo || a.descripcion_usuario || 'Sin descripción'}</div>
+            <div class="articulo-meta">${a.cantidad || '—'} ${a.unidad_medida || ''} · UNSPSC: ${a.clase_unspsc || '—'}</div>
+          </div>
+          <div class="articulo-precio">${a.precio_total_estimado ? 'RD$'+Number(a.precio_total_estimado).toLocaleString() : '—'}</div>
+        </div>`).join('') : '<div style="color:var(--muted);font-size:14px">Sin artículos registrados</div>'}
+    </div>`;
+}
+
+function mostrarDashboard() {
+  document.getElementById('tab-dashboard').style.display = 'block';
+  document.getElementById('tab-detalle').style.display = 'none';
+  document.getElementById('tab-perfil').style.display = 'none';
+}
+
+// ── NAV ──
+function switchTab2(tab) {
+  document.getElementById('tab-dashboard').style.display = tab === 'dashboard' ? 'block' : 'none';
+  document.getElementById('tab-detalle').style.display = 'none';
+  document.getElementById('tab-perfil').style.display = tab === 'perfil' ? 'block' : 'none';
+  document.getElementById('nav-dashboard').classList.toggle('active', tab === 'dashboard');
+  document.getElementById('nav-perfil').classList.toggle('active', tab === 'perfil');
+}
+
+// ── PUSH ──
+async function checkPushStatus() {
+  if (!('serviceWorker' in navigator)) return;
+  const reg = await navigator.serviceWorker.getRegistration();
+  if (!reg) return;
+  const sub = await reg.pushManager.getSubscription();
+  const toggle = document.getElementById('toggle-push');
+  if (sub) {
+    toggle.classList.add('on');
+    pushSubscription = sub;
+    document.getElementById('push-status').textContent = '✅ Notificaciones activas en este dispositivo';
+  } else {
+    toggle.classList.remove('on');
+    document.getElementById('push-status').textContent = 'Las notificaciones están desactivadas';
+  }
+}
+
+async function togglePush() {
+  const toggle = document.getElementById('toggle-push');
+  const status = document.getElementById('push-status');
+  if (toggle.classList.contains('on')) {
+    if (pushSubscription) {
+      await pushSubscription.unsubscribe();
+      await fetch(`${API}/api/notificaciones/desuscribirse`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({endpoint: pushSubscription.endpoint})
+      });
+      pushSubscription = null;
+    }
+    toggle.classList.remove('on');
+    status.textContent = 'Notificaciones desactivadas';
+  } else {
+    try {
+      const keyRes = await fetch(`${API}/api/vapid-public-key`);
+      const {publicKey} = await keyRes.json();
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') { status.textContent = '❌ Permiso denegado'; return; }
+      pushSubscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey)
+      });
+      await fetch(`${API}/api/notificaciones/suscribirse`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({user_id: currentUser?.id || 'user', subscription: pushSubscription.toJSON(), rubros: []})
+      });
+      toggle.classList.add('on');
+      status.textContent = '✅ Notificaciones activadas';
+    } catch(e) {
+      status.textContent = '❌ Error: ' + e.message;
+    }
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+// ── INIT ──
+const savedToken = localStorage.getItem('sb_token');
+const savedUser = localStorage.getItem('sb_user');
+if (savedToken && savedUser) {
+  currentUser = JSON.parse(savedUser);
+  showApp();
+}
+</script>
+</body>
+</html>
