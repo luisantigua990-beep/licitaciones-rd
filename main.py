@@ -76,13 +76,18 @@ app.add_middleware(
 )
 from fastapi.responses import FileResponse
 
+import os
+from fastapi.responses import FileResponse
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 @app.get("/test")
 def test_page():
-    return FileResponse("static/test_push.html")
+    return FileResponse(os.path.join(BASE_DIR, "static", "test_push.html"))
 
 @app.get("/sw.js")
 def service_worker():
-    return FileResponse("static/sw.js", media_type="application/javascript")
+    return FileResponse(os.path.join(BASE_DIR, "static", "sw.js"), media_type="application/javascript")
 
 
 # ============================================
