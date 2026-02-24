@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Push Notifications - LicitacionLab</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; }
+        button { padding: 10px 20px; margin: 10px 0; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 6px; font-size: 14px; }
+        button:disabled { background: #9ca3af; }
+        #log { background: #f3f4f6; padding: 15px; border-radius: 6px; margin-top: 20px; font-family: monospace; font-size: 13px; white-space: pre-wrap; }
+        .ok { color: green; } .error { color: red; }
+    </style>
+</head>
+<body>
+    <h2>🔔 LicitacionLab — Test Notificaciones</h2>
+    
+    <button id="btnSuscribir" onclick="suscribirse()">1. Suscribirse a notificaciones</button><br>
+    <button id="btnPrueba" onclick="enviarPrueba()" disabled>2. Enviar notificación de prueba</button>
+    
+    <div id="log">Esperando acciones...</div>
+
+    <script>
+        const API = "https://web-production-7b940.up.railway.app";
+        let endpointActual = null;
+
+        function log(msg, tipo = "") {
+            const el = document.getElementById("log");
+            el.innerHTML += `\n<span class="${tipo}">${msg}</span>`;
+        }
+
+        async function registrarServiceWorker() {
+            if (!('serviceWorker' in navigator)) {
+                log("❌ Este navegador no soporta Service Workers", "error");
+                return null;
+            }
+            const reg = await navigator.serviceWorker.register("/sw.js");
+            log("✅ Service Worker registrado");
+            return reg;
+        }
+
+        async function suscribirse() {
+            try {
+                log("⏳ Obteniendo VAPID public key...");
+                const res = await fetch(`${API}/api/vapid-public-key`);
+                const { publicKey } = await res.json();
+                log("✅ Public key obtenida: " + publicKey.substring(0, 20) + "...");
+
+                const reg = await registrarServiceWorker();
+                if (!reg) return;
+
+                log("⏳ Solicitando permiso de notificaciones...");
+                const permiso = await Notification.requestPermission();
+                if (permiso !== "granted") {
+                    log("❌ Permiso denegado", "error");
+                    return;
+                }
+                log("✅ Permiso concedido");
+
+                log("⏳ Creando suscripción push...");
+                const subscription = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(publicKey)
+                });
+
+                endpointActual = subscription.endpoint;
+                log("✅ Suscripción creada");
+
+                log("⏳ Guardando en backend...");
+                const saveRes = await fetch(`${API}/api/notificaciones/suscribirse`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        user_id: "test-user",
+                        subscription: subscription.toJSON(),
+                        rubros: []
+                    })
+                });
+                const saveData = await saveRes.json();
+                log("✅ Guardado en Supabase: " + JSON.stringify(saveData), "ok");
+
+                document.getElementById("btnPrueba").disabled = false;
+
+            } catch (err) {
+                log("❌ Error: " + err.message, "error");
+            }
+        }
+
+        async function enviarPrueba() {
+            try {
+                log("⏳ Enviando notificación de prueba...");
+                const res = await fetch(`${API}/api/notificaciones/enviar-prueba`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ endpoint: endpointActual })
+                });
+                const data = await res.json();
+                log("✅ Resultado: " + JSON.stringify(data), "ok");
+            } catch (err) {
+                log("❌ Error: " + err.message, "error");
+            }
+        }
+
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+            return outputArray;
+        }
+    </script>
+</body>
+</html>
