@@ -3,7 +3,7 @@ self.addEventListener('push', function(event) {
     event.waitUntil(
         self.registration.showNotification(data.title || 'LicitacionLab', {
             body: data.body || 'Nueva licitación disponible',
-            icon: data.icon || '/icons/icon-192.png',
+            icon: data.icon || '',
             data: { url: data.url || '/' }
         })
     );
