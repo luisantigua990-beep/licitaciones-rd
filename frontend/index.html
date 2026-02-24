@@ -1,9 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="LicitacionLab">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0f172a">
@@ -681,24 +678,39 @@
   <!-- Dashboard Tab -->
   <div id="tab-dashboard" class="main page-with-nav">
     <div class="stats-bar" id="stats-bar">
+      <div class="stat-card" onclick="filtrarRubro('')" style="cursor:pointer"><div class="stat-label">Total activos</div><div class="stat-value amber" id="stat-activos">—</div></div>
+      <div class="stat-card" onclick="filtrarRubro('Obras')" style="cursor:pointer"><div class="stat-label">🏗️ Obras</div><div class="stat-value green" id="stat-obras">—</div></div>
+      <div class="stat-card" onclick="filtrarRubro('Bienes')" style="cursor:pointer"><div class="stat-label">📦 Bienes</div><div class="stat-value blue" id="stat-bienes">—</div></div>
+      <div class="stat-card" onclick="filtrarRubro('Servicios')" style="cursor:pointer"><div class="stat-label">🛠️ Servicios</div><div class="stat-value amber" id="stat-servicios">—</div></div>
       <div class="stat-card"><div class="stat-label">Total procesos</div><div class="stat-value blue" id="stat-total">—</div></div>
-      <div class="stat-card"><div class="stat-label">Activos ahora</div><div class="stat-value amber" id="stat-activos">—</div></div>
-      <div class="stat-card"><div class="stat-label">Artículos indexados</div><div class="stat-value green" id="stat-articulos">—</div></div>
     </div>
 
     <div class="filters">
-      <input class="filter-input" type="text" id="busqueda" placeholder="🔍  Buscar licitaciones..." oninput="debounceSearch()">
+      <input class="filter-input" type="text" id="busqueda" placeholder="🔍  Título, código proceso..." oninput="debounceSearch()" style="flex:2;min-width:200px">
+      <input class="filter-input" type="text" id="filtro-institucion" placeholder="🏛️ Institución..." oninput="debounceSearch()" style="flex:1;min-width:160px">
       <select class="filter-select" id="filtro-objeto" onchange="cargarProcesos(1)">
-        <option value="">Todos los tipos</option>
-        <option value="Obras">Obras</option>
-        <option value="Bienes">Bienes</option>
-        <option value="Servicios">Servicios</option>
-        <option value="Consultoría">Consultoría</option>
+        <option value="">Todos los rubros</option>
+        <option value="Obras">🏗️ Obras</option>
+        <option value="Bienes">📦 Bienes</option>
+        <option value="Servicios">🛠️ Servicios</option>
       </select>
       <select class="filter-select" id="filtro-activos" onchange="cargarProcesos(1)">
         <option value="true">Solo activos</option>
         <option value="false">Todos</option>
       </select>
+    </div>
+    <div class="filters" style="margin-top:-8px">
+      <input class="filter-input" type="number" id="filtro-monto-min" placeholder="💰 Monto mín (RD$)" oninput="debounceSearch()" style="flex:1;min-width:160px">
+      <input class="filter-input" type="number" id="filtro-monto-max" placeholder="💰 Monto máx (RD$)" oninput="debounceSearch()" style="flex:1;min-width:160px">
+      <div style="flex:2;min-width:200px;position:relative">
+        <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="🔎 Buscar familia UNSPSC..." oninput="buscarUnspsc()" autocomplete="off" style="width:100%">
+        <div id="unspsc-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);z-index:200;max-height:200px;overflow-y:auto"></div>
+      </div>
+      <button class="filter-select" onclick="limpiarFiltros()" style="cursor:pointer;color:var(--muted)">✕ Limpiar</button>
+    </div>
+    <div id="unspsc-activo" style="display:none;padding:8px 12px;background:var(--surface2);border-radius:8px;margin-bottom:8px;font-size:13px;display:flex;align-items:center;gap:8px">
+      <span id="unspsc-activo-label"></span>
+      <button onclick="limpiarUnspsc()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px">✕</button>
     </div>
 
     <div id="procesos-container" class="procesos-grid">
@@ -735,6 +747,34 @@
         <div class="toggle" id="toggle-push" onclick="togglePush()"></div>
       </div>
       <div id="push-status" style="font-size:12px;color:var(--muted);margin-top:12px"></div>
+    </div>
+
+    <div class="perfil-section">
+      <h2>🎯 Mis intereses de notificación</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Solo recibirás alertas de las categorías que selecciones.</p>
+      <div style="margin-bottom:16px">
+        <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Rubros</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="interes-obras" value="Obras" onchange="guardarIntereses()"> 🏗️ Obras
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="interes-bienes" value="Bienes" onchange="guardarIntereses()"> 📦 Bienes
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="interes-servicios" value="Servicios" onchange="guardarIntereses()"> 🛠️ Servicios
+          </label>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Familias UNSPSC específicas</div>
+        <div style="position:relative;margin-bottom:8px">
+          <input class="filter-input" type="text" id="perfil-unspsc-text" placeholder="Buscar familia (ej: construcción)..." oninput="buscarUnspscPerfil()" autocomplete="off">
+          <div id="perfil-unspsc-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);z-index:200;max-height:200px;overflow-y:auto"></div>
+        </div>
+        <div id="familias-seleccionadas" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
+      </div>
+      <div id="intereses-status" style="font-size:12px;color:var(--muted);margin-top:12px"></div>
     </div>
   </div>
 
@@ -815,6 +855,7 @@ function showApp() {
   cargarStats();
   cargarProcesos(1);
   checkPushStatus();
+  cargarInteresesGuardados();
 }
 
 function showMsg(msg, type) {
@@ -838,20 +879,136 @@ async function cargarStats() {
   const data = await res.json();
   document.getElementById('stat-total').textContent = data.total_procesos?.toLocaleString() || '0';
   document.getElementById('stat-activos').textContent = data.procesos_activos?.toLocaleString() || '0';
-  document.getElementById('stat-articulos').textContent = data.total_articulos?.toLocaleString() || '0';
+  document.getElementById('stat-obras').textContent = data.obras_activas?.toLocaleString() || '0';
+  document.getElementById('stat-bienes').textContent = data.bienes_activos?.toLocaleString() || '0';
+  document.getElementById('stat-servicios').textContent = data.servicios_activos?.toLocaleString() || '0';
 }
+
+function filtrarRubro(rubro) {
+  document.getElementById('filtro-objeto').value = rubro;
+  cargarProcesos(1);
+  switchTab2('dashboard');
+}
+
+let unspscFiltro = null;
 
 async function cargarProcesos(page = 1) {
   document.getElementById('procesos-container').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   const busqueda = document.getElementById('busqueda').value;
   const objeto = document.getElementById('filtro-objeto').value;
   const soloActivos = document.getElementById('filtro-activos').value;
+  const institucion = document.getElementById('filtro-institucion')?.value || '';
+  const montoMin = document.getElementById('filtro-monto-min')?.value || '';
+  const montoMax = document.getElementById('filtro-monto-max')?.value || '';
   let url = `${API}/api/procesos?page=${page}&limit=15&solo_activos=${soloActivos}`;
   if (busqueda) url += `&busqueda=${encodeURIComponent(busqueda)}`;
   if (objeto) url += `&objeto=${encodeURIComponent(objeto)}`;
+  if (institucion) url += `&institucion=${encodeURIComponent(institucion)}`;
+  if (montoMin) url += `&monto_min=${montoMin}`;
+  if (montoMax) url += `&monto_max=${montoMax}`;
+  if (unspscFiltro) url += `&familia_unspsc=${encodeURIComponent(unspscFiltro.codigo)}`;
   const res = await fetch(url);
   const data = await res.json();
   renderProcesos(data.procesos || [], data, page);
+}
+
+function limpiarFiltros() {
+  document.getElementById('busqueda').value = '';
+  document.getElementById('filtro-institucion').value = '';
+  document.getElementById('filtro-objeto').value = '';
+  document.getElementById('filtro-monto-min').value = '';
+  document.getElementById('filtro-monto-max').value = '';
+  limpiarUnspsc();
+  cargarProcesos(1);
+}
+
+function limpiarUnspsc() {
+  unspscFiltro = null;
+  document.getElementById('filtro-unspsc-text').value = '';
+  document.getElementById('unspsc-activo').style.display = 'none';
+  cargarProcesos(1);
+}
+
+async function buscarUnspsc() {
+  const q = document.getElementById('filtro-unspsc-text').value.trim();
+  const dd = document.getElementById('unspsc-dropdown');
+  if (q.length < 2) { dd.style.display = 'none'; return; }
+  const res = await fetch(`${API}/api/unspsc/buscar?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  if (!data.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = data.map(f => `<div onclick="seleccionarUnspsc('${f.familia}','${f.descripcion_familia.replace(/'/g,"\'")}',this)" style="padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">${f.descripcion_familia} <span style="color:var(--muted);font-size:11px">${f.familia}</span></div>`).join('');
+  dd.style.display = 'block';
+}
+
+function seleccionarUnspsc(codigo, nombre) {
+  unspscFiltro = {codigo, nombre};
+  document.getElementById('filtro-unspsc-text').value = nombre;
+  document.getElementById('unspsc-dropdown').style.display = 'none';
+  const activo = document.getElementById('unspsc-activo');
+  activo.style.display = 'flex';
+  document.getElementById('unspsc-activo-label').textContent = `UNSPSC: ${nombre} (${codigo})`;
+  cargarProcesos(1);
+}
+
+// ── UNSPSC PERFIL ──
+let familiasPerfil = JSON.parse(localStorage.getItem('familias_interes') || '[]');
+
+async function buscarUnspscPerfil() {
+  const q = document.getElementById('perfil-unspsc-text').value.trim();
+  const dd = document.getElementById('perfil-unspsc-dropdown');
+  if (q.length < 2) { dd.style.display = 'none'; return; }
+  const res = await fetch(`${API}/api/unspsc/buscar?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  if (!data.length) { dd.style.display = 'none'; return; }
+  dd.innerHTML = data.map(f => `<div onclick="agregarFamiliaPerfil('${f.familia}','${f.descripcion_familia.replace(/'/g,"\'")}',this)" style="padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">${f.descripcion_familia} <span style="color:var(--muted);font-size:11px">${f.familia}</span></div>`).join('');
+  dd.style.display = 'block';
+}
+
+function agregarFamiliaPerfil(codigo, nombre) {
+  if (!familiasPerfil.find(f => f.codigo === codigo)) {
+    familiasPerfil.push({codigo, nombre});
+    localStorage.setItem('familias_interes', JSON.stringify(familiasPerfil));
+    renderFamiliasPerfil();
+    guardarIntereses();
+  }
+  document.getElementById('perfil-unspsc-text').value = '';
+  document.getElementById('perfil-unspsc-dropdown').style.display = 'none';
+}
+
+function removerFamiliaPerfil(codigo) {
+  familiasPerfil = familiasPerfil.filter(f => f.codigo !== codigo);
+  localStorage.setItem('familias_interes', JSON.stringify(familiasPerfil));
+  renderFamiliasPerfil();
+  guardarIntereses();
+}
+
+function renderFamiliasPerfil() {
+  const container = document.getElementById('familias-seleccionadas');
+  if (!container) return;
+  container.innerHTML = familiasPerfil.map(f => `<span class="badge badge-blue" style="display:flex;align-items:center;gap:4px;padding:6px 10px">${f.nombre} <button onclick="removerFamiliaPerfil('${f.codigo}')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0;line-height:1">✕</button></span>`).join('');
+}
+
+async function guardarIntereses() {
+  const rubros = ['obras','bienes','servicios'].filter(r => document.getElementById(`interes-${r}`)?.checked).map(r => r.charAt(0).toUpperCase()+r.slice(1));
+  const familias = familiasPerfil.map(f => f.codigo);
+  localStorage.setItem('rubros_interes', JSON.stringify(rubros));
+  if (pushSubscription) {
+    await fetch(`${API}/api/notificaciones/intereses`, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({endpoint: pushSubscription.endpoint, rubros, familias})
+    });
+  }
+  document.getElementById('intereses-status').textContent = '✅ Preferencias guardadas';
+  setTimeout(() => { const el = document.getElementById('intereses-status'); if(el) el.textContent = ''; }, 2000);
+}
+
+function cargarInteresesGuardados() {
+  const rubros = JSON.parse(localStorage.getItem('rubros_interes') || '[]');
+  rubros.forEach(r => {
+    const el = document.getElementById(`interes-${r.toLowerCase()}`);
+    if (el) el.checked = true;
+  });
+  renderFamiliasPerfil();
 }
 
 function renderProcesos(procesos, data, page) {
@@ -964,12 +1121,7 @@ function switchTab2(tab) {
 
 // ── PUSH ──
 async function checkPushStatus() {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    document.getElementById('push-status').textContent = '⚠️ Tu navegador no soporta notificaciones push';
-    document.getElementById('toggle-push').style.opacity = '0.4';
-    document.getElementById('toggle-push').style.pointerEvents = 'none';
-    return;
-  }
+  if (!('serviceWorker' in navigator)) return;
   const reg = await navigator.serviceWorker.getRegistration();
   if (!reg) return;
   const sub = await reg.pushManager.getSubscription();
@@ -987,12 +1139,6 @@ async function checkPushStatus() {
 async function togglePush() {
   const toggle = document.getElementById('toggle-push');
   const status = document.getElementById('push-status');
-
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    status.textContent = '⚠️ Notificaciones no soportadas en este navegador';
-    return;
-  }
-
   if (toggle.classList.contains('on')) {
     if (pushSubscription) {
       await pushSubscription.unsubscribe();
@@ -1009,18 +1155,8 @@ async function togglePush() {
       const keyRes = await fetch(`${API}/api/vapid-public-key`);
       const {publicKey} = await keyRes.json();
       const reg = await navigator.serviceWorker.register('/sw.js');
-
-      // Compatible con Safari iOS y otros navegadores
-      let permission;
-      if (typeof Notification !== 'undefined' && Notification.requestPermission) {
-        permission = await Notification.requestPermission();
-      } else {
-        status.textContent = '⚠️ Este navegador no soporta notificaciones';
-        return;
-      }
-
+      const permission = await Notification.requestPermission();
       if (permission !== 'granted') { status.textContent = '❌ Permiso denegado'; return; }
-
       pushSubscription = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey)
@@ -1047,6 +1183,12 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 // ── INIT ──
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#filtro-unspsc-text') && !e.target.closest('#unspsc-dropdown'))
+    document.getElementById('unspsc-dropdown').style.display = 'none';
+  if (!e.target.closest('#perfil-unspsc-text') && !e.target.closest('#perfil-unspsc-dropdown'))
+    { const dd = document.getElementById('perfil-unspsc-dropdown'); if(dd) dd.style.display = 'none'; }
+});
 const savedToken = localStorage.getItem('sb_token');
 const savedUser = localStorage.getItem('sb_user');
 if (savedToken && savedUser) {
