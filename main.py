@@ -94,14 +94,11 @@ def service_worker():
 # ENDPOINTS — PROCESOS
 # ============================================
 
+app.mount("/frontend", StaticFiles(directory=os.path.join(BASE_DIR, "frontend"), html=True), name="frontend")
+
 @app.get("/")
 def inicio():
-    """Endpoint de prueba para verificar que el servidor está vivo."""
-    return {
-        "status": "ok",
-        "servicio": "API Licitaciones RD",
-        "fecha": datetime.now().isoformat()
-    }
+    return FileResponse(os.path.join(BASE_DIR, "frontend", "index.html"))
 
 
 @app.get("/api/procesos")
@@ -458,17 +455,11 @@ async def enviar_prueba(payload: dict):
         return {"ok": ok}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-from fastapi.staticfiles import StaticFiles
 
-# Servir frontend
-app.mount("/frontend", StaticFiles(directory=os.path.join(BASE_DIR, "frontend"), html=True), name="frontend")
 
-@app.get("/")
-def root():
-    return FileResponse(os.path.join(BASE_DIR, "frontend", "index.html"))
 
 @app.get("/api/stats")
-def stats():
+def get_stats():
     total = supabase.table("procesos").select("*", count="exact").execute()
     activos = supabase.table("procesos").select("*", count="exact").eq("estado_proceso", "Publicado").execute()
     arts = supabase.table("articulos_proceso").select("*", count="exact").execute()
@@ -479,7 +470,7 @@ def stats():
     }
 
 @app.get("/api/procesos")
-def listar_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: str = "", solo_activos: bool = True):
+def get_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: str = "", solo_activos: bool = True):
     query = supabase.table("procesos").select("*", count="exact")
     if solo_activos:
         query = query.eq("estado_proceso", "Publicado")
@@ -498,10 +489,19 @@ def listar_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: 
     }
 
 @app.get("/api/procesos/{codigo}")
-def detalle_proceso(codigo: str):
+def get_proceso_detalle(codigo: str):
     proceso = supabase.table("procesos").select("*").eq("codigo_proceso", codigo).single().execute()
     articulos = supabase.table("articulos_proceso").select("*").eq("codigo_proceso", codigo).execute()
     return {"proceso": proceso.data, "articulos": articulos.data}
 
+@app.post("/api/admin/forzar-monitor")
+async def forzar_monitor_admin():
+    from monitor import obtener_todas_las_paginas, guardar_procesos_nuevos, procesar_articulos_de_nuevos, notificar_procesos_nuevos
+    procesos = obtener_todas_las_paginas(fecha_desde="2026-02-20", fecha_hasta="2026-02-24")
+    nuevos = guardar_procesos_nuevos(procesos)
+    if nuevos:
+        procesar_articulos_de_nuevos(nuevos)
+        notificar_procesos_nuevos(nuevos)
+    return {"nuevos": len(nuevos)}
 
 
