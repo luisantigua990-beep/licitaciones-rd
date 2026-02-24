@@ -462,22 +462,60 @@ async def enviar_prueba(payload: dict):
 def get_stats():
     total = supabase.table("procesos").select("*", count="exact").execute()
     activos = supabase.table("procesos").select("*", count="exact").eq("estado_proceso", "Publicado").execute()
+    obras = supabase.table("procesos").select("*", count="exact").eq("estado_proceso", "Publicado").eq("objeto_proceso", "Obras").execute()
+    bienes = supabase.table("procesos").select("*", count="exact").eq("estado_proceso", "Publicado").eq("objeto_proceso", "Bienes").execute()
+    servicios = supabase.table("procesos").select("*", count="exact").eq("estado_proceso", "Publicado").eq("objeto_proceso", "Servicios").execute()
     arts = supabase.table("articulos_proceso").select("*", count="exact").execute()
     return {
         "total_procesos": total.count,
         "procesos_activos": activos.count,
+        "obras_activas": obras.count,
+        "bienes_activos": bienes.count,
+        "servicios_activos": servicios.count,
         "total_articulos": arts.count
     }
 
+@app.get("/api/unspsc/buscar")
+def buscar_unspsc(q: str = ""):
+    if not q or len(q) < 2:
+        return []
+    result = supabase.table("catalogo_unspsc")        .select("familia, descripcion_familia")        .ilike("descripcion_familia", f"%{q}%")        .limit(15)        .execute()
+    # Deduplicar por familia
+    seen = set()
+    unique = []
+    for r in (result.data or []):
+        if r["familia"] not in seen:
+            seen.add(r["familia"])
+            unique.append(r)
+    return unique
+
 @app.get("/api/procesos")
-def get_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: str = "", solo_activos: bool = True):
-    query = supabase.table("procesos").select("*", count="exact")
+def get_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: str = "", 
+                 solo_activos: bool = True, institucion: str = "", 
+                 monto_min: float = None, monto_max: float = None,
+                 familia_unspsc: str = ""):
+    if familia_unspsc:
+        # Buscar codigos_proceso que tengan esa familia UNSPSC
+        arts = supabase.table("articulos_proceso").select("codigo_proceso").eq("familia_unspsc", familia_unspsc).execute()
+        codigos = list(set(a["codigo_proceso"] for a in (arts.data or [])))
+        if not codigos:
+            return {"procesos": [], "total": 0, "page": page, "pages": 1}
+        query = supabase.table("procesos").select("*", count="exact").in_("codigo_proceso", codigos[:500])
+    else:
+        query = supabase.table("procesos").select("*", count="exact")
+    
     if solo_activos:
         query = query.eq("estado_proceso", "Publicado")
     if busqueda:
-        query = query.ilike("titulo", f"%{busqueda}%")
+        query = query.or_(f"titulo.ilike.%{busqueda}%,codigo_proceso.ilike.%{busqueda}%")
     if objeto:
         query = query.eq("objeto_proceso", objeto)
+    if institucion:
+        query = query.ilike("unidad_compra", f"%{institucion}%")
+    if monto_min is not None:
+        query = query.gte("monto_estimado", monto_min)
+    if monto_max is not None:
+        query = query.lte("monto_estimado", monto_max)
     offset = (page - 1) * limit
     result = query.order("fecha_publicacion", desc=True).range(offset, offset + limit - 1).execute()
     total = result.count or 0
@@ -503,5 +541,4 @@ async def forzar_monitor_admin():
         procesar_articulos_de_nuevos(nuevos)
         notificar_procesos_nuevos(nuevos)
     return {"nuevos": len(nuevos)}
-
 
