@@ -12,7 +12,7 @@ def enviar_notificacion(subscription_info: dict, titulo: str, cuerpo: str, url: 
             "title": titulo,
             "body": cuerpo,
             "url": url,
-            "icon": "/icons/icon-192.png"
+            
         })
         
         webpush(
