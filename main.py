@@ -10,6 +10,7 @@ import threading
 import time
 from datetime import datetime
 from contextlib import asynccontextmanager
+from fastapi.staticfiles import StaticFiles
 
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -73,6 +74,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+from fastapi.responses import FileResponse
+
+@app.get("/test")
+def test_page():
+    return FileResponse("static/test_push.html")
+
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse("static/sw.js", media_type="application/javascript")
 
 
 # ============================================
