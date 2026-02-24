@@ -11,7 +11,7 @@ import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
-from notifications import enviar_notificacion
+
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -202,7 +202,7 @@ def procesar_articulos_de_nuevos(procesos_nuevos):
     if not procesos_nuevos:
         return
     total_articulos = 0
-    for i, proceso in enumerate(procesos_nuevos):
+    for proceso in procesos_nuevos:
         articulos = obtener_articulos_proceso(proceso["codigo_proceso"])
         if articulos:
             total_articulos += guardar_articulos(proceso["codigo_proceso"], articulos)
@@ -211,33 +211,35 @@ def procesar_articulos_de_nuevos(procesos_nuevos):
 
 
 # ============================================
-# FUNCIÓN PRINCIPAL
+# NOTIFICACIONES
 # ============================================
+
 def notificar_procesos_nuevos(procesos_nuevos):
     if not procesos_nuevos:
         return
-    
+
     try:
-        # Obtener todas las suscripciones activas
+        from notifications import enviar_notificacion
+
         result = supabase.table("user_subscriptions")\
             .select("*")\
             .eq("active", True)\
             .execute()
-        
+
         suscripciones = result.data
         if not suscripciones:
             print("ℹ️  Sin suscriptores activos")
             return
-        
+
         notificaciones_enviadas = 0
-        
+
         for proceso in procesos_nuevos:
             titulo_proceso = proceso.get("titulo", "Nueva licitación")[:60]
             entidad = proceso.get("unidad_compra", "")
             monto = proceso.get("monto_estimado")
             monto_str = f" | RD${monto:,.0f}" if monto else ""
             codigo = proceso.get("codigo_proceso", "")
-            
+
             for sub in suscripciones:
                 subscription_info = {
                     "endpoint": sub["endpoint"],
@@ -246,21 +248,26 @@ def notificar_procesos_nuevos(procesos_nuevos):
                         "p256dh": sub["p256dh"]
                     }
                 }
-                
+
                 ok = enviar_notificacion(
                     subscription_info,
                     titulo=f"🏗️ {entidad}{monto_str}",
                     cuerpo=titulo_proceso,
                     url=f"/proceso/{codigo}"
                 )
-                
+
                 if ok:
                     notificaciones_enviadas += 1
-        
+
         print(f"🔔 {notificaciones_enviadas} notificaciones enviadas")
-    
+
     except Exception as e:
         print(f"❌ Error enviando notificaciones: {e}")
+
+
+# ============================================
+# FUNCIÓN PRINCIPAL
+# ============================================
 
 def ejecutar_monitor():
     print(f"\n{'='*50}")
@@ -275,7 +282,7 @@ def ejecutar_monitor():
     print(f"📊 {len(procesos)} procesos encontrados")
     nuevos = guardar_procesos_nuevos(procesos)
 
-   if nuevos:
+    if nuevos:
         procesar_articulos_de_nuevos(nuevos)
         notificar_procesos_nuevos(nuevos)
         for p in nuevos[:5]:
@@ -285,7 +292,7 @@ def ejecutar_monitor():
             print(f"   ... y {len(nuevos) - 5} más")
 
     print(f"✅ Monitor completado\n")
-    return nuevos 
+    return nuevos
 
 
 if __name__ == "__main__":
