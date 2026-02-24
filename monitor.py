@@ -11,7 +11,7 @@ import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
-
+from notifications import enviar_notificacion
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -213,6 +213,54 @@ def procesar_articulos_de_nuevos(procesos_nuevos):
 # ============================================
 # FUNCIÓN PRINCIPAL
 # ============================================
+def notificar_procesos_nuevos(procesos_nuevos):
+    if not procesos_nuevos:
+        return
+    
+    try:
+        # Obtener todas las suscripciones activas
+        result = supabase.table("user_subscriptions")\
+            .select("*")\
+            .eq("active", True)\
+            .execute()
+        
+        suscripciones = result.data
+        if not suscripciones:
+            print("ℹ️  Sin suscriptores activos")
+            return
+        
+        notificaciones_enviadas = 0
+        
+        for proceso in procesos_nuevos:
+            titulo_proceso = proceso.get("titulo", "Nueva licitación")[:60]
+            entidad = proceso.get("unidad_compra", "")
+            monto = proceso.get("monto_estimado")
+            monto_str = f" | RD${monto:,.0f}" if monto else ""
+            codigo = proceso.get("codigo_proceso", "")
+            
+            for sub in suscripciones:
+                subscription_info = {
+                    "endpoint": sub["endpoint"],
+                    "keys": {
+                        "auth": sub["auth"],
+                        "p256dh": sub["p256dh"]
+                    }
+                }
+                
+                ok = enviar_notificacion(
+                    subscription_info,
+                    titulo=f"🏗️ {entidad}{monto_str}",
+                    cuerpo=titulo_proceso,
+                    url=f"/proceso/{codigo}"
+                )
+                
+                if ok:
+                    notificaciones_enviadas += 1
+        
+        print(f"🔔 {notificaciones_enviadas} notificaciones enviadas")
+    
+    except Exception as e:
+        print(f"❌ Error enviando notificaciones: {e}")
 
 def ejecutar_monitor():
     print(f"\n{'='*50}")
@@ -229,6 +277,10 @@ def ejecutar_monitor():
 
     if nuevos:
         procesar_articulos_de_nuevos(nuevos)
+        for p in nuevos[:5]:
+            if nuevos:
+        procesar_articulos_de_nuevos(nuevos)
+        notificar_procesos_nuevos(nuevos)  # <-- agrega esta línea
         for p in nuevos[:5]:
             monto = f"RD${p.get('monto_estimado', 0):,.2f}" if p.get('monto_estimado') else "N/A"
             print(f"   🆕 {p['titulo'][:50]}... | {monto}")
