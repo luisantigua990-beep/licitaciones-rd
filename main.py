@@ -409,6 +409,16 @@ async def desuscribirse(payload: dict):
         .execute()
     return {"ok": True}
 
+@app.post("/api/admin/forzar-monitor")
+async def forzar_monitor():
+    from monitor import obtener_todas_las_paginas, guardar_procesos_nuevos, procesar_articulos_de_nuevos, notificar_procesos_nuevos
+    procesos = obtener_todas_las_paginas(fecha_desde="2026-02-20", fecha_hasta="2026-02-24")
+    nuevos = guardar_procesos_nuevos(procesos)
+    if nuevos:
+        procesar_articulos_de_nuevos(nuevos)
+        notificar_procesos_nuevos(nuevos)
+    return {"nuevos": len(nuevos)}
+
 
 @app.put("/api/notificaciones/intereses")
 async def actualizar_intereses(payload: dict):
