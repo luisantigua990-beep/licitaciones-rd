@@ -275,12 +275,9 @@ def ejecutar_monitor():
     print(f"📊 {len(procesos)} procesos encontrados")
     nuevos = guardar_procesos_nuevos(procesos)
 
-    if nuevos:
+   if nuevos:
         procesar_articulos_de_nuevos(nuevos)
-        for p in nuevos[:5]:
-            if nuevos:
-        procesar_articulos_de_nuevos(nuevos)
-        notificar_procesos_nuevos(nuevos)  # <-- agrega esta línea
+        notificar_procesos_nuevos(nuevos)
         for p in nuevos[:5]:
             monto = f"RD${p.get('monto_estimado', 0):,.2f}" if p.get('monto_estimado') else "N/A"
             print(f"   🆕 {p['titulo'][:50]}... | {monto}")
@@ -288,7 +285,7 @@ def ejecutar_monitor():
             print(f"   ... y {len(nuevos) - 5} más")
 
     print(f"✅ Monitor completado\n")
-    return nuevos
+    return nuevos 
 
 
 if __name__ == "__main__":
