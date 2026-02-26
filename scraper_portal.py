@@ -303,10 +303,203 @@ def notificar_proceso_inmediato(proceso, articulos):
             return 0
 
         entidad = proceso.get("unidad_compra", "")[:40]
-        titulo = proceso.get("titulo", "Nueva licitación")[:70]
+        titulo_raw = proceso.get("titulo", "Nueva licitación")
+        objeto = (proceso.get("objeto_proceso") or "").strip()
         monto = proceso.get("monto_estimado")
-        monto_str = f" | RD${monto:,.0f}" if monto else ""
         url = proceso.get("url", "https://comprasdominicanas.gob.do")
+
+        # ── Calcular días al cierre ──
+        dias_cierre = None
+        fecha_cierre = proceso.get("fecha_fin_recepcion_ofertas")
+        if fecha_cierre:
+            try:
+                from datetime import datetime
+                cierre_dt = datetime.fromisoformat(str(fecha_cierre).replace("Z", ""))
+                dias_cierre = (cierre_dt - datetime.utcnow()).days
+            except Exception:
+                pass
+
+        # ── Formatear monto ──
+        def fmt_monto(m):
+            if not m:
+                return None
+            m = float(m)
+            if m >= 1_000_000:
+                return f"RD${m/1_000_000:.1f}M"
+            if m >= 1_000:
+                return f"RD${m/1_000:.0f}K"
+            return f"RD${m:,.0f}"
+
+        monto_fmt = fmt_monto(monto)
+
+        # ── Generar mensajes con personalidad según contexto ──
+        import random
+
+        def extraer_tema(titulo_raw):
+            """
+            Detecta de qué trata el proceso a partir del título.
+            Orden de prioridad: lo más específico primero.
+            """
+            t = titulo_raw.lower()
+            temas = [
+                # ── Suministros específicos primero (antes que la institución) ──
+                (["reactivo", "reactivos"],                                           "reactivos de laboratorio"),
+                (["medicamento", "fármaco", "farmaco", "insumo médico"],              "medicamentos"),
+                (["combustible", "gasoil", "gasolina"],                               "combustible"),
+                (["alimento", "racion", "ración", "comida"],                          "alimentos"),
+                (["uniforme", "ropa", "calzado"],                                     "uniformes"),
+                (["equipo médico", "equipo medico"],                                  "equipos médicos"),
+                (["equipo", "maquinaria"],                                            "equipos/maquinaria"),
+                (["vehículo", "vehiculo", "camión", "camion"],                        "vehículos"),
+                (["software", "sistema informático", "sistema informatico"],          "software"),
+                # ── Infraestructura vial ──
+                (["carretera", "autopista", " vial ", "camino", "paviment"],          "carretera"),
+                (["puente", "viaducto", "paso elevado"],                              "puente"),
+                (["acera", "contén", "anden"],                                        "aceras y contenes"),
+                # ── Agua y saneamiento ──
+                (["acueducto", "agua potable", "tubería", "tuberia"],                 "acueducto"),
+                (["alcantarillado", "saneamiento"],                                   "alcantarillado"),
+                (["drenaje", "pluvial", "canal"],                                     "drenaje pluvial"),
+                (["planta de tratamiento"],                                           "planta de tratamiento"),
+                # ── Edificaciones ──
+                (["escuela", "aula", "politécnico", "politecnico", "liceo"],          "escuela"),
+                (["hospital", "clínica", "clinica", "centro de salud"],               "hospital/clínica"),
+                (["policia", "policía", "destacamento", "cuartel"],                   "destacamento policial"),
+                (["mercado"],                                                         "mercado"),
+                (["parque", "plaza"],                                                 "parque/plaza"),
+                (["vivienda", "residencial", "apartamento", "habitacional"],          "viviendas"),
+                (["oficina", "edificio administrativo"],                              "edificio"),
+                # ── Servicios ──
+                (["consultoría", "consultoria", "supervisión", "supervision"],        "consultoría"),
+                (["limpieza", "aseo"],                                                "limpieza"),
+                (["seguridad", "vigilancia"],                                         "seguridad"),
+                (["mantenimiento"],                                                   "mantenimiento"),
+                (["tecnología", "tecnologia"],                                        "tecnología"),
+            ]
+            for palabras, tema in temas:
+                if any(p in t for p in palabras):
+                    return tema
+            return None
+
+        def descripcion_notificacion(titulo_raw, tema):
+            """
+            Estrategia: el título siempre da más contexto que el tema.
+            - Corto (<=65):  título completo en título y cuerpo
+            - Largo (>65):   primeros 62 chars + "..." en título, título completo en cuerpo
+            - Tema: solo se usa si el título tiene menos de 4 palabras reales (caso raro)
+            """
+            titulo_limpio = titulo_raw.strip().title()
+            palabras_reales = [p for p in titulo_raw.split() if len(p) > 2]
+
+            if len(palabras_reales) < 4 and tema:
+                # Título muy corto/codificado — el tema es más descriptivo
+                return tema.capitalize(), titulo_limpio
+            elif len(titulo_raw) <= 65:
+                return titulo_limpio, titulo_limpio
+            else:
+                # Título largo: recortar con "..." pero siempre del título real
+                return titulo_limpio[:62] + "…", titulo_limpio[:70] + ("…" if len(titulo_raw) > 70 else "")
+
+        def generar_mensaje(objeto, monto_fmt, entidad, titulo_raw, dias_cierre):
+            tema = extraer_tema(titulo_raw)
+            desc_corta, desc_larga = descripcion_notificacion(titulo_raw, tema)
+
+            # ── URGENCIA (cierra pronto) ──
+            if dias_cierre is not None and dias_cierre <= 3:
+                if dias_cierre <= 0:
+                    titulos = [
+                        f"🚨 ¡Cierra HOY! {desc_corta}",
+                        f"⏰ Último día para entrar: {desc_corta}",
+                    ]
+                    cuerpos = [
+                        f"¡Esta es la señal! {entidad} cierra hoy. No lo dejes escapar.",
+                        f"{entidad} — Fecha límite: HOY. ¿Ya tienes todo listo?",
+                    ]
+                elif dias_cierre == 1:
+                    titulos = [
+                        f"⚡ ¡Mañana cierra! {desc_corta}",
+                        f"🔔 Queda 1 día para: {desc_corta}",
+                    ]
+                    cuerpos = [
+                        f"¿Ya tienes todo listo? {entidad} no espera.",
+                        f"{entidad} — ¡No lo dejes para después!",
+                    ]
+                else:
+                    titulos = [
+                        f"⏳ {dias_cierre} días para: {desc_corta}",
+                        f"🚀 No te confíes — {desc_corta}",
+                    ]
+                    cuerpos = [
+                        f"La competencia ya está preparando su oferta. {entidad}.",
+                        f"{entidad} — Quedan {dias_cierre} días. ¿Ya empezaste?",
+                    ]
+                return random.choice(titulos), random.choice(cuerpos)
+
+            # ── OBRAS ──
+            if objeto == "Obras":
+                if monto and float(monto) >= 50_000_000:
+                    titulos = [
+                        f"🔥 Esta obra puede cambiar tu año: {desc_corta}",
+                        f"🏆 {monto_fmt} en juego — {desc_corta}",
+                        f"💰 ¡Proyecto grande! {desc_corta}",
+                    ]
+                    cuerpos = [
+                        f"{entidad} publicó esto hace instantes. ¿Participamos?",
+                        f"Una de las más grandes del día. {monto_fmt} — {entidad}.",
+                        f"Vale la pena revisarla. {entidad} está esperando ofertas.",
+                    ]
+                else:
+                    titulos = [
+                        f"🔨 ¡Hay trabajo! {desc_corta}",
+                        f"🏗️ Acaba de salir: {desc_corta}",
+                        f"📋 Nueva obra disponible: {desc_corta}",
+                    ]
+                    cuerpos = [
+                        f"{entidad} está buscando contratista. ¿Eres tú?",
+                        f"Publicado ahora mismo — tienes ventaja si entras temprano.",
+                        f"¿Tu empresa puede con esto? {entidad} está esperando.",
+                    ]
+
+            # ── BIENES ──
+            elif objeto == "Bienes":
+                titulos = [
+                    f"📦 {entidad[:28]} necesita: {desc_corta}",
+                    f"🛒 Acaba de salir: {desc_corta}",
+                    f"📦 Oportunidad de suministro: {desc_corta}",
+                ]
+                cuerpos = [
+                    f"¿Tienes lo que necesitan? Revísalo antes que la competencia.",
+                    f"{entidad} está comprando — publicado hace instantes.",
+                    f"Proceso nuevo. Primero en llegar, primero en ganar.",
+                ]
+
+            # ── SERVICIOS ──
+            elif objeto == "Servicios":
+                titulos = [
+                    f"🛠️ {entidad[:28]} busca: {desc_corta}",
+                    f"💼 Contrato disponible: {desc_corta}",
+                    f"🤝 Acaba de publicarse: {desc_corta}",
+                ]
+                cuerpos = [
+                    f"¿Tu empresa puede con esto? {entidad} está esperando.",
+                    f"Publicado ahora mismo — sé el primero en entrar.",
+                    f"{entidad} — Primero en llegar, primero en ganar.",
+                ]
+
+            # ── GENÉRICO ──
+            else:
+                titulos = [
+                    f"⚡ Acaba de salir: {desc_corta}",
+                    f"🏛️ {entidad[:28]} publicó: {desc_corta}",
+                    f"📢 Nueva oportunidad: {desc_corta}",
+                ]
+                cuerpos = [
+                    f"Sé el primero en revisarlo. {entidad}.",
+                    f"{entidad} — Publicado ahora mismo.",
+                    f"¿Es para ti? Entra y revisa.",
+                ]
+
+            return random.choice(titulos), random.choice(cuerpos)
 
         enviadas = 0
         omitidas = 0
@@ -317,13 +510,17 @@ def notificar_proceso_inmediato(proceso, articulos):
                 omitidas += 1
                 continue
 
+            notif_titulo, notif_cuerpo = generar_mensaje(
+                objeto, monto_fmt, entidad, titulo_raw, dias_cierre
+            )
+
             ok = enviar_notificacion(
                 subscription_info={
                     "endpoint": sub["endpoint"],
                     "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]},
                 },
-                titulo=f"🏗️ {entidad}{monto_str}",
-                cuerpo=titulo,
+                titulo=notif_titulo,
+                cuerpo=notif_cuerpo,
                 url=url,
             )
             if ok:
