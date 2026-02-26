@@ -167,6 +167,35 @@ def guardar_proceso_basico(proceso):
 # NOTIFICACIONES INMEDIATAS
 # ============================================
 
+def obtener_url_proceso(codigo_proceso):
+    """
+    Consulta la API DGCP para obtener la URL oficial del proceso.
+    El portal transaccional no tiene URLs directas por proceso (usa JavaScript),
+    así que obtenemos la URL real del campo 'url' que devuelve la API.
+    """
+    API_BASE_URL = "https://datosabiertos.dgcp.gob.do/api-dgcp/v1"
+    try:
+        resp = requests.get(
+            f"{API_BASE_URL}/procesos",
+            params={"proceso": codigo_proceso, "limit": 1},
+            timeout=10
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        payload = data.get("payload")
+        procesos = []
+        if isinstance(payload, list):
+            procesos = payload
+        elif isinstance(payload, dict):
+            procesos = payload.get("content", []) or []
+        if procesos and procesos[0].get("url"):
+            return procesos[0]["url"]
+    except Exception:
+        pass
+    # Fallback: búsqueda en datosabiertos con el código
+    return f"https://datosabiertos.dgcp.gob.do/?q={codigo_proceso}"
+
+
 def obtener_articulos_rapido(codigo_proceso):
     """
     Llama a la API DGCP para obtener los artículos UNSPSC de UN proceso específico.
@@ -347,7 +376,12 @@ def ejecutar_scraper_portal():
         if not guardado:
             continue  # Ya existía (race condition), saltar
 
-        # 2. Obtener artículos UNSPSC inmediatamente de la API
+        # 2. Obtener URL oficial del proceso desde la API DGCP
+        url_oficial = obtener_url_proceso(codigo)
+        if url_oficial:
+            proceso["url"] = url_oficial
+
+        # 3. Obtener artículos UNSPSC inmediatamente de la API
         articulos = obtener_articulos_rapido(codigo)
         if articulos:
             guardar_articulos_portal(codigo, articulos)
