@@ -309,6 +309,110 @@ def proceso_coincide_con_intereses(proceso, articulos, intereses_usuario):
     return False
 
 
+
+# ── SIGLAS DE INSTITUCIONES RD ──
+SIGLAS_INSTITUCIONES = {
+    # Ministerios
+    "Ministerio de Obras Públicas y Comunicaciones": "MOPC",
+    "Ministerio de Salud Pública y Asistencia Social": "MISPAS",
+    "Ministerio de Educación": "MINERD",
+    "Ministerio de la Vivienda, Hábitat y Edificaciones": "Min. Vivienda",
+    "Ministerio de la Mujer": "Min. Mujer",
+    "Ministerio de Medio Ambiente y Recursos Naturales": "Min. Ambiente",
+    "Ministerio de Agricultura": "Min. Agricultura",
+    "Ministerio de Hacienda": "Min. Hacienda",
+    "Ministerio de Interior y Policía": "Min. Interior",
+    "Ministerio de Defensa": "Min. Defensa",
+    "Ministerio de Industria, Comercio y Mipymes": "MICM",
+    "Ministerio de Turismo": "MITUR",
+    "Ministerio de Trabajo": "Min. Trabajo",
+    "Ministerio de Economía, Planificación y Desarrollo": "MEPyD",
+    "Ministerio de Energía y Minas": "MEM",
+    "Ministerio de Relaciones Exteriores": "MIREX",
+    "Ministerio de Cultura": "Min. Cultura",
+    "Ministerio de Deportes": "Min. Deportes",
+    "Ministerio de la Presidencia": "Min. Presidencia",
+    "Ministerio Administrativo de la Presidencia": "MAP",
+    # Agua y saneamiento
+    "Corporación del Acueducto y Alcantarillado de Santo Domingo": "CAASD",
+    "Corporación del Acueducto y Alcantarillado de Santiago": "CORAASAN",
+    "Instituto Nacional de Aguas Potables y Alcantarillados": "INAPA",
+    "Corporación de Acueducto y Alcantarillado de La Romana": "CORAROM",
+    "Corporación de Acueducto y Alcantarillado de Santiago": "CORAASAN",
+    # Energía
+    "Empresa Distribuidora de Electricidad del Norte": "EDENORTE",
+    "Empresa Distribuidora de Electricidad del Sur": "EDESUR",
+    "Empresa Distribuidora de Electricidad del Este": "EDEESTE",
+    "Corporación Dominicana de Empresas Eléctricas Estatales": "CDEEE",
+    "Empresa de Generación Hidroeléctrica Dominicana": "EGEHID",
+    # Salud
+    "Servicio Nacional de Salud": "SNS",
+    "Sistema Nacional de Atención a Emergencias y Seguridad 9-1-1": "9-1-1",
+    "Instituto Dominicano de Seguros Sociales": "IDSS",
+    "Instituto Nacional de Bienestar Estudiantil": "INABIE",
+    # Educación
+    "Instituto Nacional de Formación Técnico Profesional": "INFOTEP",
+    "Universidad Autónoma de Santo Domingo": "UASD",
+    "Instituto Tecnológico de Santo Domingo": "INTEC",
+    # Vivienda y urbanismo
+    "Instituto Nacional de la Vivienda": "INVI",
+    "Oficina para el Reordenamiento del Transporte": "OPRET",
+    # Telecomunicaciones
+    "Instituto Dominicano de las Telecomunicaciones": "INDOTEL",
+    # Beneficios sociales
+    "Sistema Único de Beneficiarios": "SIUBEN",
+    "Administradora de Subsidios Sociales": "ADESS",
+    "Programa de Medicamentos Esenciales": "PROMESE",
+    # Ayuntamientos
+    "Ayuntamiento del Distrito Nacional": "ADN",
+    "Ayuntamiento Municipal de Santo Domingo": "AMSD",
+    "Ayuntamiento Municipal de Santiago": "Ayto. Santiago",
+    # Otros frecuentes
+    "Dirección General de Contrataciones Públicas": "DGCP",
+    "Dirección General de Presupuesto": "DIGEPRES",
+    "Dirección General de Impuestos Internos": "DGII",
+    "Dirección General de Aduanas": "DGA",
+    "Tesorería Nacional": "TN",
+    "Contraloría General de la República": "CGR",
+    "Procuraduría General de la República": "PGR",
+    "Policía Nacional": "PN",
+    "Fuerzas Armadas de la República Dominicana": "FFAA",
+    "Instituto Dominicano de Aviación Civil": "IDAC",
+    "Autoridad Portuaria Dominicana": "APORDOM",
+    "Instituto Agrario Dominicano": "IAD",
+    "Banco Agrícola de la República Dominicana": "BAGRICOLA",
+    "Banco de Reservas de la República Dominicana": "BANRESERVAS",
+    "Corporación de Fomento Industrial": "CFI",
+    "Centro de Exportación e Inversión de la República Dominicana": "CEI-RD",
+    "Consejo Nacional de Zonas Francas de Exportación": "CNZFE",
+    "Hospital General": "Hospital General",
+    "Hospital Regional": "Hospital Regional",
+}
+
+def abreviar_entidad(nombre_completo):
+    """
+    Devuelve la sigla si la conocemos, si no recorta inteligentemente.
+    """
+    nombre = nombre_completo.strip()
+
+    # Búsqueda exacta
+    if nombre in SIGLAS_INSTITUCIONES:
+        return SIGLAS_INSTITUCIONES[nombre]
+
+    # Búsqueda parcial (el nombre puede venir truncado por el portal)
+    for nombre_completo_key, sigla in SIGLAS_INSTITUCIONES.items():
+        if nombre.lower() in nombre_completo_key.lower() or nombre_completo_key.lower() in nombre.lower():
+            return sigla
+
+    # Si no hay sigla, recortar a 22 chars máximo
+    if len(nombre) <= 22:
+        return nombre
+    # Intentar usar solo las palabras principales (quitar artículos)
+    palabras = [p for p in nombre.split() if p.lower() not in
+                ("de", "del", "la", "el", "los", "las", "y", "e", "o", "a", "en")]
+    abrev = " ".join(palabras)
+    return abrev[:22] + ("…" if len(abrev) > 22 else "")
+
 def notificar_proceso_inmediato(proceso, articulos):
     """
     Envía notificación push a los usuarios cuyo interés coincida con el proceso.
@@ -328,7 +432,8 @@ def notificar_proceso_inmediato(proceso, articulos):
         if not suscripciones:
             return 0
 
-        entidad = proceso.get("unidad_compra", "")[:40]
+        entidad_raw = proceso.get("unidad_compra", "")
+        entidad = abreviar_entidad(entidad_raw)
         titulo_raw = proceso.get("titulo", "Nueva licitación")
         objeto = (proceso.get("objeto_proceso") or "").strip()
         monto = proceso.get("monto_estimado")
@@ -514,12 +619,17 @@ def notificar_proceso_inmediato(proceso, articulos):
                 omitidas += 1
                 continue
 
-            # Título = frase jocosa  |  Cuerpo = título del proceso (siempre claro)
+            # Título = frase jocosa + nombre del proceso
+            # Cuerpo = institución + monto  (complementa, no repite)
             notif_titulo = generar_titulo_jocoso(
                 objeto, monto_fmt, entidad, titulo_raw, dias_cierre
             )
-            _, desc_larga = descripcion_notificacion(titulo_raw, extraer_tema(titulo_raw))
-            notif_cuerpo = desc_larga  # El título del proceso, sin frases extra
+            partes_cuerpo = [entidad]
+            if monto_fmt:
+                partes_cuerpo.append(monto_fmt)
+            if dias_cierre is not None and dias_cierre >= 0:
+                partes_cuerpo.append(f"Cierre: {dias_cierre}d")
+            notif_cuerpo = " · ".join(partes_cuerpo)
 
             ok = enviar_notificacion(
                 subscription_info={
