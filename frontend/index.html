@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
 <title>LicitacionLab — Alertas de Licitaciones RD</title>
 <link rel="manifest" href="/frontend/manifest.json">
@@ -261,14 +261,14 @@
   .filters {
     display: flex;
     gap: 10px;
-    margin-bottom: 20px;
+    margin-bottom: 10px;
     flex-wrap: wrap;
     align-items: center;
   }
 
   .filter-input {
     flex: 1;
-    min-width: 200px;
+    min-width: 140px;
     padding: 10px 16px;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -277,6 +277,7 @@
     font-family: 'DM Sans', sans-serif;
     font-size: 14px;
     outline: none;
+    width: 100%;
   }
 
   .filter-input:focus { border-color: var(--accent2); }
@@ -292,6 +293,17 @@
     outline: none;
     cursor: pointer;
   }
+
+  /* Fila de filtros: cada fila ocupa 100% en móvil */
+  .filter-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+
+  .filter-row .filter-input,
+  .filter-row .filter-select { flex: 1; min-width: 130px; }
 
   /* ── PROCESO CARDS ── */
   .procesos-grid { display: flex; flex-direction: column; gap: 12px; }
@@ -335,11 +347,13 @@
 
   .proceso-monto {
     font-family: 'Syne', sans-serif;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--accent);
-    white-space: nowrap;
+    white-space: normal;
+    word-break: break-word;
     text-align: right;
+    max-width: 120px;
   }
 
   .proceso-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
@@ -427,9 +441,12 @@
 
   .detalle-monto {
     font-family: 'Syne', sans-serif;
-    font-size: 32px;
+    font-size: clamp(18px, 5vw, 28px);
     font-weight: 800;
     color: var(--accent);
+    word-break: break-word;
+    line-height: 1.2;
+    margin: 8px 0;
   }
 
   .articulos-section {
@@ -572,7 +589,7 @@
   .bottom-nav-item.active { color: var(--accent); }
   .bottom-nav-item span { font-size: 20px; }
 
-  .page-with-nav { padding-bottom: 80px; }
+  .page-with-nav { padding-bottom: 100px; }
 
   /* ── TABS ── */
   .section-tabs {
@@ -602,10 +619,17 @@
 
   @media (max-width: 600px) {
     .auth-card { padding: 32px 24px; }
-    .main { padding: 20px 16px; }
-    .stats-bar { grid-template-columns: repeat(2, 1fr); }
+    .main { padding: 16px 12px; }
+    .stats-bar { grid-template-columns: repeat(2, 1fr); gap: 10px; }
     .proceso-card { grid-template-columns: 1fr; }
-    .proceso-monto { text-align: left; }
+    .proceso-monto { text-align: left; max-width: 100%; font-size: 15px; }
+    .detalle-titulo { font-size: 17px; }
+    .detalle-grid { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+    .filter-row { flex-direction: column; }
+    .filter-row .filter-input,
+    .filter-row .filter-select { min-width: 100%; }
+    .navbar { padding: 0 12px; }
+    .stat-value { font-size: 22px; }
   }
 </style>
 </head>
@@ -685,9 +709,13 @@
       <div class="stat-card"><div class="stat-label">Total procesos</div><div class="stat-value blue" id="stat-total">—</div></div>
     </div>
 
-    <div class="filters">
-      <input class="filter-input" type="text" id="busqueda" placeholder="🔍  Título, código proceso..." oninput="debounceSearch()" style="flex:2;min-width:200px">
-      <input class="filter-input" type="text" id="filtro-institucion" placeholder="🏛️ Institución..." oninput="debounceSearch()" style="flex:1;min-width:160px">
+    <!-- Fila 1: búsqueda + institución -->
+    <div class="filter-row">
+      <input class="filter-input" type="text" id="busqueda" placeholder="🔍 Título, código proceso..." oninput="debounceSearch()" style="flex:2">
+      <input class="filter-input" type="text" id="filtro-institucion" placeholder="🏛️ Institución..." oninput="debounceSearch()">
+    </div>
+    <!-- Fila 2: rubro + estado -->
+    <div class="filter-row">
       <select class="filter-select" id="filtro-objeto" onchange="cargarProcesos(1)">
         <option value="">Todos los rubros</option>
         <option value="Obras">🏗️ Obras</option>
@@ -698,17 +726,19 @@
         <option value="true">Solo activos</option>
         <option value="false">Todos</option>
       </select>
-    </div>
-    <div class="filters" style="margin-top:-8px">
-      <input class="filter-input" type="number" id="filtro-monto-min" placeholder="💰 Monto mín (RD$)" oninput="debounceSearch()" style="flex:1;min-width:160px">
-      <input class="filter-input" type="number" id="filtro-monto-max" placeholder="💰 Monto máx (RD$)" oninput="debounceSearch()" style="flex:1;min-width:160px">
-      <div style="flex:2;min-width:200px;position:relative">
-        <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="🔎 Buscar familia UNSPSC..." oninput="buscarUnspsc()" autocomplete="off" style="width:100%">
-        <div id="unspsc-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);z-index:200;max-height:200px;overflow-y:auto"></div>
-      </div>
       <button class="filter-select" onclick="limpiarFiltros()" style="cursor:pointer;color:var(--muted)">✕ Limpiar</button>
     </div>
-    <div id="unspsc-activo" style="display:none;padding:8px 12px;background:var(--surface2);border-radius:8px;margin-bottom:8px;font-size:13px;display:flex;align-items:center;gap:8px">
+    <!-- Fila 3: montos -->
+    <div class="filter-row">
+      <input class="filter-input" type="number" id="filtro-monto-min" placeholder="💰 Monto mín (RD$)" oninput="debounceSearch()">
+      <input class="filter-input" type="number" id="filtro-monto-max" placeholder="💰 Monto máx (RD$)" oninput="debounceSearch()">
+    </div>
+    <!-- Fila 4: UNSPSC -->
+    <div class="filter-row" style="position:relative">
+      <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="🔎 Buscar familia UNSPSC o código..." oninput="buscarUnspsc()" autocomplete="off">
+      <div id="unspsc-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);z-index:200;max-height:200px;overflow-y:auto"></div>
+    </div>
+    <div id="unspsc-activo" style="display:none;padding:8px 12px;background:var(--surface2);border-radius:8px;margin-bottom:8px;font-size:13px;align-items:center;gap:8px">
       <span id="unspsc-activo-label"></span>
       <button onclick="limpiarUnspsc()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px">✕</button>
     </div>
@@ -1198,4 +1228,3 @@ if (savedToken && savedUser) {
 </script>
 </body>
 </html>
-
