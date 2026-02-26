@@ -32,25 +32,50 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ============================================
 
 def monitor_loop():
-    """Ejecuta el monitor cada 10 minutos en segundo plano."""
-    INTERVALO_MINUTOS = 10
+    """Ejecuta el monitor de la API DGCP cada 8 horas (ciclo del Data Warehouse)."""
+    INTERVALO_HORAS = 8
     while True:
         try:
-            print(f"\n⏰ Ejecutando monitor automático...")
+            print(f"\n⏰ Ejecutando monitor API DGCP...")
             ejecutar_monitor()
         except Exception as e:
-            print(f"❌ Error en monitor automático: {e}")
-        
-        print(f"💤 Próxima ejecución en {INTERVALO_MINUTOS} minutos...")
+            print(f"❌ Error en monitor API: {e}")
+
+        print(f"💤 Próxima sincronización API en {INTERVALO_HORAS} horas...")
+        time.sleep(INTERVALO_HORAS * 3600)
+
+
+def scraper_loop():
+    """
+    Scraper del portal transaccional en tiempo real, cada 3 minutos.
+    Detecta procesos nuevos inmediatamente, sin esperar el ciclo de 8h de la API.
+    """
+    INTERVALO_MINUTOS = 3
+    # Esperar 30 segundos al inicio para que el monitor API arranque primero
+    time.sleep(30)
+    while True:
+        try:
+            from scraper_portal import ejecutar_scraper_portal
+            ejecutar_scraper_portal()
+        except Exception as e:
+            print(f"❌ Error en scraper portal: {e}")
+
         time.sleep(INTERVALO_MINUTOS * 60)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Inicia el monitor en segundo plano al arrancar el servidor."""
+    """Inicia el monitor API y el scraper en tiempo real al arrancar."""
+    # Monitor API DGCP (cada 8h, enriquece con UNSPSC)
     hilo_monitor = threading.Thread(target=monitor_loop, daemon=True)
     hilo_monitor.start()
-    print("✅ Monitor automático iniciado (cada 10 minutos)")
+    print("✅ Monitor API DGCP iniciado (cada 8 horas)")
+
+    # Scraper portal transaccional (cada 3 min, tiempo real)
+    hilo_scraper = threading.Thread(target=scraper_loop, daemon=True)
+    hilo_scraper.start()
+    print("✅ Scraper portal en tiempo real iniciado (cada 3 minutos)")
+
     yield
     print("🛑 Servidor detenido")
 
@@ -80,6 +105,24 @@ import os
 from fastapi.responses import FileResponse
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+@app.get("/api/sync-status")
+def sync_status():
+    """
+    Estado de sincronización con la API DGCP.
+    La DGCP opera sobre un Data Warehouse que se refresca cada ~8 horas,
+    por lo que los procesos pueden demorar hasta 8h en aparecer desde su publicación.
+    """
+    from monitor import obtener_estado_sync
+    estado = obtener_estado_sync()
+    if not estado:
+        return {
+            "disponible": False,
+            "mensaje": "Sin datos de sincronización aún. El monitor aún no ha ejecutado.",
+            "ciclo_horas": 8
+        }
+    return {"disponible": True, **estado}
+
 
 @app.get("/test")
 def test_page():
@@ -274,36 +317,18 @@ def listar_clases(familia: str):
 def buscar_unspsc(q: str = ""):
     if not q or len(q) < 2:
         return []
-
-    es_codigo = q.strip().isdigit()
-
-    if es_codigo:
-        # Buscar por código numérico: familia, clase o segmento que empiece con ese número
-        result = supabase.table("catalogo_unspsc") \
-            .select("familia, descripcion_familia, segmento, descripcion_segmento, clase, descripcion_clase") \
-            .or_(f"familia.like.{q}%,clase.like.{q}%,segmento.like.{q}%,subclase.like.{q}%") \
-            .limit(50) \
-            .execute()
-    else:
-        # Buscar por texto en descripción
-        result = supabase.table("catalogo_unspsc") \
-            .select("familia, descripcion_familia, segmento, descripcion_segmento, clase, descripcion_clase") \
-            .or_(f"descripcion_familia.ilike.%{q}%,descripcion_clase.ilike.%{q}%,descripcion_segmento.ilike.%{q}%") \
-            .limit(50) \
-            .execute()
-
+    # Buscar en familia y también en subclase/sinónimos
+    result = supabase.table("catalogo_unspsc")\
+        .select("familia, descripcion_familia")\
+        .or_(f"descripcion_familia.ilike.%{q}%,descripcion_subclase.ilike.%{q}%,sinonimos_subclase.ilike.%{q}%")\
+        .limit(50)\
+        .execute()
     seen = set()
     unique = []
     for r in (result.data or []):
-        key = r["familia"]
-        if key not in seen:
-            seen.add(key)
-            unique.append({
-                "familia": r["familia"],
-                "descripcion_familia": r["descripcion_familia"],
-                "segmento": r.get("segmento"),
-                "descripcion_segmento": r.get("descripcion_segmento"),
-            })
+        if r["familia"] not in seen:
+            seen.add(r["familia"])
+            unique.append(r)
     return unique[:15]
 
 
@@ -511,7 +536,19 @@ def get_stats():
         "total_articulos": arts.count
     }
 
-
+@app.get("/api/unspsc/buscar")
+def buscar_unspsc(q: str = ""):
+    if not q or len(q) < 2:
+        return []
+    result = supabase.table("catalogo_unspsc")        .select("familia, descripcion_familia")        .ilike("descripcion_familia", f"%{q}%")        .limit(15)        .execute()
+    # Deduplicar por familia
+    seen = set()
+    unique = []
+    for r in (result.data or []):
+        if r["familia"] not in seen:
+            seen.add(r["familia"])
+            unique.append(r)
+    return unique
 
 @app.get("/api/procesos")
 def get_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: str = "", 
@@ -565,4 +602,3 @@ async def forzar_monitor_admin():
         procesar_articulos_de_nuevos(nuevos)
         notificar_procesos_nuevos(nuevos)
     return {"nuevos": len(nuevos)}
-
