@@ -249,11 +249,14 @@ def notificar_procesos_nuevos(procesos_nuevos):
                     }
                 }
 
+                # Usar URL directa del portal DGCP si existe, si no la PWA
+                url_proceso = proceso.get("url") or f"https://comprasdominicanas.gob.do/proceso/{codigo}"
+
                 ok = enviar_notificacion(
                     subscription_info,
                     titulo=f"🏗️ {entidad}{monto_str}",
                     cuerpo=titulo_proceso,
-                    url=f"/proceso/{codigo}"
+                    url=url_proceso
                 )
 
                 if ok:
