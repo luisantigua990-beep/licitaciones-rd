@@ -18,7 +18,70 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 API_BASE_URL = "https://datosabiertos.dgcp.gob.do/api-dgcp/v1"
 
+# Ciclo de refresco del Data Warehouse de la DGCP (cada 8 horas)
+CICLO_HORAS_DGCP = 8
+
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+# ============================================
+# TRACKING DE SINCRONIZACIÓN
+# ============================================
+
+def registrar_sync_exitosa(procesos_encontrados: int, procesos_nuevos: int):
+    """Guarda el timestamp de la última sincronización exitosa con la API DGCP."""
+    ahora = datetime.utcnow().isoformat()
+    try:
+        supabase.table("system_config").upsert({
+            "clave": "ultima_sync_dgcp",
+            "valor": ahora,
+            "meta": {
+                "procesos_encontrados": procesos_encontrados,
+                "procesos_nuevos": procesos_nuevos,
+                "ciclo_horas": CICLO_HORAS_DGCP
+            }
+        }, on_conflict="clave").execute()
+        print(f"📡 Sync registrada: {ahora}")
+    except Exception as e:
+        print(f"⚠️  No se pudo registrar sync (tabla system_config puede no existir): {e}")
+
+
+def obtener_estado_sync():
+    """
+    Devuelve el estado de sincronización con la API DGCP.
+    Retorna: ultima_sync, proxima_sync, minutos_desde_sync, ciclo_horas
+    """
+    try:
+        result = supabase.table("system_config") \
+            .select("valor, meta") \
+            .eq("clave", "ultima_sync_dgcp") \
+            .single() \
+            .execute()
+
+        if not result.data:
+            return None
+
+        ultima_sync_str = result.data["valor"]
+        meta = result.data.get("meta", {})
+
+        ultima_sync = datetime.fromisoformat(ultima_sync_str)
+        proxima_sync = ultima_sync + timedelta(hours=CICLO_HORAS_DGCP)
+        ahora = datetime.utcnow()
+        minutos_desde_sync = int((ahora - ultima_sync).total_seconds() / 60)
+
+        return {
+            "ultima_sync": ultima_sync_str,
+            "proxima_sync": proxima_sync.isoformat(),
+            "minutos_desde_sync": minutos_desde_sync,
+            "ciclo_horas": CICLO_HORAS_DGCP,
+            "procesos_encontrados_ultimo_ciclo": meta.get("procesos_encontrados", 0),
+            "procesos_nuevos_ultimo_ciclo": meta.get("procesos_nuevos", 0),
+            "mensaje": f"Datos verificados hace {minutos_desde_sync} min. Próximo ciclo DGCP: {proxima_sync.strftime('%H:%M')} UTC"
+        }
+
+    except Exception as e:
+        print(f"⚠️  Error obteniendo estado sync: {e}")
+        return None
 
 
 # ============================================
@@ -280,6 +343,8 @@ def ejecutar_monitor():
     procesos = obtener_todas_las_paginas()
     if not procesos:
         print("📭 Sin procesos en el período")
+        # Aun sin procesos, registrar que la API respondió exitosamente
+        registrar_sync_exitosa(procesos_encontrados=0, procesos_nuevos=0)
         return []
 
     print(f"📊 {len(procesos)} procesos encontrados")
@@ -293,6 +358,12 @@ def ejecutar_monitor():
             print(f"   🆕 {p['titulo'][:50]}... | {monto}")
         if len(nuevos) > 5:
             print(f"   ... y {len(nuevos) - 5} más")
+
+    # Registrar sync exitosa con la DGCP
+    registrar_sync_exitosa(
+        procesos_encontrados=len(procesos),
+        procesos_nuevos=len(nuevos)
+    )
 
     print(f"✅ Monitor completado\n")
     return nuevos
