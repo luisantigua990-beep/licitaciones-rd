@@ -87,6 +87,14 @@ def raspar_portal():
         except Exception:
             pass
 
+        # Parsear fecha de cierre de ofertas (columna 6)
+        fecha_cierre_str = textos[6].replace("(UTC -4 horas)", "").strip()
+        fecha_cierre = None
+        try:
+            fecha_cierre = datetime.strptime(fecha_cierre_str, "%d/%m/%Y %H:%M").isoformat()
+        except Exception:
+            pass
+
         # Parsear monto (puede tener "Pesos Dominicanos" o vacío)
         monto_raw = textos[7].replace("Pesos Dominicanos", "").replace(",", "").strip()
         monto = None
@@ -101,6 +109,7 @@ def raspar_portal():
             "titulo": textos[3].strip(),
             "fase_actual": textos[4].strip(),
             "fecha_publicacion": fecha_publicacion,
+            "fecha_fin_recepcion_ofertas": fecha_cierre,
             "monto_estimado": monto,
             "estado_proceso": textos[8].strip(),
             # URL directa al proceso en el portal
@@ -149,6 +158,7 @@ def guardar_proceso_basico(proceso):
             "estado_proceso": proceso["estado_proceso"],
             "monto_estimado": proceso["monto_estimado"],
             "fecha_publicacion": proceso["fecha_publicacion"],
+            "fecha_fin_recepcion_ofertas": proceso.get("fecha_fin_recepcion_ofertas"),
             "url": proceso["url"],
             "notificado": False,
             # Marcar como "pendiente enriquecimiento" para que la API lo complete
@@ -167,12 +177,22 @@ def guardar_proceso_basico(proceso):
 # NOTIFICACIONES INMEDIATAS
 # ============================================
 
-def obtener_url_proceso(codigo_proceso):
+def obtener_url_proceso(codigo_proceso, url_portal=None):
     """
-    Consulta la API DGCP para obtener la URL oficial del proceso.
-    El portal transaccional no tiene URLs directas por proceso (usa JavaScript),
-    así que obtenemos la URL real del campo 'url' que devuelve la API.
+    Devuelve la mejor URL posible para abrir el proceso directamente.
+    Prioridad:
+      1. URL del portal transaccional ya construida (comprasdominicana.gob.do)
+      2. URL del campo 'url' de la API, solo si es del portal transaccional
+      3. Fallback: URL del portal construida con el codigo
+    Nunca devuelve una URL de datosabiertos.dgcp.gob.do (no util para el usuario).
     """
+    PORTAL_BASE = "https://comunidad.comprasdominicana.gob.do"
+
+    # 1. Si ya tenemos URL del portal, usarla
+    if url_portal and "comprasdominicana.gob.do" in url_portal:
+        return url_portal
+
+    # 2. Intentar API DGCP
     API_BASE_URL = "https://datosabiertos.dgcp.gob.do/api-dgcp/v1"
     try:
         resp = requests.get(
@@ -188,13 +208,19 @@ def obtener_url_proceso(codigo_proceso):
             procesos = payload
         elif isinstance(payload, dict):
             procesos = payload.get("content", []) or []
-        if procesos and procesos[0].get("url"):
-            return procesos[0]["url"]
+        if procesos:
+            url_api = procesos[0].get("url", "")
+            # Solo usar si apunta al portal, no a datosabiertos
+            if url_api and "comprasdominicana.gob.do" in url_api:
+                return url_api
     except Exception:
         pass
-    # Fallback: búsqueda en datosabiertos con el código
-    return f"https://datosabiertos.dgcp.gob.do/?q={codigo_proceso}"
 
+    # 3. Fallback: construir URL del portal con el codigo del proceso
+    return (
+        f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index"
+        f"?currentLanguage=es&Country=DO&Theme=DGCP&NoticeReference={codigo_proceso}"
+    )
 
 def obtener_articulos_rapido(codigo_proceso):
     """
@@ -306,7 +332,11 @@ def notificar_proceso_inmediato(proceso, articulos):
         titulo_raw = proceso.get("titulo", "Nueva licitación")
         objeto = (proceso.get("objeto_proceso") or "").strip()
         monto = proceso.get("monto_estimado")
-        url = proceso.get("url", "https://comprasdominicanas.gob.do")
+        codigo = proceso.get("codigo_proceso", "")
+
+        # ── URL → siempre a la app, con el código del proceso ──
+        APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+        url_notif = f"{APP_URL}?proceso={codigo}"
 
         # ── Calcular días al cierre ──
         dias_cierre = None
@@ -400,106 +430,80 @@ def notificar_proceso_inmediato(proceso, articulos):
                 # Título largo: recortar con "..." pero siempre del título real
                 return titulo_limpio[:62] + "…", titulo_limpio[:70] + ("…" if len(titulo_raw) > 70 else "")
 
-        def generar_mensaje(objeto, monto_fmt, entidad, titulo_raw, dias_cierre):
+        def generar_titulo_jocoso(objeto, monto_fmt, entidad, titulo_raw, dias_cierre):
+            """
+            Solo genera el TÍTULO jocoso de la notificación.
+            El cuerpo siempre será el título del proceso — así el usuario
+            sabe de qué se trata antes de abrir la app.
+            """
             tema = extraer_tema(titulo_raw)
-            desc_corta, desc_larga = descripcion_notificacion(titulo_raw, tema)
+            desc_corta, _ = descripcion_notificacion(titulo_raw, tema)
 
-            # ── URGENCIA (cierra pronto) ──
+            # ── URGENCIA ──
             if dias_cierre is not None and dias_cierre <= 3:
                 if dias_cierre <= 0:
-                    titulos = [
-                        f"🚨 ¡Cierra HOY! {desc_corta}",
-                        f"⏰ Último día para entrar: {desc_corta}",
-                    ]
-                    cuerpos = [
-                        f"¡Esta es la señal! {entidad} cierra hoy. No lo dejes escapar.",
-                        f"{entidad} — Fecha límite: HOY. ¿Ya tienes todo listo?",
+                    frases = [
+                        "🚨 ¡Cierra HOY!",
+                        "⏰ ¡Último día!",
+                        "🔴 ¡Hoy es el día!",
                     ]
                 elif dias_cierre == 1:
-                    titulos = [
-                        f"⚡ ¡Mañana cierra! {desc_corta}",
-                        f"🔔 Queda 1 día para: {desc_corta}",
-                    ]
-                    cuerpos = [
-                        f"¿Ya tienes todo listo? {entidad} no espera.",
-                        f"{entidad} — ¡No lo dejes para después!",
+                    frases = [
+                        "⚡ ¡Mañana cierra!",
+                        "🔔 ¡Queda 1 día!",
+                        "⏳ ¡Último chance mañana!",
                     ]
                 else:
-                    titulos = [
-                        f"⏳ {dias_cierre} días para: {desc_corta}",
-                        f"🚀 No te confíes — {desc_corta}",
+                    frases = [
+                        f"⏳ ¡{dias_cierre} días y cierra!",
+                        f"🚀 ¡No te confíes! {dias_cierre} días",
+                        f"🎯 Quedan {dias_cierre} días — ¿ya empezaste?",
                     ]
-                    cuerpos = [
-                        f"La competencia ya está preparando su oferta. {entidad}.",
-                        f"{entidad} — Quedan {dias_cierre} días. ¿Ya empezaste?",
-                    ]
-                return random.choice(titulos), random.choice(cuerpos)
+                return f"{random.choice(frases)} {desc_corta}"
 
-            # ── OBRAS ──
+            # ── OBRAS grandes ──
+            if objeto == "Obras" and monto and float(monto) >= 50_000_000:
+                frases = [
+                    f"🔥 Esta obra puede cambiar tu año:",
+                    f"🏆 {monto_fmt} en juego —",
+                    f"💰 ¡Proyecto grande!",
+                ]
+                return f"{random.choice(frases)} {desc_corta}"
+
+            # ── OBRAS normales ──
             if objeto == "Obras":
-                if monto and float(monto) >= 50_000_000:
-                    titulos = [
-                        f"🔥 Esta obra puede cambiar tu año: {desc_corta}",
-                        f"🏆 {monto_fmt} en juego — {desc_corta}",
-                        f"💰 ¡Proyecto grande! {desc_corta}",
-                    ]
-                    cuerpos = [
-                        f"{entidad} publicó esto hace instantes. ¿Participamos?",
-                        f"Una de las más grandes del día. {monto_fmt} — {entidad}.",
-                        f"Vale la pena revisarla. {entidad} está esperando ofertas.",
-                    ]
-                else:
-                    titulos = [
-                        f"🔨 ¡Hay trabajo! {desc_corta}",
-                        f"🏗️ Acaba de salir: {desc_corta}",
-                        f"📋 Nueva obra disponible: {desc_corta}",
-                    ]
-                    cuerpos = [
-                        f"{entidad} está buscando contratista. ¿Eres tú?",
-                        f"Publicado ahora mismo — tienes ventaja si entras temprano.",
-                        f"¿Tu empresa puede con esto? {entidad} está esperando.",
-                    ]
+                frases = [
+                    "🔨 ¡Hay trabajo!",
+                    "🏗️ Acaba de salir:",
+                    "📋 Nueva obra disponible:",
+                ]
+                return f"{random.choice(frases)} {desc_corta}"
 
             # ── BIENES ──
-            elif objeto == "Bienes":
-                titulos = [
-                    f"📦 {entidad[:28]} necesita: {desc_corta}",
-                    f"🛒 Acaba de salir: {desc_corta}",
-                    f"📦 Oportunidad de suministro: {desc_corta}",
+            if objeto == "Bienes":
+                frases = [
+                    "📦 ¡Oportunidad de suministro!",
+                    "🛒 Acaba de salir:",
+                    "📦 Nueva compra disponible:",
                 ]
-                cuerpos = [
-                    f"¿Tienes lo que necesitan? Revísalo antes que la competencia.",
-                    f"{entidad} está comprando — publicado hace instantes.",
-                    f"Proceso nuevo. Primero en llegar, primero en ganar.",
-                ]
+                return f"{random.choice(frases)} {desc_corta}"
 
             # ── SERVICIOS ──
-            elif objeto == "Servicios":
-                titulos = [
-                    f"🛠️ {entidad[:28]} busca: {desc_corta}",
-                    f"💼 Contrato disponible: {desc_corta}",
-                    f"🤝 Acaba de publicarse: {desc_corta}",
+            if objeto == "Servicios":
+                frases = [
+                    "🛠️ ¡Contrato disponible!",
+                    "💼 Acaba de publicarse:",
+                    "🤝 Nueva oportunidad:",
                 ]
-                cuerpos = [
-                    f"¿Tu empresa puede con esto? {entidad} está esperando.",
-                    f"Publicado ahora mismo — sé el primero en entrar.",
-                    f"{entidad} — Primero en llegar, primero en ganar.",
-                ]
+                return f"{random.choice(frases)} {desc_corta}"
 
             # ── GENÉRICO ──
-            else:
-                titulos = [
-                    f"⚡ Acaba de salir: {desc_corta}",
-                    f"🏛️ {entidad[:28]} publicó: {desc_corta}",
-                    f"📢 Nueva oportunidad: {desc_corta}",
-                ]
-                cuerpos = [
-                    f"Sé el primero en revisarlo. {entidad}.",
-                    f"{entidad} — Publicado ahora mismo.",
-                    f"¿Es para ti? Entra y revisa.",
-                ]
-
-            return random.choice(titulos), random.choice(cuerpos)
+            frases = [
+                "⚡ ¡Acaba de salir!",
+                "🏛️ Nueva licitación:",
+                "📢 ¡No te lo pierdas!",
+            ]
+            return f"{random.choice(frases)} {desc_corta}"
 
         enviadas = 0
         omitidas = 0
@@ -510,9 +514,12 @@ def notificar_proceso_inmediato(proceso, articulos):
                 omitidas += 1
                 continue
 
-            notif_titulo, notif_cuerpo = generar_mensaje(
+            # Título = frase jocosa  |  Cuerpo = título del proceso (siempre claro)
+            notif_titulo = generar_titulo_jocoso(
                 objeto, monto_fmt, entidad, titulo_raw, dias_cierre
             )
+            _, desc_larga = descripcion_notificacion(titulo_raw, extraer_tema(titulo_raw))
+            notif_cuerpo = desc_larga  # El título del proceso, sin frases extra
 
             ok = enviar_notificacion(
                 subscription_info={
@@ -521,7 +528,7 @@ def notificar_proceso_inmediato(proceso, articulos):
                 },
                 titulo=notif_titulo,
                 cuerpo=notif_cuerpo,
-                url=url,
+                url=url_notif,
             )
             if ok:
                 enviadas += 1
@@ -574,7 +581,7 @@ def ejecutar_scraper_portal():
             continue  # Ya existía (race condition), saltar
 
         # 2. Obtener URL oficial del proceso desde la API DGCP
-        url_oficial = obtener_url_proceso(codigo)
+        url_oficial = obtener_url_proceso(codigo, url_portal=proceso.get("url"))
         if url_oficial:
             proceso["url"] = url_oficial
 
