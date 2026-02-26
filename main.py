@@ -274,18 +274,36 @@ def listar_clases(familia: str):
 def buscar_unspsc(q: str = ""):
     if not q or len(q) < 2:
         return []
-    # Buscar en familia y también en subclase/sinónimos
-    result = supabase.table("catalogo_unspsc")\
-        .select("familia, descripcion_familia")\
-        .or_(f"descripcion_familia.ilike.%{q}%,descripcion_subclase.ilike.%{q}%,sinonimos_subclase.ilike.%{q}%")\
-        .limit(50)\
-        .execute()
+
+    es_codigo = q.strip().isdigit()
+
+    if es_codigo:
+        # Buscar por código numérico: familia, clase o segmento que empiece con ese número
+        result = supabase.table("catalogo_unspsc") \
+            .select("familia, descripcion_familia, segmento, descripcion_segmento, clase, descripcion_clase") \
+            .or_(f"familia.like.{q}%,clase.like.{q}%,segmento.like.{q}%,subclase.like.{q}%") \
+            .limit(50) \
+            .execute()
+    else:
+        # Buscar por texto en descripción
+        result = supabase.table("catalogo_unspsc") \
+            .select("familia, descripcion_familia, segmento, descripcion_segmento, clase, descripcion_clase") \
+            .or_(f"descripcion_familia.ilike.%{q}%,descripcion_clase.ilike.%{q}%,descripcion_segmento.ilike.%{q}%") \
+            .limit(50) \
+            .execute()
+
     seen = set()
     unique = []
     for r in (result.data or []):
-        if r["familia"] not in seen:
-            seen.add(r["familia"])
-            unique.append(r)
+        key = r["familia"]
+        if key not in seen:
+            seen.add(key)
+            unique.append({
+                "familia": r["familia"],
+                "descripcion_familia": r["descripcion_familia"],
+                "segmento": r.get("segmento"),
+                "descripcion_segmento": r.get("descripcion_segmento"),
+            })
     return unique[:15]
 
 
@@ -493,19 +511,7 @@ def get_stats():
         "total_articulos": arts.count
     }
 
-@app.get("/api/unspsc/buscar")
-def buscar_unspsc(q: str = ""):
-    if not q or len(q) < 2:
-        return []
-    result = supabase.table("catalogo_unspsc")        .select("familia, descripcion_familia")        .ilike("descripcion_familia", f"%{q}%")        .limit(15)        .execute()
-    # Deduplicar por familia
-    seen = set()
-    unique = []
-    for r in (result.data or []):
-        if r["familia"] not in seen:
-            seen.add(r["familia"])
-            unique.append(r)
-    return unique
+
 
 @app.get("/api/procesos")
 def get_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: str = "", 
