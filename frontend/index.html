@@ -1675,6 +1675,28 @@ if (savedToken && savedUser) {
   currentUser = JSON.parse(savedUser);
   showApp();
 }
+
+// ── ABRIR PROCESO DESDE NOTIFICACIÓN ──
+// Si la URL tiene ?proceso=CODIGO, abrir el detalle automáticamente
+async function checkNotificacionUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const codigoParam = params.get('proceso');
+  if (!codigoParam) return;
+
+  // Limpiar la URL sin recargar la página
+  window.history.replaceState({}, '', window.location.pathname);
+
+  // Esperar a que la app esté lista y cargar el detalle
+  await verDetalle(codigoParam);
+}
+
+// Ejecutar después de que showApp() haya cargado
+const _originalShowApp = showApp;
+showApp = async function() {
+  _originalShowApp();
+  // Pequeña espera para que el DOM esté listo
+  setTimeout(checkNotificacionUrl, 300);
+};
 </script>
 </body>
 </html>
