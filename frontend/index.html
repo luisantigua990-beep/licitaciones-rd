@@ -10,6 +10,7 @@
 <link rel="manifest" href="/frontend/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <style>
 :root {
   --bg: #FAFAF7;
@@ -1007,6 +1008,93 @@ body {
   .stats-bar { grid-template-columns: repeat(3, 1fr); }
   .stat-card.total-card { grid-column: auto; }
 }
+
+/* ══════════════════════════════════════
+   MAPA DE PROYECTOS
+══════════════════════════════════════ */
+#tab-mapa {
+  display: none;
+  flex-direction: column;
+  height: calc(100vh - 56px - 70px);
+  overflow: hidden;
+  background: var(--bg2);
+}
+.mapa-header {
+  padding: 14px 16px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.mapa-header h2 { font-family: "DM Serif Display", serif; font-size: 1.2rem; color: var(--navy); margin-bottom: 2px; }
+.mapa-header p { font-size: .72rem; color: var(--muted); }
+.mapa-stats { display: flex; gap: 12px; margin-top: 10px; }
+.mapa-stat { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; flex: 1; text-align: center; }
+.mapa-stat-val { font-size: .95rem; font-weight: 700; color: var(--navy); }
+.mapa-stat-lbl { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+.mapa-stat.warn .mapa-stat-val { color: #B45309; }
+.mapa-body { display: flex; flex: 1; overflow: hidden; }
+.mapa-svg-wrap { flex: 1; position: relative; overflow: hidden; background: #EEF2F7; }
+#mapaSVG { width: 100%; height: 100%; }
+.prov-shape { stroke: #C8D8E8; stroke-width: 1; cursor: pointer; transition: all .2s; }
+.prov-shape:hover { stroke: var(--navy); stroke-width: 1.8; filter: drop-shadow(0 2px 6px rgba(28,43,58,.2)); }
+.prov-shape.selected { stroke: var(--gold); stroke-width: 2.5; filter: drop-shadow(0 2px 8px rgba(201,145,26,.5)); }
+.ph0 { fill: #E8EDF2; } .ph1 { fill: #C8DAF0; } .ph2 { fill: #96BAE4; }
+.ph3 { fill: #5E95D4; } .ph4 { fill: #2E70BE; } .ph5 { fill: #1B4F8A; }
+.mbubble-ring { animation: mring 2.5s ease-in-out infinite alternate; }
+.mbubble-core { animation: mring 2.5s ease-in-out infinite alternate-reverse; }
+@keyframes mring { from{opacity:.2} to{opacity:.65} }
+#mapaTooltip { position: absolute; display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; pointer-events: none; font-size: .76rem; z-index: 50; max-width: 200px; box-shadow: var(--shadow-md); }
+.mtt-name { font-weight: 700; color: var(--navy); margin-bottom: 3px; font-size: .82rem; }
+.mtt-row { color: var(--muted); margin-top: 1px; }
+.mtt-row span { color: var(--navy); font-weight: 600; }
+.mtt-hint { margin-top: 5px; font-size: .65rem; color: var(--gold); font-weight: 600; }
+.mapa-legend { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.92); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: .68rem; box-shadow: var(--shadow); }
+.mleg-title { font-weight: 700; color: var(--navy); margin-bottom: 6px; font-size: .7rem; text-transform: uppercase; letter-spacing: .8px; }
+.mleg-scale { display: flex; gap: 3px; margin-bottom: 3px; }
+.mleg-box { width: 20px; height: 10px; border-radius: 2px; }
+.mleg-labs { display: flex; justify-content: space-between; color: var(--muted); font-size: .6rem; margin-bottom: 0; }
+.mapa-panel { width: 300px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+@media(max-width:700px) {
+  .mapa-body { flex-direction: column; }
+  .mapa-panel { width: 100%; height: 45%; border-left: none; border-top: 1px solid var(--border); }
+  .mapa-svg-wrap { flex: none; height: 55%; }
+}
+.mpanel-head { padding: 12px 14px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg2); }
+.mpanel-prov { font-family: "DM Serif Display", serif; font-size: 1.1rem; color: var(--navy); }
+.mpanel-sub { font-size: .65rem; color: var(--muted); margin-top: 2px; }
+.mpanel-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 9px; }
+.mpanel-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; }
+.mpanel-kpi-v { font-weight: 700; color: var(--navy); font-size: .9rem; }
+.mpanel-kpi-l { font-size: .58rem; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; }
+.mpanel-search { padding: 8px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.mpanel-search input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px; font-family: "Plus Jakarta Sans", sans-serif; font-size: .76rem; outline: none; color: var(--navy); }
+.mpanel-search input:focus { border-color: var(--navy); }
+.mpanel-list { flex: 1; overflow-y: auto; padding: 8px; }
+.mpanel-list::-webkit-scrollbar { width: 3px; }
+.mpanel-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+.mproj-card { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 11px 12px; margin-bottom: 7px; cursor: pointer; transition: all .18s; border-left: 3px solid transparent; }
+.mproj-card:hover { border-color: var(--border2); border-left-color: var(--navy); background: var(--surface); transform: translateX(2px); }
+.mproj-inst { font-size: .6rem; color: var(--gold); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 4px; font-weight: 600; }
+.mproj-name { font-size: .78rem; font-weight: 600; color: var(--navy); line-height: 1.35; margin-bottom: 6px; }
+.mproj-meta { display: flex; justify-content: space-between; align-items: flex-end; }
+.mproj-monto { font-weight: 700; color: var(--blue); font-size: .82rem; }
+.mproj-dead { font-size: .6rem; color: var(--muted); margin-top: 4px; }
+.mproj-dead .urg { color: var(--danger); font-weight: 700; }
+.mapa-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; color: var(--muted); text-align: center; padding: 30px 16px; }
+.mapa-empty-icon { font-size: 2.2rem; margin-bottom: 10px; opacity: .5; }
+.mapa-empty-title { font-weight: 700; font-size: .85rem; color: var(--navy); margin-bottom: 5px; }
+.mapa-empty-sub { font-size: .72rem; line-height: 1.5; }
+.sinubic-pill { padding: 7px 10px; border-top: 1px solid var(--border); background: #FFF8E8; cursor: pointer; flex-shrink: 0; font-size: .68rem; color: #B45309; text-align: center; font-weight: 600; }
+.sinubic-pill:hover { background: #FEF0C7; }
+#mapaAssignModal { position: fixed; inset: 0; background: rgba(28,43,58,.5); z-index: 300; display: none; align-items: center; justify-content: center; backdrop-filter: blur(3px); }
+#mapaAssignModal.open { display: flex; }
+.massign-box { background: var(--surface); border-radius: var(--radius-lg); padding: 22px; max-width: 400px; width: 90%; box-shadow: var(--shadow-lg); animation: slideUp .22s ease; }
+@keyframes slideUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:none} }
+.massign-title { font-family: "DM Serif Display", serif; font-size: 1.05rem; color: var(--navy); margin-bottom: 4px; }
+.massign-sub { font-size: .72rem; color: var(--muted); line-height: 1.4; margin-bottom: 2px; }
+.massign-btns { display: flex; gap: 8px; margin-top: 16px; }
+.assign-select { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font-family: "Plus Jakarta Sans", sans-serif; font-size: .82rem; color: var(--navy); background: var(--bg); outline: none; margin-top: 10px; }
+.assign-select:focus { border-color: var(--navy); }
 </style>
 </head>
 <body>
@@ -1212,11 +1300,77 @@ body {
 
   </div>
 
+
+  <!-- ══ TAB: MAPA ══ -->
+  <div id="tab-mapa" class="main">
+
+    <div class="mapa-header">
+      <h2>🗺️ Mapa de Proyectos Activos</h2>
+      <p>Distribución geográfica de licitaciones por provincia</p>
+      <div class="mapa-stats">
+        <div class="mapa-stat">
+          <div class="mapa-stat-val" id="mapa-total">—</div>
+          <div class="mapa-stat-lbl">Proyectos</div>
+        </div>
+        <div class="mapa-stat">
+          <div class="mapa-stat-val" id="mapa-inv">—</div>
+          <div class="mapa-stat-lbl">Inversión total</div>
+        </div>
+        <div class="mapa-stat warn">
+          <div class="mapa-stat-val" id="mapa-sinprov">—</div>
+          <div class="mapa-stat-lbl">Sin provincia</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mapa-body">
+      <div class="mapa-svg-wrap">
+        <svg id="mapaSVG"></svg>
+        <div id="mapaTooltip">
+          <div class="mtt-name" id="mtt-name"></div>
+          <div class="mtt-row">Proyectos: <span id="mtt-count"></span></div>
+          <div class="mtt-row">Inversión: <span id="mtt-inv"></span></div>
+          <div class="mtt-hint">Toca para ver proyectos →</div>
+        </div>
+        <div class="mapa-legend">
+          <div class="mleg-title">Inversión</div>
+          <div class="mleg-scale">
+            <div class="mleg-box ph0"></div><div class="mleg-box ph1"></div>
+            <div class="mleg-box ph2"></div><div class="mleg-box ph3"></div>
+            <div class="mleg-box ph4"></div><div class="mleg-box ph5"></div>
+          </div>
+          <div class="mleg-labs"><span>Bajo</span><span>Alto</span></div>
+        </div>
+      </div>
+
+      <div class="mapa-panel">
+        <div class="mpanel-head" id="mpanel-head">
+          <div class="mapa-empty" style="padding:20px 10px">
+            <div class="mapa-empty-icon">🗺️</div>
+            <div class="mapa-empty-title">Selecciona una provincia</div>
+            <div class="mapa-empty-sub">Toca cualquier provincia del mapa</div>
+          </div>
+        </div>
+        <div class="mpanel-search" id="mpanel-search" style="display:none">
+          <input type="text" placeholder="Buscar proyecto..." id="mapa-search-input" oninput="mapaFilterProjects()">
+        </div>
+        <div class="mpanel-list" id="mpanel-list"></div>
+        <div class="sinubic-pill" id="sinubic-pill" style="display:none" onclick="mapaShowSinProv()">
+          ⚠️ Ver sin provincia asignada (<span id="sinubic-count">0</span>)
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Bottom Nav -->
   <nav class="bottom-nav">
     <button class="bottom-nav-item active" id="nav-dashboard" onclick="switchTab2('dashboard')">
       <div class="nav-icon-wrap"><span class="nav-icon">📋</span></div>
       Licitaciones
+    </button>
+    <button class="bottom-nav-item" id="nav-mapa" onclick="switchTab2('mapa')">
+      <div class="nav-icon-wrap"><span class="nav-icon">🗺️</span></div>
+      Mapa
     </button>
     <button class="bottom-nav-item" id="nav-perfil" onclick="switchTab2('perfil')">
       <div class="nav-icon-wrap"><span class="nav-icon">👤</span></div>
@@ -1579,6 +1733,10 @@ function switchTab2(tab) {
   document.getElementById('tab-dashboard').style.display = tab==='dashboard' ? 'block' : 'none';
   document.getElementById('tab-detalle').style.display   = 'none';
   document.getElementById('tab-perfil').style.display    = tab==='perfil' ? 'block' : 'none';
+  document.getElementById('tab-mapa').style.display      = tab==='mapa' ? 'flex' : 'none';
+  if (tab === 'mapa') { setTimeout(mapaInit, 50); }
+  document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('nav-' + tab)?.classList.add('active');
   document.getElementById('nav-dashboard').classList.toggle('active', tab==='dashboard');
   document.getElementById('nav-perfil').classList.toggle('active', tab==='perfil');
   window.scrollTo(0,0);
@@ -1697,6 +1855,393 @@ showApp = async function() {
   // Pequeña espera para que el DOM esté listo
   setTimeout(checkNotificacionUrl, 300);
 };
+
+// ═══════════════════════════════════════════════════════
+// MAPA DE PROYECTOS — Lógica completa
+// ═══════════════════════════════════════════════════════
+
+const PROVINCIAS_MAP = [
+  { id:'DN',  nombre:'Distrito Nacional',           keys:['distrito nacional','d.n.','dn ','ciudad de santo domingo'] },
+  { id:'SD',  nombre:'Santo Domingo',               keys:['santo domingo este','santo domingo norte','santo domingo oeste','los alcarrizos','pedro brand','san antonio de guerra','boca chica','sabana perdida','los alcarrizos'] },
+  { id:'STG', nombre:'Santiago',                    keys:['santiago de los caballeros','santiago ','gurabo','villa bisonó','licey','tamboril','jánico','san marcos de las vacas','villa gonzalez'] },
+  { id:'LRM', nombre:'La Romana',                   keys:['la romana','caleta','guaymate','villa hermosa'] },
+  { id:'SPM', nombre:'San Pedro de Macorís',        keys:['san pedro de macor','macoris del este','el puerto','guayacanes','los llanos','ramón santana','quisqueya','consuelo'] },
+  { id:'LVG', nombre:'La Vega',                     keys:['la vega','concepción de la vega','constanza','jarabacoa','moca','san francisco de macorís'] },
+  { id:'AZU', nombre:'Azua',                        keys:['azua','las charcas','las yayas','peralta','pueblo viejo','sabana yegua','tábara arriba','yayas de viajama'] },
+  { id:'BAR', nombre:'Barahona',                    keys:['barahona','cabral','enriquillo','fundación','jaquimeyes','la ciénaga','las salinas','paraíso','polo','vicente noble'] },
+  { id:'DAJ', nombre:'Dajabón',                     keys:['dajabón','el pino','loma de cabrera','partido','restauración'] },
+  { id:'DUA', nombre:'Duarte',                      keys:['duarte','arenoso','castillo','hostos','las guaranas','pimentel','san francisco de macorís','villa rivas','villa riva','cruce de las verdes','majagual'] },
+  { id:'ELP', nombre:'Elías Piña',                  keys:['elías piña','bánica','comendador','el llano','hondo valle','juan santiago','pedro santana'] },
+  { id:'LAL', nombre:'La Altagracia',               keys:['la altagracia','higüey','san rafael del yuma','salvaleón','punta cana','bávaro','bavaro','la otra banda'] },
+  { id:'MTS', nombre:'María Trinidad Sánchez',      keys:['maría trinidad','nagua','cabrera','el factor','río san juan'] },
+  { id:'MCR', nombre:'Monte Cristi',                keys:['monte cristi','castañuelas','guayubín','las matas de santa cruz','pepillo salcedo','villa vásquez'] },
+  { id:'PPL', nombre:'Puerto Plata',                keys:['puerto plata','altamira','guananico','imbert','los hidalgos','luperón','sosúa','villa isabela','villa montellano'] },
+  { id:'SMA', nombre:'Samaná',                      keys:['samaná','las terrenas','sanchez','sánchez','las galeras'] },
+  { id:'SCR', nombre:'San Cristóbal',               keys:['san cristóbal','bajos de haina','cambita','palenque','sabana grande de palenque','san gregorio de nigua','villa altagracia','yaguate'] },
+  { id:'SJO', nombre:'San José de Ocoa',            keys:['san josé de ocoa','ocoa','sabana larga','rancho arriba'] },
+  { id:'SJN', nombre:'San Juan',                    keys:['san juan de la maguana','san juan ','bohechio','el cercado','juan de herrera','las matas de farfán','vallejuelo'] },
+  { id:'STR', nombre:'Santiago Rodríguez',          keys:['santiago rodríguez','monción','sabaneta','villa los almácigos'] },
+  { id:'VLV', nombre:'Valverde',                    keys:['valverde','esperanza','laguna salada'] },
+  { id:'HMY', nombre:'Hato Mayor',                  keys:['hato mayor','el valle','sabana de la mar'] },
+  { id:'IND', nombre:'Independencia',               keys:['independencia','duvergé','jimaní','la descubierta','mella','postrer río'] },
+  { id:'ESP', nombre:'Espaillat',                   keys:['espaillat','cayetano germosén','gaspar hernández','jamao al norte','moca','san víctor','villa tapia'] },
+  { id:'SRM', nombre:'Sánchez Ramírez',             keys:['sánchez ramírez','cevicos','cotuí','fantino','la mata'] },
+  { id:'ESB', nombre:'El Seibo',                    keys:['el seibo','el seybo','miches','pedro sánchez'] },
+  { id:'PVA', nombre:'Peravia',                     keys:['peravia','baní','nizao','padre las casas','villa fundación'] },
+  { id:'PED', nombre:'Pedernales',                  keys:['pedernales','oviedo','juancho'] },
+  { id:'HMI', nombre:'Hermanas Mirabal',            keys:['hermanas mirabal','salcedo','tenares'] },
+  { id:'MNP', nombre:'Monte Plata',                 keys:['monte plata','bayaguana','peralvillo','sabana grande de boyá','yamasá'] },
+  { id:'BAO', nombre:'Baoruco',                     keys:['baoruco','galván','los ríos','neiba','tamayo'] },
+];
+
+// GeoJSON simplificado de provincias RD (polígonos reales aproximados)
+const RD_GEOJSON = {type:"FeatureCollection",features:[
+  {type:"Feature",properties:{id:"DN",nombre:"Distrito Nacional"},geometry:{type:"Polygon",coordinates:[[[-70.00,18.44],[-69.90,18.44],[-69.90,18.52],[-70.00,18.52],[-70.00,18.44]]]}},
+  {type:"Feature",properties:{id:"SD",nombre:"Santo Domingo"},geometry:{type:"Polygon",coordinates:[[[-70.15,18.35],[-69.65,18.35],[-69.65,18.60],[-70.15,18.60],[-70.15,18.35]]]}},
+  {type:"Feature",properties:{id:"STG",nombre:"Santiago"},geometry:{type:"Polygon",coordinates:[[[-71.00,19.15],[-70.35,19.15],[-70.35,19.70],[-71.00,19.70],[-71.00,19.15]]]}},
+  {type:"Feature",properties:{id:"LRM",nombre:"La Romana"},geometry:{type:"Polygon",coordinates:[[[-69.10,18.35],[-68.72,18.35],[-68.72,18.60],[-69.10,18.60],[-69.10,18.35]]]}},
+  {type:"Feature",properties:{id:"SPM",nombre:"San Pedro de Macorís"},geometry:{type:"Polygon",coordinates:[[[-69.60,18.33],[-69.12,18.33],[-69.12,18.60],[-69.60,18.60],[-69.60,18.33]]]}},
+  {type:"Feature",properties:{id:"LVG",nombre:"La Vega"},geometry:{type:"Polygon",coordinates:[[[-70.70,18.85],[-70.05,18.85],[-70.05,19.30],[-70.70,19.30],[-70.70,18.85]]]}},
+  {type:"Feature",properties:{id:"AZU",nombre:"Azua"},geometry:{type:"Polygon",coordinates:[[[-70.95,18.20],[-70.30,18.20],[-70.30,18.72],[-70.95,18.72],[-70.95,18.20]]]}},
+  {type:"Feature",properties:{id:"BAR",nombre:"Barahona"},geometry:{type:"Polygon",coordinates:[[[-71.45,17.85],[-71.00,17.85],[-71.00,18.38],[-71.45,18.38],[-71.45,17.85]]]}},
+  {type:"Feature",properties:{id:"DAJ",nombre:"Dajabón"},geometry:{type:"Polygon",coordinates:[[[-71.85,19.42],[-71.50,19.42],[-71.50,19.82],[-71.85,19.82],[-71.85,19.42]]]}},
+  {type:"Feature",properties:{id:"DUA",nombre:"Duarte"},geometry:{type:"Polygon",coordinates:[[[-70.18,19.00],[-69.65,19.00],[-69.65,19.48],[-70.18,19.48],[-70.18,19.00]]]}},
+  {type:"Feature",properties:{id:"ELP",nombre:"Elías Piña"},geometry:{type:"Polygon",coordinates:[[[-71.88,18.75],[-71.42,18.75],[-71.42,19.22],[-71.88,19.22],[-71.88,18.75]]]}},
+  {type:"Feature",properties:{id:"LAL",nombre:"La Altagracia"},geometry:{type:"Polygon",coordinates:[[[-68.95,18.35],[-68.25,18.35],[-68.25,18.85],[-68.95,18.85],[-68.95,18.35]]]}},
+  {type:"Feature",properties:{id:"MTS",nombre:"María Trinidad Sánchez"},geometry:{type:"Polygon",coordinates:[[[-70.05,19.35],[-69.52,19.35],[-69.52,19.78],[-70.05,19.78],[-70.05,19.35]]]}},
+  {type:"Feature",properties:{id:"MCR",nombre:"Monte Cristi"},geometry:{type:"Polygon",coordinates:[[[-71.78,19.45],[-71.38,19.45],[-71.38,19.98],[-71.78,19.98],[-71.78,19.45]]]}},
+  {type:"Feature",properties:{id:"PPL",nombre:"Puerto Plata"},geometry:{type:"Polygon",coordinates:[[[-71.12,19.55],[-70.52,19.55],[-70.52,19.98],[-71.12,19.98],[-71.12,19.55]]]}},
+  {type:"Feature",properties:{id:"SMA",nombre:"Samaná"},geometry:{type:"Polygon",coordinates:[[[-69.65,19.08],[-69.12,19.08],[-69.12,19.42],[-69.65,19.42],[-69.65,19.08]]]}},
+  {type:"Feature",properties:{id:"SCR",nombre:"San Cristóbal"},geometry:{type:"Polygon",coordinates:[[[-70.35,18.32],[-69.98,18.32],[-69.98,18.62],[-70.35,18.62],[-70.35,18.32]]]}},
+  {type:"Feature",properties:{id:"SJO",nombre:"San José de Ocoa"},geometry:{type:"Polygon",coordinates:[[[-70.65,18.45],[-70.32,18.45],[-70.32,18.80],[-70.65,18.80],[-70.65,18.45]]]}},
+  {type:"Feature",properties:{id:"SJN",nombre:"San Juan"},geometry:{type:"Polygon",coordinates:[[[-71.42,18.50],[-70.88,18.50],[-70.88,18.98],[-71.42,18.98],[-71.42,18.50]]]}},
+  {type:"Feature",properties:{id:"STR",nombre:"Santiago Rodríguez"},geometry:{type:"Polygon",coordinates:[[[-71.45,19.30],[-71.08,19.30],[-71.08,19.65],[-71.45,19.65],[-71.45,19.30]]]}},
+  {type:"Feature",properties:{id:"VLV",nombre:"Valverde"},geometry:{type:"Polygon",coordinates:[[[-71.15,19.28],[-70.82,19.28],[-70.82,19.58],[-71.15,19.58],[-71.15,19.28]]]}},
+  {type:"Feature",properties:{id:"HMY",nombre:"Hato Mayor"},geometry:{type:"Polygon",coordinates:[[[-69.55,18.72],[-69.08,18.72],[-69.08,19.05],[-69.55,19.05],[-69.55,18.72]]]}},
+  {type:"Feature",properties:{id:"IND",nombre:"Independencia"},geometry:{type:"Polygon",coordinates:[[[-71.78,18.38],[-71.38,18.38],[-71.38,18.80],[-71.78,18.80],[-71.78,18.38]]]}},
+  {type:"Feature",properties:{id:"ESP",nombre:"Espaillat"},geometry:{type:"Polygon",coordinates:[[[-70.55,19.25],[-70.08,19.25],[-70.08,19.58],[-70.55,19.58],[-70.55,19.25]]]}},
+  {type:"Feature",properties:{id:"SRM",nombre:"Sánchez Ramírez"},geometry:{type:"Polygon",coordinates:[[[-70.25,18.90],[-69.78,18.90],[-69.78,19.22],[-70.25,19.22],[-70.25,18.90]]]}},
+  {type:"Feature",properties:{id:"ESB",nombre:"El Seibo"},geometry:{type:"Polygon",coordinates:[[[-69.25,18.60],[-68.82,18.60],[-68.82,18.95],[-69.25,18.95],[-69.25,18.60]]]}},
+  {type:"Feature",properties:{id:"PVA",nombre:"Peravia"},geometry:{type:"Polygon",coordinates:[[[-70.28,18.12],[-69.88,18.12],[-69.88,18.42],[-70.28,18.42],[-70.28,18.12]]]}},
+  {type:"Feature",properties:{id:"PED",nombre:"Pedernales"},geometry:{type:"Polygon",coordinates:[[[-72.02,17.85],[-71.58,17.85],[-71.58,18.42],[-72.02,18.42],[-72.02,17.85]]]}},
+  {type:"Feature",properties:{id:"HMI",nombre:"Hermanas Mirabal"},geometry:{type:"Polygon",coordinates:[[[-70.15,19.32],[-69.72,19.32],[-69.72,19.65],[-70.15,19.65],[-70.15,19.32]]]}},
+  {type:"Feature",properties:{id:"MNP",nombre:"Monte Plata"},geometry:{type:"Polygon",coordinates:[[[-69.85,18.62],[-69.48,18.62],[-69.48,18.95],[-69.85,18.95],[-69.85,18.62]]]}},
+  {type:"Feature",properties:{id:"BAO",nombre:"Baoruco"},geometry:{type:"Polygon",coordinates:[[[-71.62,18.32],[-71.28,18.32],[-71.28,18.72],[-71.62,18.72],[-71.62,18.32]]]}},
+]};
+
+let mapaProvMap = {};
+let mapaSinProv = [];
+let mapaSelectedProv = null;
+let mapaCurrentList = [];
+let mapaAssignTarget = null;
+let mapaBuilt = false;
+
+function mapaDetectarProvincia(texto) {
+  if (!texto) return null;
+  const t = texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  for (const p of PROVINCIAS_MAP) {
+    for (const k of p.keys) {
+      const kn = k.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if (t.includes(kn)) return p.id;
+    }
+  }
+  return null;
+}
+
+function mapaFmt(v) {
+  if (!v) return 'N/D';
+  v = parseFloat(v);
+  if (v >= 1e9) return `RD$${(v/1e9).toFixed(2)}B`;
+  if (v >= 1e6) return `RD$${(v/1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `RD$${(v/1e3).toFixed(0)}K`;
+  return `RD$${v.toLocaleString()}`;
+}
+
+function mapaHeat(inv) {
+  if (!inv) return 'ph0';
+  if (inv < 50e6) return 'ph1';
+  if (inv < 150e6) return 'ph2';
+  if (inv < 400e6) return 'ph3';
+  if (inv < 900e6) return 'ph4';
+  return 'ph5';
+}
+
+function mapaBubbleR(inv) {
+  if (!inv) return 0;
+  if (inv < 50e6) return 6;
+  if (inv < 150e6) return 10;
+  if (inv < 400e6) return 14;
+  if (inv < 900e6) return 19;
+  return 25;
+}
+
+async function mapaInit() {
+  if (mapaBuilt) return;
+
+  // Cargar procesos desde la API del backend
+  const resp = await fetch(`${API}/api/procesos?limite=500`).catch(() => null);
+  let procesos = [];
+  if (resp && resp.ok) {
+    const data = await resp.json();
+    procesos = data.procesos || data.results || data || [];
+  }
+
+  // Clasificar por provincia
+  mapaProvMap = {};
+  mapaSinProv = [];
+  PROVINCIAS_MAP.forEach(p => mapaProvMap[p.id] = []);
+
+  procesos.forEach(p => {
+    const provId = p.provincia || mapaDetectarProvincia(p.titulo || p.descripcion || '');
+    if (provId && mapaProvMap[provId]) {
+      p._prov = provId;
+      mapaProvMap[provId].push(p);
+    } else {
+      p._prov = null;
+      mapaSinProv.push(p);
+    }
+  });
+
+  // Stats header
+  const total = procesos.length;
+  const inv = procesos.reduce((s,p) => s + (parseFloat(p.monto_estimado)||0), 0);
+  document.getElementById('mapa-total').textContent = total;
+  document.getElementById('mapa-inv').textContent = mapaFmt(inv);
+  document.getElementById('mapa-sinprov').textContent = mapaSinProv.length;
+  document.getElementById('sinubic-count').textContent = mapaSinProv.length;
+  document.getElementById('sinubic-pill').style.display = mapaSinProv.length > 0 ? 'block' : 'none';
+
+  mapaBuildD3();
+  mapaBuilt = true;
+}
+
+function mapaBuildD3() {
+  const wrap = document.querySelector('.mapa-svg-wrap');
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  const svg = d3.select('#mapaSVG').attr('viewBox', `0 0 ${W} ${H}`);
+  svg.selectAll('*').remove();
+
+  const proj = d3.geoMercator()
+    .center([-70.3, 18.75])
+    .scale(Math.min(W, H) * 5.0)
+    .translate([W/2, H/2]);
+
+  const path = d3.geoPath().projection(proj);
+  const tooltip = document.getElementById('mapaTooltip');
+
+  // Defs glow
+  const defs = svg.append('defs');
+  const filter = defs.append('filter').attr('id','mapaglow');
+  filter.append('feGaussianBlur').attr('stdDeviation','2').attr('result','blur');
+  const merge = filter.append('feMerge');
+  merge.append('feMergeNode').attr('in','blur');
+  merge.append('feMergeNode').attr('in','SourceGraphic');
+
+  // Provinces
+  svg.append('g').selectAll('path')
+    .data(RD_GEOJSON.features)
+    .enter().append('path')
+    .attr('d', path)
+    .attr('data-id', d => d.properties.id)
+    .attr('class', d => {
+      const pros = mapaProvMap[d.properties.id] || [];
+      const inv = pros.reduce((s,p) => s+(parseFloat(p.monto_estimado)||0), 0);
+      return `prov-shape ${mapaHeat(inv)}`;
+    })
+    .on('mouseenter', function(event, d) {
+      const pros = mapaProvMap[d.properties.id] || [];
+      const inv = pros.reduce((s,p) => s+(parseFloat(p.monto_estimado)||0), 0);
+      document.getElementById('mtt-name').textContent = d.properties.nombre;
+      document.getElementById('mtt-count').textContent = pros.length;
+      document.getElementById('mtt-inv').textContent = inv > 0 ? mapaFmt(inv) : 'Sin proyectos';
+      tooltip.style.display = 'block';
+    })
+    .on('mousemove', function(event) {
+      const rect = wrap.getBoundingClientRect();
+      let x = event.clientX - rect.left + 12;
+      let y = event.clientY - rect.top + 12;
+      if (x + 210 > W) x -= 220;
+      tooltip.style.left = x + 'px';
+      tooltip.style.top = y + 'px';
+    })
+    .on('mouseleave', () => { tooltip.style.display = 'none'; })
+    .on('click', function(event, d) {
+      d3.selectAll('.prov-shape').classed('selected', false);
+      d3.select(this).classed('selected', true);
+      mapaShowProvince(d.properties.id, d.properties.nombre);
+    })
+    .on('touchstart', function(event, d) {
+      event.preventDefault();
+      d3.selectAll('.prov-shape').classed('selected', false);
+      d3.select(this).classed('selected', true);
+      mapaShowProvince(d.properties.id, d.properties.nombre);
+    }, { passive: false });
+
+  // Labels
+  svg.append('g').selectAll('text')
+    .data(RD_GEOJSON.features)
+    .enter().append('text')
+    .attr('transform', d => {
+      const [x,y] = proj(d3.geoCentroid(d));
+      return `translate(${x},${y})`;
+    })
+    .attr('text-anchor','middle').attr('dominant-baseline','middle')
+    .attr('fill','rgba(28,43,58,0.55)').attr('font-size','7')
+    .attr('font-family','Plus Jakarta Sans').attr('pointer-events','none')
+    .text(d => {
+      const n = d.properties.nombre;
+      return n.length > 14 ? n.split(' ')[0] : n;
+    });
+
+  // Bubbles
+  const bg = svg.append('g');
+  RD_GEOJSON.features.forEach(feat => {
+    const pros = mapaProvMap[feat.properties.id] || [];
+    const inv = pros.reduce((s,p) => s+(parseFloat(p.monto_estimado)||0), 0);
+    const r = mapaBubbleR(inv);
+    if (r === 0) return;
+    const [cx,cy] = proj(d3.geoCentroid(feat));
+    const g = bg.append('g').style('pointer-events','none');
+    g.append('circle').attr('cx',cx).attr('cy',cy).attr('r',r+6)
+      .attr('fill','rgba(30,95,184,0.12)').attr('class','mbubble-ring')
+      .style('animation-delay', Math.random()*2+'s');
+    g.append('circle').attr('cx',cx).attr('cy',cy).attr('r',r)
+      .attr('fill','rgba(30,95,184,0.35)').attr('stroke','rgba(30,95,184,0.7)')
+      .attr('stroke-width','1.2').attr('filter','url(#mapaglow)')
+      .attr('class','mbubble-core').style('animation-delay', Math.random()*2+'s');
+  });
+}
+
+function mapaShowProvince(provId, nombre) {
+  mapaSelectedProv = provId;
+  mapaCurrentList = mapaProvMap[provId] || [];
+  const inv = mapaCurrentList.reduce((s,p) => s+(parseFloat(p.monto_estimado)||0), 0);
+
+  document.getElementById('mpanel-head').innerHTML = `
+    <div class="mpanel-prov">${nombre}</div>
+    <div class="mpanel-sub">Proyectos activos en licitación</div>
+    <div class="mpanel-kpis">
+      <div class="mpanel-kpi"><div class="mpanel-kpi-v">${mapaCurrentList.length}</div><div class="mpanel-kpi-l">Proyectos</div></div>
+      <div class="mpanel-kpi"><div class="mpanel-kpi-v">${inv>0?mapaFmt(inv):'N/D'}</div><div class="mpanel-kpi-l">Inversión</div></div>
+    </div>`;
+
+  document.getElementById('mpanel-search').style.display = 'block';
+  document.getElementById('mapa-search-input').value = '';
+  mapaRenderProjects(mapaCurrentList);
+}
+
+function mapaFilterProjects() {
+  const q = document.getElementById('mapa-search-input').value.toLowerCase();
+  const filtered = q ? mapaCurrentList.filter(p =>
+    (p.titulo||'').toLowerCase().includes(q) || (p.unidad_compra||'').toLowerCase().includes(q)
+  ) : mapaCurrentList;
+  mapaRenderProjects(filtered);
+}
+
+function mapaRenderProjects(list) {
+  const el = document.getElementById('mpanel-list');
+  if (!list.length) {
+    el.innerHTML = '<div class="mapa-empty"><div class="mapa-empty-icon">📋</div><div class="mapa-empty-title">Sin proyectos</div><div class="mapa-empty-sub">No hay licitaciones activas en esta provincia</div></div>';
+    return;
+  }
+  el.innerHTML = list.map(p => {
+    const cierre = p.fecha_fin_recepcion_ofertas;
+    const days = cierre ? Math.ceil((new Date(cierre)-new Date())/86400000) : null;
+    let deadStr = '';
+    if (days !== null) {
+      if (days < 0) deadStr = `<span class="urg">Cerrado</span>`;
+      else if (days <= 7) deadStr = `Cierre en <span class="urg">${days}d</span>`;
+      else deadStr = `Cierre en ${days}d`;
+    }
+    return `<div class="mproj-card" onclick="verDetalle('${p.codigo_proceso}');switchTab2('dashboard')">
+      <div class="mproj-inst">${p.unidad_compra||'—'}</div>
+      <div class="mproj-name">${(p.titulo||'').slice(0,100)}${(p.titulo||'').length>100?'…':''}</div>
+      <div class="mproj-meta">
+        <div class="mproj-monto">${mapaFmt(p.monto_estimado)}</div>
+        <button onclick="event.stopPropagation();mapaOpenAssign(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="font-size:.6rem;padding:2px 6px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--muted);cursor:pointer">📍</button>
+      </div>
+      ${deadStr?`<div class="mproj-dead">${deadStr}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function mapaShowSinProv() {
+  d3.selectAll('.prov-shape').classed('selected', false);
+  mapaSelectedProv = null;
+  mapaCurrentList = mapaSinProv;
+  document.getElementById('mpanel-head').innerHTML = `
+    <div class="mpanel-prov" style="color:#B45309">Sin Provincia</div>
+    <div class="mpanel-sub">Proyectos sin ubicación detectada — asígnalos manualmente</div>
+    <div class="mpanel-kpis">
+      <div class="mpanel-kpi"><div class="mpanel-kpi-v" style="color:#B45309">${mapaSinProv.length}</div><div class="mpanel-kpi-l">Sin ubicar</div></div>
+    </div>`;
+  document.getElementById('mpanel-search').style.display = 'block';
+  document.getElementById('mapa-search-input').value = '';
+  mapaRenderProjects(mapaSinProv);
+}
+
+function mapaOpenAssign(p) {
+  mapaAssignTarget = p;
+  const titulo = (p.titulo||'Sin título').slice(0,80);
+  document.getElementById('massign-titulo').textContent = titulo + (p.titulo?.length>80?'…':'');
+  const sel = document.getElementById('massign-select');
+  sel.innerHTML = '<option value="">-- Selecciona una provincia --</option>' +
+    PROVINCIAS_MAP.map(pr => `<option value="${pr.id}"${p._prov===pr.id?' selected':''}>${pr.nombre}</option>`).join('');
+  document.getElementById('mapaAssignModal').classList.add('open');
+}
+
+async function mapaSaveAssign() {
+  if (!mapaAssignTarget) return;
+  const provId = document.getElementById('massign-select').value;
+  if (!provId) return;
+
+  const oldProv = mapaAssignTarget._prov;
+  mapaAssignTarget._prov = provId;
+
+  if (oldProv && mapaProvMap[oldProv]) {
+    mapaProvMap[oldProv] = mapaProvMap[oldProv].filter(x => x !== mapaAssignTarget);
+  } else {
+    mapaSinProv = mapaSinProv.filter(x => x !== mapaAssignTarget);
+  }
+  if (!mapaProvMap[provId]) mapaProvMap[provId] = [];
+  mapaProvMap[provId].push(mapaAssignTarget);
+
+  // Update Supabase si hay id
+  if (mapaAssignTarget.id) {
+    fetch(`${SUPABASE_URL}/rest/v1/procesos?id=eq.${mapaAssignTarget.id}`, {
+      method: 'PATCH',
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provincia: provId })
+    }).catch(() => {});
+  }
+
+  document.getElementById('mapaAssignModal').classList.remove('open');
+  document.getElementById('sinubic-count').textContent = mapaSinProv.length;
+  document.getElementById('sinubic-pill').style.display = mapaSinProv.length > 0 ? 'block' : 'none';
+  document.getElementById('mapa-sinprov').textContent = mapaSinProv.length;
+  mapaBuildD3();
+  if (mapaSelectedProv) mapaShowProvince(mapaSelectedProv, PROVINCIAS_MAP.find(x=>x.id===mapaSelectedProv)?.nombre||'');
+}
+
+document.getElementById('mapaAssignModal')?.addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+});
+
 </script>
+
+<!-- Mapa Assign Modal -->
+<div id="mapaAssignModal">
+  <div class="massign-box">
+    <div class="massign-title">Asignar Provincia</div>
+    <div class="massign-sub" id="massign-titulo"></div>
+    <select class="assign-select" id="massign-select">
+      <option value="">-- Selecciona una provincia --</option>
+    </select>
+    <div class="massign-btns">
+      <button class="btn-primary" onclick="mapaSaveAssign()">Guardar</button>
+      <button class="btn-outline" onclick="document.getElementById('mapaAssignModal').classList.remove('open')">Cancelar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
