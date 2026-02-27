@@ -3,40 +3,41 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#FAFAF7">
+<meta name="theme-color" content="#0B1120">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>LicitacionLab</title>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Licitaciones Lab</title>
 <link rel="manifest" href="/frontend/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <style>
+/* ── PALETA MODO OSCURO (ENTERPRISE MODERN) ── */
 :root {
-  --bg: #FAFAF7;
-  --bg2: #F3F1EC;
-  --surface: #FFFFFF;
-  --border: #E2DDD5;
-  --border2: #CCC8BF;
-  --navy: #1C2B3A;
-  --navy2: #2D4159;
-  --gold: #C9911A;
-  --gold-light: #FDF3E0;
-  --gold-border: #F0D49A;
-  --blue: #1B5FA8;
-  --blue-light: #EBF3FD;
-  --text: #1C2B3A;
-  --text2: #4A5568;
-  --muted: #8A93A0;
-  --success: #1A7A4A;
-  --success-light: #E8F5EE;
-  --danger: #C0392B;
-  --danger-light: #FDEAEA;
+  --bg: #0B1120;         /* Deep Navy Background */
+  --bg2: #151E2E;        /* Lighter Navy */
+  --surface: #111827;    /* Card Surface */
+  --border: #1F2937;
+  --border2: #374151;
+  --navy: #93C5FD;       /* Light Blue for Headers to contrast dark bg */
+  --navy2: #3B82F6;
+  --gold: #FF9F00;       /* Electric Amber */
+  --gold-light: rgba(255, 159, 0, 0.15);
+  --gold-border: #D97706;
+  --blue: #38BDF8;       /* Tech Blue */
+  --blue-light: rgba(56, 189, 248, 0.15);
+  --text: #F9FAFB;       /* White text */
+  --text2: #D1D5DB;      /* Light gray */
+  --muted: #9CA3AF;      /* Muted gray */
+  --success: #10B981;
+  --success-light: rgba(16, 185, 129, 0.15);
+  --danger: #EF4444;
+  --danger-light: rgba(239, 68, 68, 0.15);
   --radius: 10px;
   --radius-lg: 16px;
-  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.06);
+  --shadow: 0 4px 6px rgba(0,0,0,0.3);
+  --shadow-md: 0 10px 15px rgba(0,0,0,0.4), 0 4px 6px rgba(0,0,0,0.2);
+  --shadow-lg: 0 20px 25px rgba(0,0,0,0.5), 0 10px 10px rgba(0,0,0,0.3);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -63,8 +64,8 @@ body {
   min-height: 100vh;
   padding: 24px;
   background:
-    radial-gradient(ellipse 80% 60% at 10% 80%, #F0D49A33 0%, transparent 60%),
-    radial-gradient(ellipse 60% 50% at 90% 20%, #EBF3FD44 0%, transparent 60%),
+    radial-gradient(ellipse 80% 60% at 10% 80%, rgba(255, 159, 0, 0.05) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 50% at 90% 20%, rgba(56, 189, 248, 0.05) 0%, transparent 60%),
     var(--bg);
 }
 
@@ -93,7 +94,7 @@ body {
 
 .auth-brand-icon {
   width: 44px; height: 44px;
-  background: var(--navy);
+  background: var(--navy2);
   border-radius: 12px;
   display: flex; align-items: center; justify-content: center;
   font-size: 22px;
@@ -103,13 +104,13 @@ body {
 .auth-brand-name {
   font-family: 'DM Serif Display', serif;
   font-size: 24px;
-  color: var(--navy);
+  color: var(--text);
   line-height: 1;
 }
 
 .auth-brand-sub {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--gold);
   font-weight: 500;
   letter-spacing: 0.5px;
   margin-top: 3px;
@@ -136,7 +137,7 @@ body {
   transition: color 0.2s;
 }
 
-.auth-tab.active { color: var(--navy); }
+.auth-tab.active { color: var(--gold); }
 
 .auth-tab.active::after {
   content: '';
@@ -172,8 +173,8 @@ body {
 }
 
 .form-group input:focus {
-  border-color: var(--navy);
-  box-shadow: 0 0 0 3px rgba(28,43,58,0.08);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(255, 159, 0, 0.1);
   background: var(--surface);
 }
 
@@ -191,11 +192,11 @@ body {
 }
 
 .btn-primary {
-  background: var(--navy);
+  background: var(--navy2);
   color: #fff;
 }
 
-.btn-primary:hover { background: var(--navy2); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+.btn-primary:hover { background: var(--blue); transform: translateY(-1px); box-shadow: var(--shadow-md); }
 .btn-primary:active { transform: translateY(0); }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
@@ -214,8 +215,8 @@ body {
   display: none;
 }
 
-.auth-msg.error  { background: var(--danger-light); color: var(--danger); border: 1px solid #F5C6C2; display: block; }
-.auth-msg.success { background: var(--success-light); color: var(--success); border: 1px solid #A8DDB8; display: block; }
+.auth-msg.error  { background: var(--danger-light); color: #FCA5A5; border: 1px solid var(--danger); display: block; }
+.auth-msg.success { background: var(--success-light); color: #6EE7B7; border: 1px solid var(--success); display: block; }
 
 /* ══════════════════════════════════════════
    NAVBAR
@@ -234,7 +235,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
-  box-shadow: 0 1px 0 var(--border);
+  box-shadow: var(--shadow);
 }
 
 .nav-brand {
@@ -245,7 +246,7 @@ body {
 
 .nav-brand-icon {
   width: 30px; height: 30px;
-  background: var(--navy);
+  background: var(--navy2);
   border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   font-size: 15px;
@@ -254,7 +255,7 @@ body {
 .nav-brand-name {
   font-family: 'DM Serif Display', serif;
   font-size: 18px;
-  color: var(--navy);
+  color: var(--text);
 }
 
 .nav-right {
@@ -266,7 +267,7 @@ body {
 .nav-user {
   font-size: 12px;
   color: var(--muted);
-  font-weight: 500;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -277,6 +278,7 @@ body {
   background: var(--success);
   border-radius: 50%;
   flex-shrink: 0;
+  box-shadow: 0 0 5px var(--success);
 }
 
 .nav-exit {
@@ -292,7 +294,7 @@ body {
   transition: all 0.2s;
 }
 
-.nav-exit:hover { border-color: var(--navy); color: var(--navy); }
+.nav-exit:hover { border-color: var(--danger); color: var(--danger); }
 
 /* ══════════════════════════════════════════
    MAIN / LAYOUT
@@ -338,7 +340,7 @@ body {
 }
 
 .stat-card:hover::before { background: var(--gold); }
-.stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); border-color: var(--border2); }
 .stat-card:active { transform: translateY(0); }
 
 .stat-card.total-card {
@@ -357,11 +359,11 @@ body {
 .stat-value {
   font-family: 'DM Serif Display', serif;
   font-size: 32px;
-  color: var(--navy);
+  color: var(--gold);
   line-height: 1;
 }
 
-.stat-card.total-card .stat-value { font-size: 28px; color: var(--text2); }
+.stat-card.total-card .stat-value { font-size: 28px; color: var(--blue); }
 
 .stat-emoji { font-size: 18px; margin-bottom: 4px; display: block; }
 
@@ -399,7 +401,7 @@ body {
   min-width: 0;
 }
 
-.filter-input:focus { border-color: var(--navy); background: var(--surface); }
+.filter-input:focus { border-color: var(--blue); background: var(--bg2); }
 .filter-input::placeholder { color: var(--muted); }
 
 .filter-select {
@@ -416,7 +418,7 @@ body {
   transition: border-color 0.18s;
 }
 
-.filter-select:focus { border-color: var(--navy); }
+.filter-select:focus { border-color: var(--blue); }
 
 .filter-clear {
   padding: 9px 12px;
@@ -432,7 +434,7 @@ body {
   transition: all 0.18s;
 }
 
-.filter-clear:hover { border-color: var(--danger); color: var(--danger); }
+.filter-clear:hover { border-color: var(--danger); color: #FCA5A5; }
 
 .unspsc-active-tag {
   display: none;
@@ -440,7 +442,7 @@ body {
   gap: 8px;
   padding: 6px 10px;
   background: var(--blue-light);
-  border: 1px solid #C3D9F4;
+  border: 1px solid var(--navy2);
   border-radius: 20px;
   font-size: 12px;
   color: var(--blue);
@@ -471,9 +473,9 @@ body {
   transition: background 0.15s;
 }
 
-.unspsc-dropdown-item:hover { background: var(--bg); }
+.unspsc-dropdown-item:hover { background: var(--bg2); }
 .unspsc-dropdown-item:last-child { border-bottom: none; }
-.unspsc-dropdown-item .code { color: var(--muted); font-size: 11px; margin-left: 6px; }
+.unspsc-dropdown-item .code { color: var(--gold); font-size: 11px; margin-left: 6px; }
 
 /* ══════════════════════════════════════════
    PROCESO CARDS
@@ -491,9 +493,10 @@ body {
 }
 
 .proceso-card:hover {
-  border-color: var(--navy);
+  border-color: var(--blue);
   box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+  background: var(--bg2);
 }
 
 .proceso-card:active { transform: translateY(0); box-shadow: var(--shadow); }
@@ -556,19 +559,21 @@ body {
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 3px 8px;
   border-radius: 20px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
   flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.badge-obras  { background: #FEF3C7; color: #92400E; }
-.badge-bienes { background: var(--blue-light); color: var(--blue); }
-.badge-servicios { background: var(--success-light); color: var(--success); }
-.badge-general { background: var(--bg2); color: var(--text2); }
-.badge-mipymes { background: #F0FDF4; color: #166534; border: 1px solid #BBF7D0; }
-.badge-modalidad { background: var(--bg2); color: var(--text2); }
+.badge-obras  { background: rgba(217, 119, 6, 0.2); color: #FCD34D; border: 1px solid #D97706; }
+.badge-bienes { background: rgba(56, 189, 248, 0.2); color: #7DD3FC; border: 1px solid #0284C7; }
+.badge-servicios { background: rgba(16, 185, 129, 0.2); color: #6EE7B7; border: 1px solid #059669; }
+.badge-general { background: var(--border); color: var(--text2); }
+.badge-mipymes { background: rgba(16, 185, 129, 0.1); color: #34D399; border: 1px solid #059669; }
+.badge-modalidad { background: var(--bg); color: var(--text2); border: 1px solid var(--border); }
 
 /* ══════════════════════════════════════════
    PAGINATION
@@ -595,8 +600,8 @@ body {
   transition: all 0.18s;
 }
 
-.page-btn:hover  { border-color: var(--navy); color: var(--navy); background: var(--bg2); }
-.page-btn.active { background: var(--navy); color: #fff; border-color: var(--navy); }
+.page-btn:hover  { border-color: var(--blue); color: var(--blue); background: var(--bg2); }
+.page-btn.active { background: var(--blue); color: var(--bg); border-color: var(--blue); }
 .page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* ══════════════════════════════════════════
@@ -620,9 +625,9 @@ body {
 }
 
 .back-btn:hover, .back-btn:active {
-  background: var(--navy);
-  color: #fff;
-  border-color: var(--navy);
+  background: var(--blue);
+  color: var(--bg);
+  border-color: var(--blue);
 }
 
 .detalle-card {
@@ -635,7 +640,8 @@ body {
 }
 
 .detalle-header-bar {
-  background: var(--navy);
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
   padding: 20px;
 }
 
@@ -649,14 +655,14 @@ body {
   letter-spacing: 0.3px;
 }
 
-.detalle-badge-tipo   { background: rgba(201,145,26,0.25); color: #F0D49A; }
-.detalle-badge-modal  { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.8); }
-.detalle-badge-estado { background: rgba(26,122,74,0.3); color: #6EE7B7; }
+.detalle-badge-tipo   { background: rgba(255,159,0,0.2); color: var(--gold); border: 1px solid var(--gold-border); }
+.detalle-badge-modal  { background: var(--bg); color: var(--text2); border: 1px solid var(--border); }
+.detalle-badge-estado { background: rgba(16,185,129,0.2); color: #6EE7B7; border: 1px solid #059669; }
 
 .detalle-titulo {
   font-family: 'DM Serif Display', serif;
   font-size: 20px;
-  color: #fff;
+  color: var(--text);
   line-height: 1.3;
   margin-bottom: 12px;
 }
@@ -664,8 +670,9 @@ body {
 .detalle-monto {
   font-family: 'DM Serif Display', serif;
   font-size: clamp(22px, 6vw, 34px);
-  color: #F0D49A;
+  color: var(--gold);
   line-height: 1;
+  text-shadow: 0 0 10px rgba(255, 159, 0, 0.3);
 }
 
 .detalle-body { padding: 20px; }
@@ -697,17 +704,18 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--blue);
+  color: var(--bg);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   text-decoration: none;
-  padding: 8px 16px;
-  background: var(--blue-light);
+  padding: 10px 16px;
+  background: var(--blue);
   border-radius: 20px;
   transition: all 0.18s;
+  box-shadow: 0 2px 8px rgba(56, 189, 248, 0.3);
 }
 
-.detalle-link:hover { background: var(--blue); color: #fff; }
+.detalle-link:hover { background: #7DD3FC; transform: translateY(-1px); }
 
 .articulos-card {
   background: var(--surface);
@@ -725,7 +733,7 @@ body {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.8px;
-  background: var(--bg);
+  background: var(--bg2);
 }
 
 .articulo-row {
@@ -738,7 +746,7 @@ body {
   transition: background 0.15s;
 }
 
-.articulo-row:hover { background: var(--bg); }
+.articulo-row:hover { background: var(--bg2); }
 .articulo-row:last-child { border-bottom: none; }
 
 .articulo-desc { font-size: 13px; font-weight: 500; margin-bottom: 3px; }
@@ -766,7 +774,7 @@ body {
 .perfil-card h2 {
   font-family: 'DM Serif Display', serif;
   font-size: 18px;
-  color: var(--navy);
+  color: var(--text);
   margin-bottom: 18px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
@@ -804,7 +812,7 @@ body {
   transition: all 0.18s;
 }
 
-.btn-outline:hover { border-color: var(--danger); color: var(--danger); }
+.btn-outline:hover { border-color: var(--danger); color: #FCA5A5; background: var(--danger-light); }
 
 /* Toggle */
 .toggle-row {
@@ -831,7 +839,7 @@ body {
   flex-shrink: 0;
 }
 
-.toggle.on { background: var(--success); border-color: var(--success); }
+.toggle.on { background: var(--success); border-color: var(--success); box-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
 
 .toggle::after {
   content: '';
@@ -871,7 +879,7 @@ body {
 }
 
 .rubro-chip input { display: none; }
-.rubro-chip:has(input:checked) { background: var(--navy); color: #fff; border-color: var(--navy); }
+.rubro-chip:has(input:checked) { background: var(--blue-light); color: var(--blue); border-color: var(--blue); }
 
 .familias-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 
@@ -880,22 +888,22 @@ body {
   align-items: center;
   gap: 4px;
   padding: 5px 10px;
-  background: var(--blue-light);
-  border: 1px solid #C3D9F4;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
   border-radius: 20px;
   font-size: 12px;
-  color: var(--blue);
+  color: var(--gold);
   font-weight: 600;
 }
 
 .familia-tag button {
   background: none; border: none;
-  color: var(--blue); cursor: pointer;
+  color: var(--muted); cursor: pointer;
   font-size: 14px; padding: 0; line-height: 1;
-  opacity: 0.6; transition: opacity 0.15s;
+  opacity: 0.6; transition: all 0.15s;
 }
 
-.familia-tag button:hover { opacity: 1; }
+.familia-tag button:hover { opacity: 1; color: var(--danger); }
 
 .intereses-status {
   font-size: 12px;
@@ -916,7 +924,7 @@ body {
   display: flex;
   padding-bottom: env(safe-area-inset-bottom);
   z-index: 100;
-  box-shadow: 0 -2px 12px rgba(0,0,0,0.06);
+  box-shadow: 0 -4px 15px rgba(0,0,0,0.5);
 }
 
 .bottom-nav-item {
@@ -936,14 +944,16 @@ body {
   transition: color 0.18s;
 }
 
-.bottom-nav-item.active { color: var(--navy); }
+.bottom-nav-item.active { color: var(--gold); }
 
-.bottom-nav-item .nav-icon { font-size: 20px; }
+.bottom-nav-item .nav-icon { font-size: 20px; filter: grayscale(1); opacity: 0.7; transition: all 0.2s; }
+.bottom-nav-item.active .nav-icon { filter: grayscale(0); opacity: 1; }
 
 .bottom-nav-item.active .nav-icon-wrap {
-  background: var(--bg2);
+  background: var(--gold-light);
   border-radius: 12px;
   padding: 4px 16px;
+  box-shadow: inset 0 0 5px rgba(255,159,0,0.2);
 }
 
 /* ══════════════════════════════════════════
@@ -963,7 +973,7 @@ body {
 .spinner {
   width: 28px; height: 28px;
   border: 2.5px solid var(--border);
-  border-top-color: var(--navy);
+  border-top-color: var(--gold);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -987,7 +997,7 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--success);
+  color: #6EE7B7;
   font-weight: 600;
   margin-top: 10px;
 }
@@ -1010,15 +1020,14 @@ body {
 }
 
 /* ══════════════════════════════════════
-   MAPA DE PROYECTOS
+   MAPA DE PROYECTOS (MODO OSCURO)
 ══════════════════════════════════════ */
 #tab-mapa {
   display: none;
   flex-direction: column;
   height: calc(100vh - 56px - 70px);
-  max-height: calc(100vh - 56px - 70px);
   overflow: hidden;
-  background: var(--bg2);
+  background: var(--bg);
 }
 .mapa-header {
   padding: 14px 16px 10px;
@@ -1026,88 +1035,100 @@ body {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.mapa-header h2 { font-family: "DM Serif Display", serif; font-size: 1.2rem; color: var(--navy); margin-bottom: 2px; }
+.mapa-header h2 { font-family: "DM Serif Display", serif; font-size: 1.2rem; color: var(--text); margin-bottom: 2px; }
 .mapa-header p { font-size: .72rem; color: var(--muted); }
 .mapa-stats { display: flex; gap: 12px; margin-top: 10px; }
-.mapa-stat { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; flex: 1; text-align: center; }
-.mapa-stat-val { font-size: .95rem; font-weight: 700; color: var(--navy); }
+.mapa-stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; flex: 1; text-align: center; }
+.mapa-stat-val { font-size: .95rem; font-weight: 700; color: var(--blue); }
 .mapa-stat-lbl { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
-.mapa-stat.warn .mapa-stat-val { color: #B45309; }
+.mapa-stat.warn .mapa-stat-val { color: var(--danger); text-shadow: 0 0 5px rgba(239, 68, 68, 0.4); }
 .mapa-body { display: flex; flex: 1; overflow: hidden; }
-.mapa-svg-wrap { flex: 1; position: relative; overflow: hidden; background: #EEF2F7; min-height: 220px; }
+.mapa-svg-wrap { flex: 1; position: relative; overflow: hidden; background: #050811; } /* Darkest background for the map */
 #mapaSVG { width: 100%; height: 100%; }
-.prov-shape { stroke: #C8D8E8; stroke-width: 1; cursor: pointer; transition: all .2s; }
-.prov-shape:hover { stroke: var(--navy); stroke-width: 1.8; filter: drop-shadow(0 2px 6px rgba(28,43,58,.2)); }
-.prov-shape.selected { stroke: var(--gold); stroke-width: 2.5; filter: drop-shadow(0 2px 8px rgba(201,145,26,.5)); }
-.ph0 { fill: #E8EDF2; } .ph1 { fill: #C8DAF0; } .ph2 { fill: #96BAE4; }
-.ph3 { fill: #5E95D4; } .ph4 { fill: #2E70BE; } .ph5 { fill: #1B4F8A; }
+
+/* ESTILOS DEL MAPA D3.JS PARA MODO OSCURO */
+.prov-shape { stroke: #1F2937; stroke-width: 1; cursor: pointer; transition: all .2s; }
+.prov-shape:hover { stroke: var(--gold); stroke-width: 1.8; filter: drop-shadow(0 0 8px rgba(255,159,0,.6)); }
+.prov-shape.selected { stroke: #FFF; stroke-width: 2.5; filter: drop-shadow(0 0 12px rgba(255,159,0,.9)); }
+
+/* CAPAS DE CALOR (HEATMAP DARK MODE) */
+.ph0 { fill: #111827; }
+.ph1 { fill: #1E3A8A; } /* Dark Blue */
+.ph2 { fill: #1D4ED8; }
+.ph3 { fill: #2563EB; }
+.ph4 { fill: #D97706; } /* Amber */
+.ph5 { fill: #FF9F00; } /* Bright Amber/Glow */
+
 .mbubble-ring { animation: mring 2.5s ease-in-out infinite alternate; }
 .mbubble-core { animation: mring 2.5s ease-in-out infinite alternate-reverse; }
-@keyframes mring { from{opacity:.2} to{opacity:.65} }
-#mapaTooltip { position: absolute; display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; pointer-events: none; font-size: .76rem; z-index: 50; max-width: 200px; box-shadow: var(--shadow-md); }
-.mtt-name { font-weight: 700; color: var(--navy); margin-bottom: 3px; font-size: .82rem; }
+@keyframes mring { from{opacity:.2; transform: scale(0.95); transform-origin: center;} to{opacity:.8; transform: scale(1.1); transform-origin: center;} }
+
+#mapaTooltip { position: absolute; display: none; background: rgba(17, 24, 39, 0.95); border: 1px solid var(--border2); border-radius: 8px; padding: 10px 14px; pointer-events: none; font-size: .76rem; z-index: 50; max-width: 200px; box-shadow: var(--shadow-lg); backdrop-filter: blur(4px); }
+.mtt-name { font-weight: 700; color: var(--text); margin-bottom: 3px; font-size: .82rem; }
 .mtt-row { color: var(--muted); margin-top: 1px; }
-.mtt-row span { color: var(--navy); font-weight: 600; }
-.mtt-hint { margin-top: 5px; font-size: .65rem; color: var(--gold); font-weight: 600; }
-.mapa-legend { position: absolute; bottom: 12px; left: 12px; background: rgba(255,255,255,.92); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: .68rem; box-shadow: var(--shadow); }
-.mleg-title { font-weight: 700; color: var(--navy); margin-bottom: 6px; font-size: .7rem; text-transform: uppercase; letter-spacing: .8px; }
+.mtt-row span { color: var(--gold); font-weight: 600; text-shadow: 0 0 4px rgba(255, 159, 0, 0.3); }
+.mtt-hint { margin-top: 5px; font-size: .65rem; color: var(--blue); font-weight: 600; }
+
+.mapa-legend { position: absolute; bottom: 12px; left: 12px; background: rgba(17, 24, 39, 0.85); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: .68rem; box-shadow: var(--shadow); backdrop-filter: blur(4px); }
+.mleg-title { font-weight: 700; color: var(--text); margin-bottom: 6px; font-size: .7rem; text-transform: uppercase; letter-spacing: .8px; }
 .mleg-scale { display: flex; gap: 3px; margin-bottom: 3px; }
 .mleg-box { width: 20px; height: 10px; border-radius: 2px; }
 .mleg-labs { display: flex; justify-content: space-between; color: var(--muted); font-size: .6rem; margin-bottom: 0; }
 .mapa-panel { width: 300px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+
 @media(max-width:700px) {
   .mapa-body { flex-direction: column; }
-  .mapa-svg-wrap { flex: none; height: 280px; min-height: 280px; }
-  .mapa-panel { width: 100%; flex: 1; border-left: none; border-top: 1px solid var(--border); min-height: 0; }
+  .mapa-panel { width: 100%; height: 45%; border-left: none; border-top: 1px solid var(--border); }
+  .mapa-svg-wrap { flex: none; height: 55%; }
 }
+
 .mpanel-head { padding: 12px 14px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg2); }
-.mpanel-prov { font-family: "DM Serif Display", serif; font-size: 1.1rem; color: var(--navy); }
+.mpanel-prov { font-family: "DM Serif Display", serif; font-size: 1.1rem; color: var(--text); }
 .mpanel-sub { font-size: .65rem; color: var(--muted); margin-top: 2px; }
 .mpanel-kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 9px; }
-.mpanel-kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; }
-.mpanel-kpi-v { font-weight: 700; color: var(--navy); font-size: .9rem; }
+.mpanel-kpi { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; }
+.mpanel-kpi-v { font-weight: 700; color: var(--gold); font-size: .9rem; }
 .mpanel-kpi-l { font-size: .58rem; color: var(--muted); text-transform: uppercase; letter-spacing: .7px; }
 .mpanel-search { padding: 8px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-.mpanel-search input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px; font-family: "Plus Jakarta Sans", sans-serif; font-size: .76rem; outline: none; color: var(--navy); }
-.mpanel-search input:focus { border-color: var(--navy); }
+.mpanel-search input { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px; font-family: "Plus Jakarta Sans", sans-serif; font-size: .76rem; outline: none; color: var(--text); }
+.mpanel-search input:focus { border-color: var(--blue); }
 .mpanel-list { flex: 1; overflow-y: auto; padding: 8px; }
 .mpanel-list::-webkit-scrollbar { width: 3px; }
 .mpanel-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 .mproj-card { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 11px 12px; margin-bottom: 7px; cursor: pointer; transition: all .18s; border-left: 3px solid transparent; }
-.mproj-card:hover { border-color: var(--border2); border-left-color: var(--navy); background: var(--surface); transform: translateX(2px); }
-.mproj-inst { font-size: .6rem; color: var(--gold); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 4px; font-weight: 600; }
-.mproj-name { font-size: .78rem; font-weight: 600; color: var(--navy); line-height: 1.35; margin-bottom: 6px; }
+.mproj-card:hover { border-color: var(--border2); border-left-color: var(--gold); background: var(--bg2); transform: translateX(2px); }
+.mproj-inst { font-size: .6rem; color: var(--blue); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 4px; font-weight: 600; }
+.mproj-name { font-size: .78rem; font-weight: 600; color: var(--text); line-height: 1.35; margin-bottom: 6px; }
 .mproj-meta { display: flex; justify-content: space-between; align-items: flex-end; }
-.mproj-monto { font-weight: 700; color: var(--blue); font-size: .82rem; }
+.mproj-monto { font-weight: 700; color: var(--gold); font-size: .82rem; }
 .mproj-dead { font-size: .6rem; color: var(--muted); margin-top: 4px; }
-.mproj-dead .urg { color: var(--danger); font-weight: 700; }
+.mproj-dead .urg { color: #FCA5A5; font-weight: 700; }
 .mapa-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; color: var(--muted); text-align: center; padding: 30px 16px; }
 .mapa-empty-icon { font-size: 2.2rem; margin-bottom: 10px; opacity: .5; }
-.mapa-empty-title { font-weight: 700; font-size: .85rem; color: var(--navy); margin-bottom: 5px; }
+.mapa-empty-title { font-weight: 700; font-size: .85rem; color: var(--text); margin-bottom: 5px; }
 .mapa-empty-sub { font-size: .72rem; line-height: 1.5; }
-.sinubic-pill { padding: 7px 10px; border-top: 1px solid var(--border); background: #FFF8E8; cursor: pointer; flex-shrink: 0; font-size: .68rem; color: #B45309; text-align: center; font-weight: 600; }
-.sinubic-pill:hover { background: #FEF0C7; }
-#mapaAssignModal { position: fixed; inset: 0; background: rgba(28,43,58,.5); z-index: 300; display: none; align-items: center; justify-content: center; backdrop-filter: blur(3px); }
+.sinubic-pill { padding: 7px 10px; border-top: 1px solid var(--border); background: rgba(239, 68, 68, 0.1); cursor: pointer; flex-shrink: 0; font-size: .68rem; color: #FCA5A5; text-align: center; font-weight: 600; }
+.sinubic-pill:hover { background: rgba(239, 68, 68, 0.2); }
+#mapaAssignModal { position: fixed; inset: 0; background: rgba(11, 17, 32, 0.8); z-index: 300; display: none; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
 #mapaAssignModal.open { display: flex; }
-.massign-box { background: var(--surface); border-radius: var(--radius-lg); padding: 22px; max-width: 400px; width: 90%; box-shadow: var(--shadow-lg); animation: slideUp .22s ease; }
+.massign-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 22px; max-width: 400px; width: 90%; box-shadow: var(--shadow-lg); animation: slideUp .22s ease; }
 @keyframes slideUp { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:none} }
-.massign-title { font-family: "DM Serif Display", serif; font-size: 1.05rem; color: var(--navy); margin-bottom: 4px; }
+.massign-title { font-family: "DM Serif Display", serif; font-size: 1.05rem; color: var(--text); margin-bottom: 4px; }
 .massign-sub { font-size: .72rem; color: var(--muted); line-height: 1.4; margin-bottom: 2px; }
 .massign-btns { display: flex; gap: 8px; margin-top: 16px; }
-.assign-select { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font-family: "Plus Jakarta Sans", sans-serif; font-size: .82rem; color: var(--navy); background: var(--bg); outline: none; margin-top: 10px; }
-.assign-select:focus { border-color: var(--navy); }
+.assign-select { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font-family: "Plus Jakarta Sans", sans-serif; font-size: .82rem; color: var(--text); background: var(--bg); outline: none; margin-top: 10px; }
+.assign-select:focus { border-color: var(--blue); }
 </style>
 </head>
 <body>
 
-<!-- ══ AUTH ══ -->
 <div id="screen-auth" class="screen active">
   <div class="auth-card">
     <div class="auth-brand">
       <div class="auth-brand-icon">🏗️</div>
       <div>
-        <div class="auth-brand-name">LicitacionLab</div>
-        <div class="auth-brand-sub">Alertas de licitaciones · Rep. Dom.</div>
+        <div class="auth-brand-name">Licitaciones Lab</div>
+        <div class="auth-brand-sub">INTELIGENCIA EN COMPRAS PÚBLICAS</div>
       </div>
     </div>
 
@@ -1148,13 +1169,12 @@ body {
   </div>
 </div>
 
-<!-- ══ APP ══ -->
 <div id="screen-app" class="screen">
 
   <nav class="navbar">
     <div class="nav-brand">
       <div class="nav-brand-icon">🏗️</div>
-      <span class="nav-brand-name">LicitacionLab</span>
+      <span class="nav-brand-name">Licitaciones Lab</span>
     </div>
     <div class="nav-right">
       <div class="nav-user">
@@ -1165,10 +1185,8 @@ body {
     </div>
   </nav>
 
-  <!-- ── DASHBOARD ── -->
   <div id="tab-dashboard" class="main page-with-nav">
 
-    <!-- Stats -->
     <div class="stats-bar" id="stats-bar">
       <div class="stat-card" onclick="filtrarRubro('')">
         <div class="stat-label">Total activos</div>
@@ -1195,14 +1213,11 @@ body {
       </div>
     </div>
 
-    <!-- Filtros -->
     <div class="filters-block">
-      <!-- Fila 1 -->
       <div class="filter-row">
         <input class="filter-input" type="text" id="busqueda" placeholder="🔍 Título o código proceso..." oninput="debounceSearch()" style="flex:2">
         <input class="filter-input" type="text" id="filtro-institucion" placeholder="🏛️ Institución..." oninput="debounceSearch()">
       </div>
-      <!-- Fila 2 -->
       <div class="filter-row">
         <select class="filter-select" id="filtro-objeto" onchange="cargarProcesos(1)">
           <option value="">Todos los rubros</option>
@@ -1216,12 +1231,10 @@ body {
         </select>
         <button class="filter-clear" onclick="limpiarFiltros()">✕ Limpiar</button>
       </div>
-      <!-- Fila 3 -->
       <div class="filter-row">
         <input class="filter-input" type="number" id="filtro-monto-min" placeholder="💰 Monto mín (RD$)" oninput="debounceSearch()">
         <input class="filter-input" type="number" id="filtro-monto-max" placeholder="💰 Monto máx (RD$)" oninput="debounceSearch()">
       </div>
-      <!-- Fila 4: UNSPSC -->
       <div class="filter-row" style="position:relative">
         <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="🔎 Buscar familia UNSPSC o código..." oninput="buscarUnspsc()" autocomplete="off">
         <div class="unspsc-dropdown" id="unspsc-dropdown"></div>
@@ -1232,7 +1245,6 @@ body {
       </div>
     </div>
 
-    <!-- Lista -->
     <div id="procesos-container" class="procesos-list">
       <div class="loading"><div class="spinner"></div><span>Cargando licitaciones...</span></div>
     </div>
@@ -1240,18 +1252,16 @@ body {
     <div class="pagination" id="pagination"></div>
   </div>
 
-  <!-- ── DETALLE ── -->
   <div id="tab-detalle" class="main page-with-nav" style="display:none">
     <button class="back-btn" onclick="mostrarDashboard()">← Volver</button>
     <div id="detalle-container"><div class="loading"><div class="spinner"></div></div></div>
   </div>
 
-  <!-- ── PERFIL ── -->
   <div id="tab-perfil" class="main page-with-nav" style="display:none">
 
     <div class="perfil-card">
       <h2>⚙️ Mi cuenta</h2>
-      <div class="field-label">Correo registrado</div>
+      <div class="field-label">Ingeniero / Firma</div>
       <div class="field-value" id="perfil-email">—</div>
       <button class="btn-outline" onclick="logout()">Cerrar sesión</button>
     </div>
@@ -1301,8 +1311,6 @@ body {
 
   </div>
 
-
-  <!-- ══ TAB: MAPA ══ -->
   <div id="tab-mapa" class="main">
 
     <div class="mapa-header">
@@ -1363,7 +1371,6 @@ body {
     </div>
   </div>
 
-  <!-- Bottom Nav -->
   <nav class="bottom-nav">
     <button class="bottom-nav-item active" id="nav-dashboard" onclick="switchTab2('dashboard')">
       <div class="nav-icon-wrap"><span class="nav-icon">📋</span></div>
@@ -1437,8 +1444,11 @@ function logout() {
 function showApp() {
   document.getElementById('screen-auth').classList.remove('active');
   document.getElementById('screen-app').classList.add('active');
-  document.getElementById('user-email-display').textContent = currentUser?.email?.split('@')[0] || '';
-  document.getElementById('perfil-email').textContent = currentUser?.email || '';
+  
+  // Estableciendo nombre de experto directamente per tu solicitud
+  document.getElementById('user-email-display').textContent = 'Ing. Luis Antigua';
+  document.getElementById('perfil-email').textContent = 'Ing. Luis Antigua (' + (currentUser?.email || '') + ')';
+  
   cargarStats();
   cargarProcesos(1);
   checkPushStatus();
@@ -1735,7 +1745,10 @@ function switchTab2(tab) {
   document.getElementById('tab-detalle').style.display   = 'none';
   document.getElementById('tab-perfil').style.display    = tab==='perfil' ? 'block' : 'none';
   document.getElementById('tab-mapa').style.display      = tab==='mapa' ? 'flex' : 'none';
-  if (tab === 'mapa') { setTimeout(mapaInit, 100); }
+  
+  // FIX DE RENDERIZACIÓN DE MAPA (tiempo ajustado a 300ms)
+  if (tab === 'mapa') { setTimeout(mapaInit, 300); }
+  
   document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
   document.getElementById('nav-' + tab)?.classList.add('active');
   document.getElementById('nav-dashboard').classList.toggle('active', tab==='dashboard');
@@ -1836,24 +1849,18 @@ if (savedToken && savedUser) {
 }
 
 // ── ABRIR PROCESO DESDE NOTIFICACIÓN ──
-// Si la URL tiene ?proceso=CODIGO, abrir el detalle automáticamente
 async function checkNotificacionUrl() {
   const params = new URLSearchParams(window.location.search);
   const codigoParam = params.get('proceso');
   if (!codigoParam) return;
 
-  // Limpiar la URL sin recargar la página
   window.history.replaceState({}, '', window.location.pathname);
-
-  // Esperar a que la app esté lista y cargar el detalle
   await verDetalle(codigoParam);
 }
 
-// Ejecutar después de que showApp() haya cargado
 const _originalShowApp = showApp;
 showApp = async function() {
   _originalShowApp();
-  // Pequeña espera para que el DOM esté listo
   setTimeout(checkNotificacionUrl, 300);
 };
 
@@ -1895,7 +1902,6 @@ const PROVINCIAS_MAP = [
   { id:'BAO', nombre:'Baoruco',                     keys:['baoruco','galván','los ríos','neiba','tamayo'] },
 ];
 
-// GeoJSON simplificado de provincias RD (polígonos reales aproximados)
 const RD_GEOJSON = {type:"FeatureCollection",features:[
   {type:"Feature",properties:{id:"DN",nombre:"Distrito Nacional"},geometry:{type:"Polygon",coordinates:[[[-70.00,18.44],[-69.90,18.44],[-69.90,18.52],[-70.00,18.52],[-70.00,18.44]]]}},
   {type:"Feature",properties:{id:"SD",nombre:"Santo Domingo"},geometry:{type:"Polygon",coordinates:[[[-70.15,18.35],[-69.65,18.35],[-69.65,18.60],[-70.15,18.60],[-70.15,18.35]]]}},
@@ -1979,7 +1985,6 @@ function mapaBubbleR(inv) {
 async function mapaInit() {
   if (mapaBuilt) return;
 
-  // Cargar procesos desde la API del backend
   const resp = await fetch(`${API}/api/procesos?limite=500`).catch(() => null);
   let procesos = [];
   if (resp && resp.ok) {
@@ -1987,7 +1992,6 @@ async function mapaInit() {
     procesos = data.procesos || data.results || data || [];
   }
 
-  // Clasificar por provincia
   mapaProvMap = {};
   mapaSinProv = [];
   PROVINCIAS_MAP.forEach(p => mapaProvMap[p.id] = []);
@@ -2003,7 +2007,6 @@ async function mapaInit() {
     }
   });
 
-  // Stats header
   const total = procesos.length;
   const inv = procesos.reduce((s,p) => s + (parseFloat(p.monto_estimado)||0), 0);
   document.getElementById('mapa-total').textContent = total;
@@ -2012,47 +2015,37 @@ async function mapaInit() {
   document.getElementById('sinubic-count').textContent = mapaSinProv.length;
   document.getElementById('sinubic-pill').style.display = mapaSinProv.length > 0 ? 'block' : 'none';
 
-  // Dar tiempo al DOM para que el contenedor tenga dimensiones
-  requestAnimationFrame(() => {
-    setTimeout(mapaBuildD3, 80);
-  });
+  mapaBuildD3();
   mapaBuilt = true;
 }
 
 function mapaBuildD3() {
   const wrap = document.querySelector('.mapa-svg-wrap');
-  if (!wrap) return;
   
-  // Esperar a que el contenedor tenga dimensiones reales
-  const W = wrap.offsetWidth || wrap.clientWidth || 350;
-  const H = wrap.offsetHeight || wrap.clientHeight || 280;
-  
-  if (W < 10 || H < 10) {
-    setTimeout(mapaBuildD3, 150);
-    return;
+  // FIX DE TAMAÑO PARA PREVENIR EL BUG DEL "PUNTO GRIS"
+  let W = wrap.clientWidth;
+  let H = wrap.clientHeight;
+  if (W === 0 || H === 0) {
+    const rect = wrap.getBoundingClientRect();
+    W = rect.width || window.innerWidth;
+    H = rect.height || (window.innerHeight * 0.55);
   }
-  
+
   const svg = d3.select('#mapaSVG').attr('viewBox', `0 0 ${W} ${H}`);
   svg.selectAll('*').remove();
 
-  // RD está entre lon -74 y -68, lat 17.5 y 20
-  // Para móvil ajustamos el scale dinámicamente
-  const scaleW = W / 6.5;   // 6.5 grados de longitud
-  const scaleH = H / 2.8;   // 2.8 grados de latitud
-  const baseScale = Math.min(scaleW, scaleH) * 111; // 1 grado ≈ 111km
-
   const proj = d3.geoMercator()
     .center([-70.3, 18.75])
-    .scale(baseScale)
+    .scale(Math.min(W, H) * 5.0)
     .translate([W/2, H/2]);
 
   const path = d3.geoPath().projection(proj);
   const tooltip = document.getElementById('mapaTooltip');
 
-  // Defs glow
+  // Defs glow para modo oscuro
   const defs = svg.append('defs');
   const filter = defs.append('filter').attr('id','mapaglow');
-  filter.append('feGaussianBlur').attr('stdDeviation','2').attr('result','blur');
+  filter.append('feGaussianBlur').attr('stdDeviation','3').attr('result','blur');
   const merge = filter.append('feMerge');
   merge.append('feMergeNode').attr('in','blur');
   merge.append('feMergeNode').attr('in','SourceGraphic');
@@ -2106,14 +2099,15 @@ function mapaBuildD3() {
       return `translate(${x},${y})`;
     })
     .attr('text-anchor','middle').attr('dominant-baseline','middle')
-    .attr('fill','rgba(28,43,58,0.55)').attr('font-size','7')
+    .attr('fill','rgba(255,255,255,0.4)') /* Text labels lighter for dark mode */
+    .attr('font-size','7')
     .attr('font-family','Plus Jakarta Sans').attr('pointer-events','none')
     .text(d => {
       const n = d.properties.nombre;
       return n.length > 14 ? n.split(' ')[0] : n;
     });
 
-  // Bubbles
+  // Bubbles (Electric Amber)
   const bg = svg.append('g');
   RD_GEOJSON.features.forEach(feat => {
     const pros = mapaProvMap[feat.properties.id] || [];
@@ -2122,12 +2116,16 @@ function mapaBuildD3() {
     if (r === 0) return;
     const [cx,cy] = proj(d3.geoCentroid(feat));
     const g = bg.append('g').style('pointer-events','none');
+    
+    // Outer ring glow
     g.append('circle').attr('cx',cx).attr('cy',cy).attr('r',r+6)
-      .attr('fill','rgba(30,95,184,0.12)').attr('class','mbubble-ring')
+      .attr('fill','rgba(255,159,0,0.15)').attr('class','mbubble-ring')
       .style('animation-delay', Math.random()*2+'s');
+    
+    // Inner solid dot
     g.append('circle').attr('cx',cx).attr('cy',cy).attr('r',r)
-      .attr('fill','rgba(30,95,184,0.35)').attr('stroke','rgba(30,95,184,0.7)')
-      .attr('stroke-width','1.2').attr('filter','url(#mapaglow)')
+      .attr('fill','rgba(255,159,0,0.4)').attr('stroke','rgba(255,159,0,0.9)')
+      .attr('stroke-width','1.5').attr('filter','url(#mapaglow)')
       .attr('class','mbubble-core').style('animation-delay', Math.random()*2+'s');
   });
 }
@@ -2178,7 +2176,7 @@ function mapaRenderProjects(list) {
       <div class="mproj-name">${(p.titulo||'').slice(0,100)}${(p.titulo||'').length>100?'…':''}</div>
       <div class="mproj-meta">
         <div class="mproj-monto">${mapaFmt(p.monto_estimado)}</div>
-        <button onclick="event.stopPropagation();mapaOpenAssign(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="font-size:.6rem;padding:2px 6px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--muted);cursor:pointer">📍</button>
+        <button onclick="event.stopPropagation();mapaOpenAssign(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="font-size:.6rem;padding:2px 6px;border:1px solid var(--border);border-radius:5px;background:var(--bg2);color:var(--muted);cursor:pointer">📍</button>
       </div>
       ${deadStr?`<div class="mproj-dead">${deadStr}</div>`:''}
     </div>`;
@@ -2190,10 +2188,10 @@ function mapaShowSinProv() {
   mapaSelectedProv = null;
   mapaCurrentList = mapaSinProv;
   document.getElementById('mpanel-head').innerHTML = `
-    <div class="mpanel-prov" style="color:#B45309">Sin Provincia</div>
+    <div class="mpanel-prov" style="color:#FCA5A5">Sin Provincia</div>
     <div class="mpanel-sub">Proyectos sin ubicación detectada — asígnalos manualmente</div>
     <div class="mpanel-kpis">
-      <div class="mpanel-kpi"><div class="mpanel-kpi-v" style="color:#B45309">${mapaSinProv.length}</div><div class="mpanel-kpi-l">Sin ubicar</div></div>
+      <div class="mpanel-kpi"><div class="mpanel-kpi-v" style="color:#FCA5A5">${mapaSinProv.length}</div><div class="mpanel-kpi-l">Sin ubicar</div></div>
     </div>`;
   document.getElementById('mpanel-search').style.display = 'block';
   document.getElementById('mapa-search-input').value = '';
@@ -2226,7 +2224,6 @@ async function mapaSaveAssign() {
   if (!mapaProvMap[provId]) mapaProvMap[provId] = [];
   mapaProvMap[provId].push(mapaAssignTarget);
 
-  // Update Supabase si hay id
   if (mapaAssignTarget.id) {
     fetch(`${SUPABASE_URL}/rest/v1/procesos?id=eq.${mapaAssignTarget.id}`, {
       method: 'PATCH',
@@ -2247,18 +2244,8 @@ document.getElementById('mapaAssignModal')?.addEventListener('click', e => {
   if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
 });
 
-// Rebuild mapa al hacer resize
-let mapaResizeTimer;
-window.addEventListener('resize', () => {
-  if (document.getElementById('tab-mapa').style.display !== 'none') {
-    clearTimeout(mapaResizeTimer);
-    mapaResizeTimer = setTimeout(mapaBuildD3, 200);
-  }
-});
-
 </script>
 
-<!-- Mapa Assign Modal -->
 <div id="mapaAssignModal">
   <div class="massign-box">
     <div class="massign-title">Asignar Provincia</div>
