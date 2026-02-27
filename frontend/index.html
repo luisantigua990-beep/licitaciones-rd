@@ -1311,26 +1311,33 @@ body {
 }
 
 .seg-fecha-icono { font-size: 14px; flex-shrink: 0; width: 20px; text-align: center; }
+.seg-fecha-info { display: flex; flex-direction: column; flex: 1; gap: 1px; }
 .seg-fecha-label {
   font-size: 11px;
   color: var(--muted);
-  flex: 1;
-  font-weight: 500;
+  font-weight: 600;
 }
+.seg-fecha-sublabel {
+  font-size: 10px;
+  color: var(--border2);
+  font-weight: 400;
+}
+.seg-fecha-right { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
 .seg-fecha-valor {
   font-size: 11px;
   font-weight: 700;
   color: var(--text2);
   text-align: right;
+  white-space: nowrap;
 }
 .seg-fecha-valor.destacada { color: var(--gold); font-size: 12px; }
-.seg-fecha-valor.vencida   { color: var(--muted); }
+.seg-fecha-valor.vencida   { color: var(--muted); text-decoration: line-through; }
 .seg-fecha-valor.hoy       { color: var(--danger); }
 .seg-fecha-dias {
   font-size: 10px;
   color: var(--muted);
   text-align: right;
-  min-width: 52px;
+  white-space: nowrap;
 }
 .seg-fecha-dias.critico { color: var(--danger); font-weight: 700; }
 .seg-fecha-dias.proximo { color: #F59E0B; font-weight: 700; }
@@ -1450,6 +1457,22 @@ body {
 .seg-empty-icon { font-size: 44px; margin-bottom: 14px; opacity: 0.4; }
 .seg-empty-title { font-size: 15px; font-weight: 600; color: var(--text2); margin-bottom: 8px; }
 .seg-empty-sub { font-size: 13px; line-height: 1.5; }
+
+/* ── FIX SCROLL MÓVIL: detalle y seguimiento no se tapan con barra inferior ── */
+#tab-detalle {
+  padding-bottom: 100px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+#tab-seguimiento {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 100px;
+}
+#tab-dashboard {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
 </style>
 </head>
@@ -2730,23 +2753,27 @@ const ESTADOS_CONFIG = {
 function extraerFechasClaves(p) {
   const fechas = [];
   const ahora = new Date();
-  const agregar = (label, valor, destacada = false) => {
+  const agregar = (label, valor, destacada = false, sublabel = null) => {
     if (!valor) return;
     const dt = new Date(valor);
+    if (isNaN(dt.getTime())) return;
     const dias = Math.ceil((dt - ahora) / 86400000);
     let estado = 'normal';
     if (dias < 0) estado = 'vencida';
     else if (dias === 0) estado = 'hoy';
     else if (dias <= 2) estado = 'critico';
     else if (dias <= 7) estado = 'proximo';
-    fechas.push({ label, valor: dt, dias, estado, destacada });
+    fechas.push({ label, sublabel, valor: dt, dias, estado, destacada });
   };
-  agregar('Publicación',             p.fecha_publicacion,           false);
-  agregar('Cierre de preguntas',     p.fecha_enmienda,              false);
-  agregar('Presentación de ofertas', p.fecha_fin_recepcion_ofertas, true);
-  agregar('Apertura de sobres',      p.fecha_apertura_ofertas,      false);
-  agregar('Adjudicación estimada',   p.fecha_estimada_adjudicacion, false);
-  agregar('Suscripción contrato',    p.fecha_suscripcion,           false);
+
+  // Todas las fechas que trae la API DGCP
+  agregar('Publicación',               p.fecha_publicacion,           false, 'Inicio del proceso');
+  agregar('Preguntas y subsanaciones', p.fecha_enmienda,              false, 'Último día para preguntas');
+  agregar('Presentación de ofertas',   p.fecha_fin_recepcion_ofertas, true,  '⚠️ Fecha límite de entrega');
+  agregar('Apertura de sobres',        p.fecha_apertura_ofertas,      false, 'Evaluación de ofertas');
+  agregar('Adjudicación estimada',     p.fecha_estimada_adjudicacion, false, 'Resultado esperado');
+  agregar('Suscripción del contrato',  p.fecha_suscripcion,           false, 'Firma del contrato');
+
   return fechas.sort((a, b) => a.valor - b.valor);
 }
 
@@ -2771,26 +2798,37 @@ function diasRestantesTexto(fechas) {
 
 function renderFechaRow(f) {
   const iconos = {
-    'Publicación': '📅', 'Cierre de preguntas': '❓',
-    'Presentación de ofertas': '📝', 'Apertura de sobres': '📂',
-    'Adjudicación estimada': '🏆', 'Suscripción contrato': '✍️',
+    'Publicación':               '📅',
+    'Preguntas y subsanaciones': '❓',
+    'Presentación de ofertas':   '📝',
+    'Apertura de sobres':        '📂',
+    'Adjudicación estimada':     '🏆',
+    'Suscripción del contrato':  '✍️',
   };
   const icono = iconos[f.label] || '📌';
   const fechaStr = f.valor.toLocaleDateString('es-DO', { day:'2-digit', month:'short', year:'numeric' });
+  const horaStr  = f.valor.toLocaleTimeString('es-DO', { hour:'2-digit', minute:'2-digit' });
   const rowCls = f.destacada ? (f.estado === 'vencida' ? 'vencida' : 'destacada') : f.estado;
   const valCls = f.destacada && f.estado !== 'vencida' ? 'destacada' : f.estado;
+
   let diasLabel = '';
-  if (f.estado === 'vencida') diasLabel = `<div class="seg-fecha-dias">Vencida</div>`;
-  else if (f.estado === 'hoy') diasLabel = `<div class="seg-fecha-dias critico">HOY</div>`;
-  else if (f.estado === 'critico') diasLabel = `<div class="seg-fecha-dias critico">${f.dias}d ⚠️</div>`;
-  else if (f.estado === 'proximo') diasLabel = `<div class="seg-fecha-dias proximo">${f.dias}d</div>`;
-  else diasLabel = `<div class="seg-fecha-dias">${f.dias}d</div>`;
+  if (f.estado === 'vencida')       diasLabel = `<div class="seg-fecha-dias">Vencida</div>`;
+  else if (f.estado === 'hoy')      diasLabel = `<div class="seg-fecha-dias critico">HOY ${horaStr}</div>`;
+  else if (f.estado === 'critico')  diasLabel = `<div class="seg-fecha-dias critico">${f.dias}d ⚠️</div>`;
+  else if (f.estado === 'proximo')  diasLabel = `<div class="seg-fecha-dias proximo">${f.dias}d</div>`;
+  else                               diasLabel = `<div class="seg-fecha-dias">${f.dias}d</div>`;
+
   return `
     <div class="seg-fecha-row ${rowCls}">
       <span class="seg-fecha-icono">${icono}</span>
-      <span class="seg-fecha-label">${f.label}</span>
-      <span class="seg-fecha-valor ${valCls}">${fechaStr}</span>
-      ${diasLabel}
+      <div class="seg-fecha-info">
+        <span class="seg-fecha-label">${f.label}</span>
+        ${f.sublabel ? `<span class="seg-fecha-sublabel">${f.sublabel}</span>` : ''}
+      </div>
+      <div class="seg-fecha-right">
+        <span class="seg-fecha-valor ${valCls}">${fechaStr}</span>
+        ${diasLabel}
+      </div>
     </div>`;
 }
 
@@ -2848,7 +2886,7 @@ async function cargarSeguimiento() {
     // 2. Traer los procesos correspondientes
     const codigos = segs.map(s => s.proceso_codigo).join(',');
     const procesos = await sbRest(
-      `procesos?codigo_proceso=in.(${codigos})&select=codigo_proceso,titulo,unidad_compra,monto_estimado,modalidad,fecha_publicacion,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda,fecha_suscripcion`
+      `procesos?codigo_proceso=in.(${codigos})&select=codigo_proceso,titulo,unidad_compra,monto_estimado,modalidad,objeto_proceso,url,fecha_publicacion,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda,fecha_suscripcion`
     );
 
     // 3. Combinar
