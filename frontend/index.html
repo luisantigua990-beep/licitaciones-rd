@@ -1138,6 +1138,319 @@ body {
 .massign-btns { display: flex; gap: 8px; margin-top: 16px; }
 .assign-select { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font-family: "Plus Jakarta Sans", sans-serif; font-size: .82rem; color: var(--text); background: var(--bg); outline: none; margin-top: 10px; }
 .assign-select:focus { border-color: var(--blue); }
+
+/* ══════════════════════════════════════════
+   TAB SEGUIMIENTO
+══════════════════════════════════════════ */
+#tab-seguimiento {
+  display: none;
+  flex-direction: column;
+  min-height: calc(100vh - 56px - 70px);
+  padding: 16px;
+  gap: 14px;
+}
+
+/* Header con contador */
+.seg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0 8px;
+}
+.seg-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.3rem;
+  color: var(--text);
+}
+.seg-count {
+  background: var(--gold-light);
+  border: 1px solid var(--gold-border);
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+/* Filtro de estado */
+.seg-filtros {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.seg-filtros::-webkit-scrollbar { display: none; }
+.seg-filtro-btn {
+  flex-shrink: 0;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.seg-filtro-btn.active {
+  background: var(--gold-light);
+  border-color: var(--gold-border);
+  color: var(--gold);
+}
+
+/* Card de proceso en seguimiento */
+.seg-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.seg-card:hover { border-color: var(--border2); }
+
+/* Barra de urgencia superior */
+.seg-urgencia-bar {
+  height: 3px;
+  width: 100%;
+}
+.seg-urgencia-bar.critico  { background: var(--danger); }
+.seg-urgencia-bar.proximo  { background: #F59E0B; }
+.seg-urgencia-bar.normal   { background: var(--success); }
+.seg-urgencia-bar.cerrado  { background: var(--border2); }
+
+.seg-card-body {
+  padding: 14px;
+}
+
+/* Top row: estado + días restantes */
+.seg-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.seg-estado-pill {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 20px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.seg-estado-pill.analizando  { background: rgba(56,189,248,0.15); color: var(--blue); border: 1px solid rgba(56,189,248,0.3); }
+.seg-estado-pill.preparando  { background: rgba(255,159,0,0.15);  color: var(--gold); border: 1px solid var(--gold-border); }
+.seg-estado-pill.presentado  { background: rgba(16,185,129,0.15); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+.seg-estado-pill.adjudicado  { background: rgba(16,185,129,0.25); color: #6EE7B7; border: 1px solid rgba(16,185,129,0.5); }
+.seg-estado-pill.no-adj      { background: var(--danger-light); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
+
+.seg-dias-badge {
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.seg-dias-badge.critico { color: var(--danger); }
+.seg-dias-badge.proximo { color: #F59E0B; }
+.seg-dias-badge.normal  { color: var(--success); }
+.seg-dias-badge.cerrado { color: var(--muted); }
+
+/* Título */
+.seg-card-titulo {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+.seg-card-titulo:hover { color: var(--gold); }
+
+/* Institución + monto */
+.seg-card-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.seg-card-meta .inst { color: var(--blue); font-weight: 500; }
+.seg-card-meta .monto { color: var(--gold); font-weight: 700; }
+
+/* Timeline de fechas */
+.seg-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--bg2);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.seg-fecha-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+  gap: 10px;
+}
+.seg-fecha-row:last-child { border-bottom: none; }
+.seg-fecha-row.destacada {
+  background: rgba(255,159,0,0.08);
+  border-left: 3px solid var(--gold);
+}
+.seg-fecha-row.vencida { opacity: 0.45; }
+.seg-fecha-row.hoy {
+  background: rgba(239,68,68,0.1);
+  border-left: 3px solid var(--danger);
+}
+
+.seg-fecha-icono { font-size: 14px; flex-shrink: 0; width: 20px; text-align: center; }
+.seg-fecha-label {
+  font-size: 11px;
+  color: var(--muted);
+  flex: 1;
+  font-weight: 500;
+}
+.seg-fecha-valor {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text2);
+  text-align: right;
+}
+.seg-fecha-valor.destacada { color: var(--gold); font-size: 12px; }
+.seg-fecha-valor.vencida   { color: var(--muted); }
+.seg-fecha-valor.hoy       { color: var(--danger); }
+.seg-fecha-dias {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: right;
+  min-width: 52px;
+}
+.seg-fecha-dias.critico { color: var(--danger); font-weight: 700; }
+.seg-fecha-dias.proximo { color: #F59E0B; font-weight: 700; }
+
+/* Acciones */
+.seg-card-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.seg-btn {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.seg-btn-ver    { background: var(--gold-light); color: var(--gold); border: 1px solid var(--gold-border); }
+.seg-btn-ver:hover { background: var(--gold); color: #000; }
+.seg-btn-estado { background: var(--bg2); color: var(--text2); border: 1px solid var(--border2); flex: 1; }
+.seg-btn-estado:hover { border-color: var(--gold); color: var(--gold); }
+.seg-btn-quitar { background: transparent; color: var(--muted); border: 1px solid var(--border); font-size: 10px; padding: 6px 8px; }
+.seg-btn-quitar:hover { color: var(--danger); border-color: var(--danger); }
+
+/* Modal cambio de estado */
+.seg-estado-modal {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border2);
+  border-radius: 20px 20px 0 0;
+  padding: 20px 16px 40px;
+  z-index: 200;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+  box-shadow: 0 -10px 30px rgba(0,0,0,0.5);
+}
+.seg-estado-modal.visible { transform: translateY(0); }
+.seg-modal-handle {
+  width: 40px; height: 4px;
+  background: var(--border2);
+  border-radius: 2px;
+  margin: 0 auto 16px;
+}
+.seg-modal-title {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 14px;
+  font-weight: 600;
+}
+.seg-estado-opciones {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.seg-estado-opcion {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--bg2);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.seg-estado-opcion:hover { border-color: var(--gold); background: var(--gold-light); }
+.seg-estado-opcion.selected { border-color: var(--gold); background: var(--gold-light); }
+.seg-estado-opcion .seg-opc-icon { font-size: 18px; width: 24px; }
+.seg-estado-opcion .seg-opc-label { font-size: 13px; font-weight: 600; color: var(--text); }
+.seg-estado-opcion .seg-opc-sub   { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.seg-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 199;
+  display: none;
+}
+
+/* Botón seguir en detalle */
+.btn-seguir {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: none;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  justify-content: center;
+  margin-top: 12px;
+}
+.btn-seguir.siguiendo {
+  background: var(--gold-light);
+  color: var(--gold);
+  border: 1px solid var(--gold-border);
+}
+.btn-seguir.no-siguiendo {
+  background: var(--gold);
+  color: #000;
+}
+.btn-seguir:hover { opacity: 0.85; transform: translateY(-1px); }
+
+/* Empty state */
+.seg-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+.seg-empty-icon { font-size: 44px; margin-bottom: 14px; opacity: 0.4; }
+.seg-empty-title { font-size: 15px; font-weight: 600; color: var(--text2); margin-bottom: 8px; }
+.seg-empty-sub { font-size: 13px; line-height: 1.5; }
+
 </style>
 </head>
 <body>
@@ -1246,8 +1559,7 @@ body {
           <option value="Servicios">🛠️ Servicios</option>
         </select>
         <select class="filter-select" id="filtro-activos" onchange="cargarProcesos(1)">
-          <option value="false">Todos</option>
-          <option value="true" selected>Solo activos</option>
+          <option value="true">Solo activos</option>
           <option value="false">Todos</option>
         </select>
         <button class="filter-clear" onclick="limpiarFiltros()">✕ Limpiar</button>
@@ -1392,12 +1704,65 @@ body {
     </div>
   </div>
 
+
+  <!-- ══ TAB SEGUIMIENTO ══ -->
+  <div id="tab-seguimiento" class="main page-with-nav">
+    <div class="seg-header">
+      <div class="seg-title">Mis Procesos</div>
+      <div class="seg-count" id="seg-count">0 activos</div>
+    </div>
+
+    <div class="seg-filtros">
+      <button class="seg-filtro-btn active" onclick="filtrarSeguimiento('todos')" id="sfbtn-todos">Todos</button>
+      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('analizando')" id="sfbtn-analizando">🔍 Analizando</button>
+      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('preparando')" id="sfbtn-preparando">📝 Preparando</button>
+      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('presentado')" id="sfbtn-presentado">✅ Presentado</button>
+      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('adjudicado')" id="sfbtn-adjudicado">🏆 Adjudicado</button>
+      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('no-adj')" id="sfbtn-no-adj">❌ No adj.</button>
+    </div>
+
+    <div id="seg-lista"></div>
+  </div>
+
+  <!-- Modal cambio de estado -->
+  <div class="seg-modal-overlay" id="seg-overlay" onclick="cerrarModalEstado()"></div>
+  <div class="seg-estado-modal" id="seg-estado-modal">
+    <div class="seg-modal-handle"></div>
+    <div class="seg-modal-title" id="seg-modal-titulo">Cambiar estado</div>
+    <div class="seg-estado-opciones">
+      <div class="seg-estado-opcion" onclick="cambiarEstado('analizando')">
+        <span class="seg-opc-icon">🔍</span>
+        <div><div class="seg-opc-label">Analizando pliego</div><div class="seg-opc-sub">Revisando si califico</div></div>
+      </div>
+      <div class="seg-estado-opcion" onclick="cambiarEstado('preparando')">
+        <span class="seg-opc-icon">📝</span>
+        <div><div class="seg-opc-label">Preparando oferta</div><div class="seg-opc-sub">Armando documentos y precios</div></div>
+      </div>
+      <div class="seg-estado-opcion" onclick="cambiarEstado('presentado')">
+        <span class="seg-opc-icon">📤</span>
+        <div><div class="seg-opc-label">Oferta presentada</div><div class="seg-opc-sub">Ya entregué, esperando resultado</div></div>
+      </div>
+      <div class="seg-estado-opcion" onclick="cambiarEstado('adjudicado')">
+        <span class="seg-opc-icon">🏆</span>
+        <div><div class="seg-opc-label">Adjudicado</div><div class="seg-opc-sub">¡Ganamos el contrato!</div></div>
+      </div>
+      <div class="seg-estado-opcion" onclick="cambiarEstado('no-adj')">
+        <span class="seg-opc-icon">❌</span>
+        <div><div class="seg-opc-label">No adjudicado</div><div class="seg-opc-sub">Esta vez no fue</div></div>
+      </div>
+    </div>
+  </div>
+
   <nav class="bottom-nav">
     <button class="bottom-nav-item active" id="nav-dashboard" onclick="switchTab2('dashboard')">
       <div class="nav-icon-wrap"><span class="nav-icon">📋</span></div>
       Licitaciones
     </button>
-<button class="bottom-nav-item" id="nav-perfil" onclick="switchTab2('perfil')">
+    <button class="bottom-nav-item" id="nav-seguimiento" onclick="switchTab2('seguimiento')">
+      <div class="nav-icon-wrap"><span class="nav-icon">⭐</span></div>
+      Mis Procesos
+    </button>
+    <button class="bottom-nav-item" id="nav-perfil" onclick="switchTab2('perfil')">
       <div class="nav-icon-wrap"><span class="nav-icon">👤</span></div>
       Mi Perfil
     </button>
@@ -1712,6 +2077,8 @@ async function verDetalle(codigo) {
   const fPub    = p.fecha_publicacion ? new Date(p.fecha_publicacion).toLocaleDateString('es-DO') : '—';
   const fCierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO') : '—';
 
+  // Actualizar botón seguir
+  setTimeout(() => actualizarBtnSeguir(p.codigo_proceso), 50);
   document.getElementById('detalle-container').innerHTML = `
     <div class="detalle-card">
       <div class="detalle-header-bar">
@@ -1733,6 +2100,7 @@ async function verDetalle(codigo) {
           ${p.duracion_contrato ? `<div class="detalle-field"><label>Duración contrato</label><span>${p.duracion_contrato}</span></div>` : ''}
         </div>
         ${p.url ? `<a href="${p.url}" target="_blank" class="detalle-link">🔗 Ver en portal DGCP</a>` : ''}
+      <button id="btn-seguir-${p.codigo_proceso}" class="btn-seguir no-siguiendo" onclick="toggleSeguimiento('${p.codigo_proceso}')">＋ Seguir proceso</button>
       </div>
     </div>
 
@@ -1760,12 +2128,16 @@ function mostrarDashboard() {
 function switchTab2(tab) {
   document.getElementById('tab-dashboard').style.display = tab==='dashboard' ? 'block' : 'none';
   document.getElementById('tab-detalle').style.display   = 'none';
-  document.getElementById('tab-perfil').style.display    = tab==='perfil' ? 'block' : 'none';
-  document.getElementById('tab-mapa').style.display      = tab==='mapa' ? 'flex' : 'none';
+  document.getElementById('tab-perfil').style.display      = tab==='perfil'      ? 'block' : 'none';
+  document.getElementById('tab-mapa').style.display        = tab==='mapa'        ? 'flex'  : 'none';
+  document.getElementById('tab-seguimiento').style.display = tab==='seguimiento' ? 'flex'  : 'none';
+  if (tab==='seguimiento') cargarSeguimiento();
   
   if (tab === 'mapa') { setTimeout(mapaInit, 100); }
   
   document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
+  const navMap = {'dashboard':'nav-dashboard','perfil':'nav-perfil','mapa':'nav-mapa','seguimiento':'nav-seguimiento'};
+  if(navMap[tab]) document.getElementById(navMap[tab])?.classList.add('active');
   document.getElementById('nav-' + tab)?.classList.add('active');
   document.getElementById('nav-dashboard').classList.toggle('active', tab==='dashboard');
   document.getElementById('nav-perfil').classList.toggle('active', tab==='perfil');
