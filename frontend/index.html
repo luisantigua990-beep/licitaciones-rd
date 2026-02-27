@@ -2773,17 +2773,39 @@ function renderSegCard(item) {
 async function cargarSeguimiento() {
   if (!currentUser) return;
   const lista = document.getElementById('seg-lista');
-  if (!lista) return;
-  lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  if (lista) lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
-    const res = await sbRest(
-      `seguimiento_procesos?user_id=eq.${currentUser.id}&select=*,proceso:procesos(*)&order=created_at.desc`
+    // 1. Traer registros de seguimiento del usuario
+    const segs = await sbRest(
+      `seguimiento_procesos?user_id=eq.${currentUser.id}&order=created_at.desc`
     );
-    seguimientoData = Array.isArray(res) ? res : [];
+    if (!Array.isArray(segs) || segs.length === 0) {
+      seguimientoData = [];
+      renderSeguimiento();
+      return;
+    }
+
+    // 2. Traer los procesos correspondientes
+    const codigos = segs.map(s => s.proceso_codigo).join(',');
+    const procesos = await sbRest(
+      `procesos?codigo_proceso=in.(${codigos})&select=codigo_proceso,titulo,unidad_compra,monto_estimado,modalidad,fecha_publicacion,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda,fecha_suscripcion`
+    );
+
+    // 3. Combinar
+    const procesosMap = {};
+    (Array.isArray(procesos) ? procesos : []).forEach(p => {
+      procesosMap[p.codigo_proceso] = p;
+    });
+
+    seguimientoData = segs.map(s => ({
+      ...s,
+      proceso: procesosMap[s.proceso_codigo] || { codigo_proceso: s.proceso_codigo, titulo: 'Cargando...' }
+    }));
+
     renderSeguimiento();
   } catch(e) {
     console.error('Error cargando seguimiento:', e);
-    lista.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Error cargando. Intenta de nuevo.</div></div>';
+    if (lista) lista.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Error cargando. Intenta de nuevo.</div></div>';
   }
 }
 
