@@ -144,56 +144,8 @@ def inicio():
     return FileResponse(os.path.join(BASE_DIR, "frontend", "index.html"))
 
 
-@app.get("/api/procesos")
-def listar_procesos(
-    page: int = Query(1, ge=1, description="Página"),
-    limit: int = Query(20, ge=1, le=100, description="Registros por página"),
-    objeto: str = Query(None, description="Filtrar por objeto: Obras, Bienes, Servicios, Consultoría"),
-    modalidad: str = Query(None, description="Filtrar por modalidad"),
-    unidad_compra: int = Query(None, description="Filtrar por código de unidad de compra"),
-    monto_min: float = Query(None, description="Monto mínimo estimado"),
-    monto_max: float = Query(None, description="Monto máximo estimado"),
-    busqueda: str = Query(None, description="Buscar en título y descripción"),
-    solo_activos: bool = Query(True, description="Solo procesos abiertos"),
-):
-    """Lista procesos con filtros."""
-    try:
-        query = supabase.table("procesos").select("*", count="exact")
-        
-        if solo_activos:
-            query = query.eq("estado_proceso", "Proceso publicado")
-            query = query.gt("fecha_fin_recepcion_ofertas", datetime.now().isoformat())
-        
-        if objeto:
-            query = query.eq("objeto_proceso", objeto)
-        if modalidad:
-            query = query.eq("modalidad", modalidad)
-        if unidad_compra:
-            query = query.eq("codigo_unidad_compra", unidad_compra)
-        if monto_min:
-            query = query.gte("monto_estimado", monto_min)
-        if monto_max:
-            query = query.lte("monto_estimado", monto_max)
-        if busqueda:
-            query = query.or_(f"titulo.ilike.%{busqueda}%,descripcion.ilike.%{busqueda}%")
-        
-        # Paginación
-        offset = (page - 1) * limit
-        query = query.order("fecha_publicacion", desc=True)
-        query = query.range(offset, offset + limit - 1)
-        
-        result = query.execute()
-        
-        return {
-            "procesos": result.data,
-            "total": result.count,
-            "page": page,
-            "limit": limit,
-            "pages": (result.count + limit - 1) // limit if result.count else 0
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+# NOTA: El endpoint principal /api/procesos está definido más abajo (get_procesos)
+# Este bloque fue consolidado para evitar duplicación
 
 
 @app.get("/api/procesos/{codigo_proceso}")
@@ -317,18 +269,39 @@ def listar_clases(familia: str):
 def buscar_unspsc(q: str = ""):
     if not q or len(q) < 2:
         return []
-    # Buscar en familia y también en subclase/sinónimos
-    result = supabase.table("catalogo_unspsc")\
-        .select("familia, descripcion_familia")\
-        .or_(f"descripcion_familia.ilike.%{q}%,descripcion_subclase.ilike.%{q}%,sinonimos_subclase.ilike.%{q}%")\
-        .limit(50)\
+
+    q = q.strip()
+    resultados = []
+
+    # Si el query es numérico, buscar primero por código de familia exacto o prefijo
+    if q.isdigit():
+        result_codigo = supabase.table("catalogo_unspsc") \
+            .select("familia, descripcion_familia") \
+            .like("familia", f"{q}%") \
+            .limit(50) \
+            .execute()
+        resultados.extend(result_codigo.data or [])
+
+    # Siempre también buscar por descripción (texto)
+    result_texto = supabase.table("catalogo_unspsc") \
+        .select("familia, descripcion_familia") \
+        .or_(
+            f"descripcion_familia.ilike.%{q}%,"
+            f"descripcion_subclase.ilike.%{q}%,"
+            f"sinonimos_subclase.ilike.%{q}%"
+        ) \
+        .limit(50) \
         .execute()
+    resultados.extend(result_texto.data or [])
+
+    # Deduplicar por familia, preservando orden
     seen = set()
     unique = []
-    for r in (result.data or []):
+    for r in resultados:
         if r["familia"] not in seen:
             seen.add(r["familia"])
             unique.append(r)
+
     return unique[:15]
 
 
@@ -551,41 +524,80 @@ def buscar_unspsc(q: str = ""):
     return unique
 
 @app.get("/api/procesos")
-def get_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: str = "", 
-                 solo_activos: bool = True, institucion: str = "", 
+def get_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: str = "",
+                 solo_activos: bool = True, institucion: str = "",
                  monto_min: float = None, monto_max: float = None,
                  familia_unspsc: str = ""):
-    if familia_unspsc:
-        # Buscar codigos_proceso que tengan esa familia UNSPSC
-        arts = supabase.table("articulos_proceso").select("codigo_proceso").eq("familia_unspsc", familia_unspsc).execute()
-        codigos = list(set(a["codigo_proceso"] for a in (arts.data or [])))
-        if not codigos:
-            return {"procesos": [], "total": 0, "page": page, "pages": 1}
-        query = supabase.table("procesos").select("*", count="exact").in_("codigo_proceso", codigos[:500])
-    else:
-        query = supabase.table("procesos").select("*", count="exact")
-    
-    if solo_activos:
-        query = query.eq("estado_proceso", "Publicado")
-    if busqueda:
-        query = query.or_(f"titulo.ilike.%{busqueda}%,codigo_proceso.ilike.%{busqueda}%")
-    if objeto:
-        query = query.eq("objeto_proceso", objeto)
-    if institucion:
-        query = query.ilike("unidad_compra", f"%{institucion}%")
-    if monto_min is not None:
-        query = query.gte("monto_estimado", monto_min)
-    if monto_max is not None:
-        query = query.lte("monto_estimado", monto_max)
-    offset = (page - 1) * limit
-    result = query.order("fecha_publicacion", desc=True).range(offset, offset + limit - 1).execute()
-    total = result.count or 0
-    return {
-        "procesos": result.data,
-        "total": total,
-        "page": page,
-        "pages": max(1, -(-total // limit))
-    }
+    """
+    Lista procesos con filtros combinados.
+    - busqueda: busca en título, descripción, código y unidad_compra
+    - institucion: busca en unidad_compra (nombre de la institución)
+    - familia_unspsc: filtra por código de familia UNSPSC (ej: '72' busca 72XXXX)
+    - solo_activos: filtra por estado_proceso = 'Publicado'
+    """
+    try:
+        # ── Si hay filtro UNSPSC, primero obtener los códigos de proceso ──
+        codigos_unspsc = None
+        if familia_unspsc.strip():
+            # Soporte para código parcial: "72" debe encontrar "72101500", "72102000", etc.
+            familia_limpia = familia_unspsc.strip()
+            arts = supabase.table("articulos_proceso") \
+                .select("codigo_proceso") \
+                .like("familia_unspsc", f"{familia_limpia}%") \
+                .execute()
+            codigos_unspsc = list(set(a["codigo_proceso"] for a in (arts.data or [])))
+            if not codigos_unspsc:
+                return {"procesos": [], "total": 0, "page": page, "pages": 1}
+
+        # ── Base query ──
+        if codigos_unspsc is not None:
+            query = supabase.table("procesos").select("*", count="exact") \
+                .in_("codigo_proceso", codigos_unspsc[:500])
+        else:
+            query = supabase.table("procesos").select("*", count="exact")
+
+        # ── Filtros ──
+        if solo_activos:
+            query = query.eq("estado_proceso", "Publicado")
+
+        if busqueda.strip():
+            # Busca en título, descripción, código Y nombre de institución
+            q = busqueda.strip()
+            query = query.or_(
+                f"titulo.ilike.%{q}%,"
+                f"descripcion.ilike.%{q}%,"
+                f"codigo_proceso.ilike.%{q}%,"
+                f"unidad_compra.ilike.%{q}%"
+            )
+
+        if objeto.strip():
+            query = query.eq("objeto_proceso", objeto.strip())
+
+        if institucion.strip():
+            query = query.ilike("unidad_compra", f"%{institucion.strip()}%")
+
+        if monto_min is not None:
+            query = query.gte("monto_estimado", monto_min)
+
+        if monto_max is not None:
+            query = query.lte("monto_estimado", monto_max)
+
+        # ── Paginación ──
+        offset = (page - 1) * limit
+        result = query.order("fecha_publicacion", desc=True) \
+            .range(offset, offset + limit - 1) \
+            .execute()
+
+        total = result.count or 0
+        return {
+            "procesos": result.data,
+            "total": total,
+            "page": page,
+            "pages": max(1, -(-total // limit))
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/procesos/{codigo}")
 def get_proceso_detalle(codigo: str):
