@@ -1800,6 +1800,7 @@ async function login() {
   localStorage.setItem('sb_token', data.access_token);
   localStorage.setItem('sb_user', JSON.stringify(data.user));
   currentUser = data.user;
+  cargarSeguimiento(); // precargar para que estaEnSeguimiento funcione desde detalle
   showApp();
 }
 
@@ -2077,8 +2078,6 @@ async function verDetalle(codigo) {
   const fPub    = p.fecha_publicacion ? new Date(p.fecha_publicacion).toLocaleDateString('es-DO') : '—';
   const fCierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO') : '—';
 
-  // Actualizar botón seguir
-  setTimeout(() => actualizarBtnSeguir(p.codigo_proceso), 50);
   document.getElementById('detalle-container').innerHTML = `
     <div class="detalle-card">
       <div class="detalle-header-bar">
@@ -2116,6 +2115,8 @@ async function verDetalle(codigo) {
         </div>`).join('')
       : '<div style="padding:20px;color:var(--muted);font-size:13px">Sin artículos registrados</div>'}
     </div>`;
+  // Actualizar botón seguir DESPUÉS de que el DOM esté listo
+  setTimeout(() => actualizarBtnSeguir(p.codigo_proceso), 10);
 }
 
 function mostrarDashboard() {
@@ -2234,6 +2235,7 @@ const savedUser  = localStorage.getItem('sb_user');
 if (savedToken && savedUser) {
   currentUser = JSON.parse(savedUser);
   showApp();
+  cargarSeguimiento(); // precargar para estaEnSeguimiento
 }
 
 // ── ABRIR PROCESO DESDE NOTIFICACIÓN ──
@@ -2630,6 +2632,303 @@ async function mapaSaveAssign() {
 document.getElementById('mapaAssignModal')?.addEventListener('click', e => {
   if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
 });
+
+
+// ── SUPABASE REST (tablas) ──
+async function sbRest(path, method = 'GET', body = null, extraHeaders = {}) {
+  const token = localStorage.getItem('sb_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    'apikey': SUPABASE_ANON_KEY,
+    'Prefer': 'return=representation',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  Object.assign(headers, extraHeaders);
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method, headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (res.status === 204) return [];
+  const data = await res.json();
+  return data;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SEGUIMIENTO DE PROCESOS
+// ═══════════════════════════════════════════════════════════════
+
+let seguimientoData = [];
+let segFiltroActivo = 'todos';
+let segModalCodigo  = null;
+
+const ESTADOS_CONFIG = {
+  'analizando': { label: 'Analizando',  icon: '🔍', cls: 'analizando' },
+  'preparando' : { label: 'Preparando', icon: '📝', cls: 'preparando' },
+  'presentado' : { label: 'Presentado', icon: '📤', cls: 'presentado' },
+  'adjudicado' : { label: 'Adjudicado', icon: '🏆', cls: 'adjudicado' },
+  'no-adj'     : { label: 'No adj.',    icon: '❌', cls: 'no-adj' },
+};
+
+function extraerFechasClaves(p) {
+  const fechas = [];
+  const ahora = new Date();
+  const agregar = (label, valor, destacada = false) => {
+    if (!valor) return;
+    const dt = new Date(valor);
+    const dias = Math.ceil((dt - ahora) / 86400000);
+    let estado = 'normal';
+    if (dias < 0) estado = 'vencida';
+    else if (dias === 0) estado = 'hoy';
+    else if (dias <= 2) estado = 'critico';
+    else if (dias <= 7) estado = 'proximo';
+    fechas.push({ label, valor: dt, dias, estado, destacada });
+  };
+  agregar('Publicación',             p.fecha_publicacion,           false);
+  agregar('Cierre de preguntas',     p.fecha_enmienda,              false);
+  agregar('Presentación de ofertas', p.fecha_fin_recepcion_ofertas, true);
+  agregar('Apertura de sobres',      p.fecha_apertura_ofertas,      false);
+  agregar('Adjudicación estimada',   p.fecha_estimada_adjudicacion, false);
+  agregar('Suscripción contrato',    p.fecha_suscripcion,           false);
+  return fechas.sort((a, b) => a.valor - b.valor);
+}
+
+function urgenciaClase(fechas) {
+  const pres = fechas.find(f => f.label === 'Presentación de ofertas');
+  if (!pres) return 'normal';
+  if (pres.estado === 'vencida' || pres.estado === 'hoy' || pres.estado === 'critico') return 'critico';
+  if (pres.estado === 'proximo') return 'proximo';
+  return 'normal';
+}
+
+function diasRestantesTexto(fechas) {
+  const pres = fechas.find(f => f.label === 'Presentación de ofertas');
+  if (!pres) return { texto: '—', cls: 'cerrado' };
+  if (pres.dias < 0)  return { texto: 'Cerrado', cls: 'cerrado' };
+  if (pres.dias === 0) return { texto: '¡Hoy cierra!', cls: 'critico' };
+  if (pres.dias === 1) return { texto: '¡Mañana cierra!', cls: 'critico' };
+  if (pres.dias <= 3)  return { texto: `${pres.dias} días`, cls: 'critico' };
+  if (pres.dias <= 7)  return { texto: `${pres.dias} días`, cls: 'proximo' };
+  return { texto: `${pres.dias} días`, cls: 'normal' };
+}
+
+function renderFechaRow(f) {
+  const iconos = {
+    'Publicación': '📅', 'Cierre de preguntas': '❓',
+    'Presentación de ofertas': '📝', 'Apertura de sobres': '📂',
+    'Adjudicación estimada': '🏆', 'Suscripción contrato': '✍️',
+  };
+  const icono = iconos[f.label] || '📌';
+  const fechaStr = f.valor.toLocaleDateString('es-DO', { day:'2-digit', month:'short', year:'numeric' });
+  const rowCls = f.destacada ? (f.estado === 'vencida' ? 'vencida' : 'destacada') : f.estado;
+  const valCls = f.destacada && f.estado !== 'vencida' ? 'destacada' : f.estado;
+  let diasLabel = '';
+  if (f.estado === 'vencida') diasLabel = `<div class="seg-fecha-dias">Vencida</div>`;
+  else if (f.estado === 'hoy') diasLabel = `<div class="seg-fecha-dias critico">HOY</div>`;
+  else if (f.estado === 'critico') diasLabel = `<div class="seg-fecha-dias critico">${f.dias}d ⚠️</div>`;
+  else if (f.estado === 'proximo') diasLabel = `<div class="seg-fecha-dias proximo">${f.dias}d</div>`;
+  else diasLabel = `<div class="seg-fecha-dias">${f.dias}d</div>`;
+  return `
+    <div class="seg-fecha-row ${rowCls}">
+      <span class="seg-fecha-icono">${icono}</span>
+      <span class="seg-fecha-label">${f.label}</span>
+      <span class="seg-fecha-valor ${valCls}">${fechaStr}</span>
+      ${diasLabel}
+    </div>`;
+}
+
+function renderSegCard(item) {
+  const p      = item.proceso || {};
+  const estado = item.estado || 'analizando';
+  const eCfg   = ESTADOS_CONFIG[estado] || ESTADOS_CONFIG['analizando'];
+  const fechas = extraerFechasClaves(p);
+  const urg    = urgenciaClase(fechas);
+  const dias   = diasRestantesTexto(fechas);
+  const monto  = p.monto_estimado ? `RD$${Number(p.monto_estimado).toLocaleString('es-DO')}` : '';
+  const codigo = p.codigo_proceso || item.proceso_codigo;
+  return `
+  <div class="seg-card" id="segcard-${codigo}">
+    <div class="seg-urgencia-bar ${urg}"></div>
+    <div class="seg-card-body">
+      <div class="seg-card-top">
+        <span class="seg-estado-pill ${eCfg.cls}">${eCfg.icon} ${eCfg.label}</span>
+        <div class="seg-dias-badge ${dias.cls}">📅 ${dias.texto}</div>
+      </div>
+      <div class="seg-card-titulo" onclick="verDetalle('${codigo}');switchTab2('dashboard')">${p.titulo || 'Sin título'}</div>
+      <div class="seg-card-meta">
+        <span class="inst">${p.unidad_compra || '—'}</span>
+        ${monto ? `<span>·</span><span class="monto">${monto}</span>` : ''}
+      </div>
+      <div class="seg-timeline">
+        ${fechas.length ? fechas.map(f => renderFechaRow(f)).join('') : '<div class="seg-fecha-row"><span class="seg-fecha-label">Sin fechas registradas</span></div>'}
+      </div>
+      <div class="seg-card-actions">
+        <button class="seg-btn seg-btn-ver" onclick="verDetalle('${codigo}');switchTab2('dashboard')">Ver detalle</button>
+        <button class="seg-btn seg-btn-estado" onclick="abrirModalEstado('${codigo}','${estado}')">${eCfg.icon} Estado</button>
+        <button class="seg-btn seg-btn-quitar" onclick="quitarSeguimiento('${codigo}')">✕</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function cargarSeguimiento() {
+  if (!currentUser) return;
+  const lista = document.getElementById('seg-lista');
+  if (!lista) return;
+  lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const res = await sbRest(
+      `seguimiento_procesos?user_id=eq.${currentUser.id}&select=*,proceso:procesos(*)&order=created_at.desc`
+    );
+    seguimientoData = Array.isArray(res) ? res : [];
+    renderSeguimiento();
+  } catch(e) {
+    console.error('Error cargando seguimiento:', e);
+    lista.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Error cargando. Intenta de nuevo.</div></div>';
+  }
+}
+
+function renderSeguimiento() {
+  const lista = document.getElementById('seg-lista');
+  if (!lista) return;
+  let datos = seguimientoData;
+  if (segFiltroActivo !== 'todos') {
+    datos = datos.filter(d => (d.estado || 'analizando') === segFiltroActivo);
+  }
+  const activos = seguimientoData.filter(d => !['adjudicado','no-adj'].includes(d.estado || 'analizando'));
+  const countEl = document.getElementById('seg-count');
+  if (countEl) countEl.textContent = `${activos.length} activo${activos.length !== 1 ? 's' : ''}`;
+  if (!datos.length) {
+    lista.innerHTML = `
+      <div class="seg-empty">
+        <div class="seg-empty-icon">📋</div>
+        <div class="seg-empty-title">${segFiltroActivo === 'todos' ? 'Sin procesos en seguimiento' : 'Sin procesos en este estado'}</div>
+        <div class="seg-empty-sub">${segFiltroActivo === 'todos'
+          ? 'Entra al detalle de un proceso y presiona "Seguir proceso" para agregarlo aquí.'
+          : 'Cambia el filtro para ver otros estados.'}</div>
+      </div>`;
+    return;
+  }
+  lista.innerHTML = datos.map(d => renderSegCard(d)).join('');
+}
+
+function filtrarSeguimiento(filtro) {
+  segFiltroActivo = filtro;
+  document.querySelectorAll('.seg-filtro-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById(`sfbtn-${filtro}`);
+  if (btn) btn.classList.add('active');
+  renderSeguimiento();
+}
+
+async function toggleSeguimiento(codigo) {
+  if (!currentUser) { mostrarToast('Debes iniciar sesión primero'); return; }
+  const yaEsta = estaEnSeguimiento(codigo);
+  if (yaEsta) {
+    await quitarSeguimiento(codigo);
+  } else {
+    await agregarSeguimiento(codigo);
+  }
+}
+
+async function agregarSeguimiento(codigo) {
+  try {
+    await sbRest('seguimiento_procesos', 'POST', {
+      user_id: currentUser.id,
+      proceso_codigo: codigo,
+      estado: 'analizando'
+    });
+    await cargarSeguimiento();
+    actualizarBtnSeguir(codigo);
+    mostrarToast('✅ Proceso agregado a seguimiento');
+  } catch(e) {
+    console.error('Error agregando seguimiento:', e);
+    mostrarToast('❌ Error al agregar. Intenta de nuevo.');
+  }
+}
+
+async function quitarSeguimiento(codigo) {
+  if (!confirm('¿Quitar este proceso de tu seguimiento?')) return;
+  try {
+    await sbRest(
+      `seguimiento_procesos?user_id=eq.${currentUser.id}&proceso_codigo=eq.${codigo}`,
+      'DELETE', null, { 'Prefer': 'return=minimal' }
+    );
+    seguimientoData = seguimientoData.filter(d =>
+      (d.proceso?.codigo_proceso || d.proceso_codigo) !== codigo
+    );
+    renderSeguimiento();
+    actualizarBtnSeguir(codigo);
+    mostrarToast('Proceso eliminado del seguimiento');
+  } catch(e) {
+    mostrarToast('❌ Error al quitar');
+  }
+}
+
+function estaEnSeguimiento(codigo) {
+  return seguimientoData.some(d =>
+    (d.proceso?.codigo_proceso || d.proceso_codigo) === codigo
+  );
+}
+
+function actualizarBtnSeguir(codigo) {
+  const btn = document.getElementById(`btn-seguir-${codigo}`);
+  if (!btn) return;
+  const siguiendo = estaEnSeguimiento(codigo);
+  btn.className = `btn-seguir ${siguiendo ? 'siguiendo' : 'no-siguiendo'}`;
+  btn.innerHTML  = siguiendo ? '⭐ Siguiendo proceso' : '＋ Seguir proceso';
+}
+
+function abrirModalEstado(codigo, estadoActual) {
+  segModalCodigo = codigo;
+  document.querySelectorAll('.seg-estado-opcion').forEach(el => {
+    const onclick = el.getAttribute('onclick') || '';
+    el.classList.toggle('selected', onclick.includes(`'${estadoActual}'`));
+  });
+  document.getElementById('seg-estado-modal').classList.add('visible');
+  document.getElementById('seg-overlay').style.display = 'block';
+}
+
+function cerrarModalEstado() {
+  document.getElementById('seg-estado-modal').classList.remove('visible');
+  document.getElementById('seg-overlay').style.display = 'none';
+  segModalCodigo = null;
+}
+
+async function cambiarEstado(nuevoEstado) {
+  if (!segModalCodigo) return;
+  try {
+    await sbRest(
+      `seguimiento_procesos?user_id=eq.${currentUser.id}&proceso_codigo=eq.${segModalCodigo}`,
+      'PATCH', { estado: nuevoEstado }, { 'Prefer': 'return=minimal' }
+    );
+    const item = seguimientoData.find(d =>
+      (d.proceso?.codigo_proceso || d.proceso_codigo) === segModalCodigo
+    );
+    if (item) item.estado = nuevoEstado;
+    renderSeguimiento();
+    cerrarModalEstado();
+    mostrarToast(`Estado: ${ESTADOS_CONFIG[nuevoEstado]?.label}`);
+  } catch(e) {
+    mostrarToast('❌ Error actualizando estado');
+  }
+}
+
+function mostrarToast(msg) {
+  let t = document.getElementById('ll-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'll-toast';
+    t.style.cssText = `position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
+      background:#1F2937;color:#F9FAFB;padding:10px 18px;border-radius:20px;
+      font-size:13px;font-weight:600;z-index:300;white-space:nowrap;
+      box-shadow:0 4px 12px rgba(0,0,0,0.4);opacity:0;transition:opacity 0.2s;
+      font-family:'Plus Jakarta Sans',sans-serif;pointer-events:none;`;
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.style.opacity = '0'; }, 2500);
+}
 
 </script>
 
