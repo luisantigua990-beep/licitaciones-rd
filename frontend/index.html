@@ -1798,9 +1798,19 @@ async function login() {
   btn.disabled = false; btn.textContent = 'Entrar';
   if (data.error) return showMsg(data.error_description || data.error, 'error');
   localStorage.setItem('sb_token', data.access_token);
-  localStorage.setItem('sb_user', JSON.stringify(data.user));
-  currentUser = data.user;
-  cargarSeguimiento(); // precargar para que estaEnSeguimiento funcione desde detalle
+  // Supabase a veces devuelve el user en data.user, otras veces hay que decodificar el JWT
+  let user = data.user;
+  if (!user || !user.id) {
+    // Decodificar el JWT para obtener el user_id
+    try {
+      const payload = JSON.parse(atob(data.access_token.split('.')[1]));
+      user = { id: payload.sub, email: payload.email || email };
+    } catch(e) { console.error('Error decodificando JWT:', e); }
+  }
+  localStorage.setItem('sb_user', JSON.stringify(user));
+  currentUser = user;
+  console.log('✅ Login OK, user:', currentUser?.id);
+  cargarSeguimiento();
   showApp();
 }
 
@@ -2234,8 +2244,16 @@ const savedToken = localStorage.getItem('sb_token');
 const savedUser  = localStorage.getItem('sb_user');
 if (savedToken && savedUser) {
   currentUser = JSON.parse(savedUser);
+  // Si por alguna razón no tiene id, decodificar del JWT
+  if (!currentUser?.id && savedToken) {
+    try {
+      const payload = JSON.parse(atob(savedToken.split('.')[1]));
+      currentUser = { ...currentUser, id: payload.sub };
+    } catch(e) {}
+  }
+  console.log('✅ Sesión restaurada, user:', currentUser?.id);
   showApp();
-  cargarSeguimiento(); // precargar para estaEnSeguimiento
+  cargarSeguimiento();
 }
 
 // ── ABRIR PROCESO DESDE NOTIFICACIÓN ──
@@ -2775,10 +2793,12 @@ async function cargarSeguimiento() {
   const lista = document.getElementById('seg-lista');
   if (lista) lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
+    console.log('🔍 cargarSeguimiento - user_id:', currentUser?.id);
     // 1. Traer registros de seguimiento del usuario
     const segs = await sbRest(
       `seguimiento_procesos?user_id=eq.${currentUser.id}&order=created_at.desc`
     );
+    console.log('📋 seguimientos raw:', segs);
     if (!Array.isArray(segs) || segs.length === 0) {
       seguimientoData = [];
       renderSeguimiento();
@@ -2853,11 +2873,13 @@ async function toggleSeguimiento(codigo) {
 
 async function agregarSeguimiento(codigo) {
   try {
-    await sbRest('seguimiento_procesos', 'POST', {
+    console.log('➕ Guardando seguimiento - user_id:', currentUser?.id, 'codigo:', codigo);
+    const result = await sbRest('seguimiento_procesos', 'POST', {
       user_id: currentUser.id,
       proceso_codigo: codigo,
       estado: 'analizando'
     });
+    console.log('💾 Resultado POST seguimiento:', result);
     await cargarSeguimiento();
     actualizarBtnSeguir(codigo);
     mostrarToast('✅ Proceso agregado a seguimiento');
