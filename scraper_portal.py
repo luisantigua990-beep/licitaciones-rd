@@ -31,6 +31,19 @@ PORTAL_URL = (
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+def registrar_cron_log(job: str, status: str = "ok", detalle: dict = None, duracion_ms: int = None):
+    """Registra ejecución del job en cron_log para auditoría."""
+    try:
+        supabase.table("cron_log").insert({
+            "job": job,
+            "status": status,
+            "detalle": detalle or {},
+            "duracion_ms": duracion_ms,
+        }).execute()
+    except Exception as e:
+        print(f"⚠️  cron_log: {e}")
+
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -664,6 +677,7 @@ def ejecutar_scraper_portal():
       3. Guardar proceso + artículos en Supabase
       4. Filtrar por intereses de cada usuario → notificar solo a quienes corresponde
     """
+    t0 = time.time()
     print(f"\n🌐 Scraper Portal | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     procesos = raspar_portal()
@@ -677,6 +691,9 @@ def ejecutar_scraper_portal():
 
     if not nuevos:
         print(f"ℹ️  Sin procesos nuevos (revisados {len(procesos)})")
+        registrar_cron_log("scraper_portal", "ok", {
+            "procesos_revisados": len(procesos), "procesos_nuevos": 0
+        }, int((time.time()-t0)*1000))
         return []
 
     print(f"🆕 {len(nuevos)} procesos nuevos — obteniendo artículos UNSPSC...")
@@ -714,7 +731,13 @@ def ejecutar_scraper_portal():
         # Pequeña pausa para no saturar la API DGCP
         time.sleep(0.5)
 
-    print(f"✅ Scraper completado: {len(nuevos)} nuevos, {total_notificaciones} notificaciones\n")
+    duracion = int((time.time() - t0) * 1000)
+    print(f"✅ Scraper completado: {len(nuevos)} nuevos, {total_notificaciones} notificaciones ({duracion}ms)\n")
+    registrar_cron_log("scraper_portal", "ok", {
+        "procesos_revisados": len(procesos),
+        "procesos_nuevos": len(nuevos),
+        "notificaciones_enviadas": total_notificaciones,
+    }, duracion)
     return nuevos
 
 
