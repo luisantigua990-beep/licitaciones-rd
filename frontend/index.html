@@ -1016,6 +1016,7 @@ body {
   display: none;
   flex-direction: column;
   height: calc(100vh - 56px - 70px);
+  max-height: calc(100vh - 56px - 70px);
   overflow: hidden;
   background: var(--bg2);
 }
@@ -1033,7 +1034,7 @@ body {
 .mapa-stat-lbl { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
 .mapa-stat.warn .mapa-stat-val { color: #B45309; }
 .mapa-body { display: flex; flex: 1; overflow: hidden; }
-.mapa-svg-wrap { flex: 1; position: relative; overflow: hidden; background: #EEF2F7; }
+.mapa-svg-wrap { flex: 1; position: relative; overflow: hidden; background: #EEF2F7; min-height: 220px; }
 #mapaSVG { width: 100%; height: 100%; }
 .prov-shape { stroke: #C8D8E8; stroke-width: 1; cursor: pointer; transition: all .2s; }
 .prov-shape:hover { stroke: var(--navy); stroke-width: 1.8; filter: drop-shadow(0 2px 6px rgba(28,43,58,.2)); }
@@ -1056,8 +1057,8 @@ body {
 .mapa-panel { width: 300px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
 @media(max-width:700px) {
   .mapa-body { flex-direction: column; }
-  .mapa-panel { width: 100%; height: 45%; border-left: none; border-top: 1px solid var(--border); }
-  .mapa-svg-wrap { flex: none; height: 55%; }
+  .mapa-svg-wrap { flex: none; height: 280px; min-height: 280px; }
+  .mapa-panel { width: 100%; flex: 1; border-left: none; border-top: 1px solid var(--border); min-height: 0; }
 }
 .mpanel-head { padding: 12px 14px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg2); }
 .mpanel-prov { font-family: "DM Serif Display", serif; font-size: 1.1rem; color: var(--navy); }
@@ -1734,7 +1735,7 @@ function switchTab2(tab) {
   document.getElementById('tab-detalle').style.display   = 'none';
   document.getElementById('tab-perfil').style.display    = tab==='perfil' ? 'block' : 'none';
   document.getElementById('tab-mapa').style.display      = tab==='mapa' ? 'flex' : 'none';
-  if (tab === 'mapa') { setTimeout(mapaInit, 50); }
+  if (tab === 'mapa') { setTimeout(mapaInit, 100); }
   document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
   document.getElementById('nav-' + tab)?.classList.add('active');
   document.getElementById('nav-dashboard').classList.toggle('active', tab==='dashboard');
@@ -2011,19 +2012,38 @@ async function mapaInit() {
   document.getElementById('sinubic-count').textContent = mapaSinProv.length;
   document.getElementById('sinubic-pill').style.display = mapaSinProv.length > 0 ? 'block' : 'none';
 
-  mapaBuildD3();
+  // Dar tiempo al DOM para que el contenedor tenga dimensiones
+  requestAnimationFrame(() => {
+    setTimeout(mapaBuildD3, 80);
+  });
   mapaBuilt = true;
 }
 
 function mapaBuildD3() {
   const wrap = document.querySelector('.mapa-svg-wrap');
-  const W = wrap.clientWidth, H = wrap.clientHeight;
+  if (!wrap) return;
+  
+  // Esperar a que el contenedor tenga dimensiones reales
+  const W = wrap.offsetWidth || wrap.clientWidth || 350;
+  const H = wrap.offsetHeight || wrap.clientHeight || 280;
+  
+  if (W < 10 || H < 10) {
+    setTimeout(mapaBuildD3, 150);
+    return;
+  }
+  
   const svg = d3.select('#mapaSVG').attr('viewBox', `0 0 ${W} ${H}`);
   svg.selectAll('*').remove();
 
+  // RD está entre lon -74 y -68, lat 17.5 y 20
+  // Para móvil ajustamos el scale dinámicamente
+  const scaleW = W / 6.5;   // 6.5 grados de longitud
+  const scaleH = H / 2.8;   // 2.8 grados de latitud
+  const baseScale = Math.min(scaleW, scaleH) * 111; // 1 grado ≈ 111km
+
   const proj = d3.geoMercator()
     .center([-70.3, 18.75])
-    .scale(Math.min(W, H) * 5.0)
+    .scale(baseScale)
     .translate([W/2, H/2]);
 
   const path = d3.geoPath().projection(proj);
@@ -2225,6 +2245,15 @@ async function mapaSaveAssign() {
 
 document.getElementById('mapaAssignModal')?.addEventListener('click', e => {
   if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+});
+
+// Rebuild mapa al hacer resize
+let mapaResizeTimer;
+window.addEventListener('resize', () => {
+  if (document.getElementById('tab-mapa').style.display !== 'none') {
+    clearTimeout(mapaResizeTimer);
+    mapaResizeTimer = setTimeout(mapaBuildD3, 200);
+  }
 });
 
 </script>
