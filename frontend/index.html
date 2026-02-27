@@ -1020,7 +1020,7 @@ body {
 }
 
 /* ══════════════════════════════════════
-   MAPA DE PROYECTOS (MODO OSCURO)
+   MAPA DE PROYECTOS (MODO OSCURO + LIENZO FIJO)
 ══════════════════════════════════════ */
 #tab-mapa {
   display: none;
@@ -2019,23 +2019,25 @@ async function mapaInit() {
 }
 
 function mapaBuildD3() {
-  const wrap = document.querySelector('.mapa-svg-wrap');
-  
-  let W = wrap.clientWidth;
-  let H = wrap.clientHeight;
-  if (W === 0 || H === 0) {
-    const rect = wrap.getBoundingClientRect();
-    W = rect.width || window.innerWidth;
-    H = rect.height || (window.innerHeight * 0.55);
-  }
+  // 1. FORZAMOS UN LIENZO INTERNO FIJO DE 800x600
+  // Esto evita el bug matemático que colapsa el mapa en pantallas móviles
+  const W = 800;
+  const H = 600;
 
-  const svg = d3.select('#mapaSVG').attr('viewBox', `0 0 ${W} ${H}`);
+  const svg = d3.select('#mapaSVG')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('preserveAspectRatio', 'xMidYMid meet');
+
   svg.selectAll('*').remove();
 
-  // 👉 EL FIX: Ajuste dinámico de escala y centrado usando fitExtent
-  const proj = d3.geoMercator().fitExtent([[20, 20], [W - 20, H - 20]], RD_GEOJSON);
+  // 2. CENTRAMOS EXACTAMENTE EN REPÚBLICA DOMINICANA CON ZOOM FIJO
+  const proj = d3.geoMercator()
+    .center([-70.2, 18.9])
+    .scale(9000)
+    .translate([W / 2, H / 2]);
 
   const path = d3.geoPath().projection(proj);
+  const wrap = document.querySelector('.mapa-svg-wrap');
   const tooltip = document.getElementById('mapaTooltip');
 
   const defs = svg.append('defs');
@@ -2068,7 +2070,7 @@ function mapaBuildD3() {
       const rect = wrap.getBoundingClientRect();
       let x = event.clientX - rect.left + 12;
       let y = event.clientY - rect.top + 12;
-      if (x + 210 > W) x -= 220;
+      if (x + 210 > rect.width) x -= 220;
       tooltip.style.left = x + 'px';
       tooltip.style.top = y + 'px';
     })
@@ -2095,7 +2097,7 @@ function mapaBuildD3() {
     })
     .attr('text-anchor','middle').attr('dominant-baseline','middle')
     .attr('fill','rgba(255,255,255,0.4)')
-    .attr('font-size','7')
+    .attr('font-size','10')
     .attr('font-family','Plus Jakarta Sans').attr('pointer-events','none')
     .text(d => {
       const n = d.properties.nombre;
@@ -2107,18 +2109,18 @@ function mapaBuildD3() {
   RD_GEOJSON.features.forEach(feat => {
     const pros = mapaProvMap[feat.properties.id] || [];
     const inv = pros.reduce((s,p) => s+(parseFloat(p.monto_estimado)||0), 0);
-    const r = mapaBubbleR(inv);
+    const r = mapaBubbleR(inv) * 1.5;
     if (r === 0) return;
     const [cx,cy] = proj(d3.geoCentroid(feat));
     const g = bg.append('g').style('pointer-events','none');
     
-    g.append('circle').attr('cx',cx).attr('cy',cy).attr('r',r+6)
+    g.append('circle').attr('cx',cx).attr('cy',cy).attr('r',r+8)
       .attr('fill','rgba(255,159,0,0.15)').attr('class','mbubble-ring')
       .style('animation-delay', Math.random()*2+'s');
     
     g.append('circle').attr('cx',cx).attr('cy',cy).attr('r',r)
       .attr('fill','rgba(255,159,0,0.4)').attr('stroke','rgba(255,159,0,0.9)')
-      .attr('stroke-width','1.5').attr('filter','url(#mapaglow)')
+      .attr('stroke-width','2').attr('filter','url(#mapaglow)')
       .attr('class','mbubble-core').style('animation-delay', Math.random()*2+'s');
   });
 }
