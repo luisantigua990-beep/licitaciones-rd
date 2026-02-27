@@ -1246,7 +1246,8 @@ body {
           <option value="Servicios">🛠️ Servicios</option>
         </select>
         <select class="filter-select" id="filtro-activos" onchange="cargarProcesos(1)">
-          <option value="true">Solo activos</option>
+          <option value="false">Todos</option>
+          <option value="true" selected>Solo activos</option>
           <option value="false">Todos</option>
         </select>
         <button class="filter-clear" onclick="limpiarFiltros()">✕ Limpiar</button>
@@ -1396,11 +1397,7 @@ body {
       <div class="nav-icon-wrap"><span class="nav-icon">📋</span></div>
       Licitaciones
     </button>
-    <button class="bottom-nav-item" id="nav-mapa" onclick="switchTab2('mapa')">
-      <div class="nav-icon-wrap"><span class="nav-icon">🗺️</span></div>
-      Mapa
-    </button>
-    <button class="bottom-nav-item" id="nav-perfil" onclick="switchTab2('perfil')">
+<button class="bottom-nav-item" id="nav-perfil" onclick="switchTab2('perfil')">
       <div class="nav-icon-wrap"><span class="nav-icon">👤</span></div>
       Mi Perfil
     </button>
