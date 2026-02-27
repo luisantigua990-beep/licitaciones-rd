@@ -23,6 +23,23 @@ CICLO_HORAS_DGCP = 8
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ============================================
+# CRON LOG
+# ============================================
+
+def registrar_cron_log(job: str, status: str = "ok", detalle: dict = None, duracion_ms: int = None):
+    """Registra ejecución del job en cron_log para auditoría."""
+    try:
+        supabase.table("cron_log").insert({
+            "job": job,
+            "status": status,
+            "detalle": detalle or {},
+            "duracion_ms": duracion_ms,
+        }).execute()
+    except Exception as e:
+        print(f"⚠️  No se pudo registrar cron_log: {e}")
+
+
 
 # ============================================
 # TRACKING DE SINCRONIZACIÓN
@@ -442,40 +459,51 @@ def notificar_procesos_nuevos(procesos_nuevos):
 # ============================================
 
 def ejecutar_monitor():
+    import time as _time
+    t0 = _time.time()
     print(f"\n{'='*50}")
     print(f"🔍 Monitor | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*50}")
 
-    procesos = obtener_todas_las_paginas()
-    if not procesos:
-        print("📭 Sin procesos en el período")
-        # Aun sin procesos, registrar que la API respondió exitosamente
-        registrar_sync_exitosa(procesos_encontrados=0, procesos_nuevos=0)
-        return []
+    try:
+        procesos = obtener_todas_las_paginas()
+        if not procesos:
+            print("📭 Sin procesos en el período")
+            registrar_sync_exitosa(procesos_encontrados=0, procesos_nuevos=0)
+            registrar_cron_log("monitor_api", "ok",
+                {"procesos_encontrados": 0, "procesos_nuevos": 0, "nota": "sin procesos en período"},
+                int((_time.time()-t0)*1000))
+            return []
 
-    print(f"📊 {len(procesos)} procesos encontrados")
-    nuevos = guardar_procesos_nuevos(procesos)
+        print(f"📊 {len(procesos)} procesos encontrados")
+        nuevos = guardar_procesos_nuevos(procesos)
 
-    if nuevos:
-        procesar_articulos_de_nuevos(nuevos)
-        notificar_procesos_nuevos(nuevos)
-        for p in nuevos[:5]:
-            monto = f"RD${p.get('monto_estimado', 0):,.2f}" if p.get('monto_estimado') else "N/A"
-            print(f"   🆕 {p['titulo'][:50]}... | {monto}")
-        if len(nuevos) > 5:
-            print(f"   ... y {len(nuevos) - 5} más")
+        if nuevos:
+            procesar_articulos_de_nuevos(nuevos)
+            notificar_procesos_nuevos(nuevos)
+            for p in nuevos[:5]:
+                monto = f"RD${p.get('monto_estimado', 0):,.2f}" if p.get('monto_estimado') else "N/A"
+                print(f"   🆕 {p['titulo'][:50]}... | {monto}")
+            if len(nuevos) > 5:
+                print(f"   ... y {len(nuevos) - 5} más")
 
-    # Aprovechar el ciclo para completar artículos de procesos que llegaron por scraper
-    enriquecer_articulos_faltantes()
+        enriquecer_articulos_faltantes()
 
-    # Registrar sync exitosa con la DGCP
-    registrar_sync_exitosa(
-        procesos_encontrados=len(procesos),
-        procesos_nuevos=len(nuevos)
-    )
+        registrar_sync_exitosa(
+            procesos_encontrados=len(procesos),
+            procesos_nuevos=len(nuevos)
+        )
+        registrar_cron_log("monitor_api", "ok", {
+            "procesos_encontrados": len(procesos),
+            "procesos_nuevos": len(nuevos),
+        }, int((_time.time()-t0)*1000))
 
-    print(f"✅ Monitor completado\n")
-    return nuevos
+        print(f"✅ Monitor completado\n")
+        return nuevos
+
+    except Exception as e:
+        registrar_cron_log("monitor_api", "error", {"error": str(e)}, int((_time.time()-t0)*1000))
+        raise
 
 
 if __name__ == "__main__":
