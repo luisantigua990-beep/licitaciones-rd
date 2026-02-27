@@ -1798,6 +1798,7 @@ async function login() {
   btn.disabled = false; btn.textContent = 'Entrar';
   if (data.error) return showMsg(data.error_description || data.error, 'error');
   localStorage.setItem('sb_token', data.access_token);
+  if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
   // Supabase a veces devuelve el user en data.user, otras veces hay que decodificar el JWT
   let user = data.user;
   if (!user || !user.id) {
@@ -1828,6 +1829,7 @@ async function register() {
 
 function logout() {
   localStorage.removeItem('sb_token');
+  localStorage.removeItem('sb_refresh_token');
   localStorage.removeItem('sb_user');
   currentUser = null;
   document.getElementById('screen-app').classList.remove('active');
@@ -2654,20 +2656,58 @@ document.getElementById('mapaAssignModal')?.addEventListener('click', e => {
 
 // ── SUPABASE REST (tablas) ──
 async function sbRest(path, method = 'GET', body = null, extraHeaders = {}) {
-  const token = localStorage.getItem('sb_token');
-  const headers = {
-    'Content-Type': 'application/json',
-    'apikey': SUPABASE_ANON_KEY,
-    'Prefer': 'return=representation',
+  let token = localStorage.getItem('sb_token');
+
+  const doRequest = async (tok) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON_KEY,
+      'Prefer': 'return=representation',
+    };
+    if (tok) headers['Authorization'] = `Bearer ${tok}`;
+    Object.assign(headers, extraHeaders);
+    return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      method, headers,
+      body: body ? JSON.stringify(body) : undefined
+    });
   };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  Object.assign(headers, extraHeaders);
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    method, headers,
-    body: body ? JSON.stringify(body) : undefined
-  });
+
+  let res = await doRequest(token);
+
+  // Si 401, intentar refrescar el token una vez
+  if (res.status === 401) {
+    console.warn('⚠️ 401 en sbRest, intentando refresh de token...');
+    const refreshToken = localStorage.getItem('sb_refresh_token');
+    if (refreshToken) {
+      try {
+        const refreshRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+          body: JSON.stringify({ refresh_token: refreshToken })
+        });
+        const refreshData = await refreshRes.json();
+        if (refreshData.access_token) {
+          token = refreshData.access_token;
+          localStorage.setItem('sb_token', token);
+          if (refreshData.refresh_token) {
+            localStorage.setItem('sb_refresh_token', refreshData.refresh_token);
+          }
+          console.log('✅ Token refrescado OK');
+          res = await doRequest(token);
+        }
+      } catch(e) {
+        console.error('❌ Error refrescando token:', e);
+      }
+    } else {
+      console.warn('⚠️ Sin refresh_token guardado — el usuario debe volver a iniciar sesión');
+    }
+  }
+
   if (res.status === 204) return [];
   const data = await res.json();
+  if (data?.code === 'PGRST116' || res.status === 401) {
+    console.error('❌ sbRest error:', data);
+  }
   return data;
 }
 
