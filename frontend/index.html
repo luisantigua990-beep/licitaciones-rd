@@ -1020,7 +1020,7 @@ body {
 }
 
 /* ══════════════════════════════════════
-   MAPA DE PROYECTOS (FIX ABSOLUTO DE ESCALA)
+   MAPA DE PROYECTOS (ESTRUCTURA DE LIENZO FIJO)
 ══════════════════════════════════════ */
 #tab-mapa {
   display: none;
@@ -1042,16 +1042,33 @@ body {
 .mapa-stat-val { font-size: .95rem; font-weight: 700; color: var(--blue); }
 .mapa-stat-lbl { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
 .mapa-stat.warn .mapa-stat-val { color: var(--danger); text-shadow: 0 0 5px rgba(239, 68, 68, 0.4); }
-.mapa-body { display: flex; flex: 1; overflow: hidden; }
 
-/* FIX DE CONTENEDOR */
-.mapa-svg-wrap { flex: 1; position: relative; overflow: hidden; background: #050811; display: flex; align-items: center; justify-content: center; } 
-#mapaSVG { width: 100%; height: 100%; max-height: 100%; display: block; }
+.mapa-body { 
+  display: flex; 
+  flex-direction: column; /* Apilado en móvil por defecto */
+  flex: 1; 
+  overflow: hidden; 
+}
+
+/* SOLUCIÓN DE DIMENSIONES GARANTIZADA */
+.mapa-svg-wrap { 
+  flex: 1; 
+  min-height: 50vh; /* Fuerza una altura mínima en móviles */
+  position: relative; 
+  background: #050811; 
+} 
+#mapaSVG { 
+  position: absolute; 
+  top: 0; 
+  left: 0; 
+  width: 100%; 
+  height: 100%; 
+}
 
 /* ESTILOS DEL MAPA D3.JS PARA MODO OSCURO */
-.prov-shape { stroke: #1F2937; stroke-width: 1; cursor: pointer; transition: all .2s; }
-.prov-shape:hover { stroke: var(--gold); stroke-width: 1.8; filter: drop-shadow(0 0 8px rgba(255,159,0,.6)); }
-.prov-shape.selected { stroke: #FFF; stroke-width: 2.5; filter: drop-shadow(0 0 12px rgba(255,159,0,.9)); }
+.prov-shape { stroke: #1F2937; stroke-width: 2; cursor: pointer; transition: all .2s; }
+.prov-shape:hover { stroke: var(--gold); stroke-width: 4; filter: drop-shadow(0 0 10px rgba(255,159,0,.6)); }
+.prov-shape.selected { stroke: #FFF; stroke-width: 6; filter: drop-shadow(0 0 15px rgba(255,159,0,.9)); }
 
 /* CAPAS DE CALOR (HEATMAP DARK MODE) */
 .ph0 { fill: #111827; }
@@ -1076,12 +1093,13 @@ body {
 .mleg-scale { display: flex; gap: 3px; margin-bottom: 3px; }
 .mleg-box { width: 20px; height: 10px; border-radius: 2px; }
 .mleg-labs { display: flex; justify-content: space-between; color: var(--muted); font-size: .6rem; margin-bottom: 0; }
-.mapa-panel { width: 300px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
 
-@media(max-width:700px) {
-  .mapa-body { flex-direction: column; }
-  .mapa-panel { width: 100%; height: 45%; border-left: none; border-top: 1px solid var(--border); }
-  .mapa-svg-wrap { flex: none; height: 55%; }
+.mapa-panel { width: 100%; height: 45%; background: var(--surface); border-top: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+
+@media(min-width:700px) {
+  .mapa-body { flex-direction: row; }
+  .mapa-panel { width: 300px; height: auto; border-top: none; border-left: 1px solid var(--border); }
+  .mapa-svg-wrap { height: auto; }
 }
 
 .mpanel-head { padding: 12px 14px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg2); }
@@ -1313,9 +1331,9 @@ body {
 
   </div>
 
-  <div id="tab-mapa" class="main">
+  <div id="tab-mapa" class="main" style="padding-left: 0; padding-right: 0;">
 
-    <div class="mapa-header">
+    <div class="mapa-header" style="padding: 14px 16px;">
       <h2>🗺️ Mapa de Proyectos Activos</h2>
       <p>Distribución geográfica de licitaciones por provincia</p>
       <div class="mapa-stats">
@@ -1359,7 +1377,7 @@ body {
           <div class="mapa-empty" style="padding:20px 10px">
             <div class="mapa-empty-icon">🗺️</div>
             <div class="mapa-empty-title">Selecciona una provincia</div>
-            <div class="mapa-empty-sub">Toca cualquier provincia del mapa</div>
+            <div class="mapa-empty-sub">Toca cualquier cuadro del mapa</div>
           </div>
         </div>
         <div class="mpanel-search" id="mpanel-search" style="display:none">
@@ -1447,7 +1465,7 @@ function showApp() {
   document.getElementById('screen-auth').classList.remove('active');
   document.getElementById('screen-app').classList.add('active');
   
-  // Perfil del profesional configurado
+  // Tu perfil siempre
   document.getElementById('user-email-display').textContent = 'Ing. Luis Antigua';
   document.getElementById('perfil-email').textContent = 'Ing. Luis Antigua (' + (currentUser?.email || '') + ')';
   
@@ -1748,7 +1766,7 @@ function switchTab2(tab) {
   document.getElementById('tab-perfil').style.display    = tab==='perfil' ? 'block' : 'none';
   document.getElementById('tab-mapa').style.display      = tab==='mapa' ? 'flex' : 'none';
   
-  if (tab === 'mapa') { setTimeout(mapaInit, 100); } // Solo 100ms para asegurar render
+  if (tab === 'mapa') { setTimeout(mapaInit, 100); }
   
   document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
   document.getElementById('nav-' + tab)?.classList.add('active');
@@ -1903,6 +1921,7 @@ const PROVINCIAS_MAP = [
   { id:'BAO', nombre:'Baoruco',                     keys:['baoruco','galván','los ríos','neiba','tamayo'] },
 ];
 
+// OJO: Esta base de datos de GeoJSON usa cajas (rectángulos) para cada provincia.
 const RD_GEOJSON = {type:"FeatureCollection",features:[
   {type:"Feature",properties:{id:"DN",nombre:"Distrito Nacional"},geometry:{type:"Polygon",coordinates:[[[-70.00,18.44],[-69.90,18.44],[-69.90,18.52],[-70.00,18.52],[-70.00,18.44]]]}},
   {type:"Feature",properties:{id:"SD",nombre:"Santo Domingo"},geometry:{type:"Polygon",coordinates:[[[-70.15,18.35],[-69.65,18.35],[-69.65,18.60],[-70.15,18.60],[-70.15,18.35]]]}},
@@ -2021,12 +2040,12 @@ async function mapaInit() {
 }
 
 // =================================================================
-// EL FIX ABSOLUTO Y DEFINITIVO
+// EL FIX ABSOLUTO: LIENZO Y ESCALA FIJOS
 // =================================================================
 function mapaBuildD3() {
-  // Lienzo matemático FIJO. No importa si tu celular mide 0x0 o 1000x1000
+  // 1. Mentirle a D3 diciéndole que siempre está dibujando en una pantalla gigante de 800x800
   const W = 800;
-  const H = 600;
+  const H = 800;
 
   const svg = d3.select('#mapaSVG')
     .attr('viewBox', `0 0 ${W} ${H}`)
@@ -2034,15 +2053,18 @@ function mapaBuildD3() {
     
   svg.selectAll('*').remove();
 
-  // Mágia de D3: fitSize calcula el centro y la escala EXACTOS automáticamente 
-  // para que RD encaje perfectamente en nuestro lienzo fijo de 800x600.
-  const proj = d3.geoMercator().fitSize([W, H], RD_GEOJSON);
+  // 2. Establecer la cámara manualmente en la Rep. Dom.
+  // El centro está en -70.2 (Longitud) y 18.9 (Latitud).
+  // La escala 15000 garantiza que ocupe todo el espacio visual sin importar el teléfono.
+  const proj = d3.geoMercator()
+    .center([-70.2, 18.9])
+    .scale(15000)
+    .translate([W / 2, H / 2]);
   
   const path = d3.geoPath().projection(proj);
   const tooltip = document.getElementById('mapaTooltip');
   const wrap = document.querySelector('.mapa-svg-wrap');
 
-  // Filtro de brillo
   const defs = svg.append('defs');
   const filter = defs.append('filter').attr('id','mapaglow');
   filter.append('feGaussianBlur').attr('stdDeviation','3').attr('result','blur');
@@ -2050,7 +2072,7 @@ function mapaBuildD3() {
   merge.append('feMergeNode').attr('in','blur');
   merge.append('feMergeNode').attr('in','SourceGraphic');
 
-  // Dibujar Provincias
+  // Dibujar Cuadros de Provincias
   svg.append('g').selectAll('path')
     .data(RD_GEOJSON.features)
     .enter().append('path')
@@ -2090,7 +2112,7 @@ function mapaBuildD3() {
       mapaShowProvince(d.properties.id, d.properties.nombre);
     }, { passive: false });
 
-  // Nombres encima de las provincias
+  // Nombres de Provincias
   svg.append('g').selectAll('text')
     .data(RD_GEOJSON.features)
     .enter().append('text')
@@ -2105,7 +2127,7 @@ function mapaBuildD3() {
       return n.length > 14 ? n.split(' ')[0] : n;
     });
 
-  // Puntos de calor y animación
+  // Puntos de Inversión / Luces
   const bg = svg.append('g');
   RD_GEOJSON.features.forEach(feat => {
     const pros = mapaProvMap[feat.properties.id] || [];
