@@ -558,7 +558,7 @@ def get_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: str
 
         # ── Filtros ──
         if solo_activos:
-            query = query.eq("estado_proceso", "Publicado")
+            query = query.eq("estado_proceso", "Proceso publicado")
 
         if busqueda.strip():
             # Busca en título, descripción, código Y nombre de institución
