@@ -616,3 +616,119 @@ async def forzar_monitor_admin():
         procesar_articulos_de_nuevos(nuevos)
         notificar_procesos_nuevos(nuevos)
     return {"nuevos": len(nuevos)}
+
+
+# ═══════════════════════════════════════════════════════════════
+# NOTIFICACIONES DE SEGUIMIENTO — Alertas por fechas clave
+# ═══════════════════════════════════════════════════════════════
+
+@app.post("/api/admin/notificar-seguimiento")
+async def notificar_seguimiento():
+    """
+    Envía alertas push a usuarios con procesos en seguimiento
+    cuyas fechas clave se aproximan.
+    Llamar desde cron cada mañana a las 8am.
+    """
+    from notifications import enviar_notificacion
+    from datetime import date, timedelta
+
+    ahora   = datetime.now()
+    hoy     = date.today()
+    manana  = hoy + timedelta(days=1)
+    en3dias = hoy + timedelta(days=3)
+    en7dias = hoy + timedelta(days=7)
+
+    # Obtener todos los seguimientos activos (no adjudicados ni perdidos)
+    seguimientos = supabase.table("seguimiento_procesos") \
+        .select("user_id, proceso_codigo, estado") \
+        .not_.in_("estado", ["adjudicado", "no-adj"]) \
+        .execute().data or []
+
+    if not seguimientos:
+        return {"notificaciones_enviadas": 0}
+
+    # Obtener procesos únicos
+    codigos = list(set(s["proceso_codigo"] for s in seguimientos))
+    procesos_map = {}
+    for i in range(0, len(codigos), 50):
+        bloque = codigos[i:i+50]
+        res = supabase.table("procesos") \
+            .select("codigo_proceso,titulo,unidad_compra,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda") \
+            .in_("codigo_proceso", bloque).execute()
+        for p in (res.data or []):
+            procesos_map[p["codigo_proceso"]] = p
+
+    # Obtener suscripciones push de los usuarios
+    user_ids = list(set(s["user_id"] for s in seguimientos))
+    subs_map = {}
+    for uid in user_ids:
+        subs = supabase.table("user_subscriptions") \
+            .select("endpoint,auth,p256dh") \
+            .eq("user_id", uid).eq("active", True).execute().data or []
+        if subs:
+            subs_map[uid] = subs
+
+    enviadas = 0
+    FECHAS_LABELS = {
+        "fecha_enmienda":                 ("❓", "cierre de preguntas"),
+        "fecha_fin_recepcion_ofertas":    ("📝", "presentación de ofertas"),
+        "fecha_apertura_ofertas":         ("📂", "apertura de sobres"),
+        "fecha_estimada_adjudicacion":    ("🏆", "adjudicación estimada"),
+    }
+
+    for seg in seguimientos:
+        uid    = seg["user_id"]
+        codigo = seg["proceso_codigo"]
+        p      = procesos_map.get(codigo)
+        subs   = subs_map.get(uid, [])
+
+        if not p or not subs:
+            continue
+
+        titulo   = (p.get("titulo") or "")[:50]
+        entidad  = (p.get("unidad_compra") or "")[:30]
+
+        for campo, (icono, nombre_fecha) in FECHAS_LABELS.items():
+            val = p.get(campo)
+            if not val:
+                continue
+
+            try:
+                dt  = datetime.fromisoformat(str(val).replace("Z", ""))
+                dia = dt.date()
+            except Exception:
+                continue
+
+            # Calcular días
+            dias = (dia - hoy).days
+
+            if dias not in [0, 1, 3, 7]:
+                continue
+
+            # Construir mensaje
+            if dias == 0:
+                urgencia = f"🚨 ¡HOY es el {nombre_fecha}!"
+            elif dias == 1:
+                urgencia = f"⏰ ¡Mañana: {nombre_fecha}!"
+            elif dias == 3:
+                urgencia = f"⚡ En 3 días: {nombre_fecha}"
+            else:
+                urgencia = f"📅 En 7 días: {nombre_fecha}"
+
+            # Énfasis especial para presentación de ofertas
+            if campo == "fecha_fin_recepcion_ofertas" and dias <= 3:
+                urgencia = urgencia.replace("⚡", "🔴").replace("⏰", "🔴").replace("🚨", "🔴")
+
+            APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+
+            for sub in subs:
+                ok = enviar_notificacion(
+                    subscription_info={"endpoint": sub["endpoint"], "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}},
+                    titulo=urgencia,
+                    cuerpo=f"{titulo} · {entidad}",
+                    url=f"{APP_URL}?proceso={codigo}"
+                )
+                if ok:
+                    enviadas += 1
+
+    return {"notificaciones_enviadas": enviadas, "seguimientos_revisados": len(seguimientos)}
