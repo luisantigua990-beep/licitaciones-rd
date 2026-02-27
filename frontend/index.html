@@ -1020,7 +1020,7 @@ body {
 }
 
 /* ══════════════════════════════════════
-   MAPA DE PROYECTOS (MODO OSCURO + LIENZO FIJO)
+   MAPA DE PROYECTOS (FIX ABSOLUTO DE ESCALA)
 ══════════════════════════════════════ */
 #tab-mapa {
   display: none;
@@ -1043,8 +1043,10 @@ body {
 .mapa-stat-lbl { font-size: .6rem; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
 .mapa-stat.warn .mapa-stat-val { color: var(--danger); text-shadow: 0 0 5px rgba(239, 68, 68, 0.4); }
 .mapa-body { display: flex; flex: 1; overflow: hidden; }
-.mapa-svg-wrap { flex: 1; position: relative; overflow: hidden; background: #050811; } 
-#mapaSVG { width: 100%; height: 100%; }
+
+/* FIX DE CONTENEDOR */
+.mapa-svg-wrap { flex: 1; position: relative; overflow: hidden; background: #050811; display: flex; align-items: center; justify-content: center; } 
+#mapaSVG { width: 100%; height: 100%; max-height: 100%; display: block; }
 
 /* ESTILOS DEL MAPA D3.JS PARA MODO OSCURO */
 .prov-shape { stroke: #1F2937; stroke-width: 1; cursor: pointer; transition: all .2s; }
@@ -1746,7 +1748,7 @@ function switchTab2(tab) {
   document.getElementById('tab-perfil').style.display    = tab==='perfil' ? 'block' : 'none';
   document.getElementById('tab-mapa').style.display      = tab==='mapa' ? 'flex' : 'none';
   
-  if (tab === 'mapa') { setTimeout(mapaInit, 300); }
+  if (tab === 'mapa') { setTimeout(mapaInit, 100); } // Solo 100ms para asegurar render
   
   document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
   document.getElementById('nav-' + tab)?.classList.add('active');
@@ -1974,11 +1976,11 @@ function mapaHeat(inv) {
 
 function mapaBubbleR(inv) {
   if (!inv) return 0;
-  if (inv < 50e6) return 6;
-  if (inv < 150e6) return 10;
-  if (inv < 400e6) return 14;
-  if (inv < 900e6) return 19;
-  return 25;
+  if (inv < 50e6) return 8;
+  if (inv < 150e6) return 14;
+  if (inv < 400e6) return 20;
+  if (inv < 900e6) return 28;
+  return 36;
 }
 
 async function mapaInit() {
@@ -2018,28 +2020,29 @@ async function mapaInit() {
   mapaBuilt = true;
 }
 
+// =================================================================
+// EL FIX ABSOLUTO Y DEFINITIVO
+// =================================================================
 function mapaBuildD3() {
-  // 1. FORZAMOS UN LIENZO INTERNO FIJO DE 800x600
-  // Esto evita el bug matemático que colapsa el mapa en pantallas móviles
+  // Lienzo matemático FIJO. No importa si tu celular mide 0x0 o 1000x1000
   const W = 800;
   const H = 600;
 
   const svg = d3.select('#mapaSVG')
     .attr('viewBox', `0 0 ${W} ${H}`)
     .attr('preserveAspectRatio', 'xMidYMid meet');
-
+    
   svg.selectAll('*').remove();
 
-  // 2. CENTRAMOS EXACTAMENTE EN REPÚBLICA DOMINICANA CON ZOOM FIJO
-  const proj = d3.geoMercator()
-    .center([-70.2, 18.9])
-    .scale(9000)
-    .translate([W / 2, H / 2]);
-
+  // Mágia de D3: fitSize calcula el centro y la escala EXACTOS automáticamente 
+  // para que RD encaje perfectamente en nuestro lienzo fijo de 800x600.
+  const proj = d3.geoMercator().fitSize([W, H], RD_GEOJSON);
+  
   const path = d3.geoPath().projection(proj);
-  const wrap = document.querySelector('.mapa-svg-wrap');
   const tooltip = document.getElementById('mapaTooltip');
+  const wrap = document.querySelector('.mapa-svg-wrap');
 
+  // Filtro de brillo
   const defs = svg.append('defs');
   const filter = defs.append('filter').attr('id','mapaglow');
   filter.append('feGaussianBlur').attr('stdDeviation','3').attr('result','blur');
@@ -2047,7 +2050,7 @@ function mapaBuildD3() {
   merge.append('feMergeNode').attr('in','blur');
   merge.append('feMergeNode').attr('in','SourceGraphic');
 
-  // Provinces
+  // Dibujar Provincias
   svg.append('g').selectAll('path')
     .data(RD_GEOJSON.features)
     .enter().append('path')
@@ -2087,29 +2090,27 @@ function mapaBuildD3() {
       mapaShowProvince(d.properties.id, d.properties.nombre);
     }, { passive: false });
 
-  // Labels
+  // Nombres encima de las provincias
   svg.append('g').selectAll('text')
     .data(RD_GEOJSON.features)
     .enter().append('text')
-    .attr('transform', d => {
-      const [x,y] = proj(d3.geoCentroid(d));
-      return `translate(${x},${y})`;
-    })
+    .attr('transform', d => `translate(${proj(d3.geoCentroid(d))})`)
     .attr('text-anchor','middle').attr('dominant-baseline','middle')
-    .attr('fill','rgba(255,255,255,0.4)')
-    .attr('font-size','10')
-    .attr('font-family','Plus Jakarta Sans').attr('pointer-events','none')
+    .attr('fill','rgba(255,255,255,0.6)')
+    .attr('font-size','11')
+    .attr('font-family','Plus Jakarta Sans')
+    .attr('pointer-events','none')
     .text(d => {
       const n = d.properties.nombre;
       return n.length > 14 ? n.split(' ')[0] : n;
     });
 
-  // Bubbles
+  // Puntos de calor y animación
   const bg = svg.append('g');
   RD_GEOJSON.features.forEach(feat => {
     const pros = mapaProvMap[feat.properties.id] || [];
     const inv = pros.reduce((s,p) => s+(parseFloat(p.monto_estimado)||0), 0);
-    const r = mapaBubbleR(inv) * 1.5;
+    const r = mapaBubbleR(inv);
     if (r === 0) return;
     const [cx,cy] = proj(d3.geoCentroid(feat));
     const g = bg.append('g').style('pointer-events','none');
