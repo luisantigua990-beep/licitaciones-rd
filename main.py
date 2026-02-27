@@ -494,19 +494,20 @@ async def enviar_prueba(payload: dict):
 
 @app.get("/api/stats")
 def get_stats():
-    total = supabase.table("procesos").select("*", count="exact").execute()
-    activos = supabase.table("procesos").select("*", count="exact").eq("estado_proceso", "Publicado").execute()
-    obras = supabase.table("procesos").select("*", count="exact").eq("estado_proceso", "Publicado").eq("objeto_proceso", "Obras").execute()
-    bienes = supabase.table("procesos").select("*", count="exact").eq("estado_proceso", "Publicado").eq("objeto_proceso", "Bienes").execute()
-    servicios = supabase.table("procesos").select("*", count="exact").eq("estado_proceso", "Publicado").eq("objeto_proceso", "Servicios").execute()
-    arts = supabase.table("articulos_proceso").select("*", count="exact").execute()
+    ahora = datetime.now().isoformat()
+    total   = supabase.table("procesos").select("*", count="exact").execute()
+    activos = supabase.table("procesos").select("*", count="exact").gte("fecha_fin_recepcion_ofertas", ahora).execute()
+    obras   = supabase.table("procesos").select("*", count="exact").gte("fecha_fin_recepcion_ofertas", ahora).eq("objeto_proceso", "Obras").execute()
+    bienes  = supabase.table("procesos").select("*", count="exact").gte("fecha_fin_recepcion_ofertas", ahora).eq("objeto_proceso", "Bienes").execute()
+    servicios = supabase.table("procesos").select("*", count="exact").gte("fecha_fin_recepcion_ofertas", ahora).eq("objeto_proceso", "Servicios").execute()
+    arts    = supabase.table("articulos_proceso").select("*", count="exact").execute()
     return {
-        "total_procesos": total.count,
-        "procesos_activos": activos.count,
-        "obras_activas": obras.count,
-        "bienes_activos": bienes.count,
+        "total_procesos":    total.count,
+        "procesos_activos":  activos.count,
+        "obras_activas":     obras.count,
+        "bienes_activos":    bienes.count,
         "servicios_activos": servicios.count,
-        "total_articulos": arts.count
+        "total_articulos":   arts.count
     }
 
 @app.get("/api/unspsc/buscar")
@@ -558,7 +559,8 @@ def get_procesos(page: int = 1, limit: int = 15, busqueda: str = "", objeto: str
 
         # ── Filtros ──
         if solo_activos:
-            query = query.eq("estado_proceso", "Proceso publicado")
+            # Activo = fecha de cierre de ofertas no ha pasado todavía
+            query = query.gte("fecha_fin_recepcion_ofertas", datetime.now().isoformat())
 
         if busqueda.strip():
             # Busca en título, descripción, código Y nombre de institución
