@@ -681,12 +681,12 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
                 for script in soup.find_all('script'):
                     texto = script.string or ""
                     # Buscar patrones de URL de documentos en el JS
-                    matches = re.findall(r'["']([^"']*(?:pliego|bases|condiciones|documento)[^"']*\.pdf)["']', texto, re.IGNORECASE)
+                    matches = re.findall(r"""["\']([^"\']*(pliego|bases|condiciones|documento)[^"\']*\.pdf)["\']""", texto, re.IGNORECASE)
                     if matches:
                         enlace_pdf = matches[0]
                         break
                     # Buscar cualquier URL de documento
-                    matches = re.findall(r'["'](/[^"']*Document[^"']*(?:Download|Get)[^"']*)["']', texto)
+                    matches = re.findall(r"[\"'](/[\"']*Document[\"']*(?:Download|Get)[\"']*)[\"']", texto)
                     if matches:
                         enlace_pdf = "https://comunidad.comprasdominicana.gob.do" + matches[0]
                         break
