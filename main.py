@@ -24,7 +24,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from supabase import create_client
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from monitor import ejecutar_monitor
 from notifications import enviar_notificacion
@@ -46,16 +47,12 @@ supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 # CONFIGURACIÓN DE INTELIGENCIA ARTIFICIAL
 # ============================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-modelo_gemini = None
+cliente_gemini = None
 
 if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    modelo_gemini = genai.GenerativeModel(
-        model_name="gemini-2.0-flash",
-        generation_config={"response_mime_type": "application/json"}
-    )
+    cliente_gemini = genai.Client(api_key=GEMINI_API_KEY)
 else:
-    print("⚠️ ADVERTENCIA: No se encontró GEMINI_API_KEY en las variables de entorno.")
+    print("⚠️ ADVERTENCIA: No se encontró GEMINI_API_KEY")
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -602,125 +599,83 @@ Devuelve el resultado ESTRICTAMENTE usando esta estructura JSON:
 }
 """
 
-def extraer_notice_uid(url_portal: str) -> str:
-    """Extrae el noticeUID de la URL del portal."""
-    import re
-    match = re.search(r'noticeUID=([^&]+)', url_portal)
-    return match.group(1) if match else None
-
 def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     """
-    Descarga el pliego usando la API interna del portal transaccional.
-    El portal carga los documentos via AJAX — usamos el endpoint interno directamente.
+    Descarga el pliego del portal transaccional.
+    Endpoint real: /Public/Tendering/OpportunityDetail/DownloadFile?documentFileId=X&mkey=Y
     """
+    import re as _re
     url_limpia = url_documentos.replace("gob.do//", "gob.do/")
-    print(f"🕵️‍♂️ Buscando documentos en: {url_limpia}")
+
+    # Agregar sPopupView=true para cargar el modal de documentos
+    if 'sPopupView' not in url_limpia:
+        sep = '&' if '?' in url_limpia else '?'
+        url_popup = url_limpia + sep + 'sPopupView=true'
+    else:
+        url_popup = url_limpia
+
+    print(f"\U0001f575\ufe0f\u200d\u2642\ufe0f Cargando documentos del proceso: {url_popup[:80]}...")
 
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        'Accept': 'application/json, text/html, */*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml,*/*',
+        'Accept-Language': 'es-ES,es;q=0.9',
         'Referer': 'https://comunidad.comprasdominicana.gob.do/',
     }
     session = requests.Session()
     session.verify = False
 
-    # Extraer noticeUID de la URL
-    notice_uid = extraer_notice_uid(url_limpia)
-    enlace_pdf = None
+    resp = session.get(url_popup, headers=headers, timeout=20)
+    if resp.status_code != 200:
+        raise Exception(f"Error cargando página: {resp.status_code}")
 
-    # Estrategia 1: API interna del portal (endpoint AJAX de documentos)
-    if notice_uid:
-        apis_internas = [
-            f"https://comunidad.comprasdominicana.gob.do/api/Tendering/ContractNotice/GetDocuments?noticeUID={notice_uid}",
-            f"https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/GetDocumentList?id={notice_uid}",
-            f"https://comunidad.comprasdominicana.gob.do/Public/Tendering/Document/GetByNotice?noticeUID={notice_uid}",
-        ]
-        for api_url in apis_internas:
-            try:
-                r = session.get(api_url, headers=headers, timeout=15)
-                if r.status_code == 200 and r.headers.get('content-type','').startswith('application/json'):
-                    data = r.json()
-                    print(f"✅ API interna respondió: {api_url}")
-                    # Buscar el pliego entre los documentos
-                    docs = data if isinstance(data, list) else data.get('data', data.get('documents', []))
-                    for doc in (docs if isinstance(docs, list) else []):
-                        nombre = str(doc.get('nombre','') or doc.get('name','') or doc.get('titulo','')).lower()
-                        url_doc = doc.get('url','') or doc.get('link','') or doc.get('path','')
-                        if any(x in nombre for x in ['pliego','bases','condiciones','especificacion']) and url_doc:
-                            enlace_pdf = url_doc
-                            break
-                    if not enlace_pdf and isinstance(docs, list) and docs:
-                        # Tomar el primero que tenga URL
-                        for doc in docs:
-                            url_doc = doc.get('url','') or doc.get('link','') or doc.get('path','')
-                            if url_doc and not url_doc.startswith('javascript'):
-                                enlace_pdf = url_doc
-                                break
-                    if enlace_pdf:
-                        break
-            except Exception as e:
-                print(f"⚠️  API interna {api_url}: {e}")
-                continue
+    html = resp.text
+    soup = BeautifulSoup(html, "html.parser")
 
-    # Estrategia 2: Scraping HTML buscando data-attributes con URLs reales
-    if not enlace_pdf:
-        try:
-            resp = session.get(url_limpia, headers=headers, timeout=20)
-            soup = BeautifulSoup(resp.text, 'html.parser')
+    BASE_DOWNLOAD = "https://comunidad.comprasdominicana.gob.do/Public/Tendering/OpportunityDetail/DownloadFile"
 
-            # Buscar en atributos data-* que contengan URLs de documentos
-            for elem in soup.find_all(attrs={"data-url": True}):
-                data_url = elem.get("data-url", "")
-                if data_url and "javascript" not in data_url and ".pdf" in data_url.lower():
-                    enlace_pdf = data_url
-                    break
+    # Extraer todos los pares documentFileId + mkey del HTML
+    patrones = _re.findall(r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)", html)
+    print(f"\U0001f4cb {len(patrones)} documentos encontrados")
 
-            # Buscar scripts con URLs de documentos embebidas
-            if not enlace_pdf:
-                import re
-                for script in soup.find_all('script'):
-                    texto = script.string or ""
-                    # Buscar patrones de URL de documentos en el JS
-                    matches = re.findall(r"""["\']([^"\']*(pliego|bases|condiciones|documento)[^"\']*\.pdf)["\']""", texto, re.IGNORECASE)
-                    if matches:
-                        enlace_pdf = matches[0]
-                        break
-                    # Buscar cualquier URL de documento
-                    matches = re.findall(r"[\"'](/[\"']*Document[\"']*(?:Download|Get)[\"']*)[\"']", texto)
-                    if matches:
-                        enlace_pdf = "https://comunidad.comprasdominicana.gob.do" + matches[0]
-                        break
-        except Exception as e:
-            print(f"⚠️  Scraping HTML: {e}")
+    if not patrones:
+        raise Exception(f"No se encontraron documentos descargables. URL: {url_popup}")
 
-    if not enlace_pdf:
-        raise Exception(f"No se pudo obtener el pliego del portal. noticeUID={notice_uid}. El portal usa JS dinámico — se requiere revisar la API interna.")
+    enlace_pliego = None
 
-    if enlace_pdf.startswith('/'):
-        enlace_pdf = "https://comunidad.comprasdominicana.gob.do" + enlace_pdf
+    # Buscar el pliego por contexto en el HTML
+    for file_id, mkey in patrones:
+        idx = html.find(f"documentFileId={file_id}")
+        contexto = html[max(0, idx - 400):idx + 100].lower()
+        if any(x in contexto for x in ["pliego", "bases de la contrataci", "especificacion", "condiciones"]):
+            enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
+            print(f"\u2705 Pliego identificado: documentFileId={file_id}")
+            break
 
-    print(f"📥 Descargando PDF desde: {enlace_pdf}")
-    resp_pdf = session.get(enlace_pdf, headers=headers, timeout=30)
+    # Si no, tomar el último documento (suele ser el pliego)
+    if not enlace_pliego:
+        file_id, mkey = patrones[-1]
+        enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
+        print(f"\u26a0\ufe0f  Usando último documento: documentFileId={file_id}")
+
+    print(f"\U0001f4e5 Descargando: {enlace_pliego}")
+    resp_pdf = session.get(enlace_pliego, headers=headers, timeout=60)
 
     if resp_pdf.status_code != 200:
         raise Exception(f"Error descargando PDF: {resp_pdf.status_code}")
 
-    content_type = resp_pdf.headers.get('content-type', '')
-    if 'pdf' not in content_type and len(resp_pdf.content) < 1000:
-        raise Exception(f"Respuesta no es un PDF válido: {content_type}")
+    if len(resp_pdf.content) < 500:
+        raise Exception(f"Respuesta inválida ({len(resp_pdf.content)} bytes)")
 
-    print("📄 Extrayendo texto del PDF...")
+    print(f"\U0001f4c4 PDF: {len(resp_pdf.content):,} bytes. Extrayendo texto...")
     pdf_file = io.BytesIO(resp_pdf.content)
     lector_pdf = PdfReader(pdf_file)
 
     texto_completo = ""
     for i in range(min(len(lector_pdf.pages), 80)):
-        texto_extraido = lector_pdf.pages[i].extract_text()
-        if texto_extraido:
-            texto_completo += texto_extraido + "\n"
-            
-    return texto_completo
-
+        texto = lector_pdf.pages[i].extract_text()
+        if texto:
+            texto_completo += texto + "\n"
 
 def ejecutar_analisis_gemini(proceso_id: str):
     """Descarga el pliego, lo lee y guarda el JSON en Supabase en segundo plano"""
@@ -748,11 +703,14 @@ def ejecutar_analisis_gemini(proceso_id: str):
             raise Exception("El PDF parece estar vacío o es un documento escaneado (imágenes).")
         
         # 3. LLAMADA A GEMINI 1.5 FLASH
-        if not modelo_gemini:
+        if not cliente_gemini:
             raise Exception("No se configuró Gemini. Revisa tu GEMINI_API_KEY en Railway.")
             
         print("🤖 Pasando el texto del pliego a Gemini...")
-        respuesta = modelo_gemini.generate_content([PROMPT_MAESTRO, texto_pliego])
+        respuesta = cliente_gemini.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[PROMPT_MAESTRO, texto_pliego]
+        )
         datos_json = json.loads(respuesta.text)
         
         # 4. GUARDAR RESULTADOS EN LA BÓVEDA
