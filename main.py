@@ -598,6 +598,55 @@ Devuelve el resultado ESTRICTAMENTE usando esta estructura JSON:
 }
 """
 
+def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
+    """Entra al portal, busca el pliego, lo descarga en memoria y extrae el texto"""
+    print(f"🕵️‍♂️ Entrando al portal para buscar documentos en: {url_documentos}")
+    
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    respuesta = requests.get(url_documentos, headers=headers, verify=False)
+    
+    if respuesta.status_code != 200:
+        raise Exception(f"Error de conexión con el portal: {respuesta.status_code}")
+        
+    soup = BeautifulSoup(respuesta.text, 'html.parser')
+    enlace_pdf = None
+    
+    # Buscamos en las tablas el documento "Bases de la Contratación"
+    for fila in soup.find_all('tr'):
+        texto_fila = fila.get_text().lower()
+        if "bases de la contratación" in texto_fila or "pliego de condiciones" in texto_fila:
+            etiqueta_a = fila.find('a', href=True)
+            if etiqueta_a:
+                enlace_pdf = etiqueta_a['href']
+                break
+                
+    if not enlace_pdf:
+        raise Exception("No se encontró el botón de descarga del Pliego en la página.")
+        
+    if enlace_pdf.startswith('/'):
+        enlace_pdf = "https://comunidad.comprasdominicana.gob.do" + enlace_pdf
+        
+    print(f"📥 Descargando PDF desde: {enlace_pdf}")
+    resp_pdf = requests.get(enlace_pdf, headers=headers, verify=False)
+    
+    if resp_pdf.status_code != 200:
+         raise Exception("Error al descargar el archivo PDF.")
+    
+    print("📄 Leyendo texto con PyPDF2...")
+    pdf_file = io.BytesIO(resp_pdf.content)
+    lector_pdf = PdfReader(pdf_file)
+    
+    texto_completo = ""
+    limite_paginas = min(len(lector_pdf.pages), 80) # Leemos máx 80 páginas para no saturar
+    
+    for i in range(limite_paginas):
+        texto_extraido = lector_pdf.pages[i].extract_text()
+        if texto_extraido:
+            texto_completo += texto_extraido + "\n"
+            
+    return texto_completo
+
+
 def ejecutar_analisis_gemini(proceso_id: str):
     """Descarga el pliego, lo lee y guarda el JSON en Supabase en segundo plano"""
     try:
@@ -610,13 +659,25 @@ def ejecutar_analisis_gemini(proceso_id: str):
         }).execute()
 
         # 2. SCRAPING Y EXTRACCIÓN DEL PDF
-        # (Próximo paso: Aquí programaremos el web scraping con BeautifulSoup)
-        texto_pliego = "Texto simulado del pliego de condiciones de la DGCP..." 
+        # Obtenemos la URL de tu base de datos (asegúrate de que "enlace_portal" sea el nombre correcto de tu columna)
+        proc_data = supabase.table("procesos").select("enlace_portal").eq("codigo_proceso", proceso_id).execute()
+        
+        if not proc_data.data or not proc_data.data[0].get("enlace_portal"):
+            raise Exception(f"No se encontró la URL del portal en la base de datos para {proceso_id}")
+            
+        url_portal = proc_data.data[0]["enlace_portal"]
+        
+        # Llamamos al brazo robótico
+        texto_pliego = descargar_y_extraer_texto_pdf(url_portal)
+        
+        if len(texto_pliego.strip()) < 100:
+            raise Exception("El PDF parece estar vacío o es un documento escaneado (imágenes).")
         
         # 3. LLAMADA A GEMINI 1.5 FLASH
         if not modelo_gemini:
             raise Exception("No se configuró Gemini. Revisa tu GEMINI_API_KEY en Railway.")
             
+        print("🤖 Pasando el texto del pliego a Gemini...")
         respuesta = modelo_gemini.generate_content([PROMPT_MAESTRO, texto_pliego])
         datos_json = json.loads(respuesta.text)
         
