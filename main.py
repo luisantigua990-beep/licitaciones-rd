@@ -665,6 +665,14 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
 
     patrones = _re.findall(r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)", html)
     print(f"📋 {len(patrones)} documentos encontrados")
+    if not patrones:
+        # DEBUG: ver qué hay en el HTML
+        for keyword in ["DownloadFile", "documentFile", "Descarga", "download"]:
+            idx = html.find(keyword)
+            if idx > 0:
+                print(f"🔍 '{keyword}' en pos {idx}: {repr(html[max(0,idx-80):idx+150])}")
+                break
+        print(f"🔍 HTML[4000:4500]: {repr(html[4000:4500])}")
 
     # Si no hay documentos con el popup, intentar con sPopupView=true
     if not patrones:
