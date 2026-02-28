@@ -607,68 +607,107 @@ def extraer_notice_uid(url_portal: str) -> str:
 def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     """
     Descarga el pliego del portal transaccional.
-    Usa el endpoint real: DownloadFile?documentFileId=X&mkey=Y
-    Extrae documentFileId y mkey del HTML de la página del proceso.
+    El portal requiere cookie de sesión (PublicSessionCookie) para devolver
+    el HTML con los documentos. Se obtiene haciendo primero una request
+    a la página principal y luego al popup con esa cookie.
     """
     import re as _re
+
     url_limpia = url_documentos.replace("gob.do//", "gob.do/")
 
-    # asPopupView=true + isModal=true carga el modal con tabla de documentos
-    # (confirmado en Network tab de Chrome)
-    sep = '&' if '?' in url_limpia else '?'
-    url_popup = url_limpia + sep + 'isModal=true&asPopupView=true'
-
-    print(f"🕵️ Cargando documentos: {url_popup[:100]}")
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    headers_base = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,*/*',
         'Accept-Language': 'es-ES,es;q=0.9',
-        'Referer': 'https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/Index',
-        'X-Requested-With': 'XMLHttpRequest',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'none',
     }
+
     session = requests.Session()
     session.verify = False
 
-    # Cargar página con popup de documentos
-    resp = session.get(url_popup, headers=headers, timeout=20)
+    # PASO 1: Obtener cookie de sesión visitando la página principal
+    print(f"🍪 Obteniendo sesión del portal...")
+    try:
+        session.get(
+            "https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/Index",
+            headers=headers_base,
+            timeout=15
+        )
+        cookies = {c.name: c.value for c in session.cookies}
+        print(f"🍪 Cookies obtenidas: {list(cookies.keys())}")
+    except Exception as e:
+        print(f"⚠️ Error obteniendo sesión: {e}")
+
+    # PASO 2: Cargar el popup con la sesión activa
+    # El referer correcto es el listado general
+    headers_popup = {
+        **headers_base,
+        'Accept': 'text/html, */*; q=0.01',
+        'Referer': 'https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/Index',
+        'X-Requested-With': 'XMLHttpRequest',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+    }
+
+    # Construir URL del popup
+    sep = '&' if '?' in url_limpia else '?'
+    url_popup = url_limpia + sep + 'isModal=true&asPopupView=true'
+    print(f"🕵️ Cargando popup: {url_popup[:100]}")
+
+    resp = session.get(url_popup, headers=headers_popup, timeout=20)
     html = resp.text
+    print(f"📄 HTML recibido: {len(html)} chars, status: {resp.status_code}")
 
     BASE_DOWNLOAD = "https://comunidad.comprasdominicana.gob.do/Public/Tendering/OpportunityDetail/DownloadFile"
 
-    # Extraer todos los pares documentFileId + mkey del HTML
     patrones = _re.findall(r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)", html)
     print(f"📋 {len(patrones)} documentos encontrados")
 
-    # Si no hay en popup, intentar URL original
+    # Si no hay documentos con el popup, intentar con sPopupView=true
     if not patrones:
-        resp2 = session.get(url_limpia, headers=headers, timeout=20)
+        url_popup2 = url_limpia + sep + 'sPopupView=true'
+        print(f"🔄 Reintentando con sPopupView: {url_popup2[:100]}")
+        resp2 = session.get(url_popup2, headers=headers_popup, timeout=20)
         html = resp2.text
         patrones = _re.findall(r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)", html)
-        print(f"📋 {len(patrones)} documentos en URL sin popup")
+        print(f"📋 {len(patrones)} documentos con sPopupView")
+
+    # Último intento: URL original sin parámetros popup
+    if not patrones:
+        resp3 = session.get(url_limpia, headers=headers_base, timeout=20)
+        html = resp3.text
+        patrones = _re.findall(r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)", html)
+        print(f"📋 {len(patrones)} documentos en URL original")
 
     if not patrones:
-        raise Exception(f"No se encontraron documentos descargables. URL: {url_popup}")
+        raise Exception(f"0 documentos encontrados tras 3 intentos. URL: {url_popup}")
 
     enlace_pliego = None
 
-    # Buscar el pliego por contexto (texto cerca del link)
+    # Buscar pliego por contexto
     for file_id, mkey in patrones:
         idx = html.find(f"documentFileId={file_id}")
         contexto = html[max(0, idx - 500):idx + 100].lower()
         if any(x in contexto for x in ["pliego", "bases de la contrataci", "especificaci", "condiciones"]):
             enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
-            print(f"✅ Pliego por contexto: documentFileId={file_id}")
+            print(f"✅ Pliego encontrado: documentFileId={file_id}")
             break
 
-    # Si no encontró, usar el último (suele ser el pliego)
     if not enlace_pliego:
         file_id, mkey = patrones[-1]
         enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
         print(f"⚠️ Usando último documento: documentFileId={file_id}")
 
+    # PASO 3: Descargar PDF con la misma sesión
+    headers_download = {
+        **headers_popup,
+        'Referer': url_popup,
+    }
     print(f"📥 Descargando: {enlace_pliego}")
-    resp_pdf = session.get(enlace_pliego, headers=headers, timeout=60)
+    resp_pdf = session.get(enlace_pliego, headers=headers_download, timeout=60)
 
     if resp_pdf.status_code != 200:
         raise Exception(f"Error descargando PDF: {resp_pdf.status_code}")
@@ -686,7 +725,7 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
             texto_completo += texto + "\n"
 
     print(f"📝 {len(texto_completo):,} caracteres extraídos")
-    return texto_completo  # ← CRÍTICO: sin esto todo falla
+    return texto_completo
 
 
 def ejecutar_analisis_gemini(proceso_id: str):
