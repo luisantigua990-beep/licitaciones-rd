@@ -25,7 +25,6 @@ from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from supabase import create_client
 from google import genai
-from google.genai import types
 
 from monitor import ejecutar_monitor
 from notifications import enviar_notificacion
