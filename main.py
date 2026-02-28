@@ -613,9 +613,10 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     import re as _re
     url_limpia = url_documentos.replace("gob.do//", "gob.do/")
 
-    # sPopupView=true carga el modal con la tabla de documentos
+    # asPopupView=true + isModal=true carga el modal con tabla de documentos
+    # (confirmado en Network tab de Chrome)
     sep = '&' if '?' in url_limpia else '?'
-    url_popup = url_limpia + sep + 'sPopupView=true'
+    url_popup = url_limpia + sep + 'isModal=true&asPopupView=true'
 
     print(f"🕵️ Cargando documentos: {url_popup[:100]}")
 
@@ -623,7 +624,8 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml,*/*',
         'Accept-Language': 'es-ES,es;q=0.9',
-        'Referer': 'https://comunidad.comprasdominicana.gob.do/',
+        'Referer': 'https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/Index',
+        'X-Requested-With': 'XMLHttpRequest',
     }
     session = requests.Session()
     session.verify = False
