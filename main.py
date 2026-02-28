@@ -659,13 +659,13 @@ def ejecutar_analisis_gemini(proceso_id: str):
         }).execute()
 
         # 2. SCRAPING Y EXTRACCIÓN DEL PDF
-        # Obtenemos la URL de tu base de datos (asegúrate de que "enlace_portal" sea el nombre correcto de tu columna)
-        proc_data = supabase.table("procesos").select("enlace_portal").eq("codigo_proceso", proceso_id).execute()
+        # Obtenemos la URL de tu base de datos (columna identificada como 'url')
+        proc_data = supabase.table("procesos").select("url").eq("codigo_proceso", proceso_id).execute()
         
-        if not proc_data.data or not proc_data.data[0].get("enlace_portal"):
+        if not proc_data.data or not proc_data.data[0].get("url"):
             raise Exception(f"No se encontró la URL del portal en la base de datos para {proceso_id}")
             
-        url_portal = proc_data.data[0]["enlace_portal"]
+        url_portal = proc_data.data[0]["url"]
         
         # Llamamos al brazo robótico
         texto_pliego = descargar_y_extraer_texto_pdf(url_portal)
