@@ -5,3 +5,5 @@ python-dotenv
 pywebpush
 requests
 beautifulsoup4
+google-generativeai
+PyPDF2
