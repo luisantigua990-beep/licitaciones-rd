@@ -600,6 +600,7 @@ Devuelve el resultado ESTRICTAMENTE usando esta estructura JSON:
 
 def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     """Busca el pliego real omitiendo botones falsos de JavaScript"""
+    # Limpieza de URL para evitar doble barra y asegurar conexión exitosa
     url_limpia = url_documentos.replace("gob.do//", "gob.do/")
     print(f"🕵️‍♂️ Entrando al portal para buscar documentos en: {url_limpia}")
     
@@ -612,22 +613,24 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     soup = BeautifulSoup(respuesta.text, 'html.parser')
     enlace_pdf = None
     
-    # Buscamos en las tablas el documento real (omitimos javascript:void(0))
+    # Buscamos en las filas de la tabla de documentos el enlace real de descarga
     for fila in soup.find_all('tr'):
         texto_fila = fila.get_text().lower()
         if any(x in texto_fila for x in ["bases de la contratación", "pliego", "condiciones"]):
+            # Buscamos enlaces reales que no sean javascript:void(0)
             enlaces = fila.find_all('a', href=True)
             for a in enlaces:
                 href = a['href']
+                # Filtro crítico para ignorar los botones de menú javascript vistos en los logs
                 if "javascript" not in href and href != "#":
                     enlace_pdf = href
                     break
             if enlace_pdf: break
                 
     if not enlace_pdf:
-        # Fallback: buscar cualquier link con texto 'descargar' o 'download'
+        # Intento de rescate: buscar cualquier link con texto 'descargar' que sea una URL real
         for a in soup.find_all('a', href=True):
-            if "descargar" in a.get_text().lower() or "download" in a['href'].lower():
+            if "descargar" in a.get_text().lower():
                 if "javascript" not in a['href']:
                     enlace_pdf = a['href']
                     break
@@ -649,9 +652,8 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     lector_pdf = PdfReader(pdf_file)
     
     texto_completo = ""
-    limite_paginas = min(len(lector_pdf.pages), 80)
-    
-    for i in range(limite_paginas):
+    # Límite de páginas para eficiencia en Railway
+    for i in range(min(len(lector_pdf.pages), 80)):
         texto_extraido = lector_pdf.pages[i].extract_text()
         if texto_extraido:
             texto_completo += texto_extraido + "\n"
@@ -678,7 +680,7 @@ def ejecutar_analisis_gemini(proceso_id: str):
             
         url_portal = proc_data.data[0]["url"]
         
-        # Llamamos al brazo robótico
+        # Llamamos al brazo robótico mejorado
         texto_pliego = descargar_y_extraer_texto_pdf(url_portal)
         
         if len(texto_pliego.strip()) < 100:
@@ -717,6 +719,7 @@ async def webhook_analisis_pliego(request: Request, background_tasks: Background
     proceso_id = registro.get("proceso_codigo")
     
     if proceso_id:
+        # Enviamos la tarea al fondo para no bloquear el sistema
         background_tasks.add_task(ejecutar_analisis_gemini, proceso_id)
         return {"status": "success", "message": f"IA encolada para {proceso_id}"}
     
