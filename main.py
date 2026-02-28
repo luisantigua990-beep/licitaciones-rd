@@ -599,11 +599,12 @@ Devuelve el resultado ESTRICTAMENTE usando esta estructura JSON:
 """
 
 def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
-    """Entra al portal, busca el pliego, lo descarga en memoria y extrae el texto"""
-    print(f"🕵️‍♂️ Entrando al portal para buscar documentos en: {url_documentos}")
+    """Busca el pliego real omitiendo botones falsos de JavaScript"""
+    url_limpia = url_documentos.replace("gob.do//", "gob.do/")
+    print(f"🕵️‍♂️ Entrando al portal para buscar documentos en: {url_limpia}")
     
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    respuesta = requests.get(url_documentos, headers=headers, verify=False)
+    respuesta = requests.get(url_limpia, headers=headers, verify=False)
     
     if respuesta.status_code != 200:
         raise Exception(f"Error de conexión con el portal: {respuesta.status_code}")
@@ -611,22 +612,33 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     soup = BeautifulSoup(respuesta.text, 'html.parser')
     enlace_pdf = None
     
-    # Buscamos en las tablas el documento "Bases de la Contratación"
+    # Buscamos en las tablas el documento real (omitimos javascript:void(0))
     for fila in soup.find_all('tr'):
         texto_fila = fila.get_text().lower()
-        if "bases de la contratación" in texto_fila or "pliego de condiciones" in texto_fila:
-            etiqueta_a = fila.find('a', href=True)
-            if etiqueta_a:
-                enlace_pdf = etiqueta_a['href']
-                break
+        if any(x in texto_fila for x in ["bases de la contratación", "pliego", "condiciones"]):
+            enlaces = fila.find_all('a', href=True)
+            for a in enlaces:
+                href = a['href']
+                if "javascript" not in href and href != "#":
+                    enlace_pdf = href
+                    break
+            if enlace_pdf: break
                 
     if not enlace_pdf:
-        raise Exception("No se encontró el botón de descarga del Pliego en la página.")
+        # Fallback: buscar cualquier link con texto 'descargar' o 'download'
+        for a in soup.find_all('a', href=True):
+            if "descargar" in a.get_text().lower() or "download" in a['href'].lower():
+                if "javascript" not in a['href']:
+                    enlace_pdf = a['href']
+                    break
+
+    if not enlace_pdf:
+        raise Exception("No se encontró un enlace de descarga válido en la página.")
         
     if enlace_pdf.startswith('/'):
         enlace_pdf = "https://comunidad.comprasdominicana.gob.do" + enlace_pdf
         
-    print(f"📥 Descargando PDF desde: {enlace_pdf}")
+    print(f"📥 Descargando PDF real desde: {enlace_pdf}")
     resp_pdf = requests.get(enlace_pdf, headers=headers, verify=False)
     
     if resp_pdf.status_code != 200:
@@ -637,7 +649,7 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     lector_pdf = PdfReader(pdf_file)
     
     texto_completo = ""
-    limite_paginas = min(len(lector_pdf.pages), 80) # Leemos máx 80 páginas para no saturar
+    limite_paginas = min(len(lector_pdf.pages), 80)
     
     for i in range(limite_paginas):
         texto_extraido = lector_pdf.pages[i].extract_text()
@@ -659,7 +671,6 @@ def ejecutar_analisis_gemini(proceso_id: str):
         }).execute()
 
         # 2. SCRAPING Y EXTRACCIÓN DEL PDF
-        # Obtenemos la URL de tu base de datos (usando la columna 'url' descubierta)
         proc_data = supabase.table("procesos").select("url").eq("codigo_proceso", proceso_id).execute()
         
         if not proc_data.data or not proc_data.data[0].get("url"):
@@ -685,12 +696,7 @@ def ejecutar_analisis_gemini(proceso_id: str):
         supabase.table("analisis_pliego").upsert({
             "proceso_id": proceso_id,
             "estado": "completado",
-            "alertas_fraude": datos_json.get("alertas_fraude"),
-            "requisitos_experiencia": datos_json.get("requisitos_experiencia"),
-            "requisitos_financieros": datos_json.get("requisitos_financieros"),
-            "garantias_exigidas": datos_json.get("garantias_exigidas"),
-            "personal_y_equipos": datos_json.get("personal_y_equipos"),
-            "checklist_legal": datos_json.get("checklist_legal")
+            **datos_json
         }).execute()
         
         print(f"✅ Análisis de {proceso_id} completado y guardado.")
@@ -708,10 +714,9 @@ async def webhook_analisis_pliego(request: Request, background_tasks: Background
     payload = await request.json()
     
     registro = payload.get("record", {})
-    proceso_id = registro.get("proceso_codigo") # Asegúrate que así se llama tu columna
+    proceso_id = registro.get("proceso_codigo")
     
     if proceso_id:
-        # Enviamos la tarea al fondo
         background_tasks.add_task(ejecutar_analisis_gemini, proceso_id)
         return {"status": "success", "message": f"IA encolada para {proceso_id}"}
     
