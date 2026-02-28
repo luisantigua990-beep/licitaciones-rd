@@ -11,6 +11,10 @@ import threading
 import time
 import urllib3
 import json
+import io
+from PyPDF2 import PdfReader
+from bs4 import BeautifulSoup
+import requests
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
