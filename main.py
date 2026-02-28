@@ -61,7 +61,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # ============================================
 
 def monitor_loop():
-    """Ejecuta el monitor de la API DGCP cada 8 horas."""
+    """Ejecuta el monitor de la API DGCP cada 8 horas (ciclo del Data Warehouse)."""
     INTERVALO_HORAS = 8
     while True:
         try:
@@ -69,12 +69,18 @@ def monitor_loop():
             ejecutar_monitor()
         except Exception as e:
             print(f"❌ Error en monitor API: {e}")
+
+        print(f"💤 Próxima sincronización API en {INTERVALO_HORAS} horas...")
         time.sleep(INTERVALO_HORAS * 3600)
 
 
 def scraper_loop():
-    """Scraper del portal transaccional cada 3 minutos."""
+    """
+    Scraper del portal transaccional en tiempo real, cada 3 minutos.
+    Detecta procesos nuevos inmediatamente, sin esperar el ciclo de 8h de la API.
+    """
     INTERVALO_MINUTOS = 3
+    # Esperar 30 segundos al inicio para que el monitor API arranque primero
     time.sleep(30)
     while True:
         try:
@@ -82,15 +88,25 @@ def scraper_loop():
             ejecutar_scraper_portal()
         except Exception as e:
             print(f"❌ Error en scraper portal: {e}")
+
         time.sleep(INTERVALO_MINUTOS * 60)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Inicia los monitores al arrancar."""
-    threading.Thread(target=monitor_loop, daemon=True).start()
-    threading.Thread(target=scraper_loop, daemon=True).start()
+    """Inicia el monitor API y el scraper en tiempo real al arrancar."""
+    # Monitor API DGCP (cada 8h, enriquece con UNSPSC)
+    hilo_monitor = threading.Thread(target=monitor_loop, daemon=True)
+    hilo_monitor.start()
+    print("✅ Monitor API DGCP iniciado (cada 8 horas)")
+
+    # Scraper portal transaccional (cada 3 min, tiempo real)
+    hilo_scraper = threading.Thread(target=scraper_loop, daemon=True)
+    hilo_scraper.start()
+    print("✅ Scraper portal en tiempo real iniciado (cada 3 minutos)")
+
     yield
+    print("🛑 Servidor detenido")
 
 
 # ============================================
@@ -99,10 +115,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="API Licitaciones RD",
+    description="Sistema de notificaciones de procesos de compras públicas - República Dominicana",
     version="1.0.0",
     lifespan=lifespan
 )
 
+# Permitir conexiones desde cualquier origen (para la PWA)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -111,36 +129,455 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Endpoints base y estáticos
+
+@app.get("/api/sync-status")
+def sync_status():
+    """Estado de sincronización con la API DGCP."""
+    from monitor import obtener_estado_sync
+    estado = obtener_estado_sync()
+    if not estado:
+        return {
+            "disponible": False,
+            "mensaje": "Sin datos de sincronización aún. El monitor aún no ha ejecutado.",
+            "ciclo_horas": 8
+        }
+    return {"disponible": True, **estado}
+
+
+@app.get("/test")
+def test_page():
+    return FileResponse(os.path.join(BASE_DIR, "static", "test_push.html"))
+
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse(os.path.join(BASE_DIR, "static", "sw.js"), media_type="application/javascript")
+
+
+# ============================================
+# ENDPOINTS — PROCESOS
+# ============================================
+
 app.mount("/frontend", StaticFiles(directory=os.path.join(BASE_DIR, "frontend"), html=True), name="frontend")
 
 @app.get("/")
 def inicio():
     return FileResponse(os.path.join(BASE_DIR, "frontend", "index.html"))
 
-@app.get("/api/stats")
-def estadisticas():
-    try:
-        activos = supabase.table("procesos").select("id", count="exact").eq("estado_proceso", "Proceso publicado").execute()
-        return {"total_procesos": activos.count or 0, "ultima_actualizacion": datetime.now().isoformat()}
-    except: return {"total_procesos": 0}
 
 @app.get("/api/procesos")
-def listar_procesos(page: int = 1, limit: int = 20, solo_activos: bool = True):
+def listar_procesos(
+    page: int = Query(1, ge=1, description="Página"),
+    limit: int = Query(20, ge=1, le=100, description="Registros por página"),
+    objeto: str = Query(None, description="Filtrar por objeto: Obras, Bienes, Servicios, Consultoría"),
+    modalidad: str = Query(None, description="Filtrar por modalidad"),
+    unidad_compra: int = Query(None, description="Filtrar por código de unidad de compra"),
+    monto_min: float = Query(None, description="Monto mínimo estimado"),
+    monto_max: float = Query(None, description="Monto máximo estimado"),
+    busqueda: str = Query(None, description="Buscar en título y descripción"),
+    solo_activos: bool = Query(True, description="Solo procesos abiertos"),
+):
+    """Lista procesos con filtros."""
     try:
         query = supabase.table("procesos").select("*", count="exact")
+        
         if solo_activos:
-            query = query.eq("estado_proceso", "Proceso publicado").gt("fecha_fin_recepcion_ofertas", datetime.now().isoformat())
+            query = query.eq("estado_proceso", "Proceso publicado")
+            query = query.gt("fecha_fin_recepcion_ofertas", datetime.now().isoformat())
+        
+        if objeto:
+            query = query.eq("objeto_proceso", objeto)
+        if modalidad:
+            query = query.eq("modalidad", modalidad)
+        if unidad_compra:
+            query = query.eq("codigo_unidad_compra", unidad_compra)
+        if monto_min:
+            query = query.gte("monto_estimado", monto_min)
+        if monto_max:
+            query = query.lte("monto_estimado", monto_max)
+        if busqueda:
+            query = query.or_(f"titulo.ilike.%{busqueda}%,descripcion.ilike.%{busqueda}%")
+        
+        # Paginación
         offset = (page - 1) * limit
-        result = query.order("fecha_publicacion", desc=True).range(offset, offset + limit - 1).execute()
-        return {"procesos": result.data, "total": result.count}
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+        query = query.order("fecha_publicacion", desc=True)
+        query = query.range(offset, offset + limit - 1)
+        
+        result = query.execute()
+        
+        return {
+            "procesos": result.data,
+            "total": result.count,
+            "page": page,
+            "limit": limit,
+            "pages": (result.count + limit - 1) // limit if result.count else 0
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/procesos/{codigo_proceso}")
 def detalle_proceso(codigo_proceso: str):
-    proc = supabase.table("procesos").select("*").eq("codigo_proceso", codigo_proceso).execute()
-    if not proc.data: raise HTTPException(status_code=404, detail="No encontrado")
-    return {"proceso": proc.data[0]}
+    """Obtiene el detalle de un proceso con sus artículos."""
+    try:
+        proc = supabase.table("procesos") \
+            .select("*") \
+            .eq("codigo_proceso", codigo_proceso) \
+            .execute()
+        
+        if not proc.data:
+            raise HTTPException(status_code=404, detail="Proceso no encontrado")
+        
+        arts = supabase.table("articulos_proceso") \
+            .select("*") \
+            .eq("codigo_proceso", codigo_proceso) \
+            .execute()
+        
+        return {
+            "proceso": proc.data[0],
+            "articulos": arts.data
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# ENDPOINTS — CATÁLOGO UNSPSC
+# ============================================
+
+@app.get("/api/catalogo/segmentos")
+def listar_segmentos():
+    try:
+        result = supabase.rpc("get_segmentos", {}).execute()
+        if not result.data:
+            result = supabase.table("catalogo_unspsc") \
+                .select("segmento, descripcion_segmento") \
+                .execute()
+            segmentos = {}
+            for item in result.data:
+                seg = item["segmento"]
+                if seg not in segmentos:
+                    segmentos[seg] = item["descripcion_segmento"]
+            return {"segmentos": [{"codigo": k, "descripcion": v} for k, v in sorted(segmentos.items())]}
+        return {"segmentos": result.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/catalogo/familias/{segmento}")
+def listar_familias(segmento: str):
+    try:
+        result = supabase.table("catalogo_unspsc") \
+            .select("familia, descripcion_familia") \
+            .eq("segmento", segmento) \
+            .execute()
+        familias = {}
+        for item in result.data:
+            fam = item["familia"]
+            if fam not in familias:
+                familias[fam] = item["descripcion_familia"]
+        return {"familias": [{"codigo": k, "descripcion": v} for k, v in sorted(familias.items())]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/catalogo/clases/{familia}")
+def listar_clases(familia: str):
+    try:
+        result = supabase.table("catalogo_unspsc") \
+            .select("clase, descripcion_clase") \
+            .eq("familia", familia) \
+            .execute()
+        clases = {}
+        for item in result.data:
+            cls = item["clase"]
+            if cls not in clases:
+                clases[cls] = item["descripcion_clase"]
+        return {"clases": [{"codigo": k, "descripcion": v} for k, v in sorted(clases.items())]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/unspsc/buscar")
+def buscar_unspsc(q: str = ""):
+    if not q or len(q) < 2:
+        return []
+    result = supabase.table("catalogo_unspsc")\
+        .select("familia, descripcion_familia")\
+        .or_(f"descripcion_familia.ilike.%{q}%,descripcion_subclase.ilike.%{q}%,sinonimos_subclase.ilike.%{q}%")\
+        .limit(50)\
+        .execute()
+    seen = set()
+    unique = []
+    for r in (result.data or []):
+        if r["familia"] not in seen:
+            seen.add(r["familia"])
+            unique.append(r)
+    return unique[:15]
+
+
+# ============================================
+# ENDPOINTS — FILTROS Y MATCHING
+# ============================================
+
+@app.get("/api/procesos/por-rubros")
+def procesos_por_rubros(
+    segmentos: str = Query(None, description="Códigos de segmento separados por coma"),
+    familias: str = Query(None, description="Códigos de familia separados por coma"),
+    clases: str = Query(None, description="Códigos de clase separados por coma"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+):
+    try:
+        art_query = supabase.table("articulos_proceso").select("codigo_proceso")
+        
+        if clases:
+            lista_clases = [c.strip() for c in clases.split(",")]
+            art_query = art_query.in_("clase_unspsc", lista_clases)
+        elif familias:
+            lista_familias = [f.strip() for f in familias.split(",")]
+            art_query = art_query.in_("familia_unspsc", lista_familias)
+        elif segmentos:
+            lista_segmentos = [s.strip() for s in segmentos.split(",")]
+            condiciones = [f"familia_unspsc.like.{seg[:2]}%" for seg in lista_segmentos]
+            art_query = art_query.or_(",".join(condiciones))
+        else:
+            raise HTTPException(status_code=400, detail="Debe especificar al menos un filtro de rubro")
+        
+        art_result = art_query.execute()
+        codigos = list(set(a["codigo_proceso"] for a in art_result.data))
+        
+        if not codigos:
+            return {"procesos": [], "total": 0, "page": page, "limit": limit, "pages": 0}
+        
+        offset = (page - 1) * limit
+        proc_query = supabase.table("procesos") \
+            .select("*", count="exact") \
+            .in_("codigo_proceso", codigos[:200]) \
+            .eq("estado_proceso", "Proceso publicado") \
+            .gt("fecha_fin_recepcion_ofertas", datetime.now().isoformat()) \
+            .order("fecha_publicacion", desc=True) \
+            .range(offset, offset + limit - 1)
+        
+        result = proc_query.execute()
+        
+        return {
+            "procesos": result.data,
+            "total": result.count,
+            "page": page,
+            "limit": limit,
+            "pages": (result.count + limit - 1) // limit if result.count else 0
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# ENDPOINTS — ESTADÍSTICAS
+# ============================================
+
+@app.get("/api/stats")
+def estadisticas():
+    try:
+        procesos = supabase.table("procesos").select("id", count="exact").execute()
+        activos = supabase.table("procesos") \
+            .select("id", count="exact") \
+            .eq("estado_proceso", "Proceso publicado") \
+            .gt("fecha_fin_recepcion_ofertas", datetime.now().isoformat()) \
+            .execute()
+        articulos = supabase.table("articulos_proceso").select("id", count="exact").execute()
+        
+        return {
+            "total_procesos": procesos.count,
+            "procesos_activos": activos.count,
+            "total_articulos": articulos.count,
+            "ultima_actualizacion": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# ENDPOINTS — NOTIFICACIONES WEB PUSH
+# ============================================
+
+@app.get("/api/vapid-public-key")
+def get_vapid_public_key():
+    return {"publicKey": os.getenv("VAPID_PUBLIC_KEY")}
+
+
+@app.post("/api/notificaciones/suscribirse")
+async def suscribirse(payload: dict):
+    try:
+        data = {
+            "user_id": payload.get("user_id", "anonimo"),
+            "endpoint": payload["subscription"]["endpoint"],
+            "auth": payload["subscription"]["keys"]["auth"],
+            "p256dh": payload["subscription"]["keys"]["p256dh"],
+            "intereses_rubros": payload.get("rubros", []),
+            "active": True
+        }
+        supabase.table("user_subscriptions").upsert(data, on_conflict="endpoint").execute()
+        return {"ok": True, "message": "Suscripción guardada"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/notificaciones/desuscribirse")
+async def desuscribirse(payload: dict):
+    endpoint = payload.get("endpoint")
+    supabase.table("user_subscriptions").update({"active": False}).eq("endpoint", endpoint).execute()
+    return {"ok": True}
+
+@app.post("/api/admin/forzar-monitor")
+async def forzar_monitor():
+    from monitor import obtener_todas_las_paginas, guardar_procesos_nuevos, procesar_articulos_de_nuevos, notificar_procesos_nuevos
+    procesos = obtener_todas_las_paginas(fecha_desde="2026-02-20", fecha_hasta="2026-02-24")
+    nuevos = guardar_procesos_nuevos(procesos)
+    if nuevos:
+        procesar_articulos_de_nuevos(nuevos)
+        notificar_procesos_nuevos(nuevos)
+    return {"nuevos": len(nuevos)}
+
+
+@app.put("/api/notificaciones/intereses")
+async def actualizar_intereses(payload: dict):
+    endpoint = payload.get("endpoint")
+    rubros = payload.get("rubros", [])
+    supabase.table("user_subscriptions").update({"intereses_rubros": rubros}).eq("endpoint", endpoint).execute()
+    return {"ok": True}
+
+
+@app.post("/api/notificaciones/enviar-prueba")
+async def enviar_prueba(payload: dict):
+    endpoint = payload.get("endpoint")
+    try:
+        result = supabase.table("user_subscriptions").select("*").eq("endpoint", endpoint).single().execute()
+        sub = result.data
+        subscription_info = {
+            "endpoint": sub["endpoint"],
+            "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}
+        }
+        ok = enviar_notificacion(
+            subscription_info,
+            titulo="🔔 LicitacionLab Test",
+            cuerpo="Notificaciones funcionando correctamente.",
+            url="/"
+        )
+        return {"ok": ok}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/notificar-seguimiento")
+async def notificar_seguimiento():
+    from notifications import enviar_notificacion
+    from datetime import date, timedelta
+
+    ahora   = datetime.now()
+    hoy     = date.today()
+
+    seguimientos = supabase.table("seguimiento_procesos") \
+        .select("user_id, proceso_codigo, estado") \
+        .not_.in_("estado", ["adjudicado", "no-adj"]) \
+        .execute().data or []
+
+    if not seguimientos:
+        return {"notificaciones_enviadas": 0}
+
+    codigos = list(set(s["proceso_codigo"] for s in seguimientos))
+    procesos_map = {}
+    for i in range(0, len(codigos), 50):
+        bloque = codigos[i:i+50]
+        res = supabase.table("procesos") \
+            .select("codigo_proceso,titulo,unidad_compra,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda") \
+            .in_("codigo_proceso", bloque).execute()
+        for p in (res.data or []):
+            procesos_map[p["codigo_proceso"]] = p
+
+    user_ids = list(set(s["user_id"] for s in seguimientos))
+    subs_map = {}
+    for uid in user_ids:
+        subs = supabase.table("user_subscriptions") \
+            .select("endpoint,auth,p256dh") \
+            .eq("user_id", uid).eq("active", True).execute().data or []
+        if subs:
+            subs_map[uid] = subs
+
+    enviadas = 0
+    FECHAS_LABELS = {
+        "fecha_enmienda":                 ("❓", "cierre de preguntas"),
+        "fecha_fin_recepcion_ofertas":    ("📝", "presentación de ofertas"),
+        "fecha_apertura_ofertas":         ("📂", "apertura de sobres"),
+        "fecha_estimada_adjudicacion":    ("🏆", "adjudicación estimada"),
+    }
+
+    for seg in seguimientos:
+        uid    = seg["user_id"]
+        codigo = seg["proceso_codigo"]
+        p      = procesos_map.get(codigo)
+        subs   = subs_map.get(uid, [])
+
+        if not p or not subs:
+            continue
+
+        titulo   = (p.get("titulo") or "")[:50]
+        entidad  = (p.get("unidad_compra") or "")[:30]
+
+        for campo, (icono, nombre_fecha) in FECHAS_LABELS.items():
+            val = p.get(campo)
+            if not val:
+                continue
+
+            try:
+                dt  = datetime.fromisoformat(str(val).replace("Z", ""))
+                dia = dt.date()
+            except Exception:
+                continue
+
+            dias = (dia - hoy).days
+
+            if dias not in [0, 1, 3, 7]:
+                continue
+
+            if dias == 0:
+                urgencia = f"🚨 ¡HOY es el {nombre_fecha}!"
+            elif dias == 1:
+                urgencia = f"⏰ ¡Mañana: {nombre_fecha}!"
+            elif dias == 3:
+                urgencia = f"⚡ En 3 días: {nombre_fecha}"
+            else:
+                urgencia = f"📅 En 7 días: {nombre_fecha}"
+
+            if campo == "fecha_fin_recepcion_ofertas" and dias <= 3:
+                urgencia = urgencia.replace("⚡", "🔴").replace("⏰", "🔴").replace("🚨", "🔴")
+
+            APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+
+            for sub in subs:
+                ok = enviar_notificacion(
+                    subscription_info={"endpoint": sub["endpoint"], "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}},
+                    titulo=urgencia,
+                    cuerpo=f"{titulo} · {entidad}",
+                    url=f"{APP_URL}?proceso={codigo}"
+                )
+                if ok:
+                    enviadas += 1
+
+    return {"notificaciones_enviadas": enviadas, "seguimientos_revisados": len(seguimientos)}
+
+@app.get("/api/admin/cron-log")
+def ver_cron_log(job: str = None, limit: int = 50):
+    query = supabase.table("cron_log").select("*").order("ejecutado_at", desc=True).limit(limit)
+    if job:
+        query = query.eq("job", job)
+    result = query.execute()
+    return {"logs": result.data, "total": len(result.data)}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -162,100 +599,120 @@ Devuelve el resultado ESTRICTAMENTE usando esta estructura JSON:
 """
 
 def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
-    """Busca el pliego real omitiendo botones falsos de JavaScript"""
-    # Limpiamos la URL por si viene con doble barra
-    url_limpia = url_documentos.replace("gob.do//", "gob.do/")
-    print(f"🕵️‍♂️ Entrando al portal para buscar documentos en: {url_limpia}")
+    """Entra al portal, busca el pliego, lo descarga en memoria y extrae el texto"""
+    print(f"🕵️‍♂️ Entrando al portal para buscar documentos en: {url_documentos}")
     
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    respuesta = requests.get(url_limpia, headers=headers, verify=False)
+    respuesta = requests.get(url_documentos, headers=headers, verify=False)
     
     if respuesta.status_code != 200:
-        raise Exception(f"Error de conexión: {respuesta.status_code}")
+        raise Exception(f"Error de conexión con el portal: {respuesta.status_code}")
         
     soup = BeautifulSoup(respuesta.text, 'html.parser')
     enlace_pdf = None
     
-    # Buscamos en las filas de la tabla de documentos
+    # Buscamos en las tablas el documento "Bases de la Contratación"
     for fila in soup.find_all('tr'):
         texto_fila = fila.get_text().lower()
-        if any(x in texto_fila for x in ["bases de la contratación", "pliego", "condiciones"]):
-            # Buscamos enlaces reales (que no sean javascript:void(0))
-            enlaces = fila.find_all('a', href=True)
-            for a in enlaces:
-                href = a['href']
-                if "javascript" not in href and href != "#":
-                    enlace_pdf = href
-                    break
-            if enlace_pdf: break
+        if "bases de la contratación" in texto_fila or "pliego de condiciones" in texto_fila:
+            etiqueta_a = fila.find('a', href=True)
+            if etiqueta_a:
+                enlace_pdf = etiqueta_a['href']
+                break
                 
     if not enlace_pdf:
-        # Intento de rescate: buscar cualquier link que tenga la palabra 'Download' o 'Descargar'
-        for a in soup.find_all('a', href=True):
-            if "descargar" in a.get_text().lower() or "download" in a['href'].lower():
-                if "javascript" not in a['href']:
-                    enlace_pdf = a['href']
-                    break
-
-    if not enlace_pdf:
-        raise Exception("No se encontró un enlace de descarga válido en la página.")
+        raise Exception("No se encontró el botón de descarga del Pliego en la página.")
         
     if enlace_pdf.startswith('/'):
         enlace_pdf = "https://comunidad.comprasdominicana.gob.do" + enlace_pdf
         
-    print(f"📥 Descargando PDF real desde: {enlace_pdf}")
+    print(f"📥 Descargando PDF desde: {enlace_pdf}")
     resp_pdf = requests.get(enlace_pdf, headers=headers, verify=False)
     
+    if resp_pdf.status_code != 200:
+         raise Exception("Error al descargar el archivo PDF.")
+    
+    print("📄 Leyendo texto con PyPDF2...")
     pdf_file = io.BytesIO(resp_pdf.content)
     lector_pdf = PdfReader(pdf_file)
     
     texto_completo = ""
-    for i in range(min(len(lector_pdf.pages), 80)):
-        texto_completo += (lector_pdf.pages[i].extract_text() or "") + "\n"
+    limite_paginas = min(len(lector_pdf.pages), 80) # Leemos máx 80 páginas para no saturar
+    
+    for i in range(limite_paginas):
+        texto_extraido = lector_pdf.pages[i].extract_text()
+        if texto_extraido:
+            texto_completo += texto_extraido + "\n"
             
     return texto_completo
 
 
 def ejecutar_analisis_gemini(proceso_id: str):
-    """Lógica de IA en segundo plano"""
+    """Descarga el pliego, lo lee y guarda el JSON en Supabase en segundo plano"""
     try:
         print(f"🚀 Iniciando IA para: {proceso_id}")
-        supabase.table("analisis_pliego").upsert({"proceso_id": proceso_id, "estado": "procesando"}).execute()
+        
+        # 1. ACTUALIZAR ESTADO EN SUPABASE
+        supabase.table("analisis_pliego").upsert({
+            "proceso_id": proceso_id, 
+            "estado": "procesando"
+        }).execute()
 
-        # Obtenemos la URL guardada en la columna 'url'
+        # 2. SCRAPING Y EXTRACCIÓN DEL PDF
+        # Obtenemos la URL de tu base de datos (usando la columna 'url' descubierta)
         proc_data = supabase.table("procesos").select("url").eq("codigo_proceso", proceso_id).execute()
+        
         if not proc_data.data or not proc_data.data[0].get("url"):
-            raise Exception(f"No se encontró URL para {proceso_id}")
+            raise Exception(f"No se encontró la URL del portal en la base de datos para {proceso_id}")
             
         url_portal = proc_data.data[0]["url"]
+        
+        # Llamamos al brazo robótico
         texto_pliego = descargar_y_extraer_texto_pdf(url_portal)
         
         if len(texto_pliego.strip()) < 100:
-            raise Exception("PDF sin texto suficiente para análisis.")
+            raise Exception("El PDF parece estar vacío o es un documento escaneado (imágenes).")
         
-        if not modelo_gemini: raise Exception("IA no configurada.")
+        # 3. LLAMADA A GEMINI 1.5 FLASH
+        if not modelo_gemini:
+            raise Exception("No se configuró Gemini. Revisa tu GEMINI_API_KEY en Railway.")
             
-        print("🤖 Pasando el texto a Gemini...")
+        print("🤖 Pasando el texto del pliego a Gemini...")
         respuesta = modelo_gemini.generate_content([PROMPT_MAESTRO, texto_pliego])
         datos_json = json.loads(respuesta.text)
         
+        # 4. GUARDAR RESULTADOS EN LA BÓVEDA
         supabase.table("analisis_pliego").upsert({
             "proceso_id": proceso_id,
             "estado": "completado",
-            **datos_json
+            "alertas_fraude": datos_json.get("alertas_fraude"),
+            "requisitos_experiencia": datos_json.get("requisitos_experiencia"),
+            "requisitos_financieros": datos_json.get("requisitos_financieros"),
+            "garantias_exigidas": datos_json.get("garantias_exigidas"),
+            "personal_y_equipos": datos_json.get("personal_y_equipos"),
+            "checklist_legal": datos_json.get("checklist_legal")
         }).execute()
         
-        print(f"✅ Análisis de {proceso_id} completado.")
+        print(f"✅ Análisis de {proceso_id} completado y guardado.")
 
     except Exception as e:
         print(f"❌ Error de IA en {proceso_id}: {str(e)}")
-        supabase.table("analisis_pliego").upsert({"proceso_id": proceso_id, "estado": "error"}).execute()
+        supabase.table("analisis_pliego").upsert({
+            "proceso_id": proceso_id,
+            "estado": "error"
+        }).execute()
 
 @app.post("/api/webhook/analizar-pliego")
 async def webhook_analisis_pliego(request: Request, background_tasks: BackgroundTasks):
+    """Endpoint llamado por Supabase (Webhook) al insertar un nuevo seguimiento"""
     payload = await request.json()
-    proceso_id = payload.get("record", {}).get("proceso_codigo")
+    
+    registro = payload.get("record", {})
+    proceso_id = registro.get("proceso_codigo") # Asegúrate que así se llama tu columna
+    
     if proceso_id:
+        # Enviamos la tarea al fondo
         background_tasks.add_task(ejecutar_analisis_gemini, proceso_id)
-        return {"status": "success"}
-    return {"status": "error"}
+        return {"status": "success", "message": f"IA encolada para {proceso_id}"}
+    
+    return {"status": "error", "message": "Payload inválido o sin proceso_codigo"}
