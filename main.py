@@ -3,29 +3,54 @@ API de Licitaciones RD — Backend FastAPI
 =========================================
 - Sirve datos de procesos y artículos a la PWA
 - Ejecuta el monitor automáticamente cada 10 minutos
+- Análisis de pliegos con IA de Gemini en segundo plano
 """
 
 import os
 import threading
 import time
+import urllib3
+import json
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from supabase import create_client
+import google.generativeai as genai
 
 from monitor import ejecutar_monitor
 from notifications import enviar_notificacion
+
+# Silenciamos los warnings del SSL de la DGCP
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# ============================================
+# CONFIGURACIÓN DE INTELIGENCIA ARTIFICIAL
+# ============================================
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+modelo_gemini = None
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    modelo_gemini = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        generation_config={"response_mime_type": "application/json"}
+    )
+else:
+    print("⚠️ ADVERTENCIA: No se encontró GEMINI_API_KEY en las variables de entorno.")
+
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ============================================
 # MONITOR AUTOMÁTICO EN SEGUNDO PLANO
@@ -99,20 +124,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-from fastapi.responses import FileResponse
 
-import os
-from fastapi.responses import FileResponse
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @app.get("/api/sync-status")
 def sync_status():
-    """
-    Estado de sincronización con la API DGCP.
-    La DGCP opera sobre un Data Warehouse que se refresca cada ~8 horas,
-    por lo que los procesos pueden demorar hasta 8h en aparecer desde su publicación.
-    """
+    """Estado de sincronización con la API DGCP."""
     from monitor import obtener_estado_sync
     estado = obtener_estado_sync()
     if not estado:
@@ -200,7 +216,6 @@ def listar_procesos(
 def detalle_proceso(codigo_proceso: str):
     """Obtiene el detalle de un proceso con sus artículos."""
     try:
-        # Obtener proceso
         proc = supabase.table("procesos") \
             .select("*") \
             .eq("codigo_proceso", codigo_proceso) \
@@ -209,7 +224,6 @@ def detalle_proceso(codigo_proceso: str):
         if not proc.data:
             raise HTTPException(status_code=404, detail="Proceso no encontrado")
         
-        # Obtener artículos del proceso
         arts = supabase.table("articulos_proceso") \
             .select("*") \
             .eq("codigo_proceso", codigo_proceso) \
@@ -232,84 +246,53 @@ def detalle_proceso(codigo_proceso: str):
 
 @app.get("/api/catalogo/segmentos")
 def listar_segmentos():
-    """Lista los segmentos principales del catálogo UNSPSC (nivel más alto)."""
     try:
         result = supabase.rpc("get_segmentos", {}).execute()
-        
-        # Si el RPC no existe, hacemos la consulta directa
         if not result.data:
             result = supabase.table("catalogo_unspsc") \
                 .select("segmento, descripcion_segmento") \
                 .execute()
-            
-            # Agrupar por segmento (eliminar duplicados)
             segmentos = {}
             for item in result.data:
                 seg = item["segmento"]
                 if seg not in segmentos:
                     segmentos[seg] = item["descripcion_segmento"]
-            
-            return {
-                "segmentos": [
-                    {"codigo": k, "descripcion": v}
-                    for k, v in sorted(segmentos.items())
-                ]
-            }
-        
+            return {"segmentos": [{"codigo": k, "descripcion": v} for k, v in sorted(segmentos.items())]}
         return {"segmentos": result.data}
-    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/catalogo/familias/{segmento}")
 def listar_familias(segmento: str):
-    """Lista las familias dentro de un segmento."""
     try:
         result = supabase.table("catalogo_unspsc") \
             .select("familia, descripcion_familia") \
             .eq("segmento", segmento) \
             .execute()
-        
         familias = {}
         for item in result.data:
             fam = item["familia"]
             if fam not in familias:
                 familias[fam] = item["descripcion_familia"]
-        
-        return {
-            "familias": [
-                {"codigo": k, "descripcion": v}
-                for k, v in sorted(familias.items())
-            ]
-        }
-    
+        return {"familias": [{"codigo": k, "descripcion": v} for k, v in sorted(familias.items())]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/catalogo/clases/{familia}")
 def listar_clases(familia: str):
-    """Lista las clases dentro de una familia."""
     try:
         result = supabase.table("catalogo_unspsc") \
             .select("clase, descripcion_clase") \
             .eq("familia", familia) \
             .execute()
-        
         clases = {}
         for item in result.data:
             cls = item["clase"]
             if cls not in clases:
                 clases[cls] = item["descripcion_clase"]
-        
-        return {
-            "clases": [
-                {"codigo": k, "descripcion": v}
-                for k, v in sorted(clases.items())
-            ]
-        }
-    
+        return {"clases": [{"codigo": k, "descripcion": v} for k, v in sorted(clases.items())]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -317,7 +300,6 @@ def listar_clases(familia: str):
 def buscar_unspsc(q: str = ""):
     if not q or len(q) < 2:
         return []
-    # Buscar en familia y también en subclase/sinónimos
     result = supabase.table("catalogo_unspsc")\
         .select("familia, descripcion_familia")\
         .or_(f"descripcion_familia.ilike.%{q}%,descripcion_subclase.ilike.%{q}%,sinonimos_subclase.ilike.%{q}%")\
@@ -344,12 +326,7 @@ def procesos_por_rubros(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
 ):
-    """
-    Busca procesos activos que contengan artículos de los rubros indicados.
-    Este es el endpoint clave para las notificaciones filtradas.
-    """
     try:
-        # Construir filtro de artículos
         art_query = supabase.table("articulos_proceso").select("codigo_proceso")
         
         if clases:
@@ -359,25 +336,18 @@ def procesos_por_rubros(
             lista_familias = [f.strip() for f in familias.split(",")]
             art_query = art_query.in_("familia_unspsc", lista_familias)
         elif segmentos:
-            # Para segmentos, necesitamos buscar familias que empiecen con ese segmento
             lista_segmentos = [s.strip() for s in segmentos.split(",")]
-            # Las familias UNSPSC empiezan con el código del segmento
-            condiciones = []
-            for seg in lista_segmentos:
-                condiciones.append(f"familia_unspsc.like.{seg[:2]}%")
+            condiciones = [f"familia_unspsc.like.{seg[:2]}%" for seg in lista_segmentos]
             art_query = art_query.or_(",".join(condiciones))
         else:
             raise HTTPException(status_code=400, detail="Debe especificar al menos un filtro de rubro")
         
         art_result = art_query.execute()
-        
-        # Obtener códigos únicos de procesos
         codigos = list(set(a["codigo_proceso"] for a in art_result.data))
         
         if not codigos:
             return {"procesos": [], "total": 0, "page": page, "limit": limit, "pages": 0}
         
-        # Obtener esos procesos (solo activos)
         offset = (page - 1) * limit
         proc_query = supabase.table("procesos") \
             .select("*", count="exact") \
@@ -409,7 +379,6 @@ def procesos_por_rubros(
 
 @app.get("/api/stats")
 def estadisticas():
-    """Estadísticas generales del sistema."""
     try:
         procesos = supabase.table("procesos").select("id", count="exact").execute()
         activos = supabase.table("procesos") \
@@ -425,9 +394,9 @@ def estadisticas():
             "total_articulos": articulos.count,
             "ultima_actualizacion": datetime.now().isoformat()
         }
-    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ============================================
 # ENDPOINTS — NOTIFICACIONES WEB PUSH
@@ -435,13 +404,11 @@ def estadisticas():
 
 @app.get("/api/vapid-public-key")
 def get_vapid_public_key():
-    """El frontend necesita esta clave para suscribirse."""
     return {"publicKey": os.getenv("VAPID_PUBLIC_KEY")}
 
 
 @app.post("/api/notificaciones/suscribirse")
 async def suscribirse(payload: dict):
-    """Recibe la suscripción del navegador y la guarda en Supabase."""
     try:
         data = {
             "user_id": payload.get("user_id", "anonimo"),
@@ -459,12 +426,8 @@ async def suscribirse(payload: dict):
 
 @app.post("/api/notificaciones/desuscribirse")
 async def desuscribirse(payload: dict):
-    """Desactiva una suscripción."""
     endpoint = payload.get("endpoint")
-    supabase.table("user_subscriptions")\
-        .update({"active": False})\
-        .eq("endpoint", endpoint)\
-        .execute()
+    supabase.table("user_subscriptions").update({"active": False}).eq("endpoint", endpoint).execute()
     return {"ok": True}
 
 @app.post("/api/admin/forzar-monitor")
@@ -480,33 +443,22 @@ async def forzar_monitor():
 
 @app.put("/api/notificaciones/intereses")
 async def actualizar_intereses(payload: dict):
-    """Actualiza los rubros de interés de una suscripción."""
     endpoint = payload.get("endpoint")
     rubros = payload.get("rubros", [])
-    supabase.table("user_subscriptions")\
-        .update({"intereses_rubros": rubros})\
-        .eq("endpoint", endpoint)\
-        .execute()
+    supabase.table("user_subscriptions").update({"intereses_rubros": rubros}).eq("endpoint", endpoint).execute()
     return {"ok": True}
 
 
 @app.post("/api/notificaciones/enviar-prueba")
 async def enviar_prueba(payload: dict):
-    """Envía notificación de prueba a un endpoint específico."""
     endpoint = payload.get("endpoint")
     try:
-        result = supabase.table("user_subscriptions")\
-            .select("*")\
-            .eq("endpoint", endpoint)\
-            .single()\
-            .execute()
-        
+        result = supabase.table("user_subscriptions").select("*").eq("endpoint", endpoint).single().execute()
         sub = result.data
         subscription_info = {
             "endpoint": sub["endpoint"],
             "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}
         }
-        
         ok = enviar_notificacion(
             subscription_info,
             titulo="🔔 LicitacionLab Test",
@@ -518,31 +470,14 @@ async def enviar_prueba(payload: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
-    return {"nuevos": len(nuevos)}
-
-
-# ═══════════════════════════════════════════════════════════════
-# NOTIFICACIONES DE SEGUIMIENTO — Alertas por fechas clave
-# ═══════════════════════════════════════════════════════════════
-
 @app.post("/api/admin/notificar-seguimiento")
 async def notificar_seguimiento():
-    """
-    Envía alertas push a usuarios con procesos en seguimiento
-    cuyas fechas clave se aproximan.
-    Llamar desde cron cada mañana a las 8am.
-    """
     from notifications import enviar_notificacion
     from datetime import date, timedelta
 
     ahora   = datetime.now()
     hoy     = date.today()
-    manana  = hoy + timedelta(days=1)
-    en3dias = hoy + timedelta(days=3)
-    en7dias = hoy + timedelta(days=7)
 
-    # Obtener todos los seguimientos activos (no adjudicados ni perdidos)
     seguimientos = supabase.table("seguimiento_procesos") \
         .select("user_id, proceso_codigo, estado") \
         .not_.in_("estado", ["adjudicado", "no-adj"]) \
@@ -551,7 +486,6 @@ async def notificar_seguimiento():
     if not seguimientos:
         return {"notificaciones_enviadas": 0}
 
-    # Obtener procesos únicos
     codigos = list(set(s["proceso_codigo"] for s in seguimientos))
     procesos_map = {}
     for i in range(0, len(codigos), 50):
@@ -562,7 +496,6 @@ async def notificar_seguimiento():
         for p in (res.data or []):
             procesos_map[p["codigo_proceso"]] = p
 
-    # Obtener suscripciones push de los usuarios
     user_ids = list(set(s["user_id"] for s in seguimientos))
     subs_map = {}
     for uid in user_ids:
@@ -603,13 +536,11 @@ async def notificar_seguimiento():
             except Exception:
                 continue
 
-            # Calcular días
             dias = (dia - hoy).days
 
             if dias not in [0, 1, 3, 7]:
                 continue
 
-            # Construir mensaje
             if dias == 0:
                 urgencia = f"🚨 ¡HOY es el {nombre_fecha}!"
             elif dias == 1:
@@ -619,7 +550,6 @@ async def notificar_seguimiento():
             else:
                 urgencia = f"📅 En 7 días: {nombre_fecha}"
 
-            # Énfasis especial para presentación de ofertas
             if campo == "fecha_fin_recepcion_ofertas" and dias <= 3:
                 urgencia = urgencia.replace("⚡", "🔴").replace("⏰", "🔴").replace("🚨", "🔴")
 
@@ -637,20 +567,87 @@ async def notificar_seguimiento():
 
     return {"notificaciones_enviadas": enviadas, "seguimientos_revisados": len(seguimientos)}
 
-
-
-# ═══════════════════════════════════════════════════════════════
-# CRON LOG — Ver historial de ejecuciones
-# ═══════════════════════════════════════════════════════════════
-
 @app.get("/api/admin/cron-log")
 def ver_cron_log(job: str = None, limit: int = 50):
-    """Ver historial de ejecuciones de los jobs automáticos."""
-    query = supabase.table("cron_log") \
-        .select("*") \
-        .order("ejecutado_at", desc=True) \
-        .limit(limit)
+    query = supabase.table("cron_log").select("*").order("ejecutado_at", desc=True).limit(limit)
     if job:
         query = query.eq("job", job)
     result = query.execute()
     return {"logs": result.data, "total": len(result.data)}
+
+
+# ═══════════════════════════════════════════════════════════════
+# ANÁLISIS DE PLIEGOS CON INTELIGENCIA ARTIFICIAL (GEMINI)
+# ═══════════════════════════════════════════════════════════════
+
+PROMPT_MAESTRO = """
+Eres un perito experto en licitaciones de República Dominicana (Ley 47-25). 
+Analiza el pliego adjunto y extrae los requisitos técnicos, financieros y legales.
+Devuelve el resultado ESTRICTAMENTE usando esta estructura JSON:
+{
+  "alertas_fraude": [{"riesgo": "Alto/Medio", "hallazgo": "..."}],
+  "requisitos_experiencia": {"obras_similares": "...", "montos_facturados": "..."},
+  "requisitos_financieros": {"indice_liquidez": "...", "indice_endeudamiento": "..."},
+  "garantias_exigidas": [{"tipo": "...", "monto_o_porcentaje": "..."}],
+  "personal_y_equipos": {"personal_clave": [{"posicion": "...", "titulo": "...", "anos_experiencia": "..."}], "equipos_minimos": ["..."]},
+  "checklist_legal": [{"documento": "...", "es_subsanable": true}]
+}
+"""
+
+def ejecutar_analisis_gemini(proceso_id: str):
+    """Descarga el pliego, lo lee y guarda el JSON en Supabase en segundo plano"""
+    try:
+        print(f"🚀 Iniciando IA para: {proceso_id}")
+        
+        # 1. ACTUALIZAR ESTADO EN SUPABASE
+        supabase.table("analisis_pliego").upsert({
+            "proceso_id": proceso_id, 
+            "estado": "procesando"
+        }).execute()
+
+        # 2. SCRAPING Y EXTRACCIÓN DEL PDF
+        # (Próximo paso: Aquí programaremos el web scraping con BeautifulSoup)
+        texto_pliego = "Texto simulado del pliego de condiciones de la DGCP..." 
+        
+        # 3. LLAMADA A GEMINI 1.5 FLASH
+        if not modelo_gemini:
+            raise Exception("No se configuró Gemini. Revisa tu GEMINI_API_KEY en Railway.")
+            
+        respuesta = modelo_gemini.generate_content([PROMPT_MAESTRO, texto_pliego])
+        datos_json = json.loads(respuesta.text)
+        
+        # 4. GUARDAR RESULTADOS EN LA BÓVEDA
+        supabase.table("analisis_pliego").upsert({
+            "proceso_id": proceso_id,
+            "estado": "completado",
+            "alertas_fraude": datos_json.get("alertas_fraude"),
+            "requisitos_experiencia": datos_json.get("requisitos_experiencia"),
+            "requisitos_financieros": datos_json.get("requisitos_financieros"),
+            "garantias_exigidas": datos_json.get("garantias_exigidas"),
+            "personal_y_equipos": datos_json.get("personal_y_equipos"),
+            "checklist_legal": datos_json.get("checklist_legal")
+        }).execute()
+        
+        print(f"✅ Análisis de {proceso_id} completado y guardado.")
+
+    except Exception as e:
+        print(f"❌ Error de IA en {proceso_id}: {str(e)}")
+        supabase.table("analisis_pliego").upsert({
+            "proceso_id": proceso_id,
+            "estado": "error"
+        }).execute()
+
+@app.post("/api/webhook/analizar-pliego")
+async def webhook_analisis_pliego(request: Request, background_tasks: BackgroundTasks):
+    """Endpoint llamado por Supabase (Webhook) al insertar un nuevo seguimiento"""
+    payload = await request.json()
+    
+    registro = payload.get("record", {})
+    proceso_id = registro.get("proceso_codigo") # Asegúrate que así se llama tu columna
+    
+    if proceso_id:
+        # Enviamos la tarea al fondo
+        background_tasks.add_task(ejecutar_analisis_gemini, proceso_id)
+        return {"status": "success", "message": f"IA encolada para {proceso_id}"}
+    
+    return {"status": "error", "message": "Payload inválido o sin proceso_codigo"}
