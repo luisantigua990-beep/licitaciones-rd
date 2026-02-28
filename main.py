@@ -51,7 +51,7 @@ cliente_gemini = None
 if GEMINI_API_KEY:
     cliente_gemini = genai.Client(api_key=GEMINI_API_KEY)
 else:
-    print("⚠️ ADVERTENCIA: No se encontró GEMINI_API_KEY")
+    print("⚠️ ADVERTENCIA: No se encontró GEMINI_API_KEY en las variables de entorno.")
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -598,22 +598,26 @@ Devuelve el resultado ESTRICTAMENTE usando esta estructura JSON:
 }
 """
 
+def extraer_notice_uid(url_portal: str) -> str:
+    """Extrae el noticeUID de la URL del portal."""
+    import re
+    match = re.search(r'noticeUID=([^&]+)', url_portal)
+    return match.group(1) if match else None
+
 def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     """
     Descarga el pliego del portal transaccional.
-    Endpoint real: /Public/Tendering/OpportunityDetail/DownloadFile?documentFileId=X&mkey=Y
+    Usa el endpoint real: DownloadFile?documentFileId=X&mkey=Y
+    Extrae documentFileId y mkey del HTML de la página del proceso.
     """
     import re as _re
     url_limpia = url_documentos.replace("gob.do//", "gob.do/")
 
-    # Agregar sPopupView=true para cargar el modal de documentos
-    if 'sPopupView' not in url_limpia:
-        sep = '&' if '?' in url_limpia else '?'
-        url_popup = url_limpia + sep + 'sPopupView=true'
-    else:
-        url_popup = url_limpia
+    # sPopupView=true carga el modal con la tabla de documentos
+    sep = '&' if '?' in url_limpia else '?'
+    url_popup = url_limpia + sep + 'sPopupView=true'
 
-    print(f"\U0001f575\ufe0f\u200d\u2642\ufe0f Cargando documentos del proceso: {url_popup[:80]}...")
+    print(f"🕵️ Cargando documentos: {url_popup[:100]}")
 
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -624,49 +628,52 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     session = requests.Session()
     session.verify = False
 
+    # Cargar página con popup de documentos
     resp = session.get(url_popup, headers=headers, timeout=20)
-    if resp.status_code != 200:
-        raise Exception(f"Error cargando página: {resp.status_code}")
-
     html = resp.text
-    soup = BeautifulSoup(html, "html.parser")
 
     BASE_DOWNLOAD = "https://comunidad.comprasdominicana.gob.do/Public/Tendering/OpportunityDetail/DownloadFile"
 
     # Extraer todos los pares documentFileId + mkey del HTML
     patrones = _re.findall(r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)", html)
-    print(f"\U0001f4cb {len(patrones)} documentos encontrados")
+    print(f"📋 {len(patrones)} documentos encontrados")
+
+    # Si no hay en popup, intentar URL original
+    if not patrones:
+        resp2 = session.get(url_limpia, headers=headers, timeout=20)
+        html = resp2.text
+        patrones = _re.findall(r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)", html)
+        print(f"📋 {len(patrones)} documentos en URL sin popup")
 
     if not patrones:
         raise Exception(f"No se encontraron documentos descargables. URL: {url_popup}")
 
     enlace_pliego = None
 
-    # Buscar el pliego por contexto en el HTML
+    # Buscar el pliego por contexto (texto cerca del link)
     for file_id, mkey in patrones:
         idx = html.find(f"documentFileId={file_id}")
-        contexto = html[max(0, idx - 400):idx + 100].lower()
-        if any(x in contexto for x in ["pliego", "bases de la contrataci", "especificacion", "condiciones"]):
+        contexto = html[max(0, idx - 500):idx + 100].lower()
+        if any(x in contexto for x in ["pliego", "bases de la contrataci", "especificaci", "condiciones"]):
             enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
-            print(f"\u2705 Pliego identificado: documentFileId={file_id}")
+            print(f"✅ Pliego por contexto: documentFileId={file_id}")
             break
 
-    # Si no, tomar el último documento (suele ser el pliego)
+    # Si no encontró, usar el último (suele ser el pliego)
     if not enlace_pliego:
         file_id, mkey = patrones[-1]
         enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
-        print(f"\u26a0\ufe0f  Usando último documento: documentFileId={file_id}")
+        print(f"⚠️ Usando último documento: documentFileId={file_id}")
 
-    print(f"\U0001f4e5 Descargando: {enlace_pliego}")
+    print(f"📥 Descargando: {enlace_pliego}")
     resp_pdf = session.get(enlace_pliego, headers=headers, timeout=60)
 
     if resp_pdf.status_code != 200:
         raise Exception(f"Error descargando PDF: {resp_pdf.status_code}")
-
     if len(resp_pdf.content) < 500:
         raise Exception(f"Respuesta inválida ({len(resp_pdf.content)} bytes)")
 
-    print(f"\U0001f4c4 PDF: {len(resp_pdf.content):,} bytes. Extrayendo texto...")
+    print(f"📄 PDF: {len(resp_pdf.content):,} bytes. Extrayendo texto...")
     pdf_file = io.BytesIO(resp_pdf.content)
     lector_pdf = PdfReader(pdf_file)
 
@@ -675,6 +682,10 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         texto = lector_pdf.pages[i].extract_text()
         if texto:
             texto_completo += texto + "\n"
+
+    print(f"📝 {len(texto_completo):,} caracteres extraídos")
+    return texto_completo  # ← CRÍTICO: sin esto todo falla
+
 
 def ejecutar_analisis_gemini(proceso_id: str):
     """Descarga el pliego, lo lee y guarda el JSON en Supabase en segundo plano"""
