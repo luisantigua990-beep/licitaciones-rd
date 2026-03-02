@@ -828,18 +828,24 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     ]
 
     # Grupos de prioridad — se evalúan en orden, el primer grupo con match gana
+    # P1a (más específico): Pliego emendado/corregido — SIEMPRE gana sobre el original
     PRIORIDADES = [
-        # Prioridad 1: Pliego de Condiciones (cualquier variante)
+        # Prioridad 1a: Pliego emendado/corregido/actualizado — máxima prioridad
+        [
+            "pliego emendado",
+            "pliego enmendado",
+            "pliego corregido",
+            "pliego actualizado",
+            "emendado y corregido",
+            "enmendado y corregido",
+        ],
+        # Prioridad 1b: Pliego de Condiciones original
         [
             "pliego de condiciones",
             "pliego condiciones",
             "bases de la contratacion",
             "bases de la contratación",
             "bases de contratacion",
-            "pliego emendado",
-            "pliego enmendado",
-            "pliego corregido",
-            "pliego actualizado",
             "condiciones especiales",
         ],
         # Prioridad 2: TDR / Términos de Referencia (servicios/consultoría)
@@ -863,21 +869,50 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         ["condiciones generales", "bases tecnicas"],
     ]
 
+    def extraer_nombre_archivo(html, file_id):
+        """
+        Extrae el nombre del archivo asociado a un documentFileId.
+        Usa una ventana CORTA (300 chars antes) para evitar que el contexto
+        de documentos adyacentes contamine la búsqueda.
+        """
+        import re as _re_nom
+        idx = html.find(str(file_id))
+        if idx == -1:
+            return ""
+        # Ventana corta hacia atrás: solo 300 chars (el nombre está cerca del ID)
+        # Ventana hacia adelante: 200 chars
+        contexto = html[max(0, idx - 300):idx + 200]
+        # Buscar nombre de archivo con extensión
+        nombre = _re_nom.search(
+            r'>([\w\s\-\.\,\(\)\_\#áéíóúÁÉÍÓÚñÑ]+\.(?:pdf|zip|xlsx|docx|doc))<',
+            contexto, _re_nom.IGNORECASE
+        )
+        if not nombre:
+            nombre = _re_nom.search(
+                r'"([\w\s\-\.\,\(\)\_\#áéíóúÁÉÍÓÚñÑ]+\.(?:pdf|zip|xlsx|docx|doc))"',
+                contexto, _re_nom.IGNORECASE
+            )
+        return nombre.group(1).strip().lower() if nombre else ""
+
     def buscar_por_prioridad(patrones, html):
         """
         Para cada grupo de prioridad, escanea TODOS los documentos antes de bajar al siguiente.
-        Así 'Pliego de Condiciones' siempre gana sobre 'Especificaciones Técnicas'.
-        Usa ventana de contexto amplia (1200 chars) para capturar nombres largos.
+        Así 'Pliego Emendado' siempre gana sobre 'Pliego de Condiciones' original.
+        Usa el NOMBRE DEL ARCHIVO (ventana corta 300 chars) para evitar falsos positivos
+        por contaminación del contexto de documentos adyacentes.
         """
         for grupo in PRIORIDADES:
             for file_id, mkey in patrones:
-                idx = html.find(str(file_id))
-                # Ventana amplia: el nombre del archivo puede estar lejos del ID
-                contexto = html[max(0, idx - 1200):idx + 400].lower()
-                if any(x in contexto for x in KEYWORDS_EXCLUIR):
+                nombre = extraer_nombre_archivo(html, file_id)
+                if not nombre:
+                    # Fallback: ventana amplia si no hay nombre de archivo legible
+                    idx = html.find(str(file_id))
+                    nombre = html[max(0, idx - 400):idx + 200].lower()
+
+                if any(x in nombre for x in KEYWORDS_EXCLUIR):
                     continue
-                if any(x in contexto for x in grupo):
-                    print(f"✅ Pliego identificado (grupo '{grupo[0]}'): documentFileId={file_id}")
+                if any(x in nombre for x in grupo):
+                    print(f"✅ Pliego identificado (grupo '{grupo[0]}'): documentFileId={file_id} → '{nombre[:60]}'")
                     return file_id, mkey
         return None, None
 
@@ -1161,7 +1196,7 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
         restricciones_html += f"<li style='margin:6px 0;font-size:13px;color:#374151;'><strong style='color:#7c3aed;'>{tipo_r}:</strong> {desc_r}</li>"
 
     # ── Checklist por categorías ──────────────────────────
-    checklist_docs = analisis.get("checklist_documentos") or analisis.get("checklist_legal") or {}
+    checklist_docs = analisis.get("checklist_categorizado") or analisis.get("checklist_documentos") or analisis.get("checklist_legal") or {}
 
     def render_checklist_categoria(items, titulo_cat, color_cat):
         if not items:
@@ -1320,7 +1355,7 @@ def ejecutar_analisis_gemini(proceso_id: str):
 
         # ── CACHE: si ya está completado, no reprocesar ──────
         existente = supabase_admin.table("analisis_pliego")\
-            .select("estado, alertas_fraude, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, checklist_legal")\
+            .select("estado, tipo_proceso, resumen_ejecutivo, alertas_fraude, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, checklist_categorizado, checklist_legal, plazos_clave, evaluacion_competitividad")\
             .eq("proceso_id", proceso_id)\
             .eq("estado", "completado")\
             .execute()
@@ -1431,11 +1466,30 @@ def ejecutar_analisis_gemini(proceso_id: str):
             raise Exception(f"Gemini 429 persistente tras {MAX_REINTENTOS} reintentos — revisa cuota en Google AI Studio.")
         
         # 4. GUARDAR RESULTADOS EN LA BÓVEDA
-        supabase_admin.table("analisis_pliego").upsert({
-            "proceso_id": proceso_id,
-            "estado": "completado",
-            **datos_json
-        }).execute()
+        # NOTA: mapear campos del JSON de Gemini a columnas exactas de la tabla.
+        # Gemini devuelve 'checklist_documentos' pero la tabla tiene 'checklist_categorizado'.
+        fila_supabase = {
+            "proceso_id":                  proceso_id,
+            "estado":                      "completado",
+            "tipo_proceso":                datos_json.get("tipo_proceso"),
+            "resumen_ejecutivo":           datos_json.get("resumen_ejecutivo"),
+            "alertas_fraude":              datos_json.get("alertas_fraude"),
+            "restricciones_participacion": datos_json.get("restricciones_participacion"),
+            "requisitos_experiencia":      datos_json.get("requisitos_experiencia"),
+            "requisitos_financieros":      datos_json.get("requisitos_financieros"),
+            "garantias_exigidas":          datos_json.get("garantias_exigidas"),
+            "personal_y_equipos":          datos_json.get("personal_y_equipos"),
+            # checklist_documentos (Gemini) -> checklist_categorizado (columna real)
+            "checklist_categorizado":      datos_json.get("checklist_documentos"),
+            # checklist_legal: mantener lista plana del bloque legal para compatibilidad
+            "checklist_legal":             (datos_json.get("checklist_documentos") or {}).get("legal")
+                                            if isinstance(datos_json.get("checklist_documentos"), dict) else None,
+            "plazos_clave":                datos_json.get("plazos_clave"),
+            "evaluacion_competitividad":   datos_json.get("evaluacion_competitividad"),
+        }
+        # Eliminar claves None para no sobreescribir con NULL innecesariamente
+        fila_supabase = {k: v for k, v in fila_supabase.items() if v is not None}
+        supabase_admin.table("analisis_pliego").upsert(fila_supabase).execute()
         
         print(f"✅ Análisis de {proceso_id} completado y guardado.")
 
