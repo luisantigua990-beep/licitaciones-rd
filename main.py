@@ -585,16 +585,88 @@ def ver_cron_log(job: str = None, limit: int = 50):
 # ═══════════════════════════════════════════════════════════════
 
 PROMPT_MAESTRO = """
-Eres un perito experto en licitaciones de República Dominicana (Ley 47-25). 
-Analiza el pliego adjunto y extrae los requisitos técnicos, financieros y legales.
-Devuelve el resultado ESTRICTAMENTE usando esta estructura JSON:
+Eres un perito experto en licitaciones públicas de República Dominicana con profundo conocimiento 
+de la Ley 47-25 de Compras y Contrataciones Públicas y su reglamento de aplicación.
+
+Analiza el pliego adjunto con ojo crítico y profesional. Tu análisis debe ser ÚTIL para una empresa 
+oferente que evalúa si puede y le conviene participar.
+
+INSTRUCCIONES IMPORTANTES:
+1. Identifica el tipo de proceso: Obras, Bienes, Servicios o Consultoría. Adapta el análisis según el tipo.
+2. Las "alertas_fraude" deben ser hallazgos REALES de indicadores de manipulación del proceso, NO restricciones 
+   normales de participación. Busca específicamente:
+   - Requisitos desproporcionados o inusuales que limitan competencia artificialmente (Art. 14, 47-25)
+   - Especificaciones técnicas que parecen diseñadas para un proveedor específico
+   - Plazos de presentación muy cortos sin justificación (señal de proceso dirigido)
+   - Criterios de evaluación subjetivos o con pesos inusuales
+   - Exigencia de marcas, modelos o proveedores específicos sin justificación técnica
+   - Requisitos de experiencia con montos exactos que solo una empresa podría cumplir
+   - Documentos o certificaciones difíciles de obtener sin conexiones previas
+   - Colusión posible: cuando los requisitos conjuntos solo los cumple un consorcio específico conocido
+   - Conflicto de interés: cuando los TDR parecen escritos por o para el futuro adjudicatario
+   - Presupuesto base significativamente inferior o superior al mercado
+   - Contrataciones directas disfrazadas de licitación (Art. 146, 47-25)
+   - Ausencia de criterios de evaluación claros (favorece discrecionalidad)
+3. Las "restricciones_participacion" son las condiciones normales que el pliego establece para participar
+   (no son alertas, son requisitos de elegibilidad que cualquier empresa debe conocer).
+4. Para obras: enfoca en personal técnico, equipos, experiencia constructiva y garantías.
+   Para bienes: enfoca en especificaciones técnicas, certificaciones del producto, garantía del fabricante.
+   Para servicios/consultoría: enfoca en equipo profesional, metodología, experiencia del equipo.
+
+Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes ni después):
 {
-  "alertas_fraude": [{"riesgo": "Alto/Medio", "hallazgo": "..."}],
-  "requisitos_experiencia": {"obras_similares": "...", "montos_facturados": "..."},
-  "requisitos_financieros": {"indice_liquidez": "...", "indice_endeudamiento": "..."},
-  "garantias_exigidas": [{"tipo": "...", "monto_o_porcentaje": "..."}],
-  "personal_y_equipos": {"personal_clave": [{"posicion": "...", "titulo": "...", "anos_experiencia": "..."}], "equipos_minimos": ["..."]},
-  "checklist_legal": [{"documento": "...", "es_subsanable": true}]
+  "tipo_proceso": "Obras|Bienes|Servicios|Consultoría",
+  "resumen_ejecutivo": "2-3 oraciones describiendo qué se contrata, por cuánto y aspectos más relevantes para un oferente",
+  "alertas_fraude": [
+    {
+      "riesgo": "Alto|Medio|Bajo",
+      "categoria": "Requisito desproporcional|Especificación dirigida|Plazo sospechoso|Criterio subjetivo|Conflicto de interés|Otro",
+      "hallazgo": "Descripción específica del indicador con referencia a la página o sección del pliego",
+      "articulo_ley": "Artículo de la Ley 47-25 que podría estar siendo vulnerado (si aplica)"
+    }
+  ],
+  "restricciones_participacion": [
+    {
+      "tipo": "Impedimento legal|Inhabilidad|Conflicto de interés normativo",
+      "descripcion": "Descripción de la restricción según el pliego"
+    }
+  ],
+  "requisitos_experiencia": {
+    "obras_similares": "...",
+    "montos_facturados": "...",
+    "anos_experiencia_empresa": "...",
+    "otros": "..."
+  },
+  "requisitos_financieros": {
+    "indice_liquidez": "...",
+    "indice_endeudamiento": "...",
+    "patrimonio_minimo": "...",
+    "otros": "..."
+  },
+  "garantias_exigidas": [
+    {"tipo": "Garantía de seriedad|Garantía de fiel cumplimiento|Garantía de anticipo|Otro", "monto_o_porcentaje": "...", "es_subsanable": false}
+  ],
+  "personal_y_equipos": {
+    "personal_clave": [{"posicion": "...", "titulo": "...", "anos_experiencia": "...", "es_subsanable": true}],
+    "equipos_minimos": ["..."]
+  },
+  "checklist_documentos": {
+    "legal": [{"documento": "...", "es_subsanable": true, "nota": ""}],
+    "tecnica": [{"documento": "...", "es_subsanable": true, "nota": ""}],
+    "financiera": [{"documento": "...", "es_subsanable": false, "nota": ""}]
+  },
+  "plazos_clave": {
+    "visita_sitio": "fecha o N/A",
+    "consultas": "fecha límite o N/A",
+    "presentacion_ofertas": "fecha",
+    "apertura_ofertas": "fecha o N/A",
+    "vigencia_oferta_dias": "número de días"
+  },
+  "evaluacion_competitividad": {
+    "nivel_dificultad": "Alta|Media|Baja",
+    "razon": "Por qué es difícil o fácil de cumplir para una empresa mediana del sector",
+    "recomendacion": "Participar solo|Participar en consorcio|Evaluar con cuidado|No recomendado"
+  }
 }
 """
 
@@ -990,15 +1062,18 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
 
 
 def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
-    """Genera el HTML del email con el resumen del análisis."""
-    APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    """Genera el HTML del email con el análisis COMPLETO — sin botón de 'ver más'."""
+    WS_NUMBER  = os.getenv("WHATSAPP_NUMBER", "18095551234")  # ej: 18091234567
+    WS_MSG     = f"Hola, me interesa participar en el proceso {proceso_id} y quisiera asesoría."
+    import urllib.parse
+    ws_url     = f"https://wa.me/{WS_NUMBER}?text={urllib.parse.quote(WS_MSG)}"
 
-    titulo         = proceso.get("titulo", proceso_id)[:80]
-    entidad        = proceso.get("unidad_compra", "")
-    objeto         = proceso.get("objeto_proceso", "")
-    monto          = proceso.get("monto_estimado")
-    fecha_cierre   = proceso.get("fecha_fin_recepcion_ofertas", "")
-    monto_str      = f"RD$ {monto:,.2f}" if monto else "No especificado"
+    titulo       = proceso.get("titulo", proceso_id)[:100]
+    entidad      = proceso.get("unidad_compra", "")
+    objeto       = proceso.get("objeto_proceso", "")
+    monto        = proceso.get("monto_estimado")
+    fecha_cierre = proceso.get("fecha_fin_recepcion_ofertas", "")
+    monto_str    = f"RD$ {monto:,.2f}" if monto else "No especificado"
 
     if fecha_cierre:
         try:
@@ -1006,124 +1081,204 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
         except Exception:
             pass
 
-    # Alertas de fraude
-    alertas        = analisis.get("alertas_fraude") or []
-    alertas_html   = ""
+    # ── Resumen ejecutivo ──────────────────────────────────
+    resumen      = analisis.get("resumen_ejecutivo", "")
+    tipo_proceso = analisis.get("tipo_proceso", objeto)
+
+    # ── Evaluación de competitividad ──────────────────────
+    eval_comp    = analisis.get("evaluacion_competitividad") or {}
+    dificultad   = eval_comp.get("nivel_dificultad", "")
+    recomendacion = eval_comp.get("recomendacion", "")
+    razon_dif    = eval_comp.get("razon", "")
+    color_dif    = {"Alta": "#dc2626", "Media": "#d97706", "Baja": "#16a34a"}.get(dificultad, "#6b7280")
+
+    # ── Plazos clave ──────────────────────────────────────
+    plazos       = analisis.get("plazos_clave") or {}
+    plazos_html  = ""
+    labels_plazos = {
+        "visita_sitio": "🏗️ Visita al sitio",
+        "consultas": "❓ Cierre de consultas",
+        "presentacion_ofertas": "📝 Presentación de ofertas",
+        "apertura_ofertas": "📂 Apertura de sobres",
+        "vigencia_oferta_dias": "⏱️ Vigencia de oferta",
+    }
+    for campo, label in labels_plazos.items():
+        val = plazos.get(campo, "")
+        if val and val != "N/A":
+            plazos_html += f"<tr><td style='padding:5px 12px;font-size:12px;color:#6b7280;width:50%;'>{label}</td><td style='padding:5px 12px;font-size:13px;color:#374151;font-weight:bold;'>{val}</td></tr>"
+
+    # ── Alertas de fraude ─────────────────────────────────
+    alertas      = analisis.get("alertas_fraude") or []
+    alertas_html = ""
     for a in (alertas if isinstance(alertas, list) else []):
-        riesgo     = a.get("riesgo", "")
-        hallazgo   = a.get("hallazgo", "")
-        color      = "#dc2626" if "alto" in riesgo.lower() else "#d97706"
+        riesgo   = a.get("riesgo", "")
+        hallazgo = a.get("hallazgo", "")
+        cat      = a.get("categoria", "")
+        art      = a.get("articulo_ley", "")
+        color    = "#dc2626" if "alto" in riesgo.lower() else ("#d97706" if "medio" in riesgo.lower() else "#6b7280")
+        art_badge = f"<span style='font-size:10px;color:#6b7280;margin-left:6px;'>{art}</span>" if art else ""
         alertas_html += f"""
         <tr>
-          <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;">
-            <span style="background:{color};color:white;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:bold;">{riesgo}</span>
+          <td style="padding:10px 12px;border-bottom:1px solid #fee2e2;vertical-align:top;width:30%;">
+            <span style="background:{color};color:white;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:bold;display:block;text-align:center;margin-bottom:4px;">{riesgo}</span>
+            <span style="font-size:10px;color:#9ca3af;display:block;text-align:center;">{cat}</span>
           </td>
-          <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;color:#374151;">{hallazgo}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #fee2e2;font-size:13px;color:#374151;">{hallazgo}{art_badge}</td>
         </tr>"""
 
-    # Checklist legal
-    checklist      = analisis.get("checklist_legal") or []
-    checklist_html = ""
-    for item in (checklist if isinstance(checklist, list) else []):
-        doc        = item.get("documento", "")
-        subsanable = item.get("es_subsanable", True)
-        icono      = "⚠️" if not subsanable else "📄"
-        color_bg   = "#fef2f2" if not subsanable else "#f9fafb"
-        checklist_html += f"""
-        <tr style="background:{color_bg};">
-          <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;">{icono} {doc}</td>
-          <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;font-size:11px;color:#6b7280;">
-            {'❌ No subsanable' if not subsanable else '✅ Subsanable'}
-          </td>
-        </tr>"""
+    # ── Restricciones de participación ───────────────────
+    restricciones     = analisis.get("restricciones_participacion") or []
+    restricciones_html = ""
+    for r in (restricciones if isinstance(restricciones, list) else []):
+        tipo_r = r.get("tipo", "")
+        desc_r = r.get("descripcion", "")
+        restricciones_html += f"<li style='margin:6px 0;font-size:13px;color:#374151;'><strong style='color:#7c3aed;'>{tipo_r}:</strong> {desc_r}</li>"
 
-    # Garantías
+    # ── Checklist por categorías ──────────────────────────
+    checklist_docs = analisis.get("checklist_documentos") or analisis.get("checklist_legal") or {}
+
+    def render_checklist_categoria(items, titulo_cat, color_cat):
+        if not items:
+            return ""
+        html = f"<tr><td colspan='2' style='padding:8px 12px;background:{color_cat};font-size:11px;font-weight:bold;color:white;text-transform:uppercase;'>{titulo_cat}</td></tr>"
+        for item in (items if isinstance(items, list) else []):
+            doc       = item.get("documento", "")
+            subsanable = item.get("es_subsanable", True)
+            nota      = item.get("nota", "")
+            bg        = "#fef2f2" if not subsanable else "white"
+            badge     = "<span style='color:#dc2626;font-size:11px;font-weight:bold;'>❌ NO subsanable</span>" if not subsanable else "<span style='color:#16a34a;font-size:11px;'>✅ Subsanable</span>"
+            nota_html = f"<br><span style='font-size:11px;color:#9ca3af;'>{nota}</span>" if nota else ""
+            html += f"<tr style='background:{bg};'><td style='padding:6px 12px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;'>📄 {doc}{nota_html}</td><td style='padding:6px 12px;border-bottom:1px solid #f3f4f6;text-align:right;'>{badge}</td></tr>"
+        return html
+
+    if isinstance(checklist_docs, dict):
+        checklist_html  = render_checklist_categoria(checklist_docs.get("legal", []), "⚖️ Legal", "#1e40af")
+        checklist_html += render_checklist_categoria(checklist_docs.get("tecnica", []), "🔧 Técnica", "#0891b2")
+        checklist_html += render_checklist_categoria(checklist_docs.get("financiera", []), "💰 Financiera", "#0f766e")
+    else:
+        # Fallback: lista plana (formato antiguo)
+        checklist_html = render_checklist_categoria(checklist_docs, "📑 Documentos", "#4b5563")
+
+    # ── Garantías ─────────────────────────────────────────
     garantias      = analisis.get("garantias_exigidas") or []
     garantias_html = ""
     for g in (garantias if isinstance(garantias, list) else []):
-        garantias_html += f"<li style='margin:4px 0;font-size:13px;'><strong>{g.get('tipo','')}</strong>: {g.get('monto_o_porcentaje','')}</li>"
+        subsanable = g.get("es_subsanable", False)
+        badge      = "" if subsanable else " <span style='color:#dc2626;font-size:11px;'>⚠️ No subsanable</span>"
+        garantias_html += f"<li style='margin:6px 0;font-size:13px;'><strong>{g.get('tipo','')}</strong>: {g.get('monto_o_porcentaje','')}{badge}</li>"
 
-    # Requisitos financieros
-    req_fin        = analisis.get("requisitos_financieros") or {}
-    req_exp        = analisis.get("requisitos_experiencia") or {}
+    # ── Requisitos experiencia y financieros ──────────────
+    req_exp = analisis.get("requisitos_experiencia") or {}
+    req_fin = analisis.get("requisitos_financieros") or {}
+
+    exp_rows = ""
+    labels_exp = {"obras_similares": "Obras similares", "montos_facturados": "Montos facturados", "anos_experiencia_empresa": "Años de experiencia", "otros": "Otros requisitos"}
+    for k, label in labels_exp.items():
+        v = req_exp.get(k, "")
+        if v:
+            exp_rows += f"<tr><td style='padding:6px 12px;font-size:12px;color:#6b7280;width:35%;'>{label}</td><td style='padding:6px 12px;font-size:13px;color:#374151;'>{v}</td></tr>"
+
+    fin_rows = ""
+    labels_fin = {"indice_liquidez": "Índice de liquidez", "indice_endeudamiento": "Índice de endeudamiento", "patrimonio_minimo": "Patrimonio mínimo", "otros": "Otros"}
+    for k, label in labels_fin.items():
+        v = req_fin.get(k, "")
+        if v:
+            fin_rows += f"<tr><td style='padding:6px 12px;font-size:12px;color:#6b7280;width:35%;'>{label}</td><td style='padding:6px 12px;font-size:13px;color:#374151;'>{v}</td></tr>"
+
+    # ── Personal clave ────────────────────────────────────
+    personal     = (analisis.get("personal_y_equipos") or {}).get("personal_clave") or []
+    equipos      = (analisis.get("personal_y_equipos") or {}).get("equipos_minimos") or []
+    personal_html = ""
+    for p in (personal if isinstance(personal, list) else []):
+        subsanable_p = p.get("es_subsanable", True)
+        badge_p = "" if subsanable_p else " <span style='color:#dc2626;font-size:10px;'>❌ No subsanable</span>"
+        personal_html += f"<tr><td style='padding:5px 12px;font-size:13px;'><strong>{p.get('posicion','')}</strong>{badge_p}</td><td style='padding:5px 12px;font-size:12px;color:#6b7280;'>{p.get('titulo','')} · {p.get('anos_experiencia','')} años exp.</td></tr>"
+
+    equipos_html = "".join(f"<li style='font-size:13px;margin:3px 0;'>{e}</li>" for e in equipos if e)
 
     return f"""<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:'Helvetica Neue',Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 0;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
 <tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+<table width="620" cellpadding="0" cellspacing="0" style="background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);max-width:100%;">
 
   <!-- Header -->
-  <tr>
-    <td style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:28px 32px;">
-      <h1 style="margin:0;color:white;font-size:20px;">📋 LicitacionLab</h1>
-      <p style="margin:6px 0 0;color:#bfdbfe;font-size:13px;">Análisis de pliego completado</p>
-    </td>
-  </tr>
+  <tr><td style="background:linear-gradient(135deg,#1e40af,#2563eb);padding:24px 28px;">
+    <h1 style="margin:0;color:white;font-size:20px;font-weight:800;">📋 LicitacionLab</h1>
+    <p style="margin:4px 0 0;color:#bfdbfe;font-size:12px;">Análisis de pliego · República Dominicana</p>
+  </td></tr>
 
   <!-- Saludo -->
-  <tr><td style="padding:24px 32px 0;">
-    <p style="margin:0;font-size:15px;color:#374151;">Hola <strong>{{{{nombre}}}}</strong>,</p>
-    <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">El análisis de IA está listo para el siguiente proceso:</p>
+  <tr><td style="padding:20px 28px 8px;">
+    <p style="margin:0;font-size:15px;color:#1e293b;">Hola <strong>{{nombre}}</strong>,</p>
+    <p style="margin:6px 0 0;font-size:13px;color:#64748b;">Tu análisis de IA está listo. Aquí tienes el resumen completo:</p>
   </td></tr>
 
   <!-- Info proceso -->
-  <tr><td style="padding:16px 32px;">
+  <tr><td style="padding:8px 28px;">
     <table width="100%" style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;" cellpadding="0" cellspacing="0">
-      <tr><td style="padding:16px;">
-        <p style="margin:0;font-size:16px;font-weight:bold;color:#1e293b;">{titulo}</p>
-        <p style="margin:4px 0 0;font-size:13px;color:#64748b;">{entidad} · {objeto}</p>
-        <table style="margin-top:12px;" cellpadding="0" cellspacing="0">
-          <tr>
-            <td style="padding-right:24px;"><span style="font-size:11px;color:#94a3b8;text-transform:uppercase;">Código</span><br><strong style="font-size:13px;color:#1e293b;">{proceso_id}</strong></td>
-            <td style="padding-right:24px;"><span style="font-size:11px;color:#94a3b8;text-transform:uppercase;">Monto estimado</span><br><strong style="font-size:13px;color:#1e293b;">{monto_str}</strong></td>
-            <td><span style="font-size:11px;color:#94a3b8;text-transform:uppercase;">Cierre de ofertas</span><br><strong style="font-size:13px;color:#dc2626;">{fecha_cierre}</strong></td>
-          </tr>
-        </table>
+      <tr><td style="padding:14px 16px;">
+        <p style="margin:0;font-size:15px;font-weight:bold;color:#1e293b;line-height:1.4;">{titulo}</p>
+        <p style="margin:4px 0 0;font-size:12px;color:#64748b;">{entidad} · <span style="background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:4px;font-size:11px;">{tipo_proceso}</span></p>
+        <table style="margin-top:10px;width:100%;" cellpadding="0" cellspacing="0"><tr>
+          <td style="padding-right:16px;"><span style="font-size:10px;color:#94a3b8;text-transform:uppercase;display:block;">Código</span><strong style="font-size:12px;color:#1e293b;">{proceso_id}</strong></td>
+          <td style="padding-right:16px;"><span style="font-size:10px;color:#94a3b8;text-transform:uppercase;display:block;">Monto estimado</span><strong style="font-size:12px;color:#1e293b;">{monto_str}</strong></td>
+          <td><span style="font-size:10px;color:#94a3b8;text-transform:uppercase;display:block;">Cierre de ofertas</span><strong style="font-size:13px;color:#dc2626;">{fecha_cierre}</strong></td>
+        </tr></table>
       </td></tr>
     </table>
   </td></tr>
 
-  <!-- Alertas -->
-  {'<tr><td style="padding:0 32px 16px;"><h3 style="margin:0 0 8px;font-size:14px;color:#dc2626;">🚨 Alertas de Fraude</h3><table width="100%" style="border:1px solid #fee2e2;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + alertas_html + '</table></td></tr>' if alertas_html else ''}
+  <!-- Resumen ejecutivo -->
+  {'<tr><td style="padding:8px 28px;"><div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 14px;border-radius:0 8px 8px 0;"><p style="margin:0;font-size:13px;color:#1e40af;font-weight:bold;">💡 Resumen ejecutivo</p><p style="margin:6px 0 0;font-size:13px;color:#1e3a8a;line-height:1.5;">' + resumen + '</p></div></td></tr>' if resumen else ''}
 
-  <!-- Checklist -->
-  {'<tr><td style="padding:0 32px 16px;"><h3 style="margin:0 0 8px;font-size:14px;color:#1e293b;">📑 Documentos requeridos</h3><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + checklist_html + '</table><p style="margin:6px 0 0;font-size:11px;color:#9ca3af;">⚠️ Los documentos NO subsanables son críticos — su ausencia puede descalificarte.</p></td></tr>' if checklist_html else ''}
+  <!-- Competitividad -->
+  {'<tr><td style="padding:8px 28px;"><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><p style="margin:0;font-size:13px;font-weight:bold;color:#1e293b;">📊 Evaluación de competitividad</p><p style="margin:4px 0 0;font-size:12px;color:#64748b;">' + razon_dif + '</p></td><td style="text-align:right;vertical-align:top;"><span style="background:' + color_dif + ';color:white;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:bold;">Dificultad: ' + dificultad + '</span><br><span style="font-size:11px;color:#64748b;display:block;margin-top:4px;">' + recomendacion + '</span></td></tr></table></div></td></tr>' if dificultad else ''}
+
+  <!-- Alertas de fraude -->
+  {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#dc2626;">🚨 Alertas de posible irregularidad</p><p style="margin:0 0 6px;font-size:11px;color:#9ca3af;">Indicadores identificados según Ley 47-25. No implican irregularidad confirmada.</p><table width="100%" style="border:1px solid #fee2e2;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + alertas_html + '</table></td></tr>' if alertas_html else '<tr><td style="padding:8px 28px;"><div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:10px 14px;border-radius:8px;font-size:13px;color:#166534;">✅ No se detectaron alertas de irregularidad significativas.</div></td></tr>'}
+
+  <!-- Restricciones participación -->
+  {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#7c3aed;">🚫 Restricciones de participación</p><ul style="margin:0;padding-left:18px;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:10px 10px 10px 26px;">' + restricciones_html + '</ul></td></tr>' if restricciones_html else ''}
+
+  <!-- Plazos clave -->
+  {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">📅 Plazos clave</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + plazos_html + '</table></td></tr>' if plazos_html else ''}
+
+  <!-- Documentos requeridos -->
+  {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">📑 Documentos requeridos</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + checklist_html + '</table><p style="margin:5px 0 0;font-size:11px;color:#9ca3af;">⚠️ Los documentos NO subsanables son críticos — su ausencia puede descalificarte directamente.</p></td></tr>' if checklist_html else ''}
 
   <!-- Garantías -->
-  {'<tr><td style="padding:0 32px 16px;"><h3 style="margin:0 0 8px;font-size:14px;color:#1e293b;">🔒 Garantías exigidas</h3><ul style="margin:0;padding-left:20px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 12px 12px 28px;">' + garantias_html + '</ul></td></tr>' if garantias_html else ''}
+  {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">🔒 Garantías exigidas</p><ul style="margin:0;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 10px 10px 26px;">' + garantias_html + '</ul></td></tr>' if garantias_html else ''}
 
-  <!-- Requisitos -->
-  <tr><td style="padding:0 32px 16px;">
-    <h3 style="margin:0 0 8px;font-size:14px;color:#1e293b;">📊 Requisitos clave</h3>
-    <table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">
-      <tr style="background:#f8fafc;"><td colspan="2" style="padding:8px 12px;font-size:11px;font-weight:bold;color:#6b7280;text-transform:uppercase;">Experiencia</td></tr>
-      <tr><td style="padding:6px 12px;font-size:12px;color:#6b7280;width:40%;">Obras similares</td><td style="padding:6px 12px;font-size:13px;color:#374151;">{req_exp.get('obras_similares','No especificado')}</td></tr>
-      <tr style="background:#f8fafc;"><td style="padding:6px 12px;font-size:12px;color:#6b7280;">Montos facturados</td><td style="padding:6px 12px;font-size:13px;color:#374151;">{req_exp.get('montos_facturados','No especificado')}</td></tr>
-      <tr><td colspan="2" style="padding:8px 12px;font-size:11px;font-weight:bold;color:#6b7280;text-transform:uppercase;background:#f8fafc;">Financiero</td></tr>
-      <tr><td style="padding:6px 12px;font-size:12px;color:#6b7280;">Índice de liquidez</td><td style="padding:6px 12px;font-size:13px;color:#374151;">{req_fin.get('indice_liquidez','No especificado')}</td></tr>
-      <tr style="background:#f8fafc;"><td style="padding:6px 12px;font-size:12px;color:#6b7280;">Índice de endeudamiento</td><td style="padding:6px 12px;font-size:13px;color:#374151;">{req_fin.get('indice_endeudamiento','No especificado')}</td></tr>
-    </table>
-  </td></tr>
+  <!-- Experiencia -->
+  {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">🏗️ Requisitos de experiencia</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + exp_rows + '</table></td></tr>' if exp_rows else ''}
 
-  <!-- CTA -->
-  <tr><td style="padding:8px 32px 32px;" align="center">
-    <a href="{APP_URL}?proceso={proceso_id}" style="display:inline-block;background:#1e40af;color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:bold;">
-      Ver análisis completo en LicitacionLab →
+  <!-- Financiero -->
+  {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">💰 Requisitos financieros</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + fin_rows + '</table></td></tr>' if fin_rows else ''}
+
+  <!-- Personal y equipos -->
+  {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">👷 Personal clave requerido</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + personal_html + '</table></td></tr>' if personal_html else ''}
+  {'<tr><td style="padding:4px 28px 8px;"><p style="margin:0 0 4px;font-size:12px;font-weight:bold;color:#6b7280;">🚜 Equipos mínimos:</p><ul style="margin:0;padding-left:18px;font-size:13px;color:#374151;">' + equipos_html + '</ul></td></tr>' if equipos_html else ''}
+
+  <!-- CTA WhatsApp -->
+  <tr><td style="padding:16px 28px 24px;" align="center">
+    <p style="margin:0 0 12px;font-size:13px;color:#64748b;">¿Te interesa participar en este proceso?</p>
+    <a href="{ws_url}" style="display:inline-block;background:#25d366;color:white;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:bold;letter-spacing:0.3px;">
+      💬 Contactar un experto por WhatsApp
     </a>
+    <p style="margin:10px 0 0;font-size:11px;color:#94a3b8;">Respuesta en menos de 24 horas · LicitacionLab</p>
   </td></tr>
 
   <!-- Footer -->
-  <tr>
-    <td style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e5e7eb;">
-      <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">
-        LicitacionLab · Sistema de monitoreo de licitaciones públicas RD<br>
-        Este análisis es generado por IA y debe ser verificado por un profesional.
-      </p>
-    </td>
-  </tr>
+  <tr><td style="background:#f8fafc;padding:14px 28px;border-top:1px solid #e5e7eb;">
+    <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;line-height:1.6;">
+      LicitacionLab · Monitoreo de licitaciones públicas · República Dominicana<br>
+      Este análisis es generado por IA con base en la Ley 47-25 y debe ser verificado por un profesional.<br>
+      <a href="{ws_url}" style="color:#9ca3af;">Recibiste este email porque sigues el proceso {proceso_id}</a>
+    </p>
+  </td></tr>
 
 </table>
 </td></tr>
