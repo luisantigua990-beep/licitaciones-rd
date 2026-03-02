@@ -738,6 +738,18 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         "resolución de inicio",
         "formularios",
         "anexo",
+        "dictamen juridico",
+        "dictamen jurídico",
+        "compromiso etico",
+        "compromiso ético",
+        "declaracion jurada",
+        "declaración jurada",
+        "cronograma",
+        "diario libre",
+        "listin diario",
+        "listín diario",
+        "publicacion en periodicos",
+        "publicación en periódicos",
     ]
 
     # Grupos de prioridad — se evalúan en orden, el primer grupo con match gana
@@ -777,13 +789,15 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     print(f"📋 Inventario ({len(patrones)} docs):")
     for file_id, mkey in patrones:
         idx = html_final.find(str(file_id))
-        contexto = html_final[max(0, idx - 200):idx + 100].lower()
-        # Extraer nombre del archivo si está visible
+        contexto = html_final[max(0, idx - 800):idx + 100]
+        # Buscar nombre del archivo en el contexto (entre comillas o en spans)
         import re as _re_inv
-        nombre = _re_inv.search(r'([a-záéíóúñ\w\s\-\.]+\.(?:pdf|zip|xlsx|docx))', contexto)
+        nombre = _re_inv.search(r'>([\w\s\-\.\_]+\.(?:pdf|zip|xlsx|docx|doc))<', contexto, _re_inv.IGNORECASE)
+        if not nombre:
+            nombre = _re_inv.search(r'"([\w\s\-\.\_]+\.(?:pdf|zip|xlsx|docx|doc))"', contexto, _re_inv.IGNORECASE)
         nombre_str = nombre.group(1).strip() if nombre else "sin nombre"
         seleccionado = " ← SELECCIONADO" if file_id == file_id_sel else ""
-        print(f"   {file_id}: {nombre_str[:60]}{seleccionado}")
+        print(f"   {file_id}: {nombre_str[:70]}{seleccionado}")
 
     if file_id_sel:
         enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id_sel}&mkey={mkey_sel}"
