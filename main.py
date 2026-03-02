@@ -739,19 +739,45 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         print(f"⚠️ Pliego no identificado por contexto, usando primer documento: documentFileId={file_id}")
 
     # ── Paso 4: descargar PDF con el mkey de la sesión activa ─
-    # Usamos los headers del intento exitoso como Referer para mantener la sesión.
+    # El portal no devuelve el PDF directo — responde con un redirect JS a:
+    # /Public/Archive/RetrieveFile/Index?DocumentId=XXXXX&...
+    # Hay que seguir ese redirect manualmente con la misma sesión.
     headers_download = {**hdrs_exitosos, "Referer": url_exitosa}
     print(f"📥 Descargando: {enlace_pliego}")
 
     resp_pdf = session.get(enlace_pliego, headers=headers_download, timeout=60)
-    print(f"📦 Respuesta descarga: {resp_pdf.status_code}, {len(resp_pdf.content)} bytes, Content-Type: {resp_pdf.headers.get('Content-Type', 'desconocido')}")
+    print(f"📦 Respuesta inicial: {resp_pdf.status_code}, {len(resp_pdf.content)} bytes, Content-Type: {resp_pdf.headers.get('Content-Type', '?')}")
+
+    # Detectar redirect JS y seguirlo
+    import re as _re2
+    if len(resp_pdf.content) < 2000 and b"window.location.href" in resp_pdf.content:
+        js_body = resp_pdf.content.decode("utf-8", errors="ignore")
+        match_redirect = _re2.search(r"window\.location\.href\s*=\s*['\"]([^'\"]+)", js_body)
+        if match_redirect:
+            url_relativa = match_redirect.group(1)
+            # Puede venir con o sin dominio
+            if url_relativa.startswith("http"):
+                url_real = url_relativa
+            else:
+                url_real = "https://comunidad.comprasdominicana.gob.do" + url_relativa
+            print(f"🔀 Redirect JS detectado → {url_real}")
+            headers_retrieve = {
+                **hdrs_exitosos,
+                "Referer": enlace_pliego,
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "X-Requested-With": "",  # el retrieve no es XHR
+            }
+            resp_pdf = session.get(url_real, headers=headers_retrieve, timeout=60)
+            print(f"📦 Respuesta RetrieveFile: {resp_pdf.status_code}, {len(resp_pdf.content)} bytes, Content-Type: {resp_pdf.headers.get('Content-Type', '?')}")
+        else:
+            print(f"⚠️ Redirect JS no parseable: {repr(js_body[:300])}")
 
     if resp_pdf.status_code != 200:
         raise Exception(f"Error HTTP {resp_pdf.status_code} al descargar PDF")
     if len(resp_pdf.content) < 500:
-        # Log del contenido para diagnóstico
-        print(f"⚠️ Respuesta pequeña: {repr(resp_pdf.content[:300])}")
-        raise Exception(f"Respuesta demasiado pequeña ({len(resp_pdf.content)} bytes), probable mkey expirado o sesión inválida")
+        print(f"⚠️ Respuesta pequeña final: {repr(resp_pdf.content[:300])}")
+        raise Exception(f"Respuesta demasiado pequeña ({len(resp_pdf.content)} bytes) tras seguir redirect")
 
     print(f"📄 PDF: {len(resp_pdf.content):,} bytes. Extrayendo texto...")
     pdf_file = io.BytesIO(resp_pdf.content)
