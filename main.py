@@ -804,55 +804,81 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         "acta de aprobación",
         "solicitud de compra",
         "solicitud compra",
-        "convocatoria",
-        "requerimiento",
+        "convocatoria publicada",   # solo si dice "publicada", no la convocatoria del pliego
         "resolucion de inicio",
         "resolución de inicio",
-        "formularios",
-        "anexo",
         "dictamen juridico",
         "dictamen jurídico",
         "compromiso etico",
         "compromiso ético",
         "declaracion jurada",
         "declaración jurada",
-        "cronograma",
+        "cronograma de actividades",
         "diario libre",
         "listin diario",
         "listín diario",
         "publicacion en periodicos",
         "publicación en periódicos",
+        "volumen de oferta",
+        "volumen oferta",
+        "oferta economica",         # formulario de oferta económica ≠ pliego
+        "oferta económica",
+        "formulario de presentacion",
+        "formulario de oferta",
     ]
 
     # Grupos de prioridad — se evalúan en orden, el primer grupo con match gana
-    # Dentro de cada grupo se toma el primer documento que haga match
     PRIORIDADES = [
-        # Prioridad 1: Pliego de Condiciones explícito
-        ["pliego de condiciones", "bases de la contratacion", "bases de la contratación"],
+        # Prioridad 1: Pliego de Condiciones (cualquier variante)
+        [
+            "pliego de condiciones",
+            "pliego condiciones",
+            "bases de la contratacion",
+            "bases de la contratación",
+            "bases de contratacion",
+            "pliego emendado",
+            "pliego enmendado",
+            "pliego corregido",
+            "pliego actualizado",
+            "condiciones especiales",
+        ],
         # Prioridad 2: TDR / Términos de Referencia (servicios/consultoría)
-        ["terminos de referencia", "términos de referencia", "tdr", "términos de referencia (tdr)"],
-        # Prioridad 3: Especificaciones Técnicas (último recurso antes del fallback)
-        ["especificaciones tecnicas", "especificaciones técnicas", "ficha tecnica", "ficha técnica"],
-        # Prioridad 4: cualquier mención de pliego o condiciones
-        ["pliego", "condiciones generales"],
+        [
+            "terminos de referencia",
+            "términos de referencia",
+            "tdr",
+            "términos de referencia (tdr)",
+        ],
+        # Prioridad 3: Especificaciones Técnicas
+        [
+            "especificaciones tecnicas",
+            "especificaciones técnicas",
+            "ficha tecnica",
+            "ficha técnica",
+            "especificaciones generales",
+        ],
+        # Prioridad 4: cualquier PDF que diga "pliego" en el nombre
+        ["pliego"],
+        # Prioridad 5: condiciones o bases (último recurso)
+        ["condiciones generales", "bases tecnicas"],
     ]
 
     def buscar_por_prioridad(patrones, html):
         """
         Para cada grupo de prioridad, escanea TODOS los documentos antes de bajar al siguiente.
-        Así 'Pliego de Condiciones' siempre gana sobre 'Especificaciones Técnicas'
-        aunque aparezca más abajo en el HTML.
+        Así 'Pliego de Condiciones' siempre gana sobre 'Especificaciones Técnicas'.
+        Usa ventana de contexto amplia (1200 chars) para capturar nombres largos.
         """
         for grupo in PRIORIDADES:
             for file_id, mkey in patrones:
                 idx = html.find(str(file_id))
-                contexto = html[max(0, idx - 600):idx + 300].lower()
+                # Ventana amplia: el nombre del archivo puede estar lejos del ID
+                contexto = html[max(0, idx - 1200):idx + 400].lower()
                 if any(x in contexto for x in KEYWORDS_EXCLUIR):
                     continue
                 if any(x in contexto for x in grupo):
                     print(f"✅ Pliego identificado (grupo '{grupo[0]}'): documentFileId={file_id}")
                     return file_id, mkey
-            # Si ningún doc del grupo hizo match, intentar el siguiente grupo
         return None, None
 
     file_id_sel, mkey_sel = buscar_por_prioridad(patrones, html_final)
