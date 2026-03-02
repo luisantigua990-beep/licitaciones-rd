@@ -260,6 +260,49 @@ def obtener_articulos_rapido(codigo_proceso):
         return []
 
 
+def extraer_notice_uid_del_portal(codigo_proceso):
+    """
+    Hace 1 request al portal para obtener el noticeUID real del proceso.
+    Esto permite construir la URL directa al detalle:
+      /Public/Tendering/OpportunityDetail/Index?noticeUID=DO1.NTC.XXXXXXX
+    Se ejecuta UNA SOLA VEZ cuando el scraper detecta el proceso por primera vez.
+    El portal invalida cookies si se hacen demasiados requests — aquí solo
+    necesitamos extraer un dato estático del HTML, no descarga de archivos.
+    """
+    import re as _re
+    PORTAL_BASE = "https://comunidad.comprasdominicana.gob.do"
+
+    # URL de búsqueda del proceso en la lista pública
+    url_busqueda = (
+        f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index"
+        f"?currentLanguage=es&Country=DO&Theme=DGCP&NoticeReference={codigo_proceso}"
+    )
+
+    try:
+        resp = requests.get(url_busqueda, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        html = resp.text
+
+        # Buscar el link al detalle que contiene noticeUID
+        # Formato: /Public/Tendering/OpportunityDetail/Index?noticeUID=DO1.NTC.XXXXXXX
+        match = _re.search(
+            r"/Public/Tendering/OpportunityDetail/Index\?noticeUID=(DO1\.NTC\.[\w\.]+)",
+            html
+        )
+        if match:
+            notice_uid = match.group(1)
+            url_detalle = f"{PORTAL_BASE}/Public/Tendering/OpportunityDetail/Index?noticeUID={notice_uid}"
+            print(f"   🔗 [{codigo_proceso}] noticeUID={notice_uid}")
+            return url_detalle
+        else:
+            print(f"   ⚠️  [{codigo_proceso}] noticeUID no encontrado en HTML del portal")
+    except Exception as e:
+        print(f"   ⚠️  [{codigo_proceso}] Error extrayendo noticeUID: {e}")
+
+    # Fallback: URL de la lista filtrada (menos directa pero funcional)
+    return url_busqueda
+
+
 def guardar_articulos_portal(codigo_proceso, articulos):
     """Guarda los artículos UNSPSC obtenidos en tiempo real."""
     if not articulos:
@@ -707,10 +750,21 @@ def ejecutar_scraper_portal():
         if not guardado:
             continue  # Ya existía (race condition), saltar
 
-        # 2. Obtener URL oficial del proceso desde la API DGCP
-        url_oficial = obtener_url_proceso(codigo, url_portal=proceso.get("url"))
-        if url_oficial:
-            proceso["url"] = url_oficial
+        # 2. Obtener URL directa con noticeUID desde el portal (1 request por proceso nuevo)
+        # Esto evita esperar el ciclo de 8h de la API para tener la URL de detalle.
+        url_portal_directa = extraer_notice_uid_del_portal(codigo)
+        if url_portal_directa:
+            proceso["url"] = url_portal_directa
+            # Actualizar la URL en Supabase con el noticeUID real
+            try:
+                supabase.table("procesos").update({"url": url_portal_directa}).eq("codigo_proceso", codigo).execute()
+            except Exception as e:
+                print(f"   ⚠️  Error actualizando URL en Supabase: {e}")
+        else:
+            # Fallback: usar la URL construida con el código de referencia
+            url_oficial = obtener_url_proceso(codigo, url_portal=proceso.get("url"))
+            if url_oficial:
+                proceso["url"] = url_oficial
 
         # 3. Obtener artículos UNSPSC inmediatamente de la API
         articulos = obtener_articulos_rapido(codigo)
