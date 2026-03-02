@@ -754,22 +754,36 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     ]
 
     def buscar_por_prioridad(patrones, html):
-        """Recorre los grupos de prioridad y retorna el primer (file_id, mkey) que hace match."""
+        """
+        Para cada grupo de prioridad, escanea TODOS los documentos antes de bajar al siguiente.
+        Así 'Pliego de Condiciones' siempre gana sobre 'Especificaciones Técnicas'
+        aunque aparezca más abajo en el HTML.
+        """
         for grupo in PRIORIDADES:
             for file_id, mkey in patrones:
                 idx = html.find(str(file_id))
                 contexto = html[max(0, idx - 600):idx + 300].lower()
-
-                # Saltar documentos excluidos
                 if any(x in contexto for x in KEYWORDS_EXCLUIR):
                     continue
-
                 if any(x in contexto for x in grupo):
                     print(f"✅ Pliego identificado (grupo '{grupo[0]}'): documentFileId={file_id}")
                     return file_id, mkey
+            # Si ningún doc del grupo hizo match, intentar el siguiente grupo
         return None, None
 
     file_id_sel, mkey_sel = buscar_por_prioridad(patrones, html_final)
+
+    # Log inventario de documentos encontrados para diagnóstico
+    print(f"📋 Inventario ({len(patrones)} docs):")
+    for file_id, mkey in patrones:
+        idx = html_final.find(str(file_id))
+        contexto = html_final[max(0, idx - 200):idx + 100].lower()
+        # Extraer nombre del archivo si está visible
+        import re as _re_inv
+        nombre = _re_inv.search(r'([a-záéíóúñ\w\s\-\.]+\.(?:pdf|zip|xlsx|docx))', contexto)
+        nombre_str = nombre.group(1).strip() if nombre else "sin nombre"
+        seleccionado = " ← SELECCIONADO" if file_id == file_id_sel else ""
+        print(f"   {file_id}: {nombre_str[:60]}{seleccionado}")
 
     if file_id_sel:
         enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id_sel}&mkey={mkey_sel}"
