@@ -846,18 +846,19 @@ def ejecutar_analisis_gemini(proceso_id: str):
             except Exception as e:
                 msg = str(e)
                 if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                    # Extraer tiempo de retry sugerido por Gemini
+                    # Con paid tier los 429 son raros (burst momentáneo).
+                    # Esperar el tiempo sugerido por Gemini, máximo 15s.
                     import re as _re3
                     m = _re3.search(r"retry[^\d]*(\d+)", msg, _re3.IGNORECASE)
-                    espera = int(m.group(1)) + 5 if m else 60
-                    espera = min(espera, 120)  # máximo 2 minutos de espera
-                    print(f"⏳ Gemini 429 — esperando {espera}s antes de reintentar ({intento+1}/{MAX_REINTENTOS})...")
+                    espera = int(m.group(1)) + 2 if m else 15
+                    espera = min(espera, 15)
+                    print(f"⏳ Gemini 429 (burst) — esperando {espera}s ({intento+1}/{MAX_REINTENTOS})...")
                     time.sleep(espera)
                 else:
-                    raise  # error no recuperable, lanzar inmediatamente
+                    raise  # error no recuperable
 
         if datos_json is None:
-            raise Exception(f"Gemini 429 agotado tras {MAX_REINTENTOS} reintentos. Cuota diaria del free tier superada — activa billing en Google AI Studio.")
+            raise Exception(f"Gemini 429 persistente tras {MAX_REINTENTOS} reintentos — revisa cuota en Google AI Studio.")
         
         # 4. GUARDAR RESULTADOS EN LA BÓVEDA
         supabase_admin.table("analisis_pliego").upsert({
