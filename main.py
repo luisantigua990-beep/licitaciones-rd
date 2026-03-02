@@ -865,14 +865,25 @@ def ejecutar_analisis_gemini(proceso_id: str):
                     model=MODELO,
                     contents=contents
                 )
+                # Log para diagnóstico — ver qué devuelve Gemini exactamente
+                texto_raw = respuesta.text if respuesta.text else ""
+                print(f"🧠 Gemini raw ({len(texto_raw)} chars): {repr(texto_raw[:300])}")
+
                 # Limpiar posibles ```json ... ``` que Gemini a veces añade
-                texto_respuesta = respuesta.text.strip()
+                texto_respuesta = texto_raw.strip()
+                if not texto_respuesta:
+                    raise Exception("Gemini devolvió respuesta vacía")
                 if texto_respuesta.startswith("```"):
                     texto_respuesta = texto_respuesta.split("```")[1]
                     if texto_respuesta.startswith("json"):
                         texto_respuesta = texto_respuesta[4:]
+                # Buscar el primer { en caso de que haya texto previo
+                idx_json = texto_respuesta.find("{")
+                if idx_json > 0:
+                    print(f"⚠️ JSON no empieza al inicio, recortando {idx_json} chars previos")
+                    texto_respuesta = texto_respuesta[idx_json:]
                 datos_json = json.loads(texto_respuesta)
-                break  # éxito, salir del loop
+                break  # éxito
             except Exception as e:
                 msg = str(e)
                 if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
