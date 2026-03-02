@@ -937,6 +937,14 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
             except Exception as e:
                 print(f"⚠️ No se pudo obtener email de user {uid}: {e}")
 
+        # MODO PRUEBA: si hay RESEND_TEST_EMAIL, redirigir todos los emails ahí
+        # (Resend free tier solo permite enviar al email registrado sin dominio verificado)
+        TEST_EMAIL = os.getenv("RESEND_TEST_EMAIL")
+        if TEST_EMAIL:
+            print(f"🧪 Modo prueba — redirigiendo email a {TEST_EMAIL}")
+            emails_destino  = [TEST_EMAIL]
+            nombres_destino = ["Usuario de prueba"]
+
         if not emails_destino:
             print(f"⚠️ No se encontraron emails para {proceso_id}")
             return
