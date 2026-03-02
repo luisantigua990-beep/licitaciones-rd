@@ -724,19 +724,50 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     # ── Paso 3: identificar el pliego por contexto ───────────
     BASE_DOWNLOAD = "https://comunidad.comprasdominicana.gob.do/Public/Tendering/OpportunityDetail/DownloadFile"
 
+    # Keywords en orden de prioridad — el primer match gana
+    KEYWORDS_PLIEGO = [
+        "pliego de condiciones",
+        "pliego",
+        "bases de la contrataci",
+        "terminos de referencia",
+        "términos de referencia",
+        "tdr",
+        "especificaciones tecnicas",
+        "especificaciones técnicas",
+        "ficha tecnica",
+        "ficha técnica",
+        "condiciones generales",
+    ]
+    # Keywords que indican que NO es el pliego (evitar actas de inicio, solicitudes, etc.)
+    KEYWORDS_EXCLUIR = [
+        "acta de inicio",
+        "acta administrativa",
+        "solicitud de compra",
+        "convocatoria",
+        "requerimiento",
+    ]
+
     enlace_pliego = None
     for file_id, mkey in patrones:
         idx = html_final.find(str(file_id))
-        contexto = html_final[max(0, idx - 400):idx + 100].lower()
-        if any(x in contexto for x in ["pliego", "bases de la contrataci", "especificaci", "condiciones generales"]):
+        contexto = html_final[max(0, idx - 600):idx + 200].lower()
+
+        # Saltar documentos que claramente no son el pliego
+        if any(x in contexto for x in KEYWORDS_EXCLUIR):
+            print(f"⏭️ Saltando documentFileId={file_id} (parece acta/solicitud)")
+            continue
+
+        if any(x in contexto for x in KEYWORDS_PLIEGO):
             enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
             print(f"✅ Pliego identificado: documentFileId={file_id}")
             break
 
     if not enlace_pliego:
-        file_id, mkey = patrones[0]
+        # Último recurso: usar el documento más grande (suele ser el pliego)
+        # Tomamos el último de la lista que no sea el primero (que a veces es el acta de inicio)
+        file_id, mkey = patrones[-1] if len(patrones) > 1 else patrones[0]
         enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
-        print(f"⚠️ Pliego no identificado por contexto, usando primer documento: documentFileId={file_id}")
+        print(f"⚠️ Pliego no identificado por keywords, usando último documento: documentFileId={file_id}")
 
     # ── Paso 4: descargar PDF con el mkey de la sesión activa ─
     # El portal no devuelve el PDF directo — responde con un redirect JS a:
@@ -869,19 +900,29 @@ def ejecutar_analisis_gemini(proceso_id: str):
                 texto_raw = respuesta.text if respuesta.text else ""
                 print(f"🧠 Gemini raw ({len(texto_raw)} chars): {repr(texto_raw[:300])}")
 
-                # Limpiar posibles ```json ... ``` que Gemini a veces añade
                 texto_respuesta = texto_raw.strip()
                 if not texto_respuesta:
                     raise Exception("Gemini devolvió respuesta vacía")
-                if texto_respuesta.startswith("```"):
-                    texto_respuesta = texto_respuesta.split("```")[1]
-                    if texto_respuesta.startswith("json"):
-                        texto_respuesta = texto_respuesta[4:]
-                # Buscar el primer { en caso de que haya texto previo
-                idx_json = texto_respuesta.find("{")
-                if idx_json > 0:
-                    print(f"⚠️ JSON no empieza al inicio, recortando {idx_json} chars previos")
-                    texto_respuesta = texto_respuesta[idx_json:]
+
+                # Limpiar bloques ```json ... ```
+                if "```" in texto_respuesta:
+                    partes = texto_respuesta.split("```")
+                    for parte in partes:
+                        if parte.startswith("json"):
+                            texto_respuesta = parte[4:].strip()
+                            break
+                        elif parte.strip().startswith("{"):
+                            texto_respuesta = parte.strip()
+                            break
+
+                # Extraer solo el bloque JSON {...} ignorando texto antes y después
+                idx_inicio = texto_respuesta.find("{")
+                idx_fin    = texto_respuesta.rfind("}")
+                if idx_inicio == -1 or idx_fin == -1:
+                    raise Exception(f"No se encontró JSON válido en la respuesta de Gemini: {repr(texto_respuesta[:200])}")
+                if idx_inicio > 0:
+                    print(f"⚠️ Recortando {idx_inicio} chars antes del JSON")
+                texto_respuesta = texto_respuesta[idx_inicio:idx_fin + 1]
                 datos_json = json.loads(texto_respuesta)
                 break  # éxito
             except Exception as e:
