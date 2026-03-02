@@ -686,6 +686,8 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
 
     patrones = []
     html_final = ""
+    url_exitosa = ""
+    hdrs_exitosos = {}
 
     for url_intento, hdrs in urls_a_probar:
         print(f"🕵️ Probando: {url_intento[:90]}")
@@ -696,7 +698,12 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
 
             patrones = extraer_patrones(html)
             if patrones:
-                html_final = html
+                html_final    = html
+                url_exitosa   = url_intento
+                hdrs_exitosos = hdrs
+                # ⚠️ IMPORTANTE: NO hacer más requests después de encontrar patrones.
+                # El portal genera un mkey único por sesión — requests adicionales
+                # invalidan el mkey actual. Descargamos inmediatamente abajo.
                 break
             else:
                 # Log de diagnóstico si no hay matches
@@ -731,15 +738,20 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
         print(f"⚠️ Pliego no identificado por contexto, usando primer documento: documentFileId={file_id}")
 
-    # ── Paso 4: descargar y extraer texto del PDF ────────────
-    headers_download = {**headers_popup, "Referer": urls_a_probar[0][0]}
+    # ── Paso 4: descargar PDF con el mkey de la sesión activa ─
+    # Usamos los headers del intento exitoso como Referer para mantener la sesión.
+    headers_download = {**hdrs_exitosos, "Referer": url_exitosa}
     print(f"📥 Descargando: {enlace_pliego}")
 
     resp_pdf = session.get(enlace_pliego, headers=headers_download, timeout=60)
+    print(f"📦 Respuesta descarga: {resp_pdf.status_code}, {len(resp_pdf.content)} bytes, Content-Type: {resp_pdf.headers.get('Content-Type', 'desconocido')}")
+
     if resp_pdf.status_code != 200:
         raise Exception(f"Error HTTP {resp_pdf.status_code} al descargar PDF")
     if len(resp_pdf.content) < 500:
-        raise Exception(f"Respuesta demasiado pequeña ({len(resp_pdf.content)} bytes), probable error de sesión")
+        # Log del contenido para diagnóstico
+        print(f"⚠️ Respuesta pequeña: {repr(resp_pdf.content[:300])}")
+        raise Exception(f"Respuesta demasiado pequeña ({len(resp_pdf.content)} bytes), probable mkey expirado o sesión inválida")
 
     print(f"📄 PDF: {len(resp_pdf.content):,} bytes. Extrayendo texto...")
     pdf_file = io.BytesIO(resp_pdf.content)
