@@ -606,121 +606,135 @@ def extraer_notice_uid(url_portal: str) -> str:
 
 def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     """
-    Descarga el pliego del portal transaccional.
-    El portal requiere cookie de sesión (PublicSessionCookie) para devolver
-    el HTML con los documentos. Se obtiene haciendo primero una request
-    a la página principal y luego al popup con esa cookie.
+    Descarga el pliego del portal transaccional de DGCP.
+    Estrategia multi-patrón:
+      1. Obtener cookie de sesión (PublicSessionCookie)
+      2. Probar 3 variantes de URL del popup
+      3. Buscar documentFileId con 4 patrones de extracción distintos
+      4. Descargar PDF y extraer texto
+    Si todo falla → lanza excepción para que ejecutar_analisis_gemini marque error.
     """
     import re as _re
 
     url_limpia = url_documentos.replace("gob.do//", "gob.do/")
 
     headers_base = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,*/*',
-        'Accept-Language': 'es-ES,es;q=0.9',
-        'sec-fetch-dest': 'document',
-        'sec-fetch-mode': 'navigate',
-        'sec-fetch-site': 'none',
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+        "Accept-Language": "es-ES,es;q=0.9",
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+    }
+
+    headers_popup = {
+        **headers_base,
+        "Accept": "text/html, */*; q=0.01",
+        "Referer": "https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/Index",
+        "X-Requested-With": "XMLHttpRequest",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
     }
 
     session = requests.Session()
     session.verify = False
 
-    # PASO 1: Obtener cookie de sesión visitando la página principal
-    print(f"🍪 Obteniendo sesión del portal...")
+    # ── Paso 1: cookie de sesión ──────────────────────────────
+    print("🍪 Obteniendo sesión del portal...")
     try:
         session.get(
             "https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/Index",
-            headers=headers_base,
-            timeout=15
+            headers=headers_base, timeout=15,
         )
-        cookies = {c.name: c.value for c in session.cookies}
-        print(f"🍪 Cookies obtenidas: {list(cookies.keys())}")
+        print(f"🍪 Cookies: {[c.name for c in session.cookies]}")
     except Exception as e:
         print(f"⚠️ Error obteniendo sesión: {e}")
 
-    # PASO 2: Cargar el popup con la sesión activa
-    # El referer correcto es el listado general
-    headers_popup = {
-        **headers_base,
-        'Accept': 'text/html, */*; q=0.01',
-        'Referer': 'https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/Index',
-        'X-Requested-With': 'XMLHttpRequest',
-        'sec-fetch-dest': 'empty',
-        'sec-fetch-mode': 'cors',
-        'sec-fetch-site': 'same-origin',
-    }
+    sep = "&" if "?" in url_limpia else "?"
 
-    # Construir URL del popup
-    sep = '&' if '?' in url_limpia else '?'
-    url_popup = url_limpia + sep + 'isModal=true&asPopupView=true'
-    print(f"🕵️ Cargando popup: {url_popup[:100]}")
+    # ── Paso 2: probar variantes de URL ──────────────────────
+    urls_a_probar = [
+        (url_limpia + sep + "isModal=true&asPopupView=true", headers_popup),
+        (url_limpia + sep + "sPopupView=true",               headers_popup),
+        (url_limpia,                                          headers_base),
+    ]
 
-    resp = session.get(url_popup, headers=headers_popup, timeout=20)
-    html = resp.text
-    print(f"📄 HTML recibido: {len(html)} chars, status: {resp.status_code}")
+    def extraer_patrones(html: str) -> list:
+        """Prueba 4 patrones de regex, devuelve lista de (fileId, mkey)."""
+        regexes = [
+            # Patrón original — URL directa en href/action
+            r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)",
+            # Patrón JSON embebido  {"documentFileId":123,"mkey":"abc"}
+            r'"documentFileId"\s*:\s*(\d+)[^}]*?"mkey"\s*:\s*"([\w\-]+)"',
+            # Patrón data attributes  data-file-id="123" data-mkey="abc"
+            r'data-(?:file-id|fileid|documentfileid)=["\'](\d+)["\'][^>]*?data-mkey=["\']([^"\']+)["\']',
+            # Patrón DownloadFile en cualquier contexto
+            r'DownloadFile[^"\'<>]*?documentFileId=(\d+)[^"\'<>]*?mkey=([\w\-]+)',
+        ]
+        for regex in regexes:
+            matches = _re.findall(regex, html, _re.IGNORECASE)
+            if matches:
+                print(f"✅ Patrón encontrado ({len(matches)} docs): {regex[:55]}…")
+                return matches
+        return []
 
+    patrones = []
+    html_final = ""
+
+    for url_intento, hdrs in urls_a_probar:
+        print(f"🕵️ Probando: {url_intento[:90]}")
+        try:
+            resp = session.get(url_intento, headers=hdrs, timeout=20)
+            html = resp.text
+            print(f"📄 {len(html)} chars, status {resp.status_code}")
+
+            patrones = extraer_patrones(html)
+            if patrones:
+                html_final = html
+                break
+            else:
+                # Log de diagnóstico si no hay matches
+                for kw in ["DownloadFile", "documentFileId", "mkey", "Pliego", "FileId"]:
+                    idx = html.find(kw)
+                    if idx >= 0:
+                        print(f"🔍 '{kw}' pos {idx}: {repr(html[max(0,idx-50):idx+100])}")
+        except Exception as e:
+            print(f"⚠️ Error en {url_intento[:60]}: {e}")
+
+    if not patrones:
+        raise Exception(
+            "0 documentos encontrados tras 3 intentos con 4 patrones distintos. "
+            "El portal puede requerir Playwright (render JS). "
+            f"URL base: {url_limpia}"
+        )
+
+    # ── Paso 3: identificar el pliego por contexto ───────────
     BASE_DOWNLOAD = "https://comunidad.comprasdominicana.gob.do/Public/Tendering/OpportunityDetail/DownloadFile"
 
-    patrones = _re.findall(r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)", html)
-    print(f"📋 {len(patrones)} documentos encontrados")
-    if not patrones:
-        # DEBUG: ver qué hay en el HTML
-        for keyword in ["DownloadFile", "documentFile", "Descarga", "download"]:
-            idx = html.find(keyword)
-            if idx > 0:
-                print(f"🔍 '{keyword}' en pos {idx}: {repr(html[max(0,idx-80):idx+150])}")
-                break
-        print(f"🔍 HTML[4000:4500]: {repr(html[4000:4500])}")
-
-    # Si no hay documentos con el popup, intentar con sPopupView=true
-    if not patrones:
-        url_popup2 = url_limpia + sep + 'sPopupView=true'
-        print(f"🔄 Reintentando con sPopupView: {url_popup2[:100]}")
-        resp2 = session.get(url_popup2, headers=headers_popup, timeout=20)
-        html = resp2.text
-        patrones = _re.findall(r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)", html)
-        print(f"📋 {len(patrones)} documentos con sPopupView")
-
-    # Último intento: URL original sin parámetros popup
-    if not patrones:
-        resp3 = session.get(url_limpia, headers=headers_base, timeout=20)
-        html = resp3.text
-        patrones = _re.findall(r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)", html)
-        print(f"📋 {len(patrones)} documentos en URL original")
-
-    if not patrones:
-        raise Exception(f"0 documentos encontrados tras 3 intentos. URL: {url_popup}")
-
     enlace_pliego = None
-
-    # Buscar pliego por contexto
     for file_id, mkey in patrones:
-        idx = html.find(f"documentFileId={file_id}")
-        contexto = html[max(0, idx - 500):idx + 100].lower()
-        if any(x in contexto for x in ["pliego", "bases de la contrataci", "especificaci", "condiciones"]):
+        idx = html_final.find(str(file_id))
+        contexto = html_final[max(0, idx - 400):idx + 100].lower()
+        if any(x in contexto for x in ["pliego", "bases de la contrataci", "especificaci", "condiciones generales"]):
             enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
-            print(f"✅ Pliego encontrado: documentFileId={file_id}")
+            print(f"✅ Pliego identificado: documentFileId={file_id}")
             break
 
     if not enlace_pliego:
-        file_id, mkey = patrones[-1]
+        file_id, mkey = patrones[0]
         enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
-        print(f"⚠️ Usando último documento: documentFileId={file_id}")
+        print(f"⚠️ Pliego no identificado por contexto, usando primer documento: documentFileId={file_id}")
 
-    # PASO 3: Descargar PDF con la misma sesión
-    headers_download = {
-        **headers_popup,
-        'Referer': url_popup,
-    }
+    # ── Paso 4: descargar y extraer texto del PDF ────────────
+    headers_download = {**headers_popup, "Referer": urls_a_probar[0][0]}
     print(f"📥 Descargando: {enlace_pliego}")
-    resp_pdf = session.get(enlace_pliego, headers=headers_download, timeout=60)
 
+    resp_pdf = session.get(enlace_pliego, headers=headers_download, timeout=60)
     if resp_pdf.status_code != 200:
-        raise Exception(f"Error descargando PDF: {resp_pdf.status_code}")
+        raise Exception(f"Error HTTP {resp_pdf.status_code} al descargar PDF")
     if len(resp_pdf.content) < 500:
-        raise Exception(f"Respuesta inválida ({len(resp_pdf.content)} bytes)")
+        raise Exception(f"Respuesta demasiado pequeña ({len(resp_pdf.content)} bytes), probable error de sesión")
 
     print(f"📄 PDF: {len(resp_pdf.content):,} bytes. Extrayendo texto...")
     pdf_file = io.BytesIO(resp_pdf.content)
@@ -732,7 +746,7 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         if texto:
             texto_completo += texto + "\n"
 
-    print(f"📝 {len(texto_completo):,} caracteres extraídos")
+    print(f"📝 {len(texto_completo):,} caracteres extraídos del PDF")
     return texto_completo
 
 
@@ -787,6 +801,133 @@ def ejecutar_analisis_gemini(proceso_id: str):
             "proceso_id": proceso_id,
             "estado": "error"
         }).execute()
+
+@app.get("/api/admin/test-pliego")
+def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
+    """
+    Diagnóstico del scraper de pliegos.
+    Ejecuta el flujo completo y devuelve un reporte detallado del HTML recibido
+    para identificar el formato exacto de los links de descarga.
+
+    Ejemplo: GET /api/admin/test-pliego?codigo=DO1.NTC.1234567
+    """
+    import re as _re
+
+    # 1. Buscar URL del proceso en Supabase
+    proc = supabase.table("procesos").select("url, titulo").eq("codigo_proceso", codigo).execute()
+    if not proc.data or not proc.data[0].get("url"):
+        raise HTTPException(status_code=404, detail=f"Proceso '{codigo}' no encontrado o sin URL")
+
+    url_portal = proc.data[0]["url"]
+    titulo     = proc.data[0].get("titulo", "Sin título")
+
+    headers_base = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+        "Accept-Language": "es-ES,es;q=0.9",
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+    }
+
+    headers_popup = {
+        **headers_base,
+        "Accept": "text/html, */*; q=0.01",
+        "Referer": "https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/Index",
+        "X-Requested-With": "XMLHttpRequest",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
+    }
+
+    session = requests.Session()
+    session.verify = False
+
+    diag = {
+        "codigo": codigo,
+        "titulo": titulo,
+        "url_portal": url_portal,
+        "cookies_obtenidas": [],
+        "intentos": [],
+    }
+
+    # Obtener cookie
+    try:
+        session.get(
+            "https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/Index",
+            headers=headers_base, timeout=15,
+        )
+        diag["cookies_obtenidas"] = [c.name for c in session.cookies]
+    except Exception as e:
+        diag["error_cookie"] = str(e)
+
+    url_limpia = url_portal.replace("gob.do//", "gob.do/")
+    sep = "&" if "?" in url_limpia else "?"
+
+    urls_a_probar = [
+        (url_limpia + sep + "isModal=true&asPopupView=true", headers_popup),
+        (url_limpia + sep + "sPopupView=true",               headers_popup),
+        (url_limpia,                                          headers_base),
+    ]
+
+    regexes = {
+        "patron_url_directa":    r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)",
+        "patron_json_embebido":  r'"documentFileId"\s*:\s*(\d+)[^}]*?"mkey"\s*:\s*"([\w\-]+)"',
+        "patron_data_attr":      r'data-(?:file-id|fileid|documentfileid)=["\'](\d+)["\'][^>]*?data-mkey=["\']([^"\']+)["\']',
+        "patron_downloadfile":   r'DownloadFile[^"\'<>]*?documentFileId=(\d+)[^"\'<>]*?mkey=([\w\-]+)',
+    }
+
+    for url_intento, hdrs in urls_a_probar:
+        intento: dict = {"url": url_intento}
+        try:
+            resp = session.get(url_intento, headers=hdrs, timeout=20)
+            html = resp.text
+            intento["status"]     = resp.status_code
+            intento["html_chars"] = len(html)
+
+            # Buscar con cada patrón
+            matches_por_patron = {}
+            for nombre, regex in regexes.items():
+                m = _re.findall(regex, html, _re.IGNORECASE)
+                matches_por_patron[nombre] = {"cantidad": len(m), "primeros": m[:3]}
+            intento["patrones"] = matches_por_patron
+
+            # Keywords de diagnóstico
+            keywords = {}
+            for kw in ["DownloadFile", "documentFileId", "mkey", "Pliego", "pliego",
+                       "FileId", "fileId", "download", "application/pdf", "adjunto"]:
+                idx = html.find(kw)
+                if idx >= 0:
+                    keywords[kw] = repr(html[max(0, idx-60):idx+120])
+            intento["keywords_encontradas"] = keywords
+
+            # Muestras del HTML para análisis manual
+            intento["html_inicio"]    = html[:800]
+            intento["html_zona_4000"] = html[4000:4600]
+            intento["html_final"]     = html[-400:]
+
+            total_matches = sum(v["cantidad"] for v in matches_por_patron.values())
+            intento["exito"] = total_matches > 0
+
+        except Exception as e:
+            intento["error"] = str(e)
+
+        diag["intentos"].append(intento)
+        if intento.get("exito"):
+            break
+
+    total_global = sum(
+        sum(p["cantidad"] for p in i.get("patrones", {}).values())
+        for i in diag["intentos"]
+    )
+    diag["conclusion"] = (
+        "✅ Documentos encontrados — el scraper debería funcionar"
+        if total_global > 0
+        else "❌ 0 documentos en todos los intentos — portal usa render JS puro, necesita Playwright"
+    )
+
+    return diag
+
 
 @app.post("/api/webhook/analizar-pliego")
 async def webhook_analisis_pliego(request: Request, background_tasks: BackgroundTasks):
