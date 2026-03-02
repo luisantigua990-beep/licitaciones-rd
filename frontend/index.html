@@ -2282,19 +2282,39 @@ if (savedToken && savedUser) {
 }
 
 // ── ABRIR PROCESO DESDE NOTIFICACIÓN ──
+// Se llama automáticamente al cargar la app si hay ?proceso=CODIGO en la URL.
+// Espera hasta 4 segundos a que la auth y los datos estén listos antes de abrir el detalle.
 async function checkNotificacionUrl() {
   const params = new URLSearchParams(window.location.search);
   const codigoParam = params.get('proceso');
   if (!codigoParam) return;
 
+  // Limpiar la URL para que no se repita si el usuario recarga
   window.history.replaceState({}, '', window.location.pathname);
+
+  // Esperar a que el panel principal sea visible (puede tardar si venimos de fondo)
+  const MAX_ESPERA_MS = 4000;
+  const INTERVALO_MS  = 150;
+  let elapsed = 0;
+  await new Promise(resolve => {
+    const check = () => {
+      const appVisible = document.getElementById('screen-app')?.classList.contains('active');
+      if (appVisible || elapsed >= MAX_ESPERA_MS) return resolve();
+      elapsed += INTERVALO_MS;
+      setTimeout(check, INTERVALO_MS);
+    };
+    check();
+  });
+
   await verDetalle(codigoParam);
 }
 
 const _originalShowApp = showApp;
 showApp = async function() {
   _originalShowApp();
-  setTimeout(checkNotificacionUrl, 300);
+  // Aumentar delay a 600ms para dar tiempo a que cargarProcesos() arranque
+  // antes de intentar abrir el detalle del proceso notificado.
+  setTimeout(checkNotificacionUrl, 600);
 };
 
 // ═══════════════════════════════════════════════════════
