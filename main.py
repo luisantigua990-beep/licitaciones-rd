@@ -884,22 +884,58 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         ["condiciones generales", "bases tecnicas"],
     ]
 
+    def extraer_nombre_archivo(html, file_id):
+        """Extrae el nombre del archivo por su file_id usando ventana corta (300 chars)."""
+        import re as _re_nom
+        idx = html.find(str(file_id))
+        if idx == -1:
+            return ""
+        contexto = html[max(0, idx - 300):idx + 200]
+        nombre = _re_nom.search(
+            r'>([\w\s\-\.\,\(\)\_\#áéíóúÁÉÍÓÚñÑ]+\.(?:pdf|zip|xlsx|docx|doc))<',
+            contexto, _re_nom.IGNORECASE
+        )
+        if not nombre:
+            nombre = _re_nom.search(
+                r'"([\w\s\-\.\,\(\)\_\#áéíóúÁÉÍÓÚñÑ]+\.(?:pdf|zip|xlsx|docx|doc))"',
+                contexto, _re_nom.IGNORECASE
+            )
+        return nombre.group(1).strip().lower() if nombre else ""
+
     def buscar_por_prioridad(patrones, html):
         """
-        Para cada grupo de prioridad, escanea TODOS los documentos antes de bajar al siguiente.
-        Así 'Pliego de Condiciones' siempre gana sobre 'Especificaciones Técnicas'.
-        Usa ventana de contexto amplia (1200 chars) para capturar nombres largos.
+        DOS PASADAS por grupo de prioridad:
+          Pasada 1: match solo en el NOMBRE DEL ARCHIVO (evita falsos positivos
+                    por la descripción de categoría del portal, ej: un archivo
+                    "Especificaciones tecnicas.pdf" con categoría "Pliego de Condiciones").
+          Pasada 2: si pasada 1 no encuentra nada, ampliar al contexto de 600 chars.
+        El emendado/corregido siempre gana por estar en P1a.
         """
         for grupo in PRIORIDADES:
+            # PASADA 1: solo nombre del archivo
+            for file_id, mkey in patrones:
+                nombre = extraer_nombre_archivo(html, file_id)
+                if not nombre:
+                    continue
+                if any(x in nombre for x in KEYWORDS_EXCLUIR):
+                    continue
+                if any(x in nombre for x in grupo):
+                    print(f"✅ Pliego por NOMBRE (grupo '{grupo[0]}'): documentFileId={file_id} → '{nombre[:70]}'")
+                    return file_id, mkey
+
+            # PASADA 2: contexto amplio (fallback si ningún nombre hizo match)
             for file_id, mkey in patrones:
                 idx = html.find(str(file_id))
-                # Ventana amplia: el nombre del archivo puede estar lejos del ID
-                contexto = html[max(0, idx - 1200):idx + 400].lower()
+                contexto = html[max(0, idx - 600):idx + 300].lower()
                 if any(x in contexto for x in KEYWORDS_EXCLUIR):
                     continue
                 if any(x in contexto for x in grupo):
-                    print(f"✅ Pliego identificado (grupo '{grupo[0]}'): documentFileId={file_id}")
+                    nombre = extraer_nombre_archivo(html, file_id)
+                    if nombre and any(x in nombre for x in KEYWORDS_EXCLUIR):
+                        continue
+                    print(f"✅ Pliego por CONTEXTO (grupo '{grupo[0]}'): documentFileId={file_id} → '{nombre[:70]}'")
                     return file_id, mkey
+
         return None, None
 
     file_id_sel, mkey_sel = buscar_por_prioridad(patrones, html_final)
