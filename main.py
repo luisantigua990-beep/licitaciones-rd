@@ -890,6 +890,7 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
     Usa Resend como proveedor. Requiere RESEND_API_KEY en Railway.
     """
     RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+    SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
     if not RESEND_API_KEY:
         print("⚠️ RESEND_API_KEY no configurada — email no enviado")
         return
@@ -912,14 +913,27 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
 
         for uid in user_ids:
             try:
-                user_resp = supabase_admin.auth.admin.get_user(uid)
-                email = user_resp.user.email if user_resp.user else None
-                nombre = (user_resp.user.user_metadata or {}).get("nombre") or \
-                         (user_resp.user.user_metadata or {}).get("full_name") or \
-                         email.split("@")[0] if email else "Usuario"
-                if email:
-                    emails_destino.append(email)
-                    nombres_destino.append(nombre)
+                # Intentar con la API admin de Supabase directamente via HTTP
+                # (el método get_user varía según versión del SDK)
+                resp_auth = requests.get(
+                    f"{SUPABASE_URL}/auth/v1/admin/users/{uid}",
+                    headers={
+                        "apikey": SUPABASE_SERVICE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    },
+                    timeout=10,
+                )
+                if resp_auth.status_code == 200:
+                    user_data = resp_auth.json()
+                    email = user_data.get("email")
+                    meta  = user_data.get("user_metadata") or {}
+                    nombre = meta.get("nombre") or meta.get("full_name") or \
+                             meta.get("name") or (email.split("@")[0] if email else "Usuario")
+                    if email:
+                        emails_destino.append(email)
+                        nombres_destino.append(nombre)
+                else:
+                    print(f"⚠️ Auth API {resp_auth.status_code} para user {uid}: {resp_auth.text[:100]}")
             except Exception as e:
                 print(f"⚠️ No se pudo obtener email de user {uid}: {e}")
 
