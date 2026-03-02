@@ -816,18 +816,48 @@ def ejecutar_analisis_gemini(proceso_id: str):
         texto_pliego = descargar_y_extraer_texto_pdf(url_portal)
         
         if len(texto_pliego.strip()) < 100:
-            raise Exception("El PDF parece estar vacío o es un documento escaneado (imágenes).")
+            raise Exception("El PDF parece estar vacío o es un documento escaneado (imágenes sin OCR).")
+
+        if len(texto_pliego.strip()) < 500:
+            print(f"⚠️ PDF con poco texto extraído ({len(texto_pliego)} chars) — posiblemente escaneado. Gemini intentará igual.")
         
-        # 3. LLAMADA A GEMINI 1.5 FLASH
+        # 3. LLAMADA A GEMINI CON RETRY AUTOMÁTICO
         if not cliente_gemini:
             raise Exception("No se configuró Gemini. Revisa tu GEMINI_API_KEY en Railway.")
-            
+
         print("🤖 Pasando el texto del pliego a Gemini...")
-        respuesta = cliente_gemini.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[PROMPT_MAESTRO, texto_pliego]
-        )
-        datos_json = json.loads(respuesta.text)
+
+        MAX_REINTENTOS = 3
+        datos_json = None
+        for intento in range(MAX_REINTENTOS):
+            try:
+                respuesta = cliente_gemini.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=[PROMPT_MAESTRO, texto_pliego]
+                )
+                # Limpiar posibles ```json ... ``` que Gemini a veces añade
+                texto_respuesta = respuesta.text.strip()
+                if texto_respuesta.startswith("```"):
+                    texto_respuesta = texto_respuesta.split("```")[1]
+                    if texto_respuesta.startswith("json"):
+                        texto_respuesta = texto_respuesta[4:]
+                datos_json = json.loads(texto_respuesta)
+                break  # éxito, salir del loop
+            except Exception as e:
+                msg = str(e)
+                if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                    # Extraer tiempo de retry sugerido por Gemini
+                    import re as _re3
+                    m = _re3.search(r"retry[^\d]*(\d+)", msg, _re3.IGNORECASE)
+                    espera = int(m.group(1)) + 5 if m else 60
+                    espera = min(espera, 120)  # máximo 2 minutos de espera
+                    print(f"⏳ Gemini 429 — esperando {espera}s antes de reintentar ({intento+1}/{MAX_REINTENTOS})...")
+                    time.sleep(espera)
+                else:
+                    raise  # error no recuperable, lanzar inmediatamente
+
+        if datos_json is None:
+            raise Exception(f"Gemini 429 agotado tras {MAX_REINTENTOS} reintentos. Cuota diaria del free tier superada — activa billing en Google AI Studio.")
         
         # 4. GUARDAR RESULTADOS EN LA BÓVEDA
         supabase_admin.table("analisis_pliego").upsert({
