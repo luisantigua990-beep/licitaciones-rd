@@ -661,21 +661,26 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     ]
 
     def extraer_patrones(html: str) -> list:
-        """Prueba 4 patrones de regex, devuelve lista de (fileId, mkey)."""
+        """
+        Prueba múltiples patrones de regex.
+        El portal DGCP genera los links como concatenación JS:
+          'documentFileId=' + '12346973' + '&mkey=95ffd475_...'
+        por eso los patrones directos no funcionaban.
+        """
         regexes = [
-            # Patrón original — URL directa en href/action
+            # ✅ Patrón JS concatenado — formato real del portal DGCP
+            r"documentFileId='\s*\+\s*'(\d+)'\s*\+\s*'&(?:amp;)?mkey=([\w\-]+)",
+            # Patrón URL directa (por si cambian el portal)
             r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)",
             # Patrón JSON embebido  {"documentFileId":123,"mkey":"abc"}
             r'"documentFileId"\s*:\s*(\d+)[^}]*?"mkey"\s*:\s*"([\w\-]+)"',
             # Patrón data attributes  data-file-id="123" data-mkey="abc"
             r'data-(?:file-id|fileid|documentfileid)=["\'](\d+)["\'][^>]*?data-mkey=["\']([^"\']+)["\']',
-            # Patrón DownloadFile en cualquier contexto
-            r'DownloadFile[^"\'<>]*?documentFileId=(\d+)[^"\'<>]*?mkey=([\w\-]+)',
         ]
         for regex in regexes:
             matches = _re.findall(regex, html, _re.IGNORECASE)
             if matches:
-                print(f"✅ Patrón encontrado ({len(matches)} docs): {regex[:55]}…")
+                print(f"✅ Patrón encontrado ({len(matches)} docs): {regex[:60]}…")
                 return matches
         return []
 
@@ -871,10 +876,10 @@ def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
     ]
 
     regexes = {
-        "patron_url_directa":    r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)",
-        "patron_json_embebido":  r'"documentFileId"\s*:\s*(\d+)[^}]*?"mkey"\s*:\s*"([\w\-]+)"',
-        "patron_data_attr":      r'data-(?:file-id|fileid|documentfileid)=["\'](\d+)["\'][^>]*?data-mkey=["\']([^"\']+)["\']',
-        "patron_downloadfile":   r'DownloadFile[^"\'<>]*?documentFileId=(\d+)[^"\'<>]*?mkey=([\w\-]+)',
+        "patron_js_concatenado":  r"documentFileId='\s*\+\s*'(\d+)'\s*\+\s*'&(?:amp;)?mkey=([\w\-]+)",
+        "patron_url_directa":     r"documentFileId=(\d+)&(?:amp;)?mkey=([\w\-]+)",
+        "patron_json_embebido":   r'"documentFileId"\s*:\s*(\d+)[^}]*?"mkey"\s*:\s*"([\w\-]+)"',
+        "patron_data_attr":       r'data-(?:file-id|fileid|documentfileid)=["\'](\d+)["\'][^>]*?data-mkey=["\']([^"\']+)["\']',
     }
 
     for url_intento, hdrs in urls_a_probar:
