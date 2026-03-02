@@ -585,33 +585,53 @@ def ver_cron_log(job: str = None, limit: int = 50):
 # ═══════════════════════════════════════════════════════════════
 
 PROMPT_MAESTRO = """
-Eres un perito experto en licitaciones públicas de República Dominicana con profundo conocimiento 
+Eres un perito experto en licitaciones públicas de República Dominicana con profundo conocimiento
 de la Ley 47-25 de Compras y Contrataciones Públicas y su reglamento de aplicación.
 
-Analiza el pliego adjunto con ojo crítico y profesional. Tu análisis debe ser ÚTIL para una empresa 
+Analiza el pliego adjunto con ojo crítico y profesional. Tu análisis debe ser ÚTIL para una empresa
 oferente que evalúa si puede y le conviene participar.
 
 INSTRUCCIONES IMPORTANTES:
-1. Identifica el tipo de proceso: Obras, Bienes, Servicios o Consultoría. Adapta el análisis según el tipo.
-2. Las "alertas_fraude" deben ser hallazgos REALES de indicadores de manipulación del proceso, NO restricciones 
+
+1. Identifica el tipo de proceso: Obras, Bienes, Servicios o Consultoría.
+
+2. Las "alertas_fraude" deben ser hallazgos REALES de indicadores de manipulación, NO restricciones
    normales de participación. Busca específicamente:
-   - Requisitos desproporcionados o inusuales que limitan competencia artificialmente (Art. 14, 47-25)
-   - Especificaciones técnicas que parecen diseñadas para un proveedor específico
-   - Plazos de presentación muy cortos sin justificación (señal de proceso dirigido)
+   - Requisitos desproporcionados que limitan competencia artificialmente (Art. 14, 47-25)
+   - Especificaciones técnicas diseñadas para un proveedor específico
+   - Plazos de presentación muy cortos sin justificación
    - Criterios de evaluación subjetivos o con pesos inusuales
    - Exigencia de marcas, modelos o proveedores específicos sin justificación técnica
-   - Requisitos de experiencia con montos exactos que solo una empresa podría cumplir
-   - Documentos o certificaciones difíciles de obtener sin conexiones previas
-   - Colusión posible: cuando los requisitos conjuntos solo los cumple un consorcio específico conocido
-   - Conflicto de interés: cuando los TDR parecen escritos por o para el futuro adjudicatario
-   - Presupuesto base significativamente inferior o superior al mercado
+   - Requisitos de experiencia con montos exactos que solo una empresa puede cumplir
    - Contrataciones directas disfrazadas de licitación (Art. 146, 47-25)
-   - Ausencia de criterios de evaluación claros (favorece discrecionalidad)
-3. Las "restricciones_participacion" son las condiciones normales que el pliego establece para participar
-   (no son alertas, son requisitos de elegibilidad que cualquier empresa debe conocer).
-4. Para obras: enfoca en personal técnico, equipos, experiencia constructiva y garantías.
-   Para bienes: enfoca en especificaciones técnicas, certificaciones del producto, garantía del fabricante.
-   Para servicios/consultoría: enfoca en equipo profesional, metodología, experiencia del equipo.
+
+3. Las "restricciones_participacion" son las condiciones normales de elegibilidad del pliego.
+
+4. REGLA CRÍTICA SOBRE "es_subsanable":
+   - Lógica: si el pliego dice explícitamente "No subsanable" → es_subsanable=FALSE.
+   - Si dice "Subsanable" O no dice nada → es_subsanable=TRUE (beneficio de la duda).
+   - Las garantías económicas (seriedad, fiel cumplimiento, anticipo) son SIEMPRE es_subsanable=FALSE
+     sin importar lo que diga el pliego, porque la ley no las permite subsanar.
+   - Ejemplos:
+     * "Registro Mercantil (Subsanable)" → es_subsanable: true
+     * "Compromiso Ético" (sin indicación) → es_subsanable: true
+     * "Declaración Jurada notarizada" (sin indicación) → es_subsanable: true
+     * "Estatutos sociales (No subsanable)" → es_subsanable: false
+     * "Garantía de Seriedad de la Oferta" → es_subsanable: false (siempre, sin excepción)
+
+5. REGLA CRÍTICA SOBRE PLAZOS — CRONOGRAMA DE ACTIVIDADES:
+   El pliego siempre incluye un "Cronograma de Actividades" o tabla de fechas. DEBES extraer de ahí:
+   - "Presentación de Credenciales/Ofertas técnicas y Ofertas Económicas" → presentacion_ofertas
+   - "Apertura de Credenciales/Ofertas técnicas" → apertura_ofertas
+   - "Presentación de aclaraciones" o "Plazo máximo para expedir Circulares/Enmiendas" → consultas
+   - "Acto de Adjudicación" → incluirlo en el resumen_ejecutivo si está disponible
+   - "Reunión Aclaratoria" o "Visita al Sitio" → visita_sitio
+   SIEMPRE extrae las fechas en formato DD/MM/YYYY HH:MM tal como aparecen en el cronograma.
+   Si hay un campo "vigencia_oferta_dias", búscalo en el cuerpo del pliego (no en el cronograma).
+
+6. Para los checklist_documentos, NO OMITAS NINGÚN documento que aparezca en el pliego.
+   Revisa exhaustivamente todas las secciones de "documentos requeridos", "credenciales",
+   "oferta técnica", "oferta económica" y similares. Incluye TODOS, aunque sean muchos.
 
 Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes ni después):
 {
@@ -621,7 +641,7 @@ Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes
     {
       "riesgo": "Alto|Medio|Bajo",
       "categoria": "Requisito desproporcional|Especificación dirigida|Plazo sospechoso|Criterio subjetivo|Conflicto de interés|Otro",
-      "hallazgo": "Descripción específica del indicador con referencia a la página o sección del pliego",
+      "hallazgo": "Descripción específica del indicador con referencia a la sección del pliego",
       "articulo_ley": "Artículo de la Ley 47-25 que podría estar siendo vulnerado (si aplica)"
     }
   ],
@@ -651,24 +671,25 @@ Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes
     "equipos_minimos": ["..."]
   },
   "checklist_documentos": {
-    "legal": [{"documento": "...", "es_subsanable": true, "nota": ""}],
-    "tecnica": [{"documento": "...", "es_subsanable": true, "nota": ""}],
+    "legal": [{"documento": "...", "es_subsanable": false, "nota": "Solo true si el pliego dice explícitamente Subsanable"}],
+    "tecnica": [{"documento": "...", "es_subsanable": false, "nota": ""}],
     "financiera": [{"documento": "...", "es_subsanable": false, "nota": ""}]
   },
   "plazos_clave": {
-    "visita_sitio": "fecha o N/A",
-    "consultas": "fecha límite o N/A",
-    "presentacion_ofertas": "fecha",
-    "apertura_ofertas": "fecha o N/A",
-    "vigencia_oferta_dias": "número de días"
+    "visita_sitio": "DD/MM/YYYY HH:MM o N/A",
+    "consultas": "DD/MM/YYYY HH:MM o N/A",
+    "presentacion_ofertas": "DD/MM/YYYY HH:MM",
+    "apertura_ofertas": "DD/MM/YYYY HH:MM o N/A",
+    "vigencia_oferta_dias": "número de días o N/A"
   },
   "evaluacion_competitividad": {
     "nivel_dificultad": "Alta|Media|Baja",
-    "razon": "Por qué es difícil o fácil de cumplir para una empresa mediana del sector",
+    "razon": "Por qué es difícil o fácil para una empresa mediana del sector",
     "recomendacion": "Participar solo|Participar en consorcio|Evaluar con cuidado|No recomendado"
   }
 }
 """
+
 
 def extraer_notice_uid(url_portal: str) -> str:
     """Extrae el noticeUID de la URL del portal."""
@@ -828,24 +849,18 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     ]
 
     # Grupos de prioridad — se evalúan en orden, el primer grupo con match gana
-    # P1a (más específico): Pliego emendado/corregido — SIEMPRE gana sobre el original
     PRIORIDADES = [
-        # Prioridad 1a: Pliego emendado/corregido/actualizado — máxima prioridad
-        [
-            "pliego emendado",
-            "pliego enmendado",
-            "pliego corregido",
-            "pliego actualizado",
-            "emendado y corregido",
-            "enmendado y corregido",
-        ],
-        # Prioridad 1b: Pliego de Condiciones original
+        # Prioridad 1: Pliego de Condiciones (cualquier variante)
         [
             "pliego de condiciones",
             "pliego condiciones",
             "bases de la contratacion",
             "bases de la contratación",
             "bases de contratacion",
+            "pliego emendado",
+            "pliego enmendado",
+            "pliego corregido",
+            "pliego actualizado",
             "condiciones especiales",
         ],
         # Prioridad 2: TDR / Términos de Referencia (servicios/consultoría)
@@ -869,50 +884,21 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         ["condiciones generales", "bases tecnicas"],
     ]
 
-    def extraer_nombre_archivo(html, file_id):
-        """
-        Extrae el nombre del archivo asociado a un documentFileId.
-        Usa una ventana CORTA (300 chars antes) para evitar que el contexto
-        de documentos adyacentes contamine la búsqueda.
-        """
-        import re as _re_nom
-        idx = html.find(str(file_id))
-        if idx == -1:
-            return ""
-        # Ventana corta hacia atrás: solo 300 chars (el nombre está cerca del ID)
-        # Ventana hacia adelante: 200 chars
-        contexto = html[max(0, idx - 300):idx + 200]
-        # Buscar nombre de archivo con extensión
-        nombre = _re_nom.search(
-            r'>([\w\s\-\.\,\(\)\_\#áéíóúÁÉÍÓÚñÑ]+\.(?:pdf|zip|xlsx|docx|doc))<',
-            contexto, _re_nom.IGNORECASE
-        )
-        if not nombre:
-            nombre = _re_nom.search(
-                r'"([\w\s\-\.\,\(\)\_\#áéíóúÁÉÍÓÚñÑ]+\.(?:pdf|zip|xlsx|docx|doc))"',
-                contexto, _re_nom.IGNORECASE
-            )
-        return nombre.group(1).strip().lower() if nombre else ""
-
     def buscar_por_prioridad(patrones, html):
         """
         Para cada grupo de prioridad, escanea TODOS los documentos antes de bajar al siguiente.
-        Así 'Pliego Emendado' siempre gana sobre 'Pliego de Condiciones' original.
-        Usa el NOMBRE DEL ARCHIVO (ventana corta 300 chars) para evitar falsos positivos
-        por contaminación del contexto de documentos adyacentes.
+        Así 'Pliego de Condiciones' siempre gana sobre 'Especificaciones Técnicas'.
+        Usa ventana de contexto amplia (1200 chars) para capturar nombres largos.
         """
         for grupo in PRIORIDADES:
             for file_id, mkey in patrones:
-                nombre = extraer_nombre_archivo(html, file_id)
-                if not nombre:
-                    # Fallback: ventana amplia si no hay nombre de archivo legible
-                    idx = html.find(str(file_id))
-                    nombre = html[max(0, idx - 400):idx + 200].lower()
-
-                if any(x in nombre for x in KEYWORDS_EXCLUIR):
+                idx = html.find(str(file_id))
+                # Ventana amplia: el nombre del archivo puede estar lejos del ID
+                contexto = html[max(0, idx - 1200):idx + 400].lower()
+                if any(x in contexto for x in KEYWORDS_EXCLUIR):
                     continue
-                if any(x in nombre for x in grupo):
-                    print(f"✅ Pliego identificado (grupo '{grupo[0]}'): documentFileId={file_id} → '{nombre[:60]}'")
+                if any(x in contexto for x in grupo):
+                    print(f"✅ Pliego identificado (grupo '{grupo[0]}'): documentFileId={file_id}")
                     return file_id, mkey
         return None, None
 
@@ -1196,7 +1182,7 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
         restricciones_html += f"<li style='margin:6px 0;font-size:13px;color:#374151;'><strong style='color:#7c3aed;'>{tipo_r}:</strong> {desc_r}</li>"
 
     # ── Checklist por categorías ──────────────────────────
-    checklist_docs = analisis.get("checklist_categorizado") or analisis.get("checklist_documentos") or analisis.get("checklist_legal") or {}
+    checklist_docs = analisis.get("checklist_documentos") or analisis.get("checklist_legal") or {}
 
     def render_checklist_categoria(items, titulo_cat, color_cat):
         if not items:
@@ -1355,7 +1341,7 @@ def ejecutar_analisis_gemini(proceso_id: str):
 
         # ── CACHE: si ya está completado, no reprocesar ──────
         existente = supabase_admin.table("analisis_pliego")\
-            .select("estado, tipo_proceso, resumen_ejecutivo, alertas_fraude, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, checklist_categorizado, checklist_legal, plazos_clave, evaluacion_competitividad")\
+            .select("estado, alertas_fraude, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, checklist_legal")\
             .eq("proceso_id", proceso_id)\
             .eq("estado", "completado")\
             .execute()
@@ -1466,30 +1452,11 @@ def ejecutar_analisis_gemini(proceso_id: str):
             raise Exception(f"Gemini 429 persistente tras {MAX_REINTENTOS} reintentos — revisa cuota en Google AI Studio.")
         
         # 4. GUARDAR RESULTADOS EN LA BÓVEDA
-        # NOTA: mapear campos del JSON de Gemini a columnas exactas de la tabla.
-        # Gemini devuelve 'checklist_documentos' pero la tabla tiene 'checklist_categorizado'.
-        fila_supabase = {
-            "proceso_id":                  proceso_id,
-            "estado":                      "completado",
-            "tipo_proceso":                datos_json.get("tipo_proceso"),
-            "resumen_ejecutivo":           datos_json.get("resumen_ejecutivo"),
-            "alertas_fraude":              datos_json.get("alertas_fraude"),
-            "restricciones_participacion": datos_json.get("restricciones_participacion"),
-            "requisitos_experiencia":      datos_json.get("requisitos_experiencia"),
-            "requisitos_financieros":      datos_json.get("requisitos_financieros"),
-            "garantias_exigidas":          datos_json.get("garantias_exigidas"),
-            "personal_y_equipos":          datos_json.get("personal_y_equipos"),
-            # checklist_documentos (Gemini) -> checklist_categorizado (columna real)
-            "checklist_categorizado":      datos_json.get("checklist_documentos"),
-            # checklist_legal: mantener lista plana del bloque legal para compatibilidad
-            "checklist_legal":             (datos_json.get("checklist_documentos") or {}).get("legal")
-                                            if isinstance(datos_json.get("checklist_documentos"), dict) else None,
-            "plazos_clave":                datos_json.get("plazos_clave"),
-            "evaluacion_competitividad":   datos_json.get("evaluacion_competitividad"),
-        }
-        # Eliminar claves None para no sobreescribir con NULL innecesariamente
-        fila_supabase = {k: v for k, v in fila_supabase.items() if v is not None}
-        supabase_admin.table("analisis_pliego").upsert(fila_supabase).execute()
+        supabase_admin.table("analisis_pliego").upsert({
+            "proceso_id": proceso_id,
+            "estado": "completado",
+            **datos_json
+        }).execute()
         
         print(f"✅ Análisis de {proceso_id} completado y guardado.")
 
