@@ -724,50 +724,71 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     # ── Paso 3: identificar el pliego por contexto ───────────
     BASE_DOWNLOAD = "https://comunidad.comprasdominicana.gob.do/Public/Tendering/OpportunityDetail/DownloadFile"
 
-    # Keywords en orden de prioridad — el primer match gana
-    KEYWORDS_PLIEGO = [
-        "pliego de condiciones",
-        "pliego",
-        "bases de la contrataci",
-        "terminos de referencia",
-        "términos de referencia",
-        "tdr",
-        "especificaciones tecnicas",
-        "especificaciones técnicas",
-        "ficha tecnica",
-        "ficha técnica",
-        "condiciones generales",
-    ]
-    # Keywords que indican que NO es el pliego (evitar actas de inicio, solicitudes, etc.)
+    # Keywords que indican que NO es el pliego principal
     KEYWORDS_EXCLUIR = [
         "acta de inicio",
         "acta administrativa",
+        "acta de aprobacion",
+        "acta de aprobación",
         "solicitud de compra",
+        "solicitud compra",
         "convocatoria",
         "requerimiento",
+        "resolucion de inicio",
+        "resolución de inicio",
+        "formularios",
+        "anexo",
     ]
 
-    enlace_pliego = None
-    for file_id, mkey in patrones:
-        idx = html_final.find(str(file_id))
-        contexto = html_final[max(0, idx - 600):idx + 200].lower()
+    # Grupos de prioridad — se evalúan en orden, el primer grupo con match gana
+    # Dentro de cada grupo se toma el primer documento que haga match
+    PRIORIDADES = [
+        # Prioridad 1: Pliego de Condiciones explícito
+        ["pliego de condiciones", "bases de la contratacion", "bases de la contratación"],
+        # Prioridad 2: TDR / Términos de Referencia (servicios/consultoría)
+        ["terminos de referencia", "términos de referencia", "tdr", "términos de referencia (tdr)"],
+        # Prioridad 3: Especificaciones Técnicas (último recurso antes del fallback)
+        ["especificaciones tecnicas", "especificaciones técnicas", "ficha tecnica", "ficha técnica"],
+        # Prioridad 4: cualquier mención de pliego o condiciones
+        ["pliego", "condiciones generales"],
+    ]
 
-        # Saltar documentos que claramente no son el pliego
-        if any(x in contexto for x in KEYWORDS_EXCLUIR):
-            print(f"⏭️ Saltando documentFileId={file_id} (parece acta/solicitud)")
-            continue
+    def buscar_por_prioridad(patrones, html):
+        """Recorre los grupos de prioridad y retorna el primer (file_id, mkey) que hace match."""
+        for grupo in PRIORIDADES:
+            for file_id, mkey in patrones:
+                idx = html.find(str(file_id))
+                contexto = html[max(0, idx - 600):idx + 300].lower()
 
-        if any(x in contexto for x in KEYWORDS_PLIEGO):
-            enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
-            print(f"✅ Pliego identificado: documentFileId={file_id}")
-            break
+                # Saltar documentos excluidos
+                if any(x in contexto for x in KEYWORDS_EXCLUIR):
+                    continue
+
+                if any(x in contexto for x in grupo):
+                    print(f"✅ Pliego identificado (grupo '{grupo[0]}'): documentFileId={file_id}")
+                    return file_id, mkey
+        return None, None
+
+    file_id_sel, mkey_sel = buscar_por_prioridad(patrones, html_final)
+
+    if file_id_sel:
+        enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id_sel}&mkey={mkey_sel}"
+    else:
+        # Fallback: primer documento que no esté excluido
+        enlace_pliego = None
+        for file_id, mkey in patrones:
+            idx = html_final.find(str(file_id))
+            contexto = html_final[max(0, idx - 600):idx + 300].lower()
+            if not any(x in contexto for x in KEYWORDS_EXCLUIR):
+                enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
+                print(f"⚠️ Sin match por keywords, usando primer doc no excluido: documentFileId={file_id}")
+                break
 
     if not enlace_pliego:
-        # Último recurso: usar el documento más grande (suele ser el pliego)
-        # Tomamos el último de la lista que no sea el primero (que a veces es el acta de inicio)
-        file_id, mkey = patrones[-1] if len(patrones) > 1 else patrones[0]
+        # Último recurso absoluto
+        file_id, mkey = patrones[-1]
         enlace_pliego = f"{BASE_DOWNLOAD}?documentFileId={file_id}&mkey={mkey}"
-        print(f"⚠️ Pliego no identificado por keywords, usando último documento: documentFileId={file_id}")
+        print(f"⚠️ Usando último documento como fallback: documentFileId={file_id}")
 
     # ── Paso 4: descargar PDF con el mkey de la sesión activa ─
     # El portal no devuelve el PDF directo — responde con un redirect JS a:
@@ -839,6 +860,16 @@ def ejecutar_analisis_gemini(proceso_id: str):
     """Descarga el pliego, lo lee y guarda el JSON en Supabase en segundo plano"""
     try:
         print(f"🚀 Iniciando IA para: {proceso_id}")
+
+        # ── CACHE: si ya está completado, no reprocesar ──────
+        existente = supabase_admin.table("analisis_pliego")\
+            .select("estado")\
+            .eq("proceso_id", proceso_id)\
+            .eq("estado", "completado")\
+            .execute()
+        if existente.data:
+            print(f"⚡ Cache hit — {proceso_id} ya analizado, saltando.")
+            return
         
         # 1. ACTUALIZAR ESTADO EN SUPABASE
         supabase_admin.table("analisis_pliego").upsert({
