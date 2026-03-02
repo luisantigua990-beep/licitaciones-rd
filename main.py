@@ -884,6 +884,232 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     return texto_completo
 
 
+def enviar_email_analisis(proceso_id: str, analisis: dict):
+    """
+    Envía el resumen del análisis de pliego por email al usuario que siguió el proceso.
+    Usa Resend como proveedor. Requiere RESEND_API_KEY en Railway.
+    """
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+    if not RESEND_API_KEY:
+        print("⚠️ RESEND_API_KEY no configurada — email no enviado")
+        return
+
+    try:
+        # 1. Buscar el user_id que siguió este proceso
+        seg = supabase_admin.table("seguimiento_procesos")\
+            .select("user_id")\
+            .eq("proceso_codigo", proceso_id)\
+            .execute()
+
+        if not seg.data:
+            print(f"⚠️ No hay seguimiento para {proceso_id}, no se envía email")
+            return
+
+        # Obtener emails de todos los usuarios que siguen este proceso
+        user_ids = list(set(s["user_id"] for s in seg.data))
+        emails_destino = []
+        nombres_destino = []
+
+        for uid in user_ids:
+            try:
+                user_resp = supabase_admin.auth.admin.get_user(uid)
+                email = user_resp.user.email if user_resp.user else None
+                nombre = (user_resp.user.user_metadata or {}).get("nombre") or \
+                         (user_resp.user.user_metadata or {}).get("full_name") or \
+                         email.split("@")[0] if email else "Usuario"
+                if email:
+                    emails_destino.append(email)
+                    nombres_destino.append(nombre)
+            except Exception as e:
+                print(f"⚠️ No se pudo obtener email de user {uid}: {e}")
+
+        if not emails_destino:
+            print(f"⚠️ No se encontraron emails para {proceso_id}")
+            return
+
+        # 2. Obtener datos del proceso
+        proc = supabase.table("procesos")\
+            .select("titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, objeto_proceso")\
+            .eq("codigo_proceso", proceso_id)\
+            .execute()
+        proceso = proc.data[0] if proc.data else {}
+
+        # 3. Construir HTML del email
+        html_body = construir_html_email(proceso_id, proceso, analisis)
+
+        # 4. Enviar a cada usuario
+        APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+        FROM_EMAIL = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
+
+        for email, nombre in zip(emails_destino, nombres_destino):
+            payload = {
+                "from": FROM_EMAIL,
+                "to": [email],
+                "subject": f"📋 Análisis listo: {proceso_id}",
+                "html": html_body.replace("{{nombre}}", nombre),
+            }
+            resp = requests.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {RESEND_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=15,
+            )
+            if resp.status_code in (200, 201):
+                print(f"📧 Email enviado a {email}")
+            else:
+                print(f"⚠️ Error enviando email a {email}: {resp.status_code} {resp.text[:200]}")
+
+    except Exception as e:
+        # El email no debe romper el flujo principal
+        print(f"⚠️ Error en envío de email para {proceso_id}: {e}")
+
+
+def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
+    """Genera el HTML del email con el resumen del análisis."""
+    APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+
+    titulo         = proceso.get("titulo", proceso_id)[:80]
+    entidad        = proceso.get("unidad_compra", "")
+    objeto         = proceso.get("objeto_proceso", "")
+    monto          = proceso.get("monto_estimado")
+    fecha_cierre   = proceso.get("fecha_fin_recepcion_ofertas", "")
+    monto_str      = f"RD$ {monto:,.2f}" if monto else "No especificado"
+
+    if fecha_cierre:
+        try:
+            fecha_cierre = datetime.fromisoformat(str(fecha_cierre).replace("Z","")).strftime("%d/%m/%Y")
+        except Exception:
+            pass
+
+    # Alertas de fraude
+    alertas        = analisis.get("alertas_fraude") or []
+    alertas_html   = ""
+    for a in (alertas if isinstance(alertas, list) else []):
+        riesgo     = a.get("riesgo", "")
+        hallazgo   = a.get("hallazgo", "")
+        color      = "#dc2626" if "alto" in riesgo.lower() else "#d97706"
+        alertas_html += f"""
+        <tr>
+          <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;">
+            <span style="background:{color};color:white;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:bold;">{riesgo}</span>
+          </td>
+          <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;color:#374151;">{hallazgo}</td>
+        </tr>"""
+
+    # Checklist legal
+    checklist      = analisis.get("checklist_legal") or []
+    checklist_html = ""
+    for item in (checklist if isinstance(checklist, list) else []):
+        doc        = item.get("documento", "")
+        subsanable = item.get("es_subsanable", True)
+        icono      = "⚠️" if not subsanable else "📄"
+        color_bg   = "#fef2f2" if not subsanable else "#f9fafb"
+        checklist_html += f"""
+        <tr style="background:{color_bg};">
+          <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;">{icono} {doc}</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #f3f4f6;font-size:11px;color:#6b7280;">
+            {'❌ No subsanable' if not subsanable else '✅ Subsanable'}
+          </td>
+        </tr>"""
+
+    # Garantías
+    garantias      = analisis.get("garantias_exigidas") or []
+    garantias_html = ""
+    for g in (garantias if isinstance(garantias, list) else []):
+        garantias_html += f"<li style='margin:4px 0;font-size:13px;'><strong>{g.get('tipo','')}</strong>: {g.get('monto_o_porcentaje','')}</li>"
+
+    # Requisitos financieros
+    req_fin        = analisis.get("requisitos_financieros") or {}
+    req_exp        = analisis.get("requisitos_experiencia") or {}
+
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:'Helvetica Neue',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+
+  <!-- Header -->
+  <tr>
+    <td style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:28px 32px;">
+      <h1 style="margin:0;color:white;font-size:20px;">📋 LicitacionLab</h1>
+      <p style="margin:6px 0 0;color:#bfdbfe;font-size:13px;">Análisis de pliego completado</p>
+    </td>
+  </tr>
+
+  <!-- Saludo -->
+  <tr><td style="padding:24px 32px 0;">
+    <p style="margin:0;font-size:15px;color:#374151;">Hola <strong>{{{{nombre}}}}</strong>,</p>
+    <p style="margin:8px 0 0;font-size:14px;color:#6b7280;">El análisis de IA está listo para el siguiente proceso:</p>
+  </td></tr>
+
+  <!-- Info proceso -->
+  <tr><td style="padding:16px 32px;">
+    <table width="100%" style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;" cellpadding="0" cellspacing="0">
+      <tr><td style="padding:16px;">
+        <p style="margin:0;font-size:16px;font-weight:bold;color:#1e293b;">{titulo}</p>
+        <p style="margin:4px 0 0;font-size:13px;color:#64748b;">{entidad} · {objeto}</p>
+        <table style="margin-top:12px;" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="padding-right:24px;"><span style="font-size:11px;color:#94a3b8;text-transform:uppercase;">Código</span><br><strong style="font-size:13px;color:#1e293b;">{proceso_id}</strong></td>
+            <td style="padding-right:24px;"><span style="font-size:11px;color:#94a3b8;text-transform:uppercase;">Monto estimado</span><br><strong style="font-size:13px;color:#1e293b;">{monto_str}</strong></td>
+            <td><span style="font-size:11px;color:#94a3b8;text-transform:uppercase;">Cierre de ofertas</span><br><strong style="font-size:13px;color:#dc2626;">{fecha_cierre}</strong></td>
+          </tr>
+        </table>
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <!-- Alertas -->
+  {'<tr><td style="padding:0 32px 16px;"><h3 style="margin:0 0 8px;font-size:14px;color:#dc2626;">🚨 Alertas de Fraude</h3><table width="100%" style="border:1px solid #fee2e2;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + alertas_html + '</table></td></tr>' if alertas_html else ''}
+
+  <!-- Checklist -->
+  {'<tr><td style="padding:0 32px 16px;"><h3 style="margin:0 0 8px;font-size:14px;color:#1e293b;">📑 Documentos requeridos</h3><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + checklist_html + '</table><p style="margin:6px 0 0;font-size:11px;color:#9ca3af;">⚠️ Los documentos NO subsanables son críticos — su ausencia puede descalificarte.</p></td></tr>' if checklist_html else ''}
+
+  <!-- Garantías -->
+  {'<tr><td style="padding:0 32px 16px;"><h3 style="margin:0 0 8px;font-size:14px;color:#1e293b;">🔒 Garantías exigidas</h3><ul style="margin:0;padding-left:20px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px 12px 12px 28px;">' + garantias_html + '</ul></td></tr>' if garantias_html else ''}
+
+  <!-- Requisitos -->
+  <tr><td style="padding:0 32px 16px;">
+    <h3 style="margin:0 0 8px;font-size:14px;color:#1e293b;">📊 Requisitos clave</h3>
+    <table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">
+      <tr style="background:#f8fafc;"><td colspan="2" style="padding:8px 12px;font-size:11px;font-weight:bold;color:#6b7280;text-transform:uppercase;">Experiencia</td></tr>
+      <tr><td style="padding:6px 12px;font-size:12px;color:#6b7280;width:40%;">Obras similares</td><td style="padding:6px 12px;font-size:13px;color:#374151;">{req_exp.get('obras_similares','No especificado')}</td></tr>
+      <tr style="background:#f8fafc;"><td style="padding:6px 12px;font-size:12px;color:#6b7280;">Montos facturados</td><td style="padding:6px 12px;font-size:13px;color:#374151;">{req_exp.get('montos_facturados','No especificado')}</td></tr>
+      <tr><td colspan="2" style="padding:8px 12px;font-size:11px;font-weight:bold;color:#6b7280;text-transform:uppercase;background:#f8fafc;">Financiero</td></tr>
+      <tr><td style="padding:6px 12px;font-size:12px;color:#6b7280;">Índice de liquidez</td><td style="padding:6px 12px;font-size:13px;color:#374151;">{req_fin.get('indice_liquidez','No especificado')}</td></tr>
+      <tr style="background:#f8fafc;"><td style="padding:6px 12px;font-size:12px;color:#6b7280;">Índice de endeudamiento</td><td style="padding:6px 12px;font-size:13px;color:#374151;">{req_fin.get('indice_endeudamiento','No especificado')}</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- CTA -->
+  <tr><td style="padding:8px 32px 32px;" align="center">
+    <a href="{APP_URL}?proceso={proceso_id}" style="display:inline-block;background:#1e40af;color:white;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:bold;">
+      Ver análisis completo en LicitacionLab →
+    </a>
+  </td></tr>
+
+  <!-- Footer -->
+  <tr>
+    <td style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">
+        LicitacionLab · Sistema de monitoreo de licitaciones públicas RD<br>
+        Este análisis es generado por IA y debe ser verificado por un profesional.
+      </p>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>"""
+
+
 def ejecutar_analisis_gemini(proceso_id: str):
     """Descarga el pliego, lo lee y guarda el JSON en Supabase en segundo plano"""
     try:
@@ -891,12 +1117,14 @@ def ejecutar_analisis_gemini(proceso_id: str):
 
         # ── CACHE: si ya está completado, no reprocesar ──────
         existente = supabase_admin.table("analisis_pliego")\
-            .select("estado")\
+            .select("estado, alertas_fraude, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, checklist_legal")\
             .eq("proceso_id", proceso_id)\
             .eq("estado", "completado")\
             .execute()
         if existente.data:
-            print(f"⚡ Cache hit — {proceso_id} ya analizado, saltando.")
+            print(f"⚡ Cache hit — {proceso_id} ya analizado, enviando email igual.")
+            analisis_cacheado = existente.data[0]
+            enviar_email_analisis(proceso_id, analisis_cacheado)
             return
         
         # 1. ACTUALIZAR ESTADO EN SUPABASE
@@ -1007,6 +1235,9 @@ def ejecutar_analisis_gemini(proceso_id: str):
         }).execute()
         
         print(f"✅ Análisis de {proceso_id} completado y guardado.")
+
+        # 5. ENVIAR EMAIL AL USUARIO
+        enviar_email_analisis(proceso_id, datos_json)
 
     except Exception as e:
         print(f"❌ Error de IA en {proceso_id}: {str(e)}")
