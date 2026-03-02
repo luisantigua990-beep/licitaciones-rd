@@ -780,7 +780,8 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         raise Exception(f"Respuesta demasiado pequeña ({len(resp_pdf.content)} bytes) tras seguir redirect")
 
     print(f"📄 PDF: {len(resp_pdf.content):,} bytes. Extrayendo texto...")
-    pdf_file = io.BytesIO(resp_pdf.content)
+    pdf_bytes = resp_pdf.content
+    pdf_file = io.BytesIO(pdf_bytes)
     lector_pdf = PdfReader(pdf_file)
 
     texto_completo = ""
@@ -790,6 +791,16 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
             texto_completo += texto + "\n"
 
     print(f"📝 {len(texto_completo):,} caracteres extraídos del PDF")
+
+    # Si el PDF está escaneado (imágenes), usar los bytes crudos para que
+    # Gemini Vision haga el OCR directamente — mucho más preciso
+    if len(texto_completo.strip()) < 500:
+        print(f"⚠️ PDF escaneado detectado ({len(texto_completo)} chars) — enviando bytes a Gemini Vision")
+        import base64 as _b64
+        pdf_b64 = _b64.b64encode(pdf_bytes).decode("utf-8")
+        # Devolvemos un dict especial que ejecutar_analisis_gemini usará
+        return {"__pdf_bytes_b64": pdf_b64, "__texto": texto_completo}
+
     return texto_completo
 
 
@@ -813,27 +824,46 @@ def ejecutar_analisis_gemini(proceso_id: str):
         url_portal = proc_data.data[0]["url"]
         
         # Llamamos al brazo robótico mejorado
-        texto_pliego = descargar_y_extraer_texto_pdf(url_portal)
-        
-        if len(texto_pliego.strip()) < 100:
-            raise Exception("El PDF parece estar vacío o es un documento escaneado (imágenes sin OCR).")
+        resultado_pdf = descargar_y_extraer_texto_pdf(url_portal)
 
-        if len(texto_pliego.strip()) < 500:
-            print(f"⚠️ PDF con poco texto extraído ({len(texto_pliego)} chars) — posiblemente escaneado. Gemini intentará igual.")
-        
+        # Detectar si el PDF estaba escaneado (Gemini Vision lo procesará)
+        if isinstance(resultado_pdf, dict) and "__pdf_bytes_b64" in resultado_pdf:
+            import base64 as _b64
+            pdf_bytes = _b64.b64decode(resultado_pdf["__pdf_bytes_b64"])
+            texto_pliego = resultado_pdf["__texto"]
+            usar_vision = True
+            print(f"🔬 Modo Vision activado — PDF escaneado, {len(pdf_bytes):,} bytes")
+        else:
+            texto_pliego = resultado_pdf
+            usar_vision = False
+            if len(texto_pliego.strip()) < 100:
+                raise Exception("El PDF parece estar vacío o es un documento escaneado sin texto.")
+            if len(texto_pliego.strip()) < 500:
+                print(f"⚠️ PDF con poco texto ({len(texto_pliego)} chars) — Gemini intentará igual.")
+
         # 3. LLAMADA A GEMINI CON RETRY AUTOMÁTICO
         if not cliente_gemini:
             raise Exception("No se configuró Gemini. Revisa tu GEMINI_API_KEY en Railway.")
 
         print("🤖 Pasando el texto del pliego a Gemini...")
 
+        MODELO = "gemini-2.5-flash"
         MAX_REINTENTOS = 3
         datos_json = None
         for intento in range(MAX_REINTENTOS):
             try:
+                if usar_vision:
+                    # PDF escaneado: enviar bytes crudos para OCR nativo de Gemini
+                    contents = [
+                        PROMPT_MAESTRO,
+                        {"inline_data": {"mime_type": "application/pdf", "data": _b64.b64encode(pdf_bytes).decode()}}
+                    ]
+                else:
+                    contents = [PROMPT_MAESTRO, texto_pliego]
+
                 respuesta = cliente_gemini.models.generate_content(
-                    model="gemini-2.0-flash",
-                    contents=[PROMPT_MAESTRO, texto_pliego]
+                    model=MODELO,
+                    contents=contents
                 )
                 # Limpiar posibles ```json ... ``` que Gemini a veces añade
                 texto_respuesta = respuesta.text.strip()
@@ -846,8 +876,6 @@ def ejecutar_analisis_gemini(proceso_id: str):
             except Exception as e:
                 msg = str(e)
                 if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                    # Con paid tier los 429 son raros (burst momentáneo).
-                    # Esperar el tiempo sugerido por Gemini, máximo 15s.
                     import re as _re3
                     m = _re3.search(r"retry[^\d]*(\d+)", msg, _re3.IGNORECASE)
                     espera = int(m.group(1)) + 2 if m else 15
