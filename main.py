@@ -1505,11 +1505,28 @@ def ejecutar_analisis_gemini(proceso_id: str):
             raise Exception(f"Gemini 429 persistente tras {MAX_REINTENTOS} reintentos — revisa cuota en Google AI Studio.")
         
         # 4. GUARDAR RESULTADOS EN LA BÓVEDA
-        supabase_admin.table("analisis_pliego").upsert({
-            "proceso_id": proceso_id,
-            "estado": "completado",
-            **datos_json
-        }).execute()
+        # Mapeo explícito: columnas reales de Supabase vs campos del JSON de Gemini.
+        # "checklist_documentos" (Gemini) -> "checklist_categorizado" (tabla)
+        fila_supabase = {
+            "proceso_id":                    proceso_id,
+            "estado":                        "completado",
+            "tipo_proceso":                  datos_json.get("tipo_proceso"),
+            "resumen_ejecutivo":             datos_json.get("resumen_ejecutivo"),
+            "alertas_fraude":                datos_json.get("alertas_fraude"),
+            "restricciones_participacion":   datos_json.get("restricciones_participacion"),
+            "requisitos_experiencia":        datos_json.get("requisitos_experiencia"),
+            "requisitos_financieros":        datos_json.get("requisitos_financieros"),
+            "garantias_exigidas":            datos_json.get("garantias_exigidas"),
+            "personal_y_equipos":            datos_json.get("personal_y_equipos"),
+            "checklist_categorizado":        datos_json.get("checklist_documentos"),
+            "checklist_legal":               (datos_json.get("checklist_documentos") or {}).get("legal")
+                                             if isinstance(datos_json.get("checklist_documentos"), dict) else None,
+            "plazos_clave":                  datos_json.get("plazos_clave"),
+            "evaluacion_competitividad":     datos_json.get("evaluacion_competitividad"),
+        }
+        # Eliminar None para no sobreescribir datos existentes con NULL
+        fila_supabase = {k: v for k, v in fila_supabase.items() if v is not None}
+        supabase_admin.table("analisis_pliego").upsert(fila_supabase).execute()
         
         print(f"✅ Análisis de {proceso_id} completado y guardado.")
 
