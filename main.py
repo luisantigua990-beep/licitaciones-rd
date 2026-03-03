@@ -885,52 +885,69 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     ]
 
     def extraer_nombre_archivo(html, file_id):
-        """Extrae el nombre del archivo por su file_id usando ventana corta (300 chars)."""
+        """
+        Extrae el nombre del archivo asociado a un documentFileId.
+        En el HTML del portal, el nombre del archivo aparece justo ANTES del ID
+        (dentro de los ~200 chars anteriores). Usar ventana corta hacia atrás evita
+        que el nombre de un documento adyacente contamine el resultado.
+        """
         import re as _re_nom
         idx = html.find(str(file_id))
         if idx == -1:
             return ""
-        contexto = html[max(0, idx - 300):idx + 200]
-        nombre = _re_nom.search(
-            r'>([\w\s\-\.\,\(\)\_\#áéíóúÁÉÍÓÚñÑ]+\.(?:pdf|zip|xlsx|docx|doc))<',
-            contexto, _re_nom.IGNORECASE
-        )
-        if not nombre:
-            nombre = _re_nom.search(
-                r'"([\w\s\-\.\,\(\)\_\#áéíóúÁÉÍÓÚñÑ]+\.(?:pdf|zip|xlsx|docx|doc))"',
-                contexto, _re_nom.IGNORECASE
-            )
-        return nombre.group(1).strip().lower() if nombre else ""
+        PAT = r'>([\w\s\-\.\_]+\.(?:pdf|zip|xlsx|docx|doc))<'
+        PAT2 = r'"([\w\s\-\.\_]+\.(?:pdf|zip|xlsx|docx|doc))"'
+        # 1. Buscar en ventana CORTA hacia atrás (nombre justo antes del ID)
+        ctx_atras = html[max(0, idx - 200):idx]
+        m = _re_nom.search(PAT, ctx_atras, _re_nom.IGNORECASE) or _re_nom.search(PAT2, ctx_atras, _re_nom.IGNORECASE)
+        if m:
+            return m.group(1).strip().lower()
+        # 2. Fallback: buscar hacia adelante (algunos formatos ponen el nombre después)
+        ctx_adelante = html[idx:idx + 400]
+        m = _re_nom.search(PAT, ctx_adelante, _re_nom.IGNORECASE) or _re_nom.search(PAT2, ctx_adelante, _re_nom.IGNORECASE)
+        return m.group(1).strip().lower() if m else ""
 
     def buscar_por_prioridad(patrones, html):
         """
-        DOS PASADAS por grupo de prioridad:
-          Pasada 1: match solo en el NOMBRE DEL ARCHIVO (evita falsos positivos
-                    por la descripción de categoría del portal, ej: un archivo
-                    "Especificaciones tecnicas.pdf" con categoría "Pliego de Condiciones").
-          Pasada 2: si pasada 1 no encuentra nada, ampliar al contexto de 600 chars.
-        El emendado/corregido siempre gana por estar en P1a.
+        Estrategia en tres fases:
+          FASE 1 — Nombres confirmados: construir mapa {file_id: nombre} para todos los docs.
+          FASE 2 — Buscar por NOMBRE: para cada grupo de prioridad, buscar match solo
+                   en nombres confirmados. Si algún doc en el inventario TIENE nombre con
+                   keyword del grupo, SOLO se acepta match por nombre (no por contexto).
+                   Esto evita que "Especificaciones tecnicas.pdf" gane sobre "Pliego.pdf"
+                   porque la categoría del portal dice "Pliego de Condiciones".
+          FASE 3 — Buscar por CONTEXTO: solo si ningún doc del inventario tiene nombre
+                   que coincida con el grupo. Fallback para casos sin nombre legible.
         """
-        for grupo in PRIORIDADES:
-            # PASADA 1: solo nombre del archivo
-            for file_id, mkey in patrones:
-                nombre = extraer_nombre_archivo(html, file_id)
-                if not nombre:
-                    continue
-                if any(x in nombre for x in KEYWORDS_EXCLUIR):
-                    continue
-                if any(x in nombre for x in grupo):
-                    print(f"✅ Pliego por NOMBRE (grupo '{grupo[0]}'): documentFileId={file_id} → '{nombre[:70]}'")
-                    return file_id, mkey
+        # FASE 1: mapear nombres de todos los documentos
+        nombres_map = {}
+        for file_id, mkey in patrones:
+            nombres_map[file_id] = extraer_nombre_archivo(html, file_id)
 
-            # PASADA 2: contexto amplio (fallback si ningún nombre hizo match)
+        for grupo in PRIORIDADES:
+            # ¿Algún doc tiene el keyword del grupo en su NOMBRE?
+            docs_con_nombre_match = [
+                (fid, mk) for fid, mk in patrones
+                if nombres_map.get(fid)
+                and not any(x in nombres_map[fid] for x in KEYWORDS_EXCLUIR)
+                and any(x in nombres_map[fid] for x in grupo)
+            ]
+
+            if docs_con_nombre_match:
+                # Hay al menos un doc cuyo NOMBRE contiene la keyword — usar ese
+                file_id, mkey = docs_con_nombre_match[0]
+                nombre = nombres_map[file_id]
+                print(f"✅ Pliego por NOMBRE (grupo '{grupo[0]}'): documentFileId={file_id} → '{nombre[:70]}'")
+                return file_id, mkey
+
+            # FASE 3: ningún nombre coincide — usar contexto como fallback
             for file_id, mkey in patrones:
                 idx = html.find(str(file_id))
                 contexto = html[max(0, idx - 600):idx + 300].lower()
                 if any(x in contexto for x in KEYWORDS_EXCLUIR):
                     continue
                 if any(x in contexto for x in grupo):
-                    nombre = extraer_nombre_archivo(html, file_id)
+                    nombre = nombres_map.get(file_id, "")
                     if nombre and any(x in nombre for x in KEYWORDS_EXCLUIR):
                         continue
                     print(f"✅ Pliego por CONTEXTO (grupo '{grupo[0]}'): documentFileId={file_id} → '{nombre[:70]}'")
