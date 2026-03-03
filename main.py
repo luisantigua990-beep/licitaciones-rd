@@ -884,33 +884,74 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         ["condiciones generales", "bases tecnicas"],
     ]
 
-    def extraer_nombre_archivo(html, file_id):
+    def construir_mapa_nombres(html: str) -> dict:
         """
-        Extrae el nombre del archivo asociado a un documentFileId.
-        En el HTML del portal, el nombre del archivo aparece justo ANTES del ID
-        (dentro de los ~200 chars anteriores). Usar ventana corta hacia atrás evita
-        que el nombre de un documento adyacente contamine el resultado.
+        Construye mapa {file_id: nombre_archivo} parseando por filas <tr>.
+
+        Estructura del portal DGCP:
+          <tr id="grdGridDocumentList_trN">
+            <td id="...thColumnDocumentName">NombreArchivo.pdf</td>
+            <td id="...thColumnDocumentType">Tipo doc</td>
+            <td id="...thColumnDownloadDocument">
+              ... 'documentFileId=' + '12345' + '&mkey=...'
+            </td>
+          </tr>
+
+        Parsear por TR garantiza que nombre y fileId siempre corresponden
+        al mismo documento — elimina el riesgo de contaminación entre filas.
         """
-        import re as _re_nom
-        idx = html.find(str(file_id))
-        if idx == -1:
-            return ""
-        PAT = r'>([\w\s\-\.\_]+\.(?:pdf|zip|xlsx|docx|doc))<'
-        PAT2 = r'"([\w\s\-\.\_]+\.(?:pdf|zip|xlsx|docx|doc))"'
-        # 1. Buscar en ventana CORTA hacia atrás (nombre justo antes del ID)
-        ctx_atras = html[max(0, idx - 200):idx]
-        m = _re_nom.search(PAT, ctx_atras, _re_nom.IGNORECASE) or _re_nom.search(PAT2, ctx_atras, _re_nom.IGNORECASE)
-        if m:
-            return m.group(1).strip().lower()
-        # 2. Fallback: buscar hacia adelante (algunos formatos ponen el nombre después)
-        ctx_adelante = html[idx:idx + 400]
-        m = _re_nom.search(PAT, ctx_adelante, _re_nom.IGNORECASE) or _re_nom.search(PAT2, ctx_adelante, _re_nom.IGNORECASE)
-        return m.group(1).strip().lower() if m else ""
+        import re as _re
+        mapa = {}
+
+        # Extraer cada fila de la tabla de documentos
+        filas = _re.findall(
+            r'<tr[^>]+id=["\']grdGridDocumentList_tr\d+["\'][^>]*>(.*?)</tr>',
+            html, _re.IGNORECASE | _re.DOTALL
+        )
+
+        for fila in filas:
+            # Extraer file_id de esta fila
+            m_id = _re.search(
+                r"documentFileId='\s*\+\s*'(\d+)'|documentFileId=(\d+)",
+                fila, _re.IGNORECASE
+            )
+            if not m_id:
+                continue
+            file_id = m_id.group(1) or m_id.group(2)
+
+            # Extraer nombre del td de DocumentName
+            m_nombre = _re.search(
+                r'thColumnDocumentName[^>]*>(.*?)</td>',
+                fila, _re.IGNORECASE | _re.DOTALL
+            )
+            if m_nombre:
+                # Limpiar tags HTML internos y espacios
+                nombre_raw = _re.sub(r'<[^>]+>', '', m_nombre.group(1)).strip()
+                mapa[file_id] = nombre_raw.lower()
+            else:
+                mapa[file_id] = ""
+
+        # Fallback: si el portal no usa IDs grdGridDocumentList, usar ventana de contexto
+        if not mapa:
+            print("⚠️ No se encontraron filas grdGridDocumentList — usando fallback por ventana")
+            PAT = r'>([\w\s\-\.\_]+\.(?:pdf|zip|xlsx|docx|doc))<'
+            PAT2 = r'"([\w\s\-\.\_]+\.(?:pdf|zip|xlsx|docx|doc))"'
+            for file_id, _ in patrones:
+                idx = html.find(str(file_id))
+                if idx == -1:
+                    mapa[file_id] = ""
+                    continue
+                ctx = html[max(0, idx - 400):idx + 400]
+                m = _re.search(PAT, ctx, _re.IGNORECASE) or _re.search(PAT2, ctx, _re.IGNORECASE)
+                mapa[file_id] = m.group(1).strip().lower() if m else ""
+
+        print(f"📋 Mapa de documentos ({len(mapa)} items): { {k: v[:40] for k, v in mapa.items()} }")
+        return mapa
 
     def buscar_por_prioridad(patrones, html):
         """
         Estrategia en tres fases:
-          FASE 1 — Nombres confirmados: construir mapa {file_id: nombre} para todos los docs.
+          FASE 1 — Construir mapa {fileId: nombre} usando estructura TR del portal.
           FASE 2 — Buscar por NOMBRE: para cada grupo de prioridad, buscar match solo
                    en nombres confirmados. Si algún doc en el inventario TIENE nombre con
                    keyword del grupo, SOLO se acepta match por nombre (no por contexto).
@@ -919,13 +960,17 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
           FASE 3 — Buscar por CONTEXTO: solo si ningún doc del inventario tiene nombre
                    que coincida con el grupo. Fallback para casos sin nombre legible.
         """
-        # FASE 1: mapear nombres de todos los documentos
-        nombres_map = {}
+        # FASE 1: mapear nombres por estructura TR (correcto)
+        nombres_map = construir_mapa_nombres(html)
+
+        # Asegurar que todos los patrones estén en el mapa (por si extraer_patrones
+        # encontró fileIds que no aparecen en las filas TR)
         for file_id, mkey in patrones:
-            nombres_map[file_id] = extraer_nombre_archivo(html, file_id)
+            if file_id not in nombres_map:
+                nombres_map[file_id] = ""
 
         for grupo in PRIORIDADES:
-            # ¿Algún doc tiene el keyword del grupo en su NOMBRE?
+            # FASE 2: ¿algún doc tiene el keyword del grupo en su NOMBRE?
             docs_con_nombre_match = [
                 (fid, mk) for fid, mk in patrones
                 if nombres_map.get(fid)
@@ -934,7 +979,6 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
             ]
 
             if docs_con_nombre_match:
-                # Hay al menos un doc cuyo NOMBRE contiene la keyword — usar ese
                 file_id, mkey = docs_con_nombre_match[0]
                 nombre = nombres_map[file_id]
                 print(f"✅ Pliego por NOMBRE (grupo '{grupo[0]}'): documentFileId={file_id} → '{nombre[:70]}'")
