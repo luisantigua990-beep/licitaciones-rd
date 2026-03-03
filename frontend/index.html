@@ -1912,9 +1912,6 @@ function filtrarRubro(rubro) {
 
 // ── PROCESOS ──
 let unspscFiltro = null;
-let _procesosLoadedResolve = null;
-let _procesosLoaded = new Promise(r => { _procesosLoadedResolve = r; });
-
 async function cargarProcesos(page = 1) {
   document.getElementById('procesos-container').innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando...</span></div>';
   const busqueda   = document.getElementById('busqueda').value;
@@ -1935,8 +1932,8 @@ async function cargarProcesos(page = 1) {
   const res  = await fetch(url);
   const data = await res.json();
   renderProcesos(data.procesos || [], data, page);
-  // Señalar que los procesos ya cargaron (para el deeplink de notificaciones)
-  if (_procesosLoadedResolve) { _procesosLoadedResolve(); _procesosLoadedResolve = null; }
+  // Al terminar la primera carga, verificar si hay un proceso pendiente de abrir
+  _abrirProcesoDeNotificacion();
 }
 
 function formatMonto(v) {
@@ -2291,32 +2288,27 @@ if (savedToken && savedUser) {
 }
 
 // ── ABRIR PROCESO DESDE NOTIFICACIÓN ──
-// Se llama automáticamente al cargar la app si hay ?proceso=CODIGO en la URL.
-// Espera a que cargarProcesos() termine COMPLETAMENTE antes de abrir el detalle.
-async function checkNotificacionUrl() {
+// _abrirProcesoDeNotificacion() se llama al terminar cargarProcesos().
+// Lee el parámetro ?proceso= de la URL en ese momento — cuando los datos ya están listos.
+// También funciona si la URL tiene el parámetro al momento de cargar (app cerrada).
+let _procesoNotifPendiente = null;
+
+(function capturarParamNotificacion() {
   const params = new URLSearchParams(window.location.search);
-  const codigoParam = params.get('proceso');
-  if (!codigoParam) return;
+  const codigo = params.get('proceso');
+  if (codigo) {
+    _procesoNotifPendiente = codigo;
+    // Limpiar la URL para que no se repita si el usuario recarga
+    window.history.replaceState({}, '', window.location.pathname);
+  }
+})();
 
-  // Limpiar la URL DESPUÉS de guardar el código — no antes
-  window.history.replaceState({}, '', window.location.pathname);
-
-  // Esperar a que los procesos hayan cargado (cargarProcesos resuelve esta promise)
-  // Timeout de seguridad de 6 segundos por si falla la carga
-  await Promise.race([
-    _procesosLoaded,
-    new Promise(r => setTimeout(r, 6000))
-  ]);
-
-  await verDetalle(codigoParam);
+async function _abrirProcesoDeNotificacion() {
+  if (!_procesoNotifPendiente) return;
+  const codigo = _procesoNotifPendiente;
+  _procesoNotifPendiente = null;  // limpiar para no repetir
+  await verDetalle(codigo);
 }
-
-const _originalShowApp = showApp;
-showApp = async function() {
-  _originalShowApp();
-  // Sin timeout fijo — esperamos la señal real de que los datos cargaron
-  checkNotificacionUrl();
-};
 
 // ═══════════════════════════════════════════════════════
 // MAPA DE PROYECTOS — Lógica completa
