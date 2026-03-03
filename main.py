@@ -175,15 +175,33 @@ def listar_procesos(
     monto_max: float = Query(None, description="Monto máximo estimado"),
     busqueda: str = Query(None, description="Buscar en título y descripción"),
     solo_activos: bool = Query(True, description="Solo procesos abiertos"),
+    institucion: str = Query(None, description="Filtrar por nombre de institución"),
+    familia_unspsc: str = Query(None, description="Filtrar por código de familia UNSPSC"),
 ):
     """Lista procesos con filtros."""
     try:
+        # Si hay filtro UNSPSC, primero obtener los códigos de proceso que coinciden
+        codigos_unspsc = None
+        if familia_unspsc:
+            try:
+                art_result = supabase.table("articulos_proceso")                     .select("codigo_proceso")                     .eq("familia_unspsc", familia_unspsc.strip())                     .execute()
+                codigos_unspsc = list(set(a["codigo_proceso"] for a in art_result.data))
+                if not codigos_unspsc:
+                    return {"procesos": [], "total": 0, "page": page, "limit": limit, "pages": 0}
+            except Exception as e:
+                print(f"⚠️ Error filtrando por UNSPSC: {e}")
+
         query = supabase.table("procesos").select("*", count="exact")
-        
+
+        # Aplicar filtro UNSPSC si corresponde
+        if codigos_unspsc is not None:
+            # Supabase .in_() tiene límite de ~100 items — paginar si hace falta
+            query = query.in_("codigo_proceso", codigos_unspsc[:500])
+
         if solo_activos:
             query = query.eq("estado_proceso", "Proceso publicado")
             query = query.gt("fecha_fin_recepcion_ofertas", datetime.now().isoformat())
-        
+
         if objeto:
             query = query.eq("objeto_proceso", objeto)
         if modalidad:
@@ -196,14 +214,16 @@ def listar_procesos(
             query = query.lte("monto_estimado", monto_max)
         if busqueda:
             query = query.or_(f"titulo.ilike.%{busqueda}%,descripcion.ilike.%{busqueda}%")
-        
+        if institucion:
+            query = query.ilike("unidad_compra", f"%{institucion}%")
+
         # Paginación
         offset = (page - 1) * limit
         query = query.order("fecha_publicacion", desc=True)
         query = query.range(offset, offset + limit - 1)
-        
+
         result = query.execute()
-        
+
         return {
             "procesos": result.data,
             "total": result.count,
@@ -211,7 +231,7 @@ def listar_procesos(
             "limit": limit,
             "pages": (result.count + limit - 1) // limit if result.count else 0
         }
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
