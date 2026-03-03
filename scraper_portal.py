@@ -262,29 +262,37 @@ def obtener_articulos_rapido(codigo_proceso):
 
 def extraer_notice_uid_del_portal(codigo_proceso):
     """
-    Hace 1 request al portal para obtener el noticeUID real del proceso.
-    Esto permite construir la URL directa al detalle:
-      /Public/Tendering/OpportunityDetail/Index?noticeUID=DO1.NTC.XXXXXXX
-    Se ejecuta UNA SOLA VEZ cuando el scraper detecta el proceso por primera vez.
-    El portal invalida cookies si se hacen demasiados requests — aquí solo
-    necesitamos extraer un dato estático del HTML, no descarga de archivos.
+    Obtiene la URL directa al proceso con noticeUID desde el portal DGCP.
+    Resultado: /Public/Tendering/OpportunityDetail/Index?noticeUID=DO1.NTC.XXXXXXX
+
+    Estrategia en 2 pasos:
+    1. Request con cookies de sesión a la lista filtrada por el código.
+       El portal requiere cookies para renderizar los links de detalle.
+    2. Si falla o no encuentra noticeUID, intentar directo por API de datos abiertos.
     """
     import re as _re
     PORTAL_BASE = "https://comunidad.comprasdominicana.gob.do"
-
-    # URL de búsqueda del proceso en la lista pública
     url_busqueda = (
         f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index"
         f"?currentLanguage=es&Country=DO&Theme=DGCP&NoticeReference={codigo_proceso}"
     )
 
+    session = requests.Session()
+    session.verify = False
+
     try:
-        resp = requests.get(url_busqueda, headers=HEADERS, timeout=15)
+        # Paso 1: establecer cookies de sesión visitando la página principal
+        session.get(
+            f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index",
+            headers=HEADERS, timeout=15
+        )
+
+        # Paso 2: buscar el proceso con la sesión establecida
+        resp = session.get(url_busqueda, headers=HEADERS, timeout=15)
         resp.raise_for_status()
         html = resp.text
 
-        # Buscar el link al detalle que contiene noticeUID
-        # Formato: /Public/Tendering/OpportunityDetail/Index?noticeUID=DO1.NTC.XXXXXXX
+        # Buscar noticeUID en el HTML — formato real del portal
         match = _re.search(
             r"/Public/Tendering/OpportunityDetail/Index\?noticeUID=(DO1\.NTC\.[\w\.]+)",
             html
@@ -294,12 +302,31 @@ def extraer_notice_uid_del_portal(codigo_proceso):
             url_detalle = f"{PORTAL_BASE}/Public/Tendering/OpportunityDetail/Index?noticeUID={notice_uid}"
             print(f"   🔗 [{codigo_proceso}] noticeUID={notice_uid}")
             return url_detalle
-        else:
-            print(f"   ⚠️  [{codigo_proceso}] noticeUID no encontrado en HTML del portal")
+
+        # Paso 3: si no encontró noticeUID, intentar desde la API de datos abiertos
+        try:
+            api_resp = requests.get(
+                "https://datosabiertos.dgcp.gob.do/api-dgcp/v1/procesos",
+                params={"codigo_proceso": codigo_proceso},
+                timeout=10
+            )
+            api_data = api_resp.json()
+            payload = api_data.get("payload", {})
+            procesos_api = payload.get("content", []) if isinstance(payload, dict) else (payload if isinstance(payload, list) else [])
+            for p in procesos_api:
+                url_api = p.get("url", "")
+                if url_api and "noticeUID" in url_api:
+                    print(f"   🔗 [{codigo_proceso}] noticeUID desde API: {url_api}")
+                    return url_api
+        except Exception:
+            pass
+
+        print(f"   ⚠️  [{codigo_proceso}] noticeUID no encontrado — usando URL de lista")
+
     except Exception as e:
         print(f"   ⚠️  [{codigo_proceso}] Error extrayendo noticeUID: {e}")
 
-    # Fallback: URL de la lista filtrada (menos directa pero funcional)
+    # Fallback: URL de la lista filtrada por código (funcional pero menos directa)
     return url_busqueda
 
 
