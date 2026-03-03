@@ -1781,8 +1781,13 @@ body {
       <div class="nav-icon-wrap"><span class="nav-icon">📋</span></div>
       Licitaciones
     </button>
-    <button class="bottom-nav-item" id="nav-seguimiento" onclick="switchTab2('seguimiento')">
-      <div class="nav-icon-wrap"><span class="nav-icon">⭐</span></div>
+    <button class="bottom-nav-item" id="nav-seguimiento" onclick="switchTab2('seguimiento');limpiarBadge()">
+      <div class="nav-icon-wrap" style="position:relative">
+        <span class="nav-icon">⭐</span>
+        <span id="notif-badge" style="display:none;position:absolute;top:-4px;right:-4px;
+          width:10px;height:10px;background:#EF4444;border-radius:50%;
+          border:2px solid var(--surface);"></span>
+      </div>
       Mis Procesos
     </button>
     <button class="bottom-nav-item" id="nav-perfil" onclick="switchTab2('perfil')">
@@ -1907,6 +1912,8 @@ function filtrarRubro(rubro) {
 
 // ── PROCESOS ──
 let unspscFiltro = null;
+let _procesosLoadedResolve = null;
+let _procesosLoaded = new Promise(r => { _procesosLoadedResolve = r; });
 
 async function cargarProcesos(page = 1) {
   document.getElementById('procesos-container').innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando...</span></div>';
@@ -1928,6 +1935,8 @@ async function cargarProcesos(page = 1) {
   const res  = await fetch(url);
   const data = await res.json();
   renderProcesos(data.procesos || [], data, page);
+  // Señalar que los procesos ya cargaron (para el deeplink de notificaciones)
+  if (_procesosLoadedResolve) { _procesosLoadedResolve(); _procesosLoadedResolve = null; }
 }
 
 function formatMonto(v) {
@@ -2283,28 +2292,21 @@ if (savedToken && savedUser) {
 
 // ── ABRIR PROCESO DESDE NOTIFICACIÓN ──
 // Se llama automáticamente al cargar la app si hay ?proceso=CODIGO en la URL.
-// Espera hasta 4 segundos a que la auth y los datos estén listos antes de abrir el detalle.
+// Espera a que cargarProcesos() termine COMPLETAMENTE antes de abrir el detalle.
 async function checkNotificacionUrl() {
   const params = new URLSearchParams(window.location.search);
   const codigoParam = params.get('proceso');
   if (!codigoParam) return;
 
-  // Limpiar la URL para que no se repita si el usuario recarga
+  // Limpiar la URL DESPUÉS de guardar el código — no antes
   window.history.replaceState({}, '', window.location.pathname);
 
-  // Esperar a que el panel principal sea visible (puede tardar si venimos de fondo)
-  const MAX_ESPERA_MS = 4000;
-  const INTERVALO_MS  = 150;
-  let elapsed = 0;
-  await new Promise(resolve => {
-    const check = () => {
-      const appVisible = document.getElementById('screen-app')?.classList.contains('active');
-      if (appVisible || elapsed >= MAX_ESPERA_MS) return resolve();
-      elapsed += INTERVALO_MS;
-      setTimeout(check, INTERVALO_MS);
-    };
-    check();
-  });
+  // Esperar a que los procesos hayan cargado (cargarProcesos resuelve esta promise)
+  // Timeout de seguridad de 6 segundos por si falla la carga
+  await Promise.race([
+    _procesosLoaded,
+    new Promise(r => setTimeout(r, 6000))
+  ]);
 
   await verDetalle(codigoParam);
 }
@@ -2312,9 +2314,8 @@ async function checkNotificacionUrl() {
 const _originalShowApp = showApp;
 showApp = async function() {
   _originalShowApp();
-  // Aumentar delay a 600ms para dar tiempo a que cargarProcesos() arranque
-  // antes de intentar abrir el detalle del proceso notificado.
-  setTimeout(checkNotificacionUrl, 600);
+  // Sin timeout fijo — esperamos la señal real de que los datos cargaron
+  checkNotificacionUrl();
 };
 
 // ═══════════════════════════════════════════════════════
@@ -3070,6 +3071,66 @@ function mostrarToast(msg) {
   t.style.opacity = '1';
   clearTimeout(t._timer);
   t._timer = setTimeout(() => { t.style.opacity = '0'; }, 2500);
+}
+
+// ── BADGE DE NOTIFICACIONES ──
+function mostrarBadge() {
+  const badge = document.getElementById('notif-badge');
+  if (badge) badge.style.display = 'block';
+  // Persistir en localStorage para que sobreviva si el usuario cierra la app
+  localStorage.setItem('ll_notif_badge', '1');
+}
+
+function limpiarBadge() {
+  const badge = document.getElementById('notif-badge');
+  if (badge) badge.style.display = 'none';
+  localStorage.removeItem('ll_notif_badge');
+}
+
+// Restaurar badge si había notificaciones pendientes al abrir la app
+(function restaurarBadge() {
+  if (localStorage.getItem('ll_notif_badge') === '1') {
+    // Esperar a que el DOM esté listo
+    const check = () => {
+      const badge = document.getElementById('notif-badge');
+      if (badge) { badge.style.display = 'block'; }
+      else setTimeout(check, 200);
+    };
+    check();
+  }
+})();
+
+// ── OFFLINE MODE ──
+const offlineBanner = document.createElement('div');
+offlineBanner.id = 'll-offline-banner';
+offlineBanner.style.cssText = `
+  display:none; position:fixed; top:0; left:0; right:0; z-index:9999;
+  background:#D97706; color:white; text-align:center;
+  padding:8px 16px; font-size:13px; font-weight:600;
+  font-family:'Plus Jakarta Sans',sans-serif;
+  padding-top: calc(8px + env(safe-area-inset-top));
+`;
+offlineBanner.textContent = '⚠️ Sin conexión — Mostrando datos en caché';
+document.body.appendChild(offlineBanner);
+
+window.addEventListener('offline', () => {
+  offlineBanner.style.display = 'block';
+});
+window.addEventListener('online', () => {
+  offlineBanner.style.display = 'none';
+  mostrarToast('✅ Conexión restaurada');
+  cargarProcesos(1);
+});
+// Verificar estado inicial
+if (!navigator.onLine) offlineBanner.style.display = 'block';
+
+// ── RECIBIR MENSAJE DEL SERVICE WORKER (badge desde push en segundo plano) ──
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data?.type === 'SHOW_BADGE') {
+      mostrarBadge();
+    }
+  });
 }
 
 </script>
