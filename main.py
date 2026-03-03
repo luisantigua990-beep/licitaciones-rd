@@ -884,33 +884,34 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         ["condiciones generales", "bases tecnicas"],
     ]
 
-    def construir_mapa_nombres(html: str) -> dict:
+    def construir_mapa_filas(html: str) -> dict:
         """
-        Construye mapa {file_id: nombre_archivo} parseando por filas <tr>.
+        Parsea la tabla de documentos del portal DGCP por filas <tr>.
 
-        Estructura del portal DGCP:
+        Estructura del portal:
           <tr id="grdGridDocumentList_trN">
             <td id="...thColumnDocumentName">NombreArchivo.pdf</td>
-            <td id="...thColumnDocumentType">Tipo doc</td>
+            <td id="...thColumnDocumentType"><span>Tipo del documento</span></td>
             <td id="...thColumnDownloadDocument">
               ... 'documentFileId=' + '12345' + '&mkey=...'
             </td>
           </tr>
 
-        Parsear por TR garantiza que nombre y fileId siempre corresponden
-        al mismo documento — elimina el riesgo de contaminación entre filas.
+        CRÍTICO: solo se usa el nombre del archivo para selección.
+        El campo Tipo NO se usa — un doc puede ser tipo "Pliego de Condiciones"
+        pero llamarse "Especificaciones tecnicas.pdf", causando selección incorrecta.
+
+        Devuelve dict: {file_id: nombre_archivo_lower}
         """
         import re as _re
         mapa = {}
 
-        # Extraer cada fila de la tabla de documentos
         filas = _re.findall(
             r'<tr[^>]+id=["\']grdGridDocumentList_tr\d+["\'][^>]*>(.*?)</tr>',
             html, _re.IGNORECASE | _re.DOTALL
         )
 
         for fila in filas:
-            # Extraer file_id de esta fila
             m_id = _re.search(
                 r"documentFileId='\s*\+\s*'(\d+)'|documentFileId=(\d+)",
                 fila, _re.IGNORECASE
@@ -919,83 +920,83 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
                 continue
             file_id = m_id.group(1) or m_id.group(2)
 
-            # Extraer nombre del td de DocumentName
+            # Solo extraer nombre del archivo (thColumnDocumentName)
             m_nombre = _re.search(
                 r'thColumnDocumentName[^>]*>(.*?)</td>',
                 fila, _re.IGNORECASE | _re.DOTALL
             )
             if m_nombre:
-                # Limpiar tags HTML internos y espacios
                 nombre_raw = _re.sub(r'<[^>]+>', '', m_nombre.group(1)).strip()
                 mapa[file_id] = nombre_raw.lower()
             else:
                 mapa[file_id] = ""
 
-        # Fallback: si el portal no usa IDs grdGridDocumentList, usar ventana de contexto
-        if not mapa:
-            print("⚠️ No se encontraron filas grdGridDocumentList — usando fallback por ventana")
-            PAT = r'>([\w\s\-\.\_]+\.(?:pdf|zip|xlsx|docx|doc))<'
-            PAT2 = r'"([\w\s\-\.\_]+\.(?:pdf|zip|xlsx|docx|doc))"'
-            for file_id, _ in patrones:
-                idx = html.find(str(file_id))
-                if idx == -1:
-                    mapa[file_id] = ""
-                    continue
-                ctx = html[max(0, idx - 400):idx + 400]
-                m = _re.search(PAT, ctx, _re.IGNORECASE) or _re.search(PAT2, ctx, _re.IGNORECASE)
-                mapa[file_id] = m.group(1).strip().lower() if m else ""
+        if mapa:
+            print(f"📋 Tabla TR parseada ({len(mapa)} docs): { {k: v[:35] or '[sin nombre]' for k, v in mapa.items()} }")
+        else:
+            print("⚠️ No se encontraron filas grdGridDocumentList en el HTML")
 
-        print(f"📋 Mapa de documentos ({len(mapa)} items): { {k: v[:40] for k, v in mapa.items()} }")
         return mapa
 
     def buscar_por_prioridad(patrones, html):
         """
-        Estrategia en tres fases:
-          FASE 1 — Construir mapa {fileId: nombre} usando estructura TR del portal.
-          FASE 2 — Buscar por NOMBRE: para cada grupo de prioridad, buscar match solo
-                   en nombres confirmados. Si algún doc en el inventario TIENE nombre con
-                   keyword del grupo, SOLO se acepta match por nombre (no por contexto).
-                   Esto evita que "Especificaciones tecnicas.pdf" gane sobre "Pliego.pdf"
-                   porque la categoría del portal dice "Pliego de Condiciones".
-          FASE 3 — Buscar por CONTEXTO: solo si ningún doc del inventario tiene nombre
-                   que coincida con el grupo. Fallback para casos sin nombre legible.
-        """
-        # FASE 1: mapear nombres por estructura TR (correcto)
-        nombres_map = construir_mapa_nombres(html)
+        Selecciona el pliego correcto basándose SOLO en el nombre del archivo.
 
-        # Asegurar que todos los patrones estén en el mapa (por si extraer_patrones
-        # encontró fileIds que no aparecen en las filas TR)
+        FASE 1 — Parser TR: extrae nombre del archivo de cada <tr> de la tabla.
+          Busca keyword del grupo en el nombre. Nunca usa el campo "Tipo" del portal.
+
+        FASE 2 — Fallback ventana: si no hubo filas TR, busca el nombre del archivo
+          en ventana corta hacia atrás del fileId en el HTML.
+
+        FASE 3 — Último recurso: primer doc cuyo nombre no esté en KEYWORDS_EXCLUIR.
+        """
+        import re as _re_fase
+
+        # FASE 1: parsear tabla TR
+        nombres_map = construir_mapa_filas(html)
+
+        # Si el parser TR no encontró nada, usar ventana de contexto (solo nombre)
+        if not nombres_map:
+            PAT_NOM = r'>([\w\s\-\.\_\(\)]+\.(?:pdf|zip|xlsx|docx|doc))<'
+            PAT_NOM2 = r'"([\w\s\-\.\_\(\)]+\.(?:pdf|zip|xlsx|docx|doc))"'
+            for file_id, _ in patrones:
+                idx = html.find(str(file_id))
+                if idx == -1:
+                    nombres_map[file_id] = ""
+                    continue
+                # Solo hacia atrás — el nombre del archivo está antes del fileId en el HTML
+                ctx = html[max(0, idx - 500):idx]
+                m = _re_fase.search(PAT_NOM, ctx, _re_fase.IGNORECASE) or \
+                    _re_fase.search(PAT_NOM2, ctx, _re_fase.IGNORECASE)
+                nombres_map[file_id] = m.group(1).strip().lower() if m else ""
+            print(f"📋 Fallback ventana ({len(nombres_map)} docs): { {k: v[:35] for k, v in nombres_map.items()} }")
+
+        # Asegurar que todos los patrones estén en el mapa
         for file_id, mkey in patrones:
             if file_id not in nombres_map:
                 nombres_map[file_id] = ""
 
+        # Buscar por nombre del archivo según grupos de prioridad
         for grupo in PRIORIDADES:
-            # FASE 2: ¿algún doc tiene el keyword del grupo en su NOMBRE?
-            docs_con_nombre_match = [
+            docs_match = [
                 (fid, mk) for fid, mk in patrones
                 if nombres_map.get(fid)
                 and not any(x in nombres_map[fid] for x in KEYWORDS_EXCLUIR)
                 and any(x in nombres_map[fid] for x in grupo)
             ]
-
-            if docs_con_nombre_match:
-                file_id, mkey = docs_con_nombre_match[0]
+            if docs_match:
+                file_id, mkey = docs_match[0]
                 nombre = nombres_map[file_id]
                 print(f"✅ Pliego por NOMBRE (grupo '{grupo[0]}'): documentFileId={file_id} → '{nombre[:70]}'")
                 return file_id, mkey
 
-            # FASE 3: ningún nombre coincide — usar contexto como fallback
-            for file_id, mkey in patrones:
-                idx = html.find(str(file_id))
-                contexto = html[max(0, idx - 600):idx + 300].lower()
-                if any(x in contexto for x in KEYWORDS_EXCLUIR):
-                    continue
-                if any(x in contexto for x in grupo):
-                    nombre = nombres_map.get(file_id, "")
-                    if nombre and any(x in nombre for x in KEYWORDS_EXCLUIR):
-                        continue
-                    print(f"✅ Pliego por CONTEXTO (grupo '{grupo[0]}'): documentFileId={file_id} → '{nombre[:70]}'")
-                    return file_id, mkey
+        # FASE 3: primer doc cuyo nombre no esté excluido
+        print("⚠️ Sin match por nombre — usando primer doc no excluido por nombre")
+        for file_id, mkey in patrones:
+            nombre = nombres_map.get(file_id, "")
+            if not nombre or not any(x in nombre for x in KEYWORDS_EXCLUIR):
+                print(f"⚠️ Primer doc no excluido: documentFileId={file_id} → '{nombre[:70]}'")
+                return file_id, mkey
 
         return None, None
 
