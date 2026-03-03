@@ -1688,6 +1688,23 @@ def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
             intento["html_zona_4000"] = html[4000:4600]
             intento["html_final"]     = html[-400:]
 
+            # Dump zona tabla de documentos — para diagnosticar estructura TR
+            idx_tabla = html.find("grdGridDocumentList")
+            if idx_tabla >= 0:
+                intento["html_tabla_docs"] = html[max(0, idx_tabla - 200):idx_tabla + 3000]
+            else:
+                # Buscar por primer fileId encontrado
+                primeros = []
+                for regex in regexes.values():
+                    m = _re.findall(regex, html, _re.IGNORECASE)
+                    if m:
+                        primeros = m
+                        break
+                if primeros:
+                    first_id = primeros[0][0]
+                    idx_fid = html.find(first_id)
+                    intento["html_tabla_docs"] = html[max(0, idx_fid - 1500):idx_fid + 500]
+
             total_matches = sum(v["cantidad"] for v in matches_por_patron.values())
             intento["exito"] = total_matches > 0
 
