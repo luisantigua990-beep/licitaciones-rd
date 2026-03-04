@@ -1878,6 +1878,74 @@ def debug_precio_articulo(notice_uid: str = "DO1.NTC.1679301"):
     }
 
 
+
+@app.post("/api/admin/rellenar-precios-articulos")
+async def rellenar_precios_articulos(background_tasks: BackgroundTasks):
+    """
+    Re-scrapea artículos existentes que tienen precio_total_estimado = NULL.
+    Corre en background para no bloquear el servidor.
+    """
+    def _run():
+        from scraper_portal import scraper_articulos_portal
+        import requests as _req
+
+        # Buscar artículos sin precio
+        sin_precio = supabase_admin.table("articulos_proceso") \
+            .select("codigo_proceso") \
+            .is_("precio_total_estimado", "null") \
+            .execute().data or []
+
+        # Agrupar por proceso
+        codigos = list(set(a["codigo_proceso"] for a in sin_precio))
+        print(f"🔄 Re-scrape precios: {len(codigos)} procesos con artículos sin precio")
+
+        actualizados = 0
+        for codigo in codigos[:100]:  # máx 100 por llamada
+            try:
+                # Obtener URL del proceso
+                proc = supabase_admin.table("procesos") \
+                    .select("url") \
+                    .eq("codigo_proceso", codigo) \
+                    .execute().data
+                url = proc[0]["url"] if proc else None
+                if not url or "noticeUID" not in url:
+                    continue
+
+                # Re-scrapear artículos con precios
+                arts = scraper_articulos_portal(codigo, url_portal=url)
+                if not arts:
+                    continue
+
+                # Actualizar cada artículo con el precio
+                for a in arts:
+                    precio = a.get("precio_total_estimado")
+                    precio_u = a.get("precio_unitario_estimado")
+                    desc = a.get("descripcion_articulo") or a.get("descripcion_usuario")
+                    if precio is None and precio_u is None:
+                        continue
+                    supabase_admin.table("articulos_proceso") \
+                        .update({
+                            "precio_total_estimado": precio,
+                            "precio_unitario_estimado": precio_u,
+                            "unidad_medida": a.get("unidad_medida"),
+                            "cantidad": a.get("cantidad"),
+                        }) \
+                        .eq("codigo_proceso", codigo) \
+                        .eq("descripcion_articulo", desc) \
+                        .execute()
+                    actualizados += 1
+
+                import time
+                time.sleep(0.5)
+            except Exception as e:
+                print(f"⚠️ Error re-scraping {codigo}: {e}")
+
+        print(f"✅ Re-scrape completado: {actualizados} artículos actualizados")
+
+    background_tasks.add_task(_run)
+    return {"status": "iniciado", "mensaje": "Re-scrape de precios corriendo en background. Revisa los logs."}
+
+
 @app.get("/api/admin/html-articulos")
 def debug_html_articulos(codigo: str = None, notice_uid: str = None):
     """
