@@ -2108,9 +2108,11 @@ function cargarInteresesGuardados() {
 
 // ── DETALLE ──
 async function verDetalle(codigo) {
-  document.getElementById('tab-dashboard').style.display = 'none';
-  document.getElementById('tab-detalle').style.display   = 'block';
-  document.getElementById('tab-perfil').style.display    = 'none';
+  document.getElementById('tab-dashboard').style.display   = 'none';
+  document.getElementById('tab-detalle').style.display     = 'block';
+  document.getElementById('tab-perfil').style.display      = 'none';
+  document.getElementById('tab-seguimiento').style.display = 'none';
+  document.getElementById('tab-mapa').style.display        = 'none';
   document.getElementById('detalle-container').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   window.scrollTo(0,0);
 
@@ -2619,7 +2621,7 @@ function mapaRenderProjects(list) {
       else if (days <= 7) deadStr = `Cierre en <span class="urg">${days}d</span>`;
       else deadStr = `Cierre en ${days}d`;
     }
-    return `<div class="mproj-card" onclick="verDetalle('${p.codigo_proceso}')">
+    return `<div class="mproj-card" onclick="verDetalle('${p.codigo_proceso}');switchTab2('dashboard')">
       <div class="mproj-inst">${p.unidad_compra||'—'}</div>
       <div class="mproj-name">${(p.titulo||'').slice(0,100)}${(p.titulo||'').length>100?'…':''}</div>
       <div class="mproj-meta">
@@ -2865,7 +2867,7 @@ function renderSegCard(item) {
         <span class="seg-estado-pill ${eCfg.cls}">${eCfg.icon} ${eCfg.label}</span>
         <div class="seg-dias-badge ${dias.cls}">📅 ${dias.texto}</div>
       </div>
-      <div class="seg-card-titulo" onclick="verDetalle('${codigo}')">${p.titulo || 'Sin título'}</div>
+      <div class="seg-card-titulo" onclick="verDetalle('${codigo}');switchTab2('dashboard')">${p.titulo || 'Sin título'}</div>
       <div class="seg-card-meta">
         <span class="inst">${p.unidad_compra || '—'}</span>
         ${monto ? `<span>·</span><span class="monto">${monto}</span>` : ''}
@@ -2874,7 +2876,7 @@ function renderSegCard(item) {
         ${fechas.length ? fechas.map(f => renderFechaRow(f)).join('') : '<div class="seg-fecha-row"><span class="seg-fecha-label">Sin fechas registradas</span></div>'}
       </div>
       <div class="seg-card-actions">
-        <button class="seg-btn seg-btn-ver" onclick="verDetalle('${codigo}')">Ver detalle</button>
+        <button class="seg-btn seg-btn-ver" onclick="verDetalle('${codigo}');switchTab2('dashboard')">Ver detalle</button>
         <button class="seg-btn seg-btn-estado" onclick="abrirModalEstado('${codigo}','${estado}')">${eCfg.icon} Estado</button>
         <button class="seg-btn seg-btn-quitar" onclick="quitarSeguimiento('${codigo}')">✕</button>
       </div>
