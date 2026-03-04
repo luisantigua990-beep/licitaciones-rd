@@ -1808,6 +1808,40 @@ def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
     return diag
 
 
+
+@app.get("/api/admin/debug-precio-articulo")
+def debug_precio_articulo(notice_uid: str = "DO1.NTC.1681956"):
+    """Ver HTML exacto de las celdas de precio de un artículo"""
+    import requests as _req
+    from bs4 import BeautifulSoup as _BS
+
+    session = _req.Session()
+    session.verify = False
+    session.get(
+        "https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/Index",
+        headers={"User-Agent": "Mozilla/5.0"}, timeout=15
+    )
+    url = f"https://comunidad.comprasdominicana.gob.do/Public/Tendering/OpportunityDetail/Index?noticeUID={notice_uid}&isModal=true&asPopupView=true"
+    resp = session.get(url, headers={"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest"}, timeout=20)
+    soup = _BS(resp.text, "html.parser")
+
+    filas = soup.find_all("tr", class_=lambda x: x and "PriceListLine" in " ".join(x) and "Item" in " ".join(x))
+    if not filas:
+        return {"error": "No filas PriceListLine Item", "html_size": len(resp.text), "muestra": resp.text[:2000]}
+
+    fila = filas[0]
+    line_row = fila.find("tr", class_=lambda x: x and "PriceListLineRow" in x)
+    tds_int = line_row.find_all("td") if line_row else fila.find_all("td")
+
+    return {
+        "line_row_encontrado": line_row is not None,
+        "tds_count": len(tds_int),
+        "tds_clases": [" ".join(td.get("class", [])) for td in tds_int],
+        "tds_texto": [td.get_text(strip=True)[:80] for td in tds_int],
+        "fila_html_muestra": str(fila)[:3000],
+    }
+
+
 @app.get("/api/admin/html-articulos")
 def debug_html_articulos(codigo: str = None, notice_uid: str = None):
     """
