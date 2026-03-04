@@ -1931,7 +1931,11 @@ async function cargarProcesos(page = 1) {
 
   const res  = await fetch(url);
   const data = await res.json();
-  renderProcesos(data.procesos || [], data, page);
+  // Solo renderizar si el detalle NO está abierto (evita pisar detalle abierto desde seguimiento)
+  const detalleAbierto = document.getElementById('tab-detalle').style.display === 'block';
+  if (!detalleAbierto) {
+    renderProcesos(data.procesos || [], data, page);
+  }
   // Al terminar la primera carga, verificar si hay un proceso pendiente de abrir
   _abrirProcesoDeNotificacion();
 }
@@ -1950,6 +1954,8 @@ function formatMontoFull(v) {
 }
 
 function renderProcesos(procesos, data, page) {
+  // No pisar si el usuario ya abrió un detalle
+  if (document.getElementById('tab-detalle').style.display === 'block') return;
   const container = document.getElementById('procesos-container');
   if (!procesos.length) {
     container.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-text">No se encontraron licitaciones</div></div>';
@@ -2886,6 +2892,9 @@ function renderSegCard(item) {
 
 async function cargarSeguimiento() {
   if (!currentUser) return;
+  // No interrumpir si hay un detalle abierto
+  const detalleAbierto = document.getElementById('tab-detalle').style.display === 'block';
+  if (detalleAbierto) return;
   const lista = document.getElementById('seg-lista');
   if (lista) lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
