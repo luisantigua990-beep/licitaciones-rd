@@ -1929,6 +1929,53 @@ def test_articulos_portal(notice_uid: str = None, codigo: str = None):
 
 
 
+
+@app.get("/api/admin/html-lista-raw")
+def debug_html_lista_raw():
+    """Devuelve zonas clave del HTML de la lista para encontrar noticeUID"""
+    import re as _re
+    import requests as _req
+
+    PORTAL_URL = (
+        "https://comunidad.comprasdominicana.gob.do/Public/Tendering/"
+        "ContractNoticeManagement/Index?currentLanguage=es&Country=DO&Theme=DGCP"
+    )
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    resp = _req.get(PORTAL_URL, headers=HEADERS, timeout=20)
+    html = resp.text
+
+    # Buscar DO1 en cualquier forma
+    do1_matches = [(m.start(), html[max(0,m.start()-50):m.start()+200]) 
+                   for m in _re.finditer(r"DO1", html)]
+    
+    # Buscar data- attributes en filas de resultado
+    data_attrs = _re.findall(r'data-[\w-]+="[^"]{5,50}"', html)
+    
+    # Buscar onclick o javascript con referencias a procesos
+    onclicks = _re.findall(r'onclick="[^"]{20,200}"', html)
+    
+    # Buscar var o json con noticeUID en scripts
+    scripts_zona = []
+    for m in _re.finditer(r"noticeUID|NTC\.|OpportunityDetail", html):
+        scripts_zona.append(html[max(0,m.start()-100):m.start()+300])
+
+    # Ver 500 chars alrededor del primer CERTV (proceso que vimos)
+    idx = html.find("CERTV-DAF-CD-2026-0016")
+    zona_certv = html[max(0,idx-500):idx+1000] if idx >= 0 else "no encontrado"
+
+    return {
+        "do1_apariciones": len(do1_matches),
+        "do1_muestras": [x[1] for x in do1_matches[:3]],
+        "data_attrs_unicos": list(set(data_attrs))[:20],
+        "onclicks": onclicks[:10],
+        "scripts_con_noticeUID": scripts_zona[:3],
+        "zona_proceso_certv": zona_certv,
+    }
+
+
 @app.get("/api/admin/html-lista-portal")
 def debug_html_lista_portal():
     """
