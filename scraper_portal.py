@@ -92,15 +92,31 @@ def raspar_portal():
         if not referencia or referencia == "Referencia":
             continue
 
-        # Extraer noticeUID directamente del link en esta fila de la tabla
-        # El HTML de la lista ya contiene el link OpportunityDetail con noticeUID
+        # Extraer noticeUID del onclick de la fila
+        # El portal usa JS concatenado: 'noticeUID=' + 'DO1.NTC.XXXXX' + '&'
+        # Está en el onclick del elemento lnkDetailLink de cada fila
         import re as _re
         notice_uid = None
-        for a_tag in row.find_all("a", href=True):
-            m = _re.search(r"noticeUID=(DO1\.NTC\.[\w\.]+)", a_tag["href"])
+        # Buscar en todos los elementos con onclick en esta fila
+        for el in row.find_all(onclick=True):
+            onclick_val = el.get("onclick", "")
+            # Patrón JS concatenado: 'noticeUID=' + 'DO1.NTC.1682341' + '&'
+            m = _re.search(
+                r"noticeUID='\s*\+\s*'(DO1\.NTC\.[\w\.]+)'",
+                onclick_val
+            )
             if m:
                 notice_uid = m.group(1)
                 break
+        # También buscar en el HTML completo de la fila como fallback
+        if not notice_uid:
+            fila_html = str(row)
+            m = _re.search(
+                r"noticeUID='\s*\+\s*'(DO1\.NTC\.[\w\.]+)'",
+                fila_html
+            )
+            if m:
+                notice_uid = m.group(1)
 
         # Construir URL: con noticeUID si existe, fallback a lista filtrada
         PORTAL_BASE = "https://comunidad.comprasdominicana.gob.do"
