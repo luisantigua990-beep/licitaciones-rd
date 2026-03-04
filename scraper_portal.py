@@ -237,9 +237,15 @@ def obtener_url_proceso(codigo_proceso, url_portal=None):
 
 def obtener_articulos_rapido(codigo_proceso):
     """
-    Llama a la API DGCP para obtener los artículos UNSPSC de UN proceso específico.
-    Se ejecuta inmediatamente cuando el scraper detecta un proceso nuevo.
+    Alias de compatibilidad — ahora intenta primero scraping del portal (inmediato)
+    y hace fallback a la API de datos abiertos (tiene delay de 8h).
     """
+    # Intentar scraping directo del portal con noticeUID
+    articulos = scraper_articulos_portal(codigo_proceso)
+    if articulos:
+        return articulos
+
+    # Fallback: API de datos abiertos
     API_BASE_URL = "https://datosabiertos.dgcp.gob.do/api-dgcp/v1"
     try:
         resp = requests.get(
@@ -256,43 +262,196 @@ def obtener_articulos_rapido(codigo_proceso):
             return payload.get("content", []) or []
         return []
     except Exception as e:
-        print(f"⚠️  No se pudieron obtener artículos para {codigo_proceso}: {e}")
+        print(f"⚠️  API fallback también falló para {codigo_proceso}: {e}")
         return []
+
+
+def scraper_articulos_portal(codigo_proceso, url_portal=None):
+    """
+    Scrapea los artículos UNSPSC directamente del portal transaccional DGCP.
+    No depende de la API de datos abiertos (que tiene delay de 8h por ETL).
+
+    Estrategia:
+    1. Obtener noticeUID desde la URL guardada en proceso o buscando en el portal
+    2. Cargar la página de detalle con &isModal=true&asPopupView=true
+    3. Parsear la tabla de artículos con BeautifulSoup
+
+    Estructura HTML del portal:
+    - Código UNSPSC: input[type="hidden"] dentro de VortalLookupContainer, value="41116001"
+    - Descripción: span[data-prop="Desc"]
+    - Cantidad: span[data-prop="Qtd"]
+    - Unidad: span.VortalSpan dentro de PriceListLineTableQuantityCell (unidad)
+    - Cuenta presupuestaria: span con id que termina en _AccountCode
+    - Precio unitario: span[data-prop="PUPrc"] o similar
+    - Precio total: span con NMkey BILTtl
+    - Cada artículo es un <tr class="PriceListLine Item PriceListLine">
+    """
+    try:
+        from bs4 import BeautifulSoup
+        import re as _re
+    except ImportError:
+        print("⚠️  BeautifulSoup no instalado — pip install beautifulsoup4")
+        return []
+
+    PORTAL_BASE = "https://comunidad.comprasdominicana.gob.do"
+    HEADERS_PORTAL = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "es-ES,es;q=0.9",
+        "Referer": f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index",
+    }
+
+    # ── Obtener noticeUID ──────────────────────────────────────────────
+    notice_uid = None
+
+    # 1. Desde la URL pasada como parámetro
+    if url_portal:
+        m = _re.search(r"noticeUID=(DO1\.NTC\.[\w\.]+)", url_portal)
+        if m:
+            notice_uid = m.group(1)
+
+    # 2. Desde Supabase (URL guardada al detectar el proceso)
+    if not notice_uid:
+        try:
+            proc = supabase.table("procesos").select("url").eq("codigo_proceso", codigo_proceso).execute()
+            url_db = proc.data[0].get("url", "") if proc.data else ""
+            m = _re.search(r"noticeUID=(DO1\.NTC\.[\w\.]+)", url_db)
+            if m:
+                notice_uid = m.group(1)
+        except Exception:
+            pass
+
+    if not notice_uid:
+        print(f"   ⚠️  [{codigo_proceso}] Sin noticeUID — no se puede scrapear artículos del portal")
+        return []
+
+    # ── Cargar página de detalle ───────────────────────────────────────
+    session = requests.Session()
+    session.verify = False
+    try:
+        # Establecer cookies de sesión
+        session.get(f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index",
+                    headers=HEADERS_PORTAL, timeout=15)
+    except Exception:
+        pass
+
+    url_detalle = (f"{PORTAL_BASE}/Public/Tendering/OpportunityDetail/Index"
+                   f"?noticeUID={notice_uid}&isModal=true&asPopupView=true")
+    try:
+        resp = session.get(url_detalle, headers=HEADERS_PORTAL, timeout=25)
+        resp.raise_for_status()
+        html = resp.text
+    except Exception as e:
+        print(f"   ⚠️  [{codigo_proceso}] Error cargando detalle: {e}")
+        return []
+
+    if "UNSPSC" not in html and "CategoryCode" not in html:
+        print(f"   ⚠️  [{codigo_proceso}] HTML sin tabla de artículos")
+        return []
+
+    # ── Parsear artículos con BeautifulSoup ───────────────────────────
+    soup = BeautifulSoup(html, "html.parser")
+    articulos = []
+
+    # Cada artículo es un <tr> con clase "PriceListLine Item PriceListLine"
+    filas = soup.find_all("tr", class_=lambda c: c and "PriceListLine" in c and "Item" in c)
+
+    for fila in filas:
+        try:
+            art = {}
+
+            # Código UNSPSC — en input hidden dentro de VortalLookupContainer
+            lookup = fila.find("div", class_="VortalLookupContainer") or                      fila.find("table", class_="VortalLookupContainer") or                      fila.find(id=_re.compile(r"CategoryCode$"))
+            if lookup:
+                inp = lookup.find("input", {"type": "hidden"})
+                if inp and inp.get("value"):
+                    codigo_unspsc = inp["value"].strip()
+                    # Convertir a familia (primeros 8 dígitos), clase (primeros 8), subclase (8 dígitos)
+                    # El portal devuelve el código de subclase (8 dígitos)
+                    art["subclase_unspsc"] = codigo_unspsc
+                    art["clase_unspsc"]    = codigo_unspsc[:6] + "00" if len(codigo_unspsc) >= 6 else None
+                    art["familia_unspsc"]  = codigo_unspsc[:4] + "0000" if len(codigo_unspsc) >= 4 else None
+
+                # Texto completo del código (ej: "41116001 - Reactivos analizadores...")
+                span_txt = lookup.find("span", class_="EllipsisFullMessage") or                            lookup.find("span", {"title": _re.compile(r"\d{8}")})
+                if span_txt:
+                    art["descripcion_unspsc"] = span_txt.get_text(strip=True)
+
+            # Descripción del artículo
+            desc_span = fila.find("span", {"data-prop": "Desc"})
+            if desc_span:
+                art["descripcion_articulo"] = desc_span.get_text(strip=True)
+
+            # Cantidad
+            qty_span = fila.find("span", {"data-prop": "Qtd"})
+            if qty_span:
+                try:
+                    art["cantidad"] = float(qty_span.get_text(strip=True).replace(",", "."))
+                except Exception:
+                    art["cantidad"] = None
+
+            # Cuenta presupuestaria
+            acc_span = fila.find("span", id=_re.compile(r"AccountCode$"))
+            if acc_span:
+                art["cuenta_presupuestaria"] = acc_span.get_text(strip=True)
+
+            # Unidad de medida — span.VortalSpan en celda de unidad
+            unit_cells = fila.find_all("td", class_="PriceListLineTableQuantityCell")
+            if len(unit_cells) >= 2:
+                art["unidad_medida"] = unit_cells[1].get_text(strip=True)
+
+            # Precio unitario y total — spans numéricos
+            precio_spans = fila.find_all("span", class_=_re.compile(r"VortalNumericBox"))
+            for ps in precio_spans:
+                props = ps.get("data-prop", "")
+                txt = ps.get_text(strip=True).replace(",", "").replace(".", "").strip()
+                try:
+                    val = float(ps.get_text(strip=True).replace(",", ""))
+                except Exception:
+                    val = None
+                if "PUPrc" in props or "UnitPrice" in props:
+                    art["precio_unitario_estimado"] = val
+                elif "TPrc" in props or "TotalPrice" in props:
+                    art["precio_total_estimado"] = val
+
+            # Solo agregar si tiene código UNSPSC
+            if art.get("subclase_unspsc"):
+                art["codigo_proceso"] = codigo_proceso
+                articulos.append(art)
+
+        except Exception as e:
+            print(f"   ⚠️  Error parseando fila: {e}")
+            continue
+
+    print(f"   📦 [{codigo_proceso}] {len(articulos)} artículos scrapeados del portal (noticeUID={notice_uid})")
+    return articulos
 
 
 def extraer_notice_uid_del_portal(codigo_proceso):
     """
-    Obtiene la URL directa al proceso con noticeUID desde el portal DGCP.
-    Resultado: /Public/Tendering/OpportunityDetail/Index?noticeUID=DO1.NTC.XXXXXXX
-
-    Estrategia en 2 pasos:
-    1. Request con cookies de sesión a la lista filtrada por el código.
-       El portal requiere cookies para renderizar los links de detalle.
-    2. Si falla o no encuentra noticeUID, intentar directo por API de datos abiertos.
+    Hace 1 request al portal para obtener el noticeUID real del proceso.
+    Esto permite construir la URL directa al detalle:
+      /Public/Tendering/OpportunityDetail/Index?noticeUID=DO1.NTC.XXXXXXX
+    Se ejecuta UNA SOLA VEZ cuando el scraper detecta el proceso por primera vez.
+    El portal invalida cookies si se hacen demasiados requests — aquí solo
+    necesitamos extraer un dato estático del HTML, no descarga de archivos.
     """
     import re as _re
     PORTAL_BASE = "https://comunidad.comprasdominicana.gob.do"
+
+    # URL de búsqueda del proceso en la lista pública
     url_busqueda = (
         f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index"
         f"?currentLanguage=es&Country=DO&Theme=DGCP&NoticeReference={codigo_proceso}"
     )
 
-    session = requests.Session()
-    session.verify = False
-
     try:
-        # Paso 1: establecer cookies de sesión visitando la página principal
-        session.get(
-            f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index",
-            headers=HEADERS, timeout=15
-        )
-
-        # Paso 2: buscar el proceso con la sesión establecida
-        resp = session.get(url_busqueda, headers=HEADERS, timeout=15)
+        resp = requests.get(url_busqueda, headers=HEADERS, timeout=15)
         resp.raise_for_status()
         html = resp.text
 
-        # Buscar noticeUID en el HTML — formato real del portal
+        # Buscar el link al detalle que contiene noticeUID
+        # Formato: /Public/Tendering/OpportunityDetail/Index?noticeUID=DO1.NTC.XXXXXXX
         match = _re.search(
             r"/Public/Tendering/OpportunityDetail/Index\?noticeUID=(DO1\.NTC\.[\w\.]+)",
             html
@@ -302,31 +461,12 @@ def extraer_notice_uid_del_portal(codigo_proceso):
             url_detalle = f"{PORTAL_BASE}/Public/Tendering/OpportunityDetail/Index?noticeUID={notice_uid}"
             print(f"   🔗 [{codigo_proceso}] noticeUID={notice_uid}")
             return url_detalle
-
-        # Paso 3: si no encontró noticeUID, intentar desde la API de datos abiertos
-        try:
-            api_resp = requests.get(
-                "https://datosabiertos.dgcp.gob.do/api-dgcp/v1/procesos",
-                params={"codigo_proceso": codigo_proceso},
-                timeout=10
-            )
-            api_data = api_resp.json()
-            payload = api_data.get("payload", {})
-            procesos_api = payload.get("content", []) if isinstance(payload, dict) else (payload if isinstance(payload, list) else [])
-            for p in procesos_api:
-                url_api = p.get("url", "")
-                if url_api and "noticeUID" in url_api:
-                    print(f"   🔗 [{codigo_proceso}] noticeUID desde API: {url_api}")
-                    return url_api
-        except Exception:
-            pass
-
-        print(f"   ⚠️  [{codigo_proceso}] noticeUID no encontrado — usando URL de lista")
-
+        else:
+            print(f"   ⚠️  [{codigo_proceso}] noticeUID no encontrado en HTML del portal")
     except Exception as e:
         print(f"   ⚠️  [{codigo_proceso}] Error extrayendo noticeUID: {e}")
 
-    # Fallback: URL de la lista filtrada por código (funcional pero menos directa)
+    # Fallback: URL de la lista filtrada (menos directa pero funcional)
     return url_busqueda
 
 
