@@ -1810,7 +1810,7 @@ def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
 
 
 @app.get("/api/admin/debug-precio-articulo")
-def debug_precio_articulo(notice_uid: str = "DO1.NTC.1681956"):
+def debug_precio_articulo(notice_uid: str = "DO1.NTC.1679301"):
     """Ver HTML exacto de las celdas de precio de un artículo"""
     import requests as _req
     from bs4 import BeautifulSoup as _BS
