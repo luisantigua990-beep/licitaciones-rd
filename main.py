@@ -1811,34 +1811,56 @@ def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
 
 @app.get("/api/admin/debug-precio-articulo")
 def debug_precio_articulo(notice_uid: str = "DO1.NTC.1679301"):
-    """Ver HTML exacto de las celdas de precio de un artículo"""
+    """Ver HTML exacto de las celdas de precio — usa mismos headers que scraper_articulos_portal"""
     import requests as _req
     from bs4 import BeautifulSoup as _BS
 
+    PORTAL_BASE = "https://comunidad.comprasdominicana.gob.do"
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "es-ES,es;q=0.9",
+        "Referer": f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index",
+    }
+
     session = _req.Session()
     session.verify = False
-    session.get(
-        "https://comunidad.comprasdominicana.gob.do/Public/Tendering/ContractNoticeManagement/Index",
-        headers={"User-Agent": "Mozilla/5.0"}, timeout=15
-    )
-    url = f"https://comunidad.comprasdominicana.gob.do/Public/Tendering/OpportunityDetail/Index?noticeUID={notice_uid}&isModal=true&asPopupView=true"
-    resp = session.get(url, headers={"User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest"}, timeout=20)
+    # Obtener cookie de sesión igual que el scraper
+    try:
+        session.get(f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index",
+                    headers=HEADERS, timeout=15)
+    except Exception:
+        pass
+
+    url = f"{PORTAL_BASE}/Public/Tendering/OpportunityDetail/Index?noticeUID={notice_uid}&isModal=true&asPopupView=true"
+    resp = session.get(url, headers=HEADERS, timeout=25)
     soup = _BS(resp.text, "html.parser")
 
     filas = soup.find_all("tr", class_=lambda x: x and "PriceListLine" in " ".join(x) and "Item" in " ".join(x))
     if not filas:
-        return {"error": "No filas PriceListLine Item", "html_size": len(resp.text), "muestra": resp.text[:2000]}
+        # Buscar cualquier tabla de artículos para diagnóstico
+        todas_trs = soup.find_all("tr")
+        clases_tr = list(set([" ".join(tr.get("class",[])) for tr in todas_trs if tr.get("class")]))[:30]
+        return {
+            "error": "No filas PriceListLine Item",
+            "html_size": len(resp.text),
+            "template": soup.find("meta", {"name":"TemplateName"}) and soup.find("meta", {"name":"TemplateName"}).get("content"),
+            "clases_tr_disponibles": clases_tr,
+            "cookies": list(session.cookies.keys()),
+            "muestra_html": resp.text[500:2500],
+        }
 
     fila = filas[0]
     line_row = fila.find("tr", class_=lambda x: x and "PriceListLineRow" in x)
-    tds_int = line_row.find_all("td") if line_row else fila.find_all("td")
+    tds = line_row.find_all("td") if line_row else fila.find_all("td")
 
     return {
+        "filas_encontradas": len(filas),
         "line_row_encontrado": line_row is not None,
-        "tds_count": len(tds_int),
-        "tds_clases": [" ".join(td.get("class", [])) for td in tds_int],
-        "tds_texto": [td.get_text(strip=True)[:80] for td in tds_int],
-        "fila_html_muestra": str(fila)[:3000],
+        "tds_count": len(tds),
+        "tds_clases": [" ".join(td.get("class", [])) for td in tds],
+        "tds_texto": [td.get_text(strip=True)[:80] for td in tds],
+        "fila_html": str(fila)[:4000],
     }
 
 
