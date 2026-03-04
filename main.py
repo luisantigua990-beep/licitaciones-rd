@@ -13,11 +13,6 @@ import urllib3
 import json
 import io
 from PyPDF2 import PdfReader
-try:
-    from docx import Document as DocxDocument
-    DOCX_AVAILABLE = True
-except ImportError:
-    DOCX_AVAILABLE = False
 from bs4 import BeautifulSoup
 import requests
 from datetime import datetime
@@ -341,22 +336,11 @@ def listar_clases(familia: str):
 def buscar_unspsc(q: str = ""):
     if not q or len(q) < 2:
         return []
-    q = q.strip()
-    es_codigo = q.isdigit()
-    if es_codigo:
-        # Búsqueda por prefijo numérico — campos en catalogo_unspsc: familia, clase, subclase
-        result = supabase.table("catalogo_unspsc")\
-            .select("familia, descripcion_familia")\
-            .or_(f"familia.like.{q}%,clase.like.{q}%,subclase.like.{q}%")\
-            .limit(50)\
-            .execute()
-    else:
-        # Búsqueda por texto en descripción y sinónimos
-        result = supabase.table("catalogo_unspsc")\
-            .select("familia, descripcion_familia")\
-            .or_(f"descripcion_familia.ilike.%{q}%,descripcion_subclase.ilike.%{q}%,sinonimos_subclase.ilike.%{q}%")\
-            .limit(50)\
-            .execute()
+    result = supabase.table("catalogo_unspsc")\
+        .select("familia, descripcion_familia")\
+        .or_(f"descripcion_familia.ilike.%{q}%,descripcion_subclase.ilike.%{q}%,sinonimos_subclase.ilike.%{q}%")\
+        .limit(50)\
+        .execute()
     seen = set()
     unique = []
     for r in (result.data or []):
@@ -1124,43 +1108,8 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         print(f"⚠️ Respuesta pequeña final: {repr(resp_pdf.content[:300])}")
         raise Exception(f"Respuesta demasiado pequeña ({len(resp_pdf.content)} bytes) tras seguir redirect")
 
-    doc_bytes = resp_pdf.content
-    content_type = resp_pdf.headers.get("Content-Type", "").lower()
-
-    # ── Detectar DOCX por magic bytes (PK) o por nombre del archivo ──
-    es_docx = (
-        doc_bytes[:4] == b"PK\x03\x04"  # ZIP signature (docx/xlsx/zip)
-        or ".docx" in enlace_pliego.lower()
-        or ".doc" in enlace_pliego.lower()
-        or "wordprocessingml" in content_type
-        or "openxmlformats" in content_type
-    )
-
-    if es_docx:
-        print(f"📝 DOCX detectado ({len(doc_bytes):,} bytes). Extrayendo texto con python-docx...")
-        if not DOCX_AVAILABLE:
-            raise Exception("python-docx no instalado — ejecuta: pip install python-docx")
-        try:
-            docx_file = io.BytesIO(doc_bytes)
-            doc = DocxDocument(docx_file)
-            parrafos = [p.text for p in doc.paragraphs if p.text.strip()]
-            # También extraer tablas
-            for tabla in doc.tables:
-                for fila in tabla.rows:
-                    fila_texto = " | ".join(c.text.strip() for c in fila.cells if c.text.strip())
-                    if fila_texto:
-                        parrafos.append(fila_texto)
-            texto_completo = "\n".join(parrafos)
-            print(f"📝 {len(texto_completo):,} caracteres extraídos del DOCX")
-            if len(texto_completo.strip()) < 100:
-                raise Exception("DOCX extraído con menos de 100 caracteres — posible archivo dañado")
-            return texto_completo
-        except Exception as e:
-            raise Exception(f"Error extrayendo DOCX: {e}")
-
-    # ── PDF normal ──
-    print(f"📄 PDF: {len(doc_bytes):,} bytes. Extrayendo texto...")
-    pdf_bytes = doc_bytes
+    print(f"📄 PDF: {len(resp_pdf.content):,} bytes. Extrayendo texto...")
+    pdf_bytes = resp_pdf.content
     pdf_file = io.BytesIO(pdf_bytes)
     lector_pdf = PdfReader(pdf_file)
 
@@ -1973,6 +1922,54 @@ def test_articulos_portal(notice_uid: str = None, codigo: str = None):
             "familias_unspsc": list(set(
                 a.get("familia_unspsc") for a in articulos if a.get("familia_unspsc")
             )),
+        }
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
+
+@app.get("/api/admin/html-lista-portal")
+def debug_html_lista_portal():
+    """
+    Descarga el HTML raw de la lista del portal y busca noticeUID.
+    Uso: GET /api/admin/html-lista-portal
+    """
+    import re as _re
+    import requests as _req
+
+    PORTAL_URL = (
+        "https://comunidad.comprasdominicana.gob.do/Public/Tendering/"
+        "ContractNoticeManagement/Index?currentLanguage=es&Country=DO&Theme=DGCP"
+    )
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    try:
+        resp = _req.get(PORTAL_URL, headers=HEADERS, timeout=20)
+        html = resp.text
+
+        # Buscar todos los noticeUID en el HTML
+        uids = _re.findall(r"noticeUID=(DO1\.NTC\.[\w\.]+)", html)
+        
+        # Buscar todos los href con OpportunityDetail
+        hrefs = _re.findall(r'href="([^"]*OpportunityDetail[^"]*)"', html)
+
+        # Buscar todos los href con NoticeReference  
+        refs = _re.findall(r'href="([^"]*NoticeReference=[^"]*)"', html)
+
+        # Zona donde aparece el primer proceso (tabla)
+        idx_do = html.find(">DO<")
+        zona_tabla = html[max(0,idx_do-100):idx_do+2000] if idx_do >= 0 else "NO SE ENCONTRO >DO<"
+
+        return {
+            "html_size": len(html),
+            "notice_uids_encontrados": list(set(uids))[:10],
+            "hrefs_opportunity_detail": hrefs[:5],
+            "hrefs_notice_reference": refs[:5],
+            "zona_primera_fila_DO": zona_tabla,
+            "html_inicio": html[:2000],
         }
     except Exception as e:
         import traceback
