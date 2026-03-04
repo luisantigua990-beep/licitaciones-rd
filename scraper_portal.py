@@ -386,7 +386,7 @@ def scraper_articulos_portal(codigo_proceso, url_portal=None):
     articulos = []
 
     # Cada artículo es un <tr> con clase "PriceListLine Item PriceListLine"
-    filas = soup.find_all("tr", class_=lambda c: c and "PriceListLine" in " ".join(c) and "Item" in " ".join(c))
+    filas = soup.find_all("tr", class_=lambda c: c and "PriceListLine" in c and "Item" in c)
 
     for fila in filas:
         try:
