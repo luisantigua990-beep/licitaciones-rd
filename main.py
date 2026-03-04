@@ -265,11 +265,67 @@ def detalle_proceso(codigo_proceso: str):
             .eq("codigo_proceso", codigo_proceso) \
             .execute()
         
+        # Traer análisis Gemini si existe
+        analisis_data = None
+        try:
+            analisis = supabase_admin.table("analisis_pliego")                 .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion")                 .eq("proceso_id", codigo_proceso)                 .execute()
+            if analisis.data:
+                analisis_data = analisis.data[0]
+        except Exception:
+            pass
+
         return {
             "proceso": proc.data[0],
-            "articulos": arts.data
+            "articulos": arts.data,
+            "analisis": analisis_data
         }
     
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+# ============================================
+# ENDPOINTS — CHECKLIST DE DOCUMENTOS
+# ============================================
+
+@app.get("/api/checklist/{codigo_proceso}")
+def get_checklist(codigo_proceso: str, user_id: str):
+    """Obtiene el estado del checklist de un usuario para un proceso."""
+    try:
+        result = supabase_admin.table("checklist_estado") \
+            .select("*") \
+            .eq("codigo_proceso", codigo_proceso) \
+            .eq("user_id", user_id) \
+            .execute()
+        items = {r["item_key"]: r["completado"] for r in (result.data or [])}
+        return {"items": items}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/checklist/{codigo_proceso}")
+async def save_checklist_item(codigo_proceso: str, request: Request):
+    """Guarda/actualiza el estado de un ítem del checklist."""
+    try:
+        body = await request.json()
+        user_id   = body.get("user_id")
+        item_key  = body.get("item_key")   # ej: "legal_0", "tecnica_2"
+        completado = body.get("completado", False)
+
+        if not user_id or not item_key:
+            raise HTTPException(status_code=400, detail="Falta user_id o item_key")
+
+        supabase_admin.table("checklist_estado").upsert({
+            "codigo_proceso": codigo_proceso,
+            "user_id": user_id,
+            "item_key": item_key,
+            "completado": completado,
+        }, on_conflict="codigo_proceso,user_id,item_key").execute()
+
+        return {"ok": True}
     except HTTPException:
         raise
     except Exception as e:
