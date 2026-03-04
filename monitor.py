@@ -528,6 +528,429 @@ def notificar_procesos_nuevos(procesos_nuevos):
 # FUNCIÓN PRINCIPAL
 # ============================================
 
+
+# ============================================
+# MONITOR DE ENMIENDAS
+# ============================================
+
+GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
+RESEND_API_KEY  = os.getenv("RESEND_API_KEY", "")
+SUPABASE_URL_ENV = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY", ""))
+APP_URL         = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+FROM_EMAIL      = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
+TEST_EMAIL      = os.getenv("RESEND_TEST_EMAIL", "")
+
+
+def _obtener_documentos_portal(noticeUID: str) -> list[dict]:
+    """
+    Scrape la página de documentos del proceso en el portal y devuelve
+    lista de {nombre, document_file_id} de todos los archivos visibles.
+    """
+    import re
+    from bs4 import BeautifulSoup
+
+    url = (
+        f"https://comunidad.comprasdominicana.gob.do/Public/Tendering/"
+        f"OpportunityDetail/Index?noticeUID={noticeUID}&isModal=true&asPopupView=true"
+    )
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+        "Accept-Language": "es-DO,es;q=0.9",
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=30)
+        if resp.status_code != 200:
+            return []
+        soup = BeautifulSoup(resp.text, "html.parser")
+        documentos = []
+        # Buscar links de descarga con documentFileId
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            m = re.search(r"documentFileId=(\d+)", href)
+            if m:
+                nombre = a.get_text(strip=True) or f"documento_{m.group(1)}"
+                documentos.append({
+                    "nombre": nombre,
+                    "document_file_id": m.group(1),
+                    "url": href if href.startswith("http") else
+                           f"https://comunidad.comprasdominicana.gob.do{href}"
+                })
+        return documentos
+    except Exception as e:
+        print(f"   ⚠️ Error scraping documentos {noticeUID}: {e}")
+        return []
+
+
+def _descargar_texto_enmienda(url_doc: str, nombre: str) -> str:
+    """Descarga un documento (PDF o DOCX) y extrae su texto."""
+    import io
+    try:
+        from PyPDF2 import PdfReader
+    except ImportError:
+        PdfReader = None
+    try:
+        from docx import Document as DocxDocument
+        DOCX_OK = True
+    except ImportError:
+        DOCX_OK = False
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "*/*",
+    }
+    try:
+        # El portal usa redirect JS igual que en el análisis principal
+        session = requests.Session()
+        resp = session.get(url_doc, headers=headers, timeout=60)
+        if len(resp.content) < 2000 and b"window.location.href" in resp.content:
+            import re
+            m = re.search('window.location.href\\s*=\\s*["\'](.*?)["\']', resp.text)
+            if m:
+                url_real = m.group(1)
+                if not url_real.startswith("http"):
+                    url_real = f"https://comunidad.comprasdominicana.gob.do{url_real}"
+                resp = session.get(url_real, headers=headers, timeout=60)
+
+        if resp.status_code != 200 or len(resp.content) < 200:
+            return ""
+
+        doc_bytes = resp.content
+        es_docx = (
+            doc_bytes[:4] == b"PK\x03\x04"
+            or nombre.lower().endswith(".docx")
+            or nombre.lower().endswith(".doc")
+        )
+
+        if es_docx and DOCX_OK:
+            doc = DocxDocument(io.BytesIO(doc_bytes))
+            parrafos = [p.text for p in doc.paragraphs if p.text.strip()]
+            for tabla in doc.tables:
+                for fila in tabla.rows:
+                    ft = " | ".join(c.text.strip() for c in fila.cells if c.text.strip())
+                    if ft:
+                        parrafos.append(ft)
+            return "\n".join(parrafos)[:8000]
+
+        if PdfReader:
+            lector = PdfReader(io.BytesIO(doc_bytes))
+            texto = ""
+            for i in range(min(len(lector.pages), 20)):
+                t = lector.pages[i].extract_text()
+                if t:
+                    texto += t + "\n"
+            return texto[:8000]
+
+    except Exception as e:
+        print(f"   ⚠️ Error descargando enmienda {nombre}: {e}")
+    return ""
+
+
+def _analizar_enmienda_gemini(proceso_titulo: str, texto_enmienda: str, nombre_doc: str) -> str:
+    """Usa Gemini para resumir qué cambió en la enmienda."""
+    if not GEMINI_API_KEY or not texto_enmienda.strip():
+        return "No se pudo analizar el contenido de la enmienda."
+    try:
+        from google import genai
+        cliente = genai.Client(api_key=GEMINI_API_KEY)
+        prompt = f"""Eres un experto en licitaciones públicas dominicanas.
+Se publicó una ENMIENDA/ADENDA al proceso: "{proceso_titulo}"
+Documento: {nombre_doc}
+
+Contenido de la enmienda:
+{texto_enmienda[:6000]}
+
+Analiza y responde en español con este formato exacto:
+
+RESUMEN: [Una oración resumiendo el cambio principal]
+
+CAMBIOS CLAVE:
+- [cambio 1]
+- [cambio 2]
+- [cambio 3 si aplica]
+
+IMPACTO: [Alto/Medio/Bajo] — [Explicación breve de cómo afecta a los ofertantes]
+
+ACCIÓN REQUERIDA: [Qué debe hacer el ofertante con esta información]
+"""
+        resp = cliente.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
+        return resp.text.strip()
+    except Exception as e:
+        return f"Error en análisis Gemini: {e}"
+
+
+def _obtener_emails_seguidores(proceso_codigo: str) -> list[tuple[str, str]]:
+    """Retorna lista de (email, nombre) de usuarios que siguen el proceso en estado activo."""
+    estados_activos = ["analizando", "preparando", "presentado"]
+    try:
+        seg = supabase.table("seguimiento_procesos")             .select("user_id")             .eq("proceso_codigo", proceso_codigo)             .in_("estado", estados_activos)             .execute()
+        if not seg.data:
+            return []
+
+        user_ids = list(set(s["user_id"] for s in seg.data))
+        resultado = []
+        for uid in user_ids:
+            try:
+                resp_auth = requests.get(
+                    f"{SUPABASE_URL_ENV}/auth/v1/admin/users/{uid}",
+                    headers={
+                        "apikey": SUPABASE_SERVICE_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    },
+                    timeout=10,
+                )
+                if resp_auth.status_code == 200:
+                    user_data = resp_auth.json()
+                    email = user_data.get("email")
+                    meta  = user_data.get("user_metadata") or {}
+                    nombre = (meta.get("nombre") or meta.get("full_name") or
+                              meta.get("name") or (email.split("@")[0] if email else "Usuario"))
+                    if email:
+                        resultado.append((email, nombre))
+            except Exception as e:
+                print(f"   ⚠️ No se pudo obtener email de user {uid}: {e}")
+
+        if TEST_EMAIL:
+            return [(TEST_EMAIL, "Usuario de prueba")]
+        return resultado
+    except Exception as e:
+        print(f"   ⚠️ Error obteniendo seguidores de {proceso_codigo}: {e}")
+        return []
+
+
+def _enviar_notificacion_push_enmienda(proceso_codigo: str, proceso_titulo: str, url_proceso: str):
+    """Envía push notification a usuarios que siguen el proceso."""
+    try:
+        from notifications import enviar_notificacion
+        seg = supabase.table("seguimiento_procesos")             .select("user_id")             .eq("proceso_codigo", proceso_codigo)             .in_("estado", ["analizando", "preparando", "presentado"])             .execute()
+        if not seg.data:
+            return
+        user_ids = list(set(s["user_id"] for s in seg.data))
+
+        subs = supabase.table("user_subscriptions")             .select("*")             .in_("user_id", user_ids)             .eq("active", True)             .execute()
+
+        for sub in (subs.data or []):
+            subscription_info = {
+                "endpoint": sub["endpoint"],
+                "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}
+            }
+            enviar_notificacion(
+                subscription_info,
+                titulo=f"⚠️ Enmienda publicada — {proceso_codigo}",
+                cuerpo=proceso_titulo[:80],
+                url=url_proceso
+            )
+        print(f"   🔔 Push enviado a {len(subs.data or [])} suscriptores")
+    except Exception as e:
+        print(f"   ⚠️ Error enviando push enmienda: {e}")
+
+
+def _enviar_email_enmienda(proceso_codigo: str, proceso_titulo: str,
+                            nombre_doc: str, resumen_gemini: str,
+                            url_proceso: str, emails: list[tuple[str, str]]):
+    """Envía email con el resumen de la enmienda analizado por Gemini."""
+    if not RESEND_API_KEY or not emails:
+        return
+
+    # Convertir texto Gemini a HTML legible
+    html_resumen = ""
+    for linea in resumen_gemini.split("\n"):
+        linea = linea.strip()
+        if not linea:
+            continue
+        if linea.startswith("RESUMEN:"):
+            html_resumen += f"<p style=\'font-size:15px;color:#1e3a5f;font-weight:bold;margin:0 0 12px;\'>{linea}</p>"
+        elif linea.startswith("CAMBIOS CLAVE:"):
+            html_resumen += "<p style=\'font-size:13px;font-weight:bold;color:#374151;margin:16px 0 6px;\'>📋 Cambios clave:</p><ul style=\'margin:0;padding-left:20px;\'>"
+        elif linea.startswith("IMPACTO:"):
+            html_resumen += f"</ul><p style=\'font-size:13px;color:#374151;margin:12px 0;\'>⚡ <strong>{linea}</strong></p>"
+        elif linea.startswith("ACCIÓN REQUERIDA:"):
+            html_resumen += f"<p style=\'font-size:13px;color:#dc2626;font-weight:bold;margin:12px 0;\'>🎯 {linea}</p>"
+        elif linea.startswith("- "):
+            html_resumen += f"<li style=\'font-size:13px;color:#374151;margin:4px 0;\'>{linea[2:]}</li>"
+        else:
+            html_resumen += f"<p style=\'font-size:13px;color:#374151;margin:6px 0;\'>{linea}</p>"
+
+    html_body = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:\'Plus Jakarta Sans\',Arial,sans-serif;">
+<div style="max-width:600px;margin:24px auto;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+  <div style="background:linear-gradient(135deg,#d97706,#b45309);padding:28px 32px;">
+    <p style="margin:0 0 4px;font-size:12px;color:rgba(255,255,255,0.8);letter-spacing:1px;">ENMIENDA DETECTADA</p>
+    <h1 style="margin:0;font-size:20px;color:white;">⚠️ {proceso_codigo}</h1>
+    <p style="margin:8px 0 0;font-size:14px;color:rgba(255,255,255,0.9);">{proceso_titulo[:90]}</p>
+  </div>
+  <div style="padding:24px 32px;">
+    <div style="background:#fffbeb;border:1px solid #fbbf24;border-radius:8px;padding:14px 18px;margin-bottom:20px;">
+      <p style="margin:0;font-size:13px;color:#92400e;">📄 Documento: <strong>{nombre_doc}</strong></p>
+    </div>
+    <h3 style="margin:0 0 14px;font-size:15px;color:#1e3a5f;">🤖 Análisis de la enmienda</h3>
+    <div style="background:#f8fafc;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+      {html_resumen}
+    </div>
+    <div style="text-align:center;margin-top:24px;">
+      <a href="{url_proceso}" style="background:#1e3a5f;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:bold;">Ver proceso completo →</a>
+    </div>
+  </div>
+  <div style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e5e7eb;">
+    <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">LicitacionLab — Monitoreo automático de enmiendas</p>
+  </div>
+</div>
+</body></html>"""
+
+    for email, nombre in emails:
+        payload = {
+            "from": FROM_EMAIL,
+            "to": [email],
+            "subject": f"⚠️ Enmienda en {proceso_codigo} — acción requerida",
+            "html": html_body.replace("{{nombre}}", nombre),
+        }
+        try:
+            resp = requests.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {RESEND_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=15,
+            )
+            if resp.status_code in (200, 201):
+                print(f"   📧 Email enmienda enviado a {email}")
+            else:
+                print(f"   ⚠️ Error email enmienda a {email}: {resp.status_code}")
+        except Exception as e:
+            print(f"   ⚠️ Error enviando email enmienda: {e}")
+
+
+def monitorear_enmiendas():
+    """
+    Verifica si los procesos en estado 'preparando' o posterior tienen
+    documentos nuevos (enmiendas/adendas) desde la última verificación.
+    Corre 2 veces al día desde ejecutar_monitor().
+    """
+    import time as _time
+    t0 = _time.time()
+    print(f"\n📋 Monitor de enmiendas | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    estados_activos = ["preparando", "presentado", "adjudicado"]
+
+    try:
+        # 1. Obtener procesos que alguien está siguiendo activamente
+        seg = supabase.table("seguimiento_procesos")             .select("proceso_codigo")             .in_("estado", estados_activos)             .execute()
+
+        if not seg.data:
+            print("   ℹ️ Sin procesos activos en seguimiento")
+            registrar_cron_log("monitor_enmiendas", "ok",
+                {"nota": "sin procesos activos"}, int((_time.time()-t0)*1000))
+            return
+
+        codigos = list(set(s["proceso_codigo"] for s in seg.data))
+        print(f"   📂 {len(codigos)} procesos en seguimiento activo")
+
+        # 2. Obtener datos de esos procesos (necesitamos noticeUID y título)
+        procesos_data = supabase.table("procesos")             .select("codigo_proceso, titulo, url, unidad_compra")             .in_("codigo_proceso", codigos)             .execute().data or []
+
+        enmiendas_detectadas = 0
+
+        for proc in procesos_data:
+            codigo    = proc["codigo_proceso"]
+            titulo    = proc.get("titulo", codigo)
+            url_proc  = proc.get("url", "")
+
+            # Extraer noticeUID de la URL
+            import re
+            m = re.search(r"noticeUID=(DO1\.NTC\.[\w\.]+)", url_proc or "")
+            if not m:
+                print(f"   ⚠️ [{codigo}] Sin noticeUID — omitiendo")
+                continue
+            notice_uid = m.group(1)
+
+            # 3. Obtener documentos actuales del portal
+            docs_actuales = _obtener_documentos_portal(notice_uid)
+            if not docs_actuales:
+                continue
+
+            ids_actuales = {d["document_file_id"] for d in docs_actuales}
+
+            # 4. Comparar con los IDs ya conocidos en Supabase
+            registro = supabase.table("enmiendas_proceso")                 .select("document_file_ids_conocidos")                 .eq("codigo_proceso", codigo)                 .execute()
+
+            if not registro.data:
+                # Primera vez — guardar los IDs actuales como baseline, sin notificar
+                supabase.table("enmiendas_proceso").insert({
+                    "codigo_proceso": codigo,
+                    "document_file_ids_conocidos": list(ids_actuales),
+                    "ultima_verificacion": datetime.utcnow().isoformat(),
+                }).execute()
+                print(f"   📌 [{codigo}] Baseline creado ({len(ids_actuales)} docs)")
+                continue
+
+            ids_conocidos = set(registro.data[0]["document_file_ids_conocidos"])
+            ids_nuevos    = ids_actuales - ids_conocidos
+
+            if not ids_nuevos:
+                # Actualizar timestamp de verificación
+                supabase.table("enmiendas_proceso")                     .update({"ultima_verificacion": datetime.utcnow().isoformat()})                     .eq("codigo_proceso", codigo)                     .execute()
+                continue
+
+            # 5. Hay documentos nuevos — son enmiendas
+            docs_nuevos = [d for d in docs_actuales if d["document_file_id"] in ids_nuevos]
+            print(f"   🚨 [{codigo}] {len(docs_nuevos)} enmienda(s) detectada(s):")
+
+            emails_seguidores = _obtener_emails_seguidores(codigo)
+            url_proceso = url_proc or f"{APP_URL}/#proceso-{codigo}"
+
+            for doc in docs_nuevos:
+                nombre_doc = doc["nombre"]
+                url_doc    = doc["url"]
+                print(f"      📄 {nombre_doc}")
+
+                # 6. Descargar y analizar con Gemini
+                texto = _descargar_texto_enmienda(url_doc, nombre_doc)
+                resumen_gemini = _analizar_enmienda_gemini(titulo, texto, nombre_doc)
+
+                # 7. Guardar enmienda en Supabase
+                supabase.table("enmiendas_proceso").upsert({
+                    "codigo_proceso": codigo,
+                    "document_file_ids_conocidos": list(ids_actuales),
+                    "ultima_verificacion": datetime.utcnow().isoformat(),
+                }).execute()
+
+                supabase.table("enmiendas_detectadas").insert({
+                    "codigo_proceso": codigo,
+                    "nombre_documento": nombre_doc,
+                    "document_file_id": doc["document_file_id"],
+                    "url_documento": url_doc,
+                    "resumen_gemini": resumen_gemini,
+                    "fecha_deteccion": datetime.utcnow().isoformat(),
+                }).execute()
+
+                # 8. Push notification
+                _enviar_notificacion_push_enmienda(codigo, titulo, url_proceso)
+
+                # 9. Email con análisis
+                _enviar_email_enmienda(codigo, titulo, nombre_doc,
+                                       resumen_gemini, url_proceso, emails_seguidores)
+
+                enmiendas_detectadas += 1
+
+        registrar_cron_log("monitor_enmiendas", "ok", {
+            "procesos_verificados": len(procesos_data),
+            "enmiendas_detectadas": enmiendas_detectadas,
+        }, int((_time.time()-t0)*1000))
+        print(f"   ✅ Monitor enmiendas completado — {enmiendas_detectadas} enmienda(s) procesada(s)\n")
+
+    except Exception as e:
+        registrar_cron_log("monitor_enmiendas", "error", {"error": str(e)},
+                           int((_time.time()-t0)*1000))
+        print(f"   ❌ Error en monitor de enmiendas: {e}")
+
+
 def ejecutar_monitor():
     import time as _time
     t0 = _time.time()
@@ -558,6 +981,11 @@ def ejecutar_monitor():
                 print(f"   ... y {len(nuevos) - 5} más")
 
         enriquecer_articulos_faltantes()
+
+        # ── Monitor de enmiendas 2x/día (07-09h y 18-20h) ──
+        hora_actual = datetime.now().hour
+        if (7 <= hora_actual <= 9) or (18 <= hora_actual <= 20):
+            monitorear_enmiendas()
 
         registrar_sync_exitosa(
             procesos_encontrados=len(procesos),
