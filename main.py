@@ -1762,11 +1762,11 @@ def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
 
 
 @app.get("/api/admin/html-articulos")
-def debug_html_articulos(codigo: str):
+def debug_html_articulos(codigo: str = None, notice_uid: str = None):
     """
-    Endpoint de diagnóstico: obtiene el noticeUID y devuelve el HTML de la
-    página de detalle del proceso para analizar la estructura de la tabla de artículos.
-    Uso: GET /api/admin/html-articulos?codigo=DIE-CCC-SO-2026-0004
+    Endpoint de diagnóstico para analizar estructura HTML de artículos del portal DGCP.
+    Uso: GET /api/admin/html-articulos?notice_uid=DO1.NTC.1681956
+      o: GET /api/admin/html-articulos?codigo=DIE-CCC-SO-2026-0004
     """
     import re as _re
     import requests as _req
@@ -1776,128 +1776,75 @@ def debug_html_articulos(codigo: str):
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "es-ES,es;q=0.9",
+        "Referer": f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index",
     }
 
+    resultado = {"pasos": []}
     session = _req.Session()
     session.verify = False
 
-    resultado = {"codigo": codigo, "pasos": []}
+    # Obtener notice_uid — directo o desde Supabase
+    if not notice_uid and codigo:
+        try:
+            proc = supabase.table("procesos").select("url").eq("codigo_proceso", codigo).execute()
+            url_db = proc.data[0].get("url", "") if proc.data else ""
+            m = _re.search(r"noticeUID=(DO1\.NTC\.[\w\.]+)", url_db)
+            if m:
+                notice_uid = m.group(1)
+                resultado["pasos"].append(f"✅ noticeUID desde Supabase: {notice_uid}")
+            else:
+                resultado["url_en_supabase"] = url_db
+                resultado["error"] = "No hay noticeUID en la URL guardada en Supabase"
+                return resultado
+        except Exception as e:
+            return {"error": str(e)}
 
-    # Paso 1: sesión
+    if not notice_uid:
+        return {"error": "Pasa ?notice_uid=DO1.NTC.XXXXX o ?codigo=CODIGO"}
+
+    resultado["notice_uid"] = notice_uid
+
+    # Establecer sesión
     try:
         session.get(f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index",
                     headers=HEADERS, timeout=15)
         resultado["cookies"] = [c.name for c in session.cookies]
     except Exception as e:
-        resultado["error_sesion"] = str(e)
-        return resultado
+        resultado["warn_sesion"] = str(e)
 
-    # Paso 2: obtener noticeUID — intentar varias estrategias
-    url_busqueda = (f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index"
-                    f"?currentLanguage=es&Country=DO&Theme=DGCP&NoticeReference={codigo}")
-    notice_uid = None
-    try:
-        # Estrategia A: GET directo
-        resp = session.get(url_busqueda, headers=HEADERS, timeout=15)
-        html_lista = resp.text
-        match = _re.search(
-            r"/Public/Tendering/OpportunityDetail/Index\?noticeUID=(DO1\.NTC\.[\w\.]+)",
-            html_lista
-        )
-        if match:
-            notice_uid = match.group(1)
-            resultado["pasos"].append(f"✅ noticeUID via GET: {notice_uid}")
+    # Intentar cargar detalle con variantes de URL
+    url_base = f"{PORTAL_BASE}/Public/Tendering/OpportunityDetail/Index?noticeUID={notice_uid}"
+    urls = [
+        url_base + "&isModal=true&asPopupView=true",
+        url_base + "&asPopupView=true",
+        url_base,
+    ]
 
-        # Estrategia B: POST con ViewState (ASP.NET)
-        if not notice_uid:
-            viewstate = _re.search(r'id="__VIEWSTATE"\s+value="([^"]+)"', html_lista)
-            eventvalidation = _re.search(r'id="__EVENTVALIDATION"\s+value="([^"]+)"', html_lista)
-            resultado["pasos"].append(f"ViewState: {'✅' if viewstate else '❌'} | EventValidation: {'✅' if eventvalidation else '❌'}")
-
-            post_data = {
-                "__VIEWSTATE": viewstate.group(1) if viewstate else "",
-                "__EVENTVALIDATION": eventvalidation.group(1) if eventvalidation else "",
-                "ctl00$content$txtSearch": codigo,
-                "ctl00$content$btnSearch": "Buscar",
-            }
-            resp_post = session.post(url_busqueda, data=post_data, headers={
-                **HEADERS,
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Referer": url_busqueda,
-            }, timeout=15)
-            html_post = resp_post.text
-            match2 = _re.search(
-                r"/Public/Tendering/OpportunityDetail/Index\?noticeUID=(DO1\.NTC\.[\w\.]+)",
-                html_post
-            )
-            if match2:
-                notice_uid = match2.group(1)
-                resultado["pasos"].append(f"✅ noticeUID via POST: {notice_uid}")
-            else:
-                resultado["html_post_muestra"] = html_post[:3000]
-                resultado["pasos"].append("❌ noticeUID no encontrado via POST")
-
-        # Estrategia C: URL directa construida (el portal acepta NoticeReference en la URL de detalle)
-        if not notice_uid:
-            # Intentar cargar directamente por referencia sin noticeUID
-            url_ref_directa = (f"{PORTAL_BASE}/Public/Tendering/OpportunityDetail/Index"
-                               f"?currentLanguage=es&Country=DO&Theme=DGCP&NoticeReference={codigo}")
-            resp_ref = session.get(url_ref_directa, headers=HEADERS, timeout=15)
-            html_ref = resp_ref.text
-            match3 = _re.search(
-                r"noticeUID=(DO1\.NTC\.[\w\.]+)",
-                html_ref
-            )
-            if match3:
-                notice_uid = match3.group(1)
-                resultado["pasos"].append(f"✅ noticeUID via URL directa: {notice_uid}")
-            else:
-                resultado["html_ref_muestra"] = html_ref[:2000]
-                resultado["pasos"].append("❌ noticeUID no encontrado via URL directa")
-
-        if not notice_uid:
-            resultado["error"] = "noticeUID no encontrado con ninguna estrategia"
-            resultado["html_lista_muestra"] = html_lista[:2000]
-            return resultado
-
-        resultado["notice_uid"] = notice_uid
-
-    except Exception as e:
-        resultado["error_busqueda"] = str(e)
-        return resultado
-
-    # Paso 3: cargar detalle del proceso (modal/popup)
-    url_detalle = f"{PORTAL_BASE}/Public/Tendering/OpportunityDetail/Index?noticeUID={notice_uid}"
-    for sufijo in ["&isModal=true&asPopupView=true", "&asPopupView=true", ""]:
+    for url_intento in urls:
         try:
-            url_intento = url_detalle + sufijo
-            resp2 = session.get(url_intento, headers={**HEADERS,
-                "Referer": url_busqueda,
-                "X-Requested-With": "XMLHttpRequest"
-            }, timeout=20)
-            html_detalle = resp2.text
-            resultado["pasos"].append(f"✅ Detalle cargado ({len(html_detalle)} chars) - {url_intento[-40:]}")
+            resp = session.get(url_intento, headers=HEADERS, timeout=20)
+            html = resp.text
+            resultado["pasos"].append(f"✅ HTTP {resp.status_code} — {len(html)} chars — {url_intento[-50:]}")
 
-            # Buscar keywords de artículos
-            keywords = ["UNSPSC", "unspsc", "Articulo", "articulo", "Lote", "lote",
-                        "Cuestionario", "familia", "clase", "subclase", "Cantidad", "Precio"]
-            encontradas = {k: k in html_detalle for k in keywords}
-            resultado["keywords_articulos"] = encontradas
+            # Keywords de artículos
+            kws = ["UNSPSC", "unspsc", "Cuestionario", "Lote", "Cantidad",
+                   "Precio", "grdGrid", "GridView", "tblContainer", "Articulo"]
+            resultado["keywords"] = {k: (k in html) for k in kws}
 
-            # Zona donde aparecen los artículos
-            for kw in ["UNSPSC", "Cuestionario", "Lote"]:
-                idx = html_detalle.find(kw)
+            # Zona de artículos — buscar la tabla
+            for kw in ["UNSPSC", "Cuestionario", "grdGrid", "tblContainer"]:
+                idx = html.find(kw)
                 if idx >= 0:
-                    resultado[f"zona_{kw}"] = html_detalle[max(0, idx-200):idx+2000]
+                    resultado[f"zona_{kw}"] = html[max(0, idx-200):idx+4000]
+                    resultado["pasos"].append(f"✅ '{kw}' encontrado en pos {idx}")
                     break
 
-            # HTML completo (primeros 15000 chars para no saturar)
-            resultado["html_detalle_inicio"] = html_detalle[:5000]
-            resultado["html_detalle_final"] = html_detalle[-3000:]
-            resultado["url_usada"] = url_intento
+            resultado["html_inicio"] = html[:4000]
+            resultado["html_final"] = html[-1000:]
+            resultado["url_exitosa"] = url_intento
             break
         except Exception as e:
-            resultado["pasos"].append(f"❌ Error con {sufijo}: {e}")
+            resultado["pasos"].append(f"❌ {url_intento[-40:]}: {e}")
 
     return resultado
 
