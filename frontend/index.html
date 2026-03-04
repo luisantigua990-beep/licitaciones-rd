@@ -1474,38 +1474,6 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-
-/* ── PULL TO REFRESH ── */
-#ptr-indicator {
-  position: fixed;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%) translateY(-60px);
-  background: var(--gold);
-  color: #000;
-  border-radius: 0 0 20px 20px;
-  padding: 8px 20px;
-  font-size: 13px;
-  font-weight: 600;
-  z-index: 9999;
-  transition: transform 0.25s ease;
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
-#ptr-indicator.visible {
-  transform: translateX(-50%) translateY(0px);
-}
-#ptr-indicator .ptr-spinner {
-  width: 14px; height: 14px;
-  border: 2px solid rgba(0,0,0,0.3);
-  border-top-color: #000;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
 </style>
 </head>
 <body>
@@ -2283,56 +2251,17 @@ function urlBase64ToUint8Array(b64) {
   return new Uint8Array([...raw].map(c=>c.charCodeAt(0)));
 }
 
-// ── SWIPE PARA VOLVER + PULL TO REFRESH ──
-let touchStartX = 0, touchStartY = 0, touchStartScrollY = 0;
-let ptrActive = false, ptrLoading = false;
-const ptrIndicator = document.getElementById('ptr-indicator');
-const ptrLabel = document.getElementById('ptr-label');
-
+// ── SWIPE PARA VOLVER ──
+let touchStartX = 0, touchStartY = 0;
 document.addEventListener('touchstart', e=>{
   touchStartX = e.touches[0].clientX;
   touchStartY = e.touches[0].clientY;
-  touchStartScrollY = window.scrollY;
 }, {passive:true});
-
-document.addEventListener('touchmove', e=>{
-  if (ptrLoading) return;
-  const dy = e.touches[0].clientY - touchStartY;
-  const dx = Math.abs(e.touches[0].clientX - touchStartX);
-  const dashVisible = document.getElementById('tab-dashboard').style.display !== 'none';
-  // Solo activar si: en dashboard, bajando >60px, scroll al tope, más vertical que horizontal
-  if (dashVisible && dy > 60 && touchStartScrollY === 0 && dy > dx) {
-    ptrActive = true;
-    ptrLabel.textContent = dy > 100 ? 'Suelta para actualizar' : 'Baja para actualizar';
-    ptrIndicator.querySelector('span').textContent = dy > 100 ? '✓' : '↓';
-    ptrIndicator.classList.add('visible');
-  }
-}, {passive:true});
-
 document.addEventListener('touchend', e=>{
   const dx = e.changedTouches[0].clientX - touchStartX;
-  const dy = e.changedTouches[0].clientY - touchStartY;
+  const dy = Math.abs(e.changedTouches[0].clientY - touchStartY);
   const detalleVisible = document.getElementById('tab-detalle').style.display !== 'none';
-
-  // Swipe horizontal para volver
-  if (detalleVisible && dx > 80 && Math.abs(dy) < 60) mostrarDashboard();
-
-  // Pull to refresh
-  if (ptrActive && dy > 100 && !ptrLoading) {
-    ptrLoading = true;
-    ptrLabel.textContent = 'Actualizando...';
-    ptrIndicator.querySelector('span').innerHTML = '<span class="ptr-spinner"></span>';
-    cargarProcesos(1).finally(() => {
-      setTimeout(() => {
-        ptrIndicator.classList.remove('visible');
-        ptrActive = false;
-        ptrLoading = false;
-      }, 600);
-    });
-  } else {
-    ptrIndicator.classList.remove('visible');
-    ptrActive = false;
-  }
+  if (detalleVisible && dx > 80 && dy < 60) mostrarDashboard();
 }, {passive:true});
 
 // ── CERRAR DROPDOWNS AL TOCAR FUERA ──
@@ -2690,7 +2619,7 @@ function mapaRenderProjects(list) {
       else if (days <= 7) deadStr = `Cierre en <span class="urg">${days}d</span>`;
       else deadStr = `Cierre en ${days}d`;
     }
-    return `<div class="mproj-card" onclick="verDetalle('${p.codigo_proceso}');switchTab2('dashboard')">
+    return `<div class="mproj-card" onclick="verDetalle('${p.codigo_proceso}')">
       <div class="mproj-inst">${p.unidad_compra||'—'}</div>
       <div class="mproj-name">${(p.titulo||'').slice(0,100)}${(p.titulo||'').length>100?'…':''}</div>
       <div class="mproj-meta">
@@ -2936,7 +2865,7 @@ function renderSegCard(item) {
         <span class="seg-estado-pill ${eCfg.cls}">${eCfg.icon} ${eCfg.label}</span>
         <div class="seg-dias-badge ${dias.cls}">📅 ${dias.texto}</div>
       </div>
-      <div class="seg-card-titulo" onclick="verDetalle('${codigo}');switchTab2('dashboard')">${p.titulo || 'Sin título'}</div>
+      <div class="seg-card-titulo" onclick="verDetalle('${codigo}')">${p.titulo || 'Sin título'}</div>
       <div class="seg-card-meta">
         <span class="inst">${p.unidad_compra || '—'}</span>
         ${monto ? `<span>·</span><span class="monto">${monto}</span>` : ''}
@@ -2945,7 +2874,7 @@ function renderSegCard(item) {
         ${fechas.length ? fechas.map(f => renderFechaRow(f)).join('') : '<div class="seg-fecha-row"><span class="seg-fecha-label">Sin fechas registradas</span></div>'}
       </div>
       <div class="seg-card-actions">
-        <button class="seg-btn seg-btn-ver" onclick="verDetalle('${codigo}');switchTab2('dashboard')">Ver detalle</button>
+        <button class="seg-btn seg-btn-ver" onclick="verDetalle('${codigo}')">Ver detalle</button>
         <button class="seg-btn seg-btn-estado" onclick="abrirModalEstado('${codigo}','${estado}')">${eCfg.icon} Estado</button>
         <button class="seg-btn seg-btn-quitar" onclick="quitarSeguimiento('${codigo}')">✕</button>
       </div>
