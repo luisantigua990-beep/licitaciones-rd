@@ -1592,7 +1592,7 @@ body {
         <input class="filter-input" type="number" id="filtro-monto-max" placeholder="💰 Monto máx (RD$)" oninput="debounceSearch()">
       </div>
       <div class="filter-row" style="position:relative">
-        <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="🔎 Buscar familia UNSPSC o código..." oninput="buscarUnspsc()" autocomplete="off">
+        <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="🔎 Buscar por nombre o código (ej: 1512, lubricantes...)" oninput="buscarUnspsc()" autocomplete="off">
         <div class="unspsc-dropdown" id="unspsc-dropdown"></div>
       </div>
       <div class="unspsc-active-tag" id="unspsc-activo">
@@ -2017,10 +2017,13 @@ async function buscarUnspsc() {
   const res  = await fetch(`${API}/api/unspsc/buscar?q=${encodeURIComponent(q)}`);
   const data = await res.json();
   if (!data.length) { dd.style.display = 'none'; return; }
+  const esCodigo = /^\d+$/.test(q);
   dd.innerHTML = data.map(f =>
-    `<div class="unspsc-dropdown-item" onclick="seleccionarUnspsc('${f.familia}','${f.descripcion_familia.replace(/'/g,"\\'")}')">
-      ${f.descripcion_familia}<span class="code">${f.familia}</span>
-    </div>`).join('');
+    `<div class="unspsc-dropdown-item" onclick="seleccionarUnspsc('${f.familia}','${f.descripcion_familia.replace(/'/g,"\\'")}')">${
+      esCodigo
+        ? `<span class="code" style="margin-left:0;margin-right:6px">${f.familia}</span>${f.descripcion_familia}`
+        : `${f.descripcion_familia}<span class="code">${f.familia}</span>`
+    }</div>`).join('');
   dd.style.display = 'block';
 }
 
