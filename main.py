@@ -1792,24 +1792,76 @@ def debug_html_articulos(codigo: str):
         resultado["error_sesion"] = str(e)
         return resultado
 
-    # Paso 2: obtener noticeUID
+    # Paso 2: obtener noticeUID — intentar varias estrategias
     url_busqueda = (f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index"
                     f"?currentLanguage=es&Country=DO&Theme=DGCP&NoticeReference={codigo}")
+    notice_uid = None
     try:
+        # Estrategia A: GET directo
         resp = session.get(url_busqueda, headers=HEADERS, timeout=15)
         html_lista = resp.text
         match = _re.search(
             r"/Public/Tendering/OpportunityDetail/Index\?noticeUID=(DO1\.NTC\.[\w\.]+)",
             html_lista
         )
-        if not match:
-            resultado["error"] = "noticeUID no encontrado en HTML de lista"
-            resultado["html_lista_muestra"] = html_lista[:3000]
+        if match:
+            notice_uid = match.group(1)
+            resultado["pasos"].append(f"✅ noticeUID via GET: {notice_uid}")
+
+        # Estrategia B: POST con ViewState (ASP.NET)
+        if not notice_uid:
+            viewstate = _re.search(r'id="__VIEWSTATE"\s+value="([^"]+)"', html_lista)
+            eventvalidation = _re.search(r'id="__EVENTVALIDATION"\s+value="([^"]+)"', html_lista)
+            resultado["pasos"].append(f"ViewState: {'✅' if viewstate else '❌'} | EventValidation: {'✅' if eventvalidation else '❌'}")
+
+            post_data = {
+                "__VIEWSTATE": viewstate.group(1) if viewstate else "",
+                "__EVENTVALIDATION": eventvalidation.group(1) if eventvalidation else "",
+                "ctl00$content$txtSearch": codigo,
+                "ctl00$content$btnSearch": "Buscar",
+            }
+            resp_post = session.post(url_busqueda, data=post_data, headers={
+                **HEADERS,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": url_busqueda,
+            }, timeout=15)
+            html_post = resp_post.text
+            match2 = _re.search(
+                r"/Public/Tendering/OpportunityDetail/Index\?noticeUID=(DO1\.NTC\.[\w\.]+)",
+                html_post
+            )
+            if match2:
+                notice_uid = match2.group(1)
+                resultado["pasos"].append(f"✅ noticeUID via POST: {notice_uid}")
+            else:
+                resultado["html_post_muestra"] = html_post[:3000]
+                resultado["pasos"].append("❌ noticeUID no encontrado via POST")
+
+        # Estrategia C: URL directa construida (el portal acepta NoticeReference en la URL de detalle)
+        if not notice_uid:
+            # Intentar cargar directamente por referencia sin noticeUID
+            url_ref_directa = (f"{PORTAL_BASE}/Public/Tendering/OpportunityDetail/Index"
+                               f"?currentLanguage=es&Country=DO&Theme=DGCP&NoticeReference={codigo}")
+            resp_ref = session.get(url_ref_directa, headers=HEADERS, timeout=15)
+            html_ref = resp_ref.text
+            match3 = _re.search(
+                r"noticeUID=(DO1\.NTC\.[\w\.]+)",
+                html_ref
+            )
+            if match3:
+                notice_uid = match3.group(1)
+                resultado["pasos"].append(f"✅ noticeUID via URL directa: {notice_uid}")
+            else:
+                resultado["html_ref_muestra"] = html_ref[:2000]
+                resultado["pasos"].append("❌ noticeUID no encontrado via URL directa")
+
+        if not notice_uid:
+            resultado["error"] = "noticeUID no encontrado con ninguna estrategia"
+            resultado["html_lista_muestra"] = html_lista[:2000]
             return resultado
 
-        notice_uid = match.group(1)
         resultado["notice_uid"] = notice_uid
-        resultado["pasos"].append(f"✅ noticeUID encontrado: {notice_uid}")
+
     except Exception as e:
         resultado["error_busqueda"] = str(e)
         return resultado
