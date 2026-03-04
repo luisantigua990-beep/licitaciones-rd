@@ -336,11 +336,29 @@ def listar_clases(familia: str):
 def buscar_unspsc(q: str = ""):
     if not q or len(q) < 2:
         return []
-    result = supabase.table("catalogo_unspsc")\
-        .select("familia, descripcion_familia")\
-        .or_(f"descripcion_familia.ilike.%{q}%,descripcion_subclase.ilike.%{q}%,sinonimos_subclase.ilike.%{q}%")\
-        .limit(50)\
-        .execute()
+
+    q = q.strip()
+    es_codigo = q.isdigit()
+
+    if es_codigo:
+        # Búsqueda por prefijo numérico en familia, clase o subclase
+        result = supabase.table("catalogo_unspsc")\
+            .select("familia, descripcion_familia")\
+            .or_(
+                f"familia.like.{q}%,"
+                f"clase_unspsc.like.{q}%,"
+                f"subclase_unspsc.like.{q}%"
+            )\
+            .limit(50)\
+            .execute()
+    else:
+        # Búsqueda por texto en descripción y sinónimos
+        result = supabase.table("catalogo_unspsc")\
+            .select("familia, descripcion_familia")\
+            .or_(f"descripcion_familia.ilike.%{q}%,descripcion_subclase.ilike.%{q}%,sinonimos_subclase.ilike.%{q}%")\
+            .limit(50)\
+            .execute()
+
     seen = set()
     unique = []
     for r in (result.data or []):
