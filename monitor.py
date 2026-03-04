@@ -354,43 +354,113 @@ def procesar_articulos_de_nuevos(procesos_nuevos):
 
 def enriquecer_articulos_faltantes():
     """
-    Busca procesos que ya fueron enriquecidos por la API pero que aún no tienen artículos
-    (caso: el scraper los guardó, la API los actualizó pero los artículos aún no se buscaron).
+    VÍA 2 — Fallback de reconciliación (corre cada 8h junto al ETL de la DGCP).
+
+    Busca procesos del scraper que quedaron incompletos (sin artículos o sin noticeUID)
+    y los completa usando la API de Datos Abiertos, que a estas alturas ya fue actualizada.
+
+    También reconcilia procesos enriquecidos por la API que aún no tienen artículos.
     """
     try:
-        # Procesos enriquecidos por la API
-        enriquecidos = supabase.table("procesos") \
-            .select("codigo_proceso") \
-            .eq("enriquecido_api", True) \
-            .execute()
+        from datetime import timedelta
 
-        if not enriquecidos.data:
+        # ── A. Reconciliar procesos del scraper sin artículos (enriquecido_api=False) ──
+        limite_fecha = (datetime.now() - timedelta(hours=9)).isoformat()  # publicados hace >9h
+        scraper_sin_arts = supabase.table("procesos")             .select("codigo_proceso, url, titulo")             .eq("enriquecido_api", False)             .lt("fecha_publicacion", limite_fecha)             .execute().data or []
+
+        if scraper_sin_arts:
+            codigos_scraper = [p["codigo_proceso"] for p in scraper_sin_arts]
+            # Filtrar los que realmente no tienen artículos
+            con_arts = set()
+            for i in range(0, len(codigos_scraper), 50):
+                r = supabase.table("articulos_proceso").select("codigo_proceso")                     .in_("codigo_proceso", codigos_scraper[i:i+50]).execute()
+                con_arts.update(x["codigo_proceso"] for x in r.data)
+
+            incompletos = [p for p in scraper_sin_arts if p["codigo_proceso"] not in con_arts]
+
+            if incompletos:
+                print(f"🔄 VÍA 2: {len(incompletos)} procesos del scraper incompletos — reconciliando con API...")
+                total_rec = 0
+                for proc in incompletos[:50]:
+                    codigo = proc["codigo_proceso"]
+
+                    # Intentar obtener artículos de la API (ETL ya corrió)
+                    articulos = obtener_articulos_proceso(codigo)
+                    if articulos:
+                        guardados = guardar_articulos(codigo, articulos)
+                        total_rec += guardados
+
+                    # También reconciliar la URL con noticeUID si aún no la tiene
+                    url_actual = proc.get("url", "")
+                    if "noticeUID" not in url_actual:
+                        # Intentar obtener la URL con noticeUID desde la API de documentos
+                        try:
+                            resp = requests.get(
+                                f"{API_BASE_URL}/procesos/documentos",
+                                params={"proceso": codigo},
+                                timeout=10
+                            )
+                            docs_data = resp.json()
+                            docs = docs_data.get("payload", {})
+                            if isinstance(docs, dict):
+                                docs = docs.get("content", [])
+                            elif not isinstance(docs, list):
+                                docs = []
+
+                            for doc in docs:
+                                url_doc = doc.get("url_documento", "")
+                                if url_doc and "noticeUID" in url_doc:
+                                    # Extraer noticeUID de la URL del documento
+                                    import re as _re
+                                    m = _re.search(r"noticeUID=(DO1\.NTC\.[\w\.]+)", url_doc)
+                                    if m:
+                                        notice_uid = m.group(1)
+                                        url_detalle = (
+                                            f"https://comunidad.comprasdominicana.gob.do"
+                                            f"/Public/Tendering/OpportunityDetail/Index"
+                                            f"?noticeUID={notice_uid}"
+                                        )
+                                        supabase.table("procesos").update({"url": url_detalle})                                             .eq("codigo_proceso", codigo).execute()
+                                        print(f"   🔗 [{codigo}] URL reconciliada: noticeUID={notice_uid}")
+                                        break
+                        except Exception:
+                            pass
+
+                    # Marcar como enriquecido si ya tiene artículos
+                    if articulos:
+                        supabase.table("procesos").update({"enriquecido_api": True})                             .eq("codigo_proceso", codigo).execute()
+
+                    time.sleep(0.3)
+
+                print(f"✅ VÍA 2: {total_rec} artículos reconciliados para {len(incompletos)} procesos")
+
+        # ── B. Procesos ya marcados enriquecido_api=True pero sin artículos ──
+        enriquecidos = supabase.table("procesos")             .select("codigo_proceso")             .eq("enriquecido_api", True)             .execute().data or []
+
+        if not enriquecidos:
             return
 
-        codigos_enriquecidos = [r["codigo_proceso"] for r in enriquecidos.data]
+        codigos_enriquecidos = [r["codigo_proceso"] for r in enriquecidos]
+        con_articulos = set()
+        for i in range(0, len(codigos_enriquecidos), 50):
+            r = supabase.table("articulos_proceso").select("codigo_proceso")                 .in_("codigo_proceso", codigos_enriquecidos[i:i+50]).execute()
+            con_articulos.update(x["codigo_proceso"] for x in r.data)
 
-        # De esos, cuáles NO tienen artículos
-        con_articulos = supabase.table("articulos_proceso") \
-            .select("codigo_proceso") \
-            .in_("codigo_proceso", codigos_enriquecidos[:500]) \
-            .execute()
-
-        codigos_con_arts = set(r["codigo_proceso"] for r in con_articulos.data)
-        sin_articulos = [c for c in codigos_enriquecidos if c not in codigos_con_arts]
+        sin_articulos = [c for c in codigos_enriquecidos if c not in con_articulos]
 
         if not sin_articulos:
             return
 
-        print(f"🔎 {len(sin_articulos)} procesos sin artículos — obteniendo...")
+        print(f"🔎 {len(sin_articulos)} procesos enriquecidos sin artículos — completando...")
         total = 0
-        for codigo in sin_articulos[:50]:  # máx 50 por ciclo para no saturar
+        for codigo in sin_articulos[:50]:
             articulos = obtener_articulos_proceso(codigo)
             if articulos:
                 total += guardar_articulos(codigo, articulos)
             time.sleep(0.2)
 
         if total:
-            print(f"✅ {total} artículos nuevos obtenidos para procesos existentes")
+            print(f"✅ {total} artículos completados en procesos existentes")
 
     except Exception as e:
         print(f"⚠️  Error en enriquecer_articulos_faltantes: {e}")
