@@ -92,6 +92,26 @@ def raspar_portal():
         if not referencia or referencia == "Referencia":
             continue
 
+        # Extraer noticeUID directamente del link en esta fila de la tabla
+        # El HTML de la lista ya contiene el link OpportunityDetail con noticeUID
+        import re as _re
+        notice_uid = None
+        for a_tag in row.find_all("a", href=True):
+            m = _re.search(r"noticeUID=(DO1\.NTC\.[\w\.]+)", a_tag["href"])
+            if m:
+                notice_uid = m.group(1)
+                break
+
+        # Construir URL: con noticeUID si existe, fallback a lista filtrada
+        PORTAL_BASE = "https://comunidad.comprasdominicana.gob.do"
+        if notice_uid:
+            url_proceso = f"{PORTAL_BASE}/Public/Tendering/OpportunityDetail/Index?noticeUID={notice_uid}"
+        else:
+            url_proceso = (
+                f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index"
+                f"?currentLanguage=es&Country=DO&Theme=DGCP&NoticeReference={referencia}"
+            )
+
         # Parsear fecha de publicación (formato: DD/MM/YYYY HH:MM (UTC -4 horas))
         fecha_str = textos[5].replace("(UTC -4 horas)", "").strip()
         fecha_publicacion = None
@@ -125,12 +145,8 @@ def raspar_portal():
             "fecha_fin_recepcion_ofertas": fecha_cierre,
             "monto_estimado": monto,
             "estado_proceso": textos[8].strip(),
-            # URL directa al proceso en el portal
-            "url": (
-                f"https://comunidad.comprasdominicana.gob.do/Public/Tendering/"
-                f"ContractNoticeManagement/Index?currentLanguage=es&Country=DO"
-                f"&Theme=DGCP&NoticeReference={referencia}"
-            ),
+            "url": url_proceso,
+            "notice_uid": notice_uid,  # campo temporal para log
         })
 
     print(f"🌐 Portal: {len(procesos)} procesos encontrados")
@@ -917,21 +933,14 @@ def ejecutar_scraper_portal():
         if not guardado:
             continue  # Ya existía (race condition), saltar
 
-        # 2. Obtener URL directa con noticeUID desde el portal (1 request por proceso nuevo)
-        # Esto evita esperar el ciclo de 8h de la API para tener la URL de detalle.
-        url_portal_directa = extraer_notice_uid_del_portal(codigo)
-        if url_portal_directa:
-            proceso["url"] = url_portal_directa
-            # Actualizar la URL en Supabase con el noticeUID real
-            try:
-                supabase.table("procesos").update({"url": url_portal_directa}).eq("codigo_proceso", codigo).execute()
-            except Exception as e:
-                print(f"   ⚠️  Error actualizando URL en Supabase: {e}")
+        # 2. URL con noticeUID ya viene en proceso["url"] desde raspar_portal()
+        # No se necesita request extra — el noticeUID se extrajo del HTML de la lista
+        notice_uid = proceso.pop("notice_uid", None)
+        if notice_uid:
+            print(f"   🔗 [{codigo}] noticeUID={notice_uid}")
         else:
-            # Fallback: usar la URL construida con el código de referencia
-            url_oficial = obtener_url_proceso(codigo, url_portal=proceso.get("url"))
-            if url_oficial:
-                proceso["url"] = url_oficial
+            # Si no vino en la lista (raro), loguear para diagnóstico
+            print(f"   ⚠️  [{codigo}] noticeUID no encontrado en fila de lista")
 
         # 3. Obtener artículos UNSPSC directamente del portal (ya tenemos noticeUID)
         # scraper_articulos_portal usa la URL con noticeUID guardada en proceso["url"]
