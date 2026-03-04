@@ -422,31 +422,36 @@ def scraper_articulos_portal(codigo_proceso, url_portal=None):
                 art["cuenta_presupuestaria"] = acc_span.get_text(strip=True)
 
             def parse_monto(td):
-                """Extrae número de una celda — soporta 1,234,567.89"""
+                """Extrae número: formato portal = '60,002,840.90' (coma=miles, punto=decimal)"""
                 if not td:
                     return None
-                txt = td.get_text(strip=True).replace("\xa0", "").replace(",", "").strip()
+                txt = td.get_text(strip=True).replace("\xa0", "").strip()
+                # Eliminar separadores de miles (comas) y dejar punto decimal
+                txt = txt.replace(",", "")
                 try:
                     return float(txt) if txt else None
                 except Exception:
                     return None
 
-            # Buscar celdas QuantityCell en toda la fila (sin recursive=False)
-            # Clase real en el portal: "PriceListLineCellTop PriceListLineTableQuantityCell"
+            # Estructura confirmada del portal:
+            # QuantityCell (168px) = cantidad | QuantityCell (60px) = unidad
+            # PriceCell (168px) = precio_unitario (data-prop="ClnP")
+            # PriceCell (168px) = precio_total   (data-prop="ClnPT")
             qty_cells = fila.find_all(
-                "td",
-                class_=lambda x: x and "PriceListLineTableQuantityCell" in " ".join(x)
+                "td", class_=lambda x: x and "PriceListLineTableQuantityCell" in " ".join(x)
+            )
+            price_cells = fila.find_all(
+                "td", class_=lambda x: x and "PriceListLineTablePriceCell" in " ".join(x)
             )
 
-            # Orden: [0]=cantidad(168px) [1]=unidad(60px) [2]=precio_unit(168px) [3]=precio_total(168px)
             if len(qty_cells) >= 1:
                 art["cantidad"] = parse_monto(qty_cells[0])
             if len(qty_cells) >= 2:
                 art["unidad_medida"] = qty_cells[1].get_text(strip=True)
-            if len(qty_cells) >= 3:
-                art["precio_unitario_estimado"] = parse_monto(qty_cells[2])
-            if len(qty_cells) >= 4:
-                art["precio_total_estimado"] = parse_monto(qty_cells[3])
+            if len(price_cells) >= 1:
+                art["precio_unitario_estimado"] = parse_monto(price_cells[0])
+            if len(price_cells) >= 2:
+                art["precio_total_estimado"] = parse_monto(price_cells[1])
 
             # Solo agregar si tiene código UNSPSC
             if art.get("subclase_unspsc"):
