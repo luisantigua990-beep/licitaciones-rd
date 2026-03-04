@@ -64,7 +64,16 @@ def raspar_portal():
     Retorna lista de dicts con los campos visibles en la tabla.
     """
     try:
-        resp = requests.get(PORTAL_URL, headers=HEADERS, timeout=30)
+        # Usar Session para obtener PublicSessionCookie — necesaria para que
+        # el portal incluya el onclick con noticeUID en cada fila
+        session = requests.Session()
+        session.verify = False
+        import urllib3
+        urllib3.disable_warnings()
+        # Primera petición establece la cookie de sesión
+        session.get(PORTAL_URL, headers=HEADERS, timeout=15)
+        # Segunda petición con la cookie ya activa trae el HTML completo con onclicks
+        resp = session.get(PORTAL_URL, headers=HEADERS, timeout=30)
         resp.raise_for_status()
     except Exception as e:
         print(f"❌ Error accediendo al portal: {e}")
