@@ -1849,6 +1849,38 @@ def debug_html_articulos(codigo: str = None, notice_uid: str = None):
     return resultado
 
 
+@app.get("/api/admin/test-articulos-portal")
+def test_articulos_portal(notice_uid: str = None, codigo: str = None):
+    """
+    Prueba el scraper de artículos directamente del portal DGCP.
+    Uso: GET /api/admin/test-articulos-portal?notice_uid=DO1.NTC.1681956
+      o: GET /api/admin/test-articulos-portal?codigo=PROCESO-CODIGO
+    """
+    try:
+        from scraper_portal import scraper_articulos_portal
+        url = None
+        if notice_uid:
+            url = (f"https://comunidad.comprasdominicana.gob.do/Public/Tendering/"
+                   f"OpportunityDetail/Index?noticeUID={notice_uid}")
+            cod = codigo or "TEST"
+        elif codigo:
+            cod = codigo
+        else:
+            return {"error": "Pasa ?notice_uid=DO1.NTC.XXXXX o ?codigo=CODIGO"}
+
+        articulos = scraper_articulos_portal(cod, url_portal=url)
+        return {
+            "total": len(articulos),
+            "articulos": articulos[:10],
+            "familias_unspsc": list(set(
+                a.get("familia_unspsc") for a in articulos if a.get("familia_unspsc")
+            )),
+        }
+    except Exception as e:
+        import traceback
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+
 @app.post("/api/webhook/analizar-pliego")
 async def webhook_analisis_pliego(request: Request, background_tasks: BackgroundTasks):
     """Endpoint llamado por Supabase (Webhook) al insertar un nuevo seguimiento"""
