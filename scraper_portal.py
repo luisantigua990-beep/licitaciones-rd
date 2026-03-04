@@ -421,25 +421,31 @@ def scraper_articulos_portal(codigo_proceso, url_portal=None):
             if acc_span:
                 art["cuenta_presupuestaria"] = acc_span.get_text(strip=True)
 
-            # Celdas de cantidad/unidad/precio — todas tienen class PriceListLineTableQuantityCell
-            # Orden fijo: [0]=cantidad(168px) [1]=unidad(60px) [2]=precio_unit(168px) [3]=precio_total(168px)
-            qty_cells = fila.find_all("td", class_="PriceListLineTableQuantityCell")
+            # Los precios están en el <tr class="PriceListLineRow"> interno
+            # Estructura: fila_outer > FltContentTd > PriceListLineTable > PriceListLineRow > tds
+            line_row = fila.find("tr", class_=lambda c: c and "PriceListLineRow" in c)
+            if not line_row:
+                line_row = fila  # fallback
 
             def parse_monto(td):
-                """Extrae número de una celda — soporta formato 1,234,567.89 y 1.234.567,89"""
-                txt = td.get_text(strip=True).replace("\xa0", "").strip()
-                # Eliminar separadores de miles y normalizar decimal
-                txt = txt.replace(",", "")
+                """Extrae número de una celda — soporta 1,234,567.89"""
+                if not td:
+                    return None
+                txt = td.get_text(strip=True).replace("\xa0", "").replace(",", "").strip()
                 try:
-                    return float(txt)
+                    return float(txt) if txt else None
                 except Exception:
                     return None
 
+            # Buscar todas las celdas del row interno
+            all_tds = line_row.find_all("td", recursive=False) if line_row else []
+
+            # Las celdas de cantidad/unidad/precio se identifican por su class
+            qty_cells = [td for td in all_tds if "PriceListLineTableQuantityCell" in " ".join(td.get("class", []))]
+
+            # Orden: [0]=cantidad(168px) [1]=unidad(60px) [2]=precio_unit(168px) [3]=precio_total(168px)
             if len(qty_cells) >= 1:
-                try:
-                    art["cantidad"] = parse_monto(qty_cells[0])
-                except Exception:
-                    pass
+                art["cantidad"] = parse_monto(qty_cells[0])
             if len(qty_cells) >= 2:
                 art["unidad_medida"] = qty_cells[1].get_text(strip=True)
             if len(qty_cells) >= 3:
