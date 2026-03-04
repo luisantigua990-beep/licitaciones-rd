@@ -386,7 +386,7 @@ def scraper_articulos_portal(codigo_proceso, url_portal=None):
     articulos = []
 
     # Cada artículo es un <tr> con clase "PriceListLine Item PriceListLine"
-    filas = soup.find_all("tr", class_=lambda c: c and "PriceListLine" in c and "Item" in c)
+    filas = soup.find_all("tr", class_=lambda c: c and "PriceListLine" in " ".join(c) and "Item" in " ".join(c))
 
     for fila in filas:
         try:
@@ -421,12 +421,6 @@ def scraper_articulos_portal(codigo_proceso, url_portal=None):
             if acc_span:
                 art["cuenta_presupuestaria"] = acc_span.get_text(strip=True)
 
-            # Los precios están en el <tr class="PriceListLineRow"> interno
-            # Estructura: fila_outer > FltContentTd > PriceListLineTable > PriceListLineRow > tds
-            line_row = fila.find("tr", class_=lambda c: c and "PriceListLineRow" in c)
-            if not line_row:
-                line_row = fila  # fallback
-
             def parse_monto(td):
                 """Extrae número de una celda — soporta 1,234,567.89"""
                 if not td:
@@ -437,11 +431,12 @@ def scraper_articulos_portal(codigo_proceso, url_portal=None):
                 except Exception:
                     return None
 
-            # Buscar todas las celdas del row interno
-            all_tds = line_row.find_all("td", recursive=False) if line_row else []
-
-            # Las celdas de cantidad/unidad/precio se identifican por su class
-            qty_cells = [td for td in all_tds if "PriceListLineTableQuantityCell" in " ".join(td.get("class", []))]
+            # Buscar celdas QuantityCell en toda la fila (sin recursive=False)
+            # Clase real en el portal: "PriceListLineCellTop PriceListLineTableQuantityCell"
+            qty_cells = fila.find_all(
+                "td",
+                class_=lambda x: x and "PriceListLineTableQuantityCell" in " ".join(x)
+            )
 
             # Orden: [0]=cantidad(168px) [1]=unidad(60px) [2]=precio_unit(168px) [3]=precio_total(168px)
             if len(qty_cells) >= 1:
