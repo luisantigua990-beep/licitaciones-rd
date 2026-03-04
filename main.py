@@ -1836,18 +1836,32 @@ def debug_precio_articulo(notice_uid: str = "DO1.NTC.1679301"):
     resp = session.get(url, headers=HEADERS, timeout=25)
     soup = _BS(resp.text, "html.parser")
 
-    filas = soup.find_all("tr", class_=lambda x: x and "PriceListLine" in " ".join(x) and "Item" in " ".join(x))
+    todas_trs = soup.find_all("tr")
+    
+    # Intentar 4 métodos distintos de selección
+    filas_lambda  = soup.find_all("tr", class_=lambda x: x and "PriceListLine" in " ".join(x) and "Item" in " ".join(x))
+    filas_css     = soup.select("tr.PriceListLine.Item")
+    filas_flt_css = soup.select("tr.FltTr.PriceListLine.Item")
+    filas_manual  = [tr for tr in todas_trs if tr.get("class") and "PriceListLine" in tr["class"] and "Item" in tr["class"]]
+
+    filas = filas_manual or filas_css or filas_flt_css or filas_lambda
+
     if not filas:
-        # Buscar cualquier tabla de artículos para diagnóstico
-        todas_trs = soup.find_all("tr")
         clases_tr = list(set([" ".join(tr.get("class",[])) for tr in todas_trs if tr.get("class")]))[:30]
+        idx = resp.text.find("PriceListLine Item")
+        zona = resp.text[max(0,idx-100):idx+800] if idx >= 0 else "NO ENCONTRADO EN HTML"
         return {
-            "error": "No filas PriceListLine Item",
+            "error": "Ningún método encontró filas",
             "html_size": len(resp.text),
             "template": soup.find("meta", {"name":"TemplateName"}) and soup.find("meta", {"name":"TemplateName"}).get("content"),
-            "clases_tr_disponibles": clases_tr,
-            "cookies": list(session.cookies.keys()),
-            "muestra_html": resp.text[500:2500],
+            "metodos": {
+                "lambda": len(filas_lambda),
+                "css": len(filas_css),
+                "flt_css": len(filas_flt_css),
+                "manual": len(filas_manual),
+            },
+            "clases_tr": clases_tr,
+            "zona_html": zona,
         }
 
     fila = filas[0]
