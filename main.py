@@ -1488,13 +1488,60 @@ def ejecutar_analisis_gemini(proceso_id: str):
         }).execute()
 
         # 2. SCRAPING Y EXTRACCIÓN DEL PDF
+        # VÍA 1: URL con noticeUID guardada por el scraper en tiempo real
         proc_data = supabase.table("procesos").select("url").eq("codigo_proceso", proceso_id).execute()
-        
-        if not proc_data.data or not proc_data.data[0].get("url"):
-            raise Exception(f"No se encontró la URL del portal en la base de datos para {proceso_id}")
-            
-        url_portal = proc_data.data[0]["url"]
-        
+        url_portal = proc_data.data[0].get("url", "") if proc_data.data else ""
+
+        # VÍA 2 (fallback): si no hay noticeUID en la URL, buscar en /procesos/documentos de la API
+        if not url_portal or "noticeUID" not in url_portal:
+            print(f"⚠️ Sin noticeUID para {proceso_id} — buscando en API de documentos (fallback)...")
+            try:
+                import requests as _req
+                resp = _req.get(
+                    "https://datosabiertos.dgcp.gob.do/api-dgcp/v1/procesos/documentos",
+                    params={"proceso": proceso_id},
+                    timeout=15
+                )
+                docs_payload = resp.json().get("payload", {})
+                docs_list = docs_payload.get("content", []) if isinstance(docs_payload, dict) else (docs_payload if isinstance(docs_payload, list) else [])
+
+                # Buscar el pliego o documento principal
+                KEYWORDS_PLIEGO = ["pliego", "bases", "condiciones", "especificaciones", "términos", "terminos"]
+                doc_elegido = None
+                for doc in docs_list:
+                    nombre = (doc.get("nombre_documento") or "").lower()
+                    tipo = (doc.get("tipo_documento") or "").lower()
+                    if any(k in nombre or k in tipo for k in KEYWORDS_PLIEGO):
+                        doc_elegido = doc
+                        break
+                if not doc_elegido and docs_list:
+                    doc_elegido = docs_list[0]  # fallback al primer documento
+
+                if doc_elegido:
+                    url_doc = doc_elegido.get("url_documento", "")
+                    if url_doc:
+                        # Si tiene noticeUID, guardarla en Supabase para futuros usos
+                        if "noticeUID" in url_doc:
+                            import re as _re
+                            m = _re.search(r"noticeUID=(DO1\.NTC\.[\w\.]+)", url_doc)
+                            if m:
+                                url_portal = (
+                                    f"https://comunidad.comprasdominicana.gob.do"
+                                    f"/Public/Tendering/OpportunityDetail/Index"
+                                    f"?noticeUID={m.group(1)}"
+                                )
+                                supabase.table("procesos").update({"url": url_portal}).eq("codigo_proceso", proceso_id).execute()
+                                print(f"✅ URL reconciliada desde API documentos: noticeUID={m.group(1)}")
+                        else:
+                            # URL directa al archivo PDF — intentar descarga directa
+                            url_portal = url_doc
+                        print(f"📄 Documento fallback: {doc_elegido.get('nombre_documento', '')}")
+            except Exception as e_fb:
+                print(f"⚠️ Fallback API documentos también falló: {e_fb}")
+
+        if not url_portal:
+            raise Exception(f"No se encontró URL del portal para {proceso_id} ni en Supabase ni en API de documentos")
+
         # Llamamos al brazo robótico mejorado
         resultado_pdf = descargar_y_extraer_texto_pdf(url_portal)
 
