@@ -1474,6 +1474,153 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+
+/* ── CHECKLIST DE DOCUMENTOS ── */
+.checklist-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-top: 14px;
+}
+.checklist-header {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.checklist-titulo {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.checklist-progreso {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.checklist-progreso-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.checklist-progreso-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 3px;
+  transition: width .3s ease;
+}
+.checklist-progreso-texto {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold);
+  white-space: nowrap;
+}
+.checklist-seccion {
+  border-bottom: 1px solid var(--border);
+}
+.checklist-seccion:last-child { border-bottom: none; }
+.checklist-seccion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s;
+}
+.checklist-seccion-header:hover { background: var(--bg2); }
+.checklist-seccion-titulo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.checklist-seccion-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--bg2);
+  color: var(--muted);
+}
+.checklist-seccion-badge.completo {
+  background: rgba(16,185,129,.15);
+  color: #10b981;
+}
+.checklist-chevron {
+  font-size: 11px;
+  color: var(--muted);
+  transition: transform .2s;
+}
+.checklist-seccion.abierta .checklist-chevron { transform: rotate(180deg); }
+.checklist-items {
+  display: none;
+  padding: 4px 0 8px;
+}
+.checklist-seccion.abierta .checklist-items { display: block; }
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.checklist-item:hover { background: var(--bg2); }
+.checklist-item input[type="checkbox"] {
+  width: 17px; height: 17px;
+  accent-color: var(--gold);
+  cursor: pointer;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+.checklist-item-texto { flex: 1; }
+.checklist-item-nombre {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  transition: color .15s;
+}
+.checklist-item.marcado .checklist-item-nombre {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.checklist-item-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tag-subsanable {
+  background: rgba(16,185,129,.12);
+  color: #10b981;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.tag-no-subsanable {
+  background: rgba(239,68,68,.12);
+  color: #ef4444;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.checklist-sin-analisis {
+  padding: 20px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 </style>
 </head>
 <body>
@@ -2160,9 +2307,21 @@ async function verDetalle(codigo) {
           <div class="articulo-precio">${a.precio_total_estimado ? 'RD$'+Number(a.precio_total_estimado).toLocaleString() : '—'}</div>
         </div>`).join('')
       : '<div style="padding:20px;color:var(--muted);font-size:13px">Sin artículos registrados</div>'}
-    </div>`;
+    </div>
+    ${renderChecklistHTML(data.analisis, p.codigo_proceso)}`;
   // Actualizar botón seguir DESPUÉS de que el DOM esté listo
-  setTimeout(() => actualizarBtnSeguir(p.codigo_proceso), 10);
+  setTimeout(async () => {
+    actualizarBtnSeguir(p.codigo_proceso);
+    // Abrir primera sección del checklist y cargar estado guardado
+    ['legal','tecnica','financiera'].forEach(secKey => {
+      const sec = document.getElementById(`cl-sec-${p.codigo_proceso}-${secKey}`);
+      if (sec && !sec.classList.contains('abierta')) {
+        sec.classList.add('abierta');
+        return;
+      }
+    });
+    await cargarEstadoChecklist(p.codigo_proceso);
+  }, 10);
 }
 
 function mostrarDashboard() {
@@ -3110,6 +3269,178 @@ function limpiarBadge() {
     check();
   }
 })();
+
+
+// ══════════════════════════════════════════════
+// CHECKLIST DE DOCUMENTOS
+// ══════════════════════════════════════════════
+
+// Estado en memoria: { "CODIGO-legal_0": true, ... }
+let checklistEstado = {};
+
+function renderChecklistHTML(analisis, codigo) {
+  const checklist = analisis?.checklist_categorizado;
+  const enSeguimiento = estaEnSeguimiento(codigo);
+
+  if (!checklist || (!checklist.legal?.length && !checklist.tecnica?.length && !checklist.financiera?.length)) {
+    return `<div class="checklist-card">
+      <div class="checklist-header"><div class="checklist-titulo">📋 Checklist de documentos</div></div>
+      <div class="checklist-sin-analisis">${analisis ? 'El análisis no incluye checklist de documentos.' : 'Sin análisis Gemini para este proceso.'}</div>
+    </div>`;
+  }
+
+  const secciones = [
+    { key: 'legal',      icon: '⚖️',  label: 'Legal',      items: checklist.legal      || [] },
+    { key: 'tecnica',    icon: '🔧',  label: 'Técnica',    items: checklist.tecnica    || [] },
+    { key: 'financiera', icon: '💰',  label: 'Financiera', items: checklist.financiera || [] },
+  ];
+
+  const totalItems = secciones.reduce((s, sec) => s + sec.items.length, 0);
+  const totalCheck = secciones.reduce((s, sec) =>
+    s + sec.items.filter((_, i) => checklistEstado[`${codigo}-${sec.key}_${i}`]).length, 0);
+  const pct = totalItems ? Math.round(totalCheck / totalItems * 100) : 0;
+
+  const seccionesHTML = secciones.map(sec => {
+    if (!sec.items.length) return '';
+    const marcados = sec.items.filter((_, i) => checklistEstado[`${codigo}-${sec.key}_${i}`]).length;
+    const completo = marcados === sec.items.length;
+    return `
+    <div class="checklist-seccion" id="cl-sec-${codigo}-${sec.key}">
+      <div class="checklist-seccion-header" onclick="toggleSeccionChecklist('${codigo}','${sec.key}')">
+        <div class="checklist-seccion-titulo">
+          <span>${sec.icon}</span><span>${sec.label}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="checklist-seccion-badge ${completo?'completo':''}">${marcados}/${sec.items.length}</span>
+          <span class="checklist-chevron">▼</span>
+        </div>
+      </div>
+      <div class="checklist-items">
+        ${sec.items.map((item, i) => {
+          const key = `${codigo}-${sec.key}_${i}`;
+          const marcado = checklistEstado[key] || false;
+          const subsanable = item.es_subsanable;
+          return `<div class="checklist-item ${marcado?'marcado':''}" id="cli-${key}" onclick="toggleCheckItem('${codigo}','${sec.key}',${i},${enSeguimiento})">
+            <input type="checkbox" ${marcado?'checked':''} onclick="event.stopPropagation();toggleCheckItem('${codigo}','${sec.key}',${i},${enSeguimiento})">
+            <div class="checklist-item-texto">
+              <div class="checklist-item-nombre">${item.documento}</div>
+              <div class="checklist-item-meta">
+                ${subsanable === true  ? '<span class="tag-subsanable">Subsanable</span>' : ''}
+                ${subsanable === false ? '<span class="tag-no-subsanable">No subsanable</span>' : ''}
+                ${item.nota ? `<span>${item.nota}</span>` : ''}
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  return `<div class="checklist-card" id="checklist-${codigo}">
+    <div class="checklist-header">
+      <div class="checklist-titulo">📋 Checklist de documentos</div>
+      <div class="checklist-progreso">
+        <div class="checklist-progreso-bar">
+          <div class="checklist-progreso-fill" id="cl-fill-${codigo}" style="width:${pct}%"></div>
+        </div>
+        <div class="checklist-progreso-texto" id="cl-texto-${codigo}">${totalCheck}/${totalItems} listos</div>
+      </div>
+    </div>
+    ${seccionesHTML}
+  </div>`;
+}
+
+function toggleSeccionChecklist(codigo, secKey) {
+  const sec = document.getElementById(`cl-sec-${codigo}-${secKey}`);
+  if (sec) sec.classList.toggle('abierta');
+}
+
+async function toggleCheckItem(codigo, secKey, idx, guardar) {
+  const key = `${codigo}-${secKey}_${idx}`;
+  checklistEstado[key] = !checklistEstado[key];
+
+  // Actualizar UI del ítem
+  const el = document.getElementById(`cli-${key}`);
+  if (el) {
+    el.classList.toggle('marcado', checklistEstado[key]);
+    const cb = el.querySelector('input[type="checkbox"]');
+    if (cb) cb.checked = checklistEstado[key];
+  }
+
+  // Actualizar progreso
+  actualizarProgresoChecklist(codigo);
+
+  // Guardar en Supabase si está en seguimiento
+  if (guardar && currentUser) {
+    try {
+      await fetch(`${API}/api/checklist/${codigo}`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ user_id: currentUser.id, item_key: `${secKey}_${idx}`, completado: checklistEstado[key] })
+      });
+    } catch(e) { console.error('Error guardando checklist:', e); }
+  }
+}
+
+function actualizarProgresoChecklist(codigo) {
+  // Contar todos los ítems del checklist actual
+  const items = document.querySelectorAll(`#checklist-${codigo} .checklist-item`);
+  const total = items.length;
+  const marcados = document.querySelectorAll(`#checklist-${codigo} .checklist-item.marcado`).length;
+  const pct = total ? Math.round(marcados / total * 100) : 0;
+
+  const fill = document.getElementById(`cl-fill-${codigo}`);
+  const texto = document.getElementById(`cl-texto-${codigo}`);
+  if (fill) fill.style.width = pct + '%';
+  if (texto) texto.textContent = `${marcados}/${total} listos`;
+
+  // Actualizar badges de secciones
+  ['legal','tecnica','financiera'].forEach(secKey => {
+    const sec = document.getElementById(`cl-sec-${codigo}-${secKey}`);
+    if (!sec) return;
+    const secItems = sec.querySelectorAll('.checklist-item');
+    const secMarcados = sec.querySelectorAll('.checklist-item.marcado').length;
+    const badge = sec.querySelector('.checklist-seccion-badge');
+    if (badge) {
+      badge.textContent = `${secMarcados}/${secItems.length}`;
+      badge.classList.toggle('completo', secMarcados === secItems.length && secItems.length > 0);
+    }
+  });
+}
+
+async function cargarEstadoChecklist(codigo) {
+  if (!currentUser) return;
+  try {
+    const res = await fetch(`${API}/api/checklist/${codigo}?user_id=${currentUser.id}`);
+    const data = await res.json();
+    const items = data.items || {};
+    // Restaurar estado en memoria
+    Object.entries(items).forEach(([itemKey, completado]) => {
+      checklistEstado[`${codigo}-${itemKey}`] = completado;
+    });
+    // Actualizar UI
+    Object.entries(items).forEach(([itemKey, completado]) => {
+      const el = document.getElementById(`cli-${codigo}-${itemKey}`);
+      if (el) {
+        el.classList.toggle('marcado', completado);
+        const cb = el.querySelector('input[type="checkbox"]');
+        if (cb) cb.checked = completado;
+      }
+    });
+    actualizarProgresoChecklist(codigo);
+    // Abrir la primera sección automáticamente
+    ['legal','tecnica','financiera'].forEach(secKey => {
+      const sec = document.getElementById(`cl-sec-${codigo}-${secKey}`);
+      if (sec && !document.querySelector(`#cl-sec-${codigo}-${secKey}.abierta`)) {
+        if (sec.querySelector('.checklist-items')?.children.length > 0) {
+          sec.classList.add('abierta');
+          return false;
+        }
+      }
+    });
+  } catch(e) { console.error('Error cargando checklist:', e); }
+}
+
 
 // ── OFFLINE MODE ──
 const offlineBanner = document.createElement('div');
