@@ -13,6 +13,11 @@ import urllib3
 import json
 import io
 from PyPDF2 import PdfReader
+try:
+    from docx import Document as DocxDocument
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
 from bs4 import BeautifulSoup
 import requests
 from datetime import datetime
@@ -1119,8 +1124,43 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         print(f"⚠️ Respuesta pequeña final: {repr(resp_pdf.content[:300])}")
         raise Exception(f"Respuesta demasiado pequeña ({len(resp_pdf.content)} bytes) tras seguir redirect")
 
-    print(f"📄 PDF: {len(resp_pdf.content):,} bytes. Extrayendo texto...")
-    pdf_bytes = resp_pdf.content
+    doc_bytes = resp_pdf.content
+    content_type = resp_pdf.headers.get("Content-Type", "").lower()
+
+    # ── Detectar DOCX por magic bytes (PK) o por nombre del archivo ──
+    es_docx = (
+        doc_bytes[:4] == b"PK\x03\x04"  # ZIP signature (docx/xlsx/zip)
+        or ".docx" in enlace_pliego.lower()
+        or ".doc" in enlace_pliego.lower()
+        or "wordprocessingml" in content_type
+        or "openxmlformats" in content_type
+    )
+
+    if es_docx:
+        print(f"📝 DOCX detectado ({len(doc_bytes):,} bytes). Extrayendo texto con python-docx...")
+        if not DOCX_AVAILABLE:
+            raise Exception("python-docx no instalado — ejecuta: pip install python-docx")
+        try:
+            docx_file = io.BytesIO(doc_bytes)
+            doc = DocxDocument(docx_file)
+            parrafos = [p.text for p in doc.paragraphs if p.text.strip()]
+            # También extraer tablas
+            for tabla in doc.tables:
+                for fila in tabla.rows:
+                    fila_texto = " | ".join(c.text.strip() for c in fila.cells if c.text.strip())
+                    if fila_texto:
+                        parrafos.append(fila_texto)
+            texto_completo = "\n".join(parrafos)
+            print(f"📝 {len(texto_completo):,} caracteres extraídos del DOCX")
+            if len(texto_completo.strip()) < 100:
+                raise Exception("DOCX extraído con menos de 100 caracteres — posible archivo dañado")
+            return texto_completo
+        except Exception as e:
+            raise Exception(f"Error extrayendo DOCX: {e}")
+
+    # ── PDF normal ──
+    print(f"📄 PDF: {len(doc_bytes):,} bytes. Extrayendo texto...")
+    pdf_bytes = doc_bytes
     pdf_file = io.BytesIO(pdf_bytes)
     lector_pdf = PdfReader(pdf_file)
 
