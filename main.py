@@ -1866,25 +1866,16 @@ def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
 
 
 
-@app.get("/api/admin/debug-analisis")
-def debug_analisis(codigo: str):
-    """Ver qué campos tiene el análisis de un proceso en Supabase."""
+@app.post("/api/admin/forzar-analisis")
+async def forzar_analisis(background_tasks: BackgroundTasks, codigo: str):
+    """Re-corre el análisis Gemini ignorando el cache. Limpia el estado primero."""
     try:
-        r = supabase_admin.table("analisis_pliego") \
-            .select("proceso_id, estado, checklist_categorizado, checklist_legal") \
-            .eq("proceso_id", codigo) \
-            .execute()
-        if not r.data:
-            return {"error": "No hay análisis para este proceso", "codigo": codigo}
-        row = r.data[0]
-        return {
-            "proceso_id": row.get("proceso_id"),
-            "estado": row.get("estado"),
-            "checklist_categorizado_tipo": type(row.get("checklist_categorizado")).__name__,
-            "checklist_categorizado_muestra": str(row.get("checklist_categorizado"))[:500] if row.get("checklist_categorizado") else None,
-            "checklist_legal_tipo": type(row.get("checklist_legal")).__name__,
-            "checklist_legal_muestra": str(row.get("checklist_legal"))[:200] if row.get("checklist_legal") else None,
-        }
+        # Limpiar estado para que ejecutar_analisis_gemini no use el cache
+        supabase_admin.table("analisis_pliego").update({
+            "estado": "pendiente",
+        }).eq("proceso_id", codigo).execute()
+        background_tasks.add_task(ejecutar_analisis_gemini, codigo)
+        return {"status": "iniciado", "codigo": codigo, "mensaje": "Análisis re-iniciado. Revisa logs de Railway."}
     except Exception as e:
         import traceback
         return {"error": str(e), "traceback": traceback.format_exc()}
