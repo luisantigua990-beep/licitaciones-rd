@@ -414,37 +414,38 @@ def scraper_articulos_portal(codigo_proceso, url_portal=None):
             if desc_span:
                 art["descripcion_articulo"] = desc_span.get_text(strip=True)
 
-            # Cantidad
-            qty_span = fila.find("span", {"data-prop": "Qtd"})
-            if qty_span:
-                try:
-                    art["cantidad"] = float(qty_span.get_text(strip=True).replace(",", "."))
-                except Exception:
-                    art["cantidad"] = None
+            # Cantidad — extraída por índice de celda más abajo
 
             # Cuenta presupuestaria
             acc_span = fila.find("span", id=_re.compile(r"AccountCode$"))
             if acc_span:
                 art["cuenta_presupuestaria"] = acc_span.get_text(strip=True)
 
-            # Unidad de medida — span.VortalSpan en celda de unidad
-            unit_cells = fila.find_all("td", class_="PriceListLineTableQuantityCell")
-            if len(unit_cells) >= 2:
-                art["unidad_medida"] = unit_cells[1].get_text(strip=True)
+            # Celdas de cantidad/unidad/precio — todas tienen class PriceListLineTableQuantityCell
+            # Orden fijo: [0]=cantidad(168px) [1]=unidad(60px) [2]=precio_unit(168px) [3]=precio_total(168px)
+            qty_cells = fila.find_all("td", class_="PriceListLineTableQuantityCell")
 
-            # Precio unitario y total — spans numéricos
-            precio_spans = fila.find_all("span", class_=_re.compile(r"VortalNumericBox"))
-            for ps in precio_spans:
-                props = ps.get("data-prop", "")
-                txt = ps.get_text(strip=True).replace(",", "").replace(".", "").strip()
+            def parse_monto(td):
+                """Extrae número de una celda — soporta formato 1,234,567.89 y 1.234.567,89"""
+                txt = td.get_text(strip=True).replace("\xa0", "").strip()
+                # Eliminar separadores de miles y normalizar decimal
+                txt = txt.replace(",", "")
                 try:
-                    val = float(ps.get_text(strip=True).replace(",", ""))
+                    return float(txt)
                 except Exception:
-                    val = None
-                if "PUPrc" in props or "UnitPrice" in props:
-                    art["precio_unitario_estimado"] = val
-                elif "TPrc" in props or "TotalPrice" in props:
-                    art["precio_total_estimado"] = val
+                    return None
+
+            if len(qty_cells) >= 1:
+                try:
+                    art["cantidad"] = parse_monto(qty_cells[0])
+                except Exception:
+                    pass
+            if len(qty_cells) >= 2:
+                art["unidad_medida"] = qty_cells[1].get_text(strip=True)
+            if len(qty_cells) >= 3:
+                art["precio_unitario_estimado"] = parse_monto(qty_cells[2])
+            if len(qty_cells) >= 4:
+                art["precio_total_estimado"] = parse_monto(qty_cells[3])
 
             # Solo agregar si tiene código UNSPSC
             if art.get("subclase_unspsc"):
