@@ -184,7 +184,19 @@ def listar_procesos(
         codigos_unspsc = None
         if familia_unspsc:
             try:
-                art_result = supabase.table("articulos_proceso")                     .select("codigo_proceso")                     .eq("familia_unspsc", familia_unspsc.strip())                     .execute()
+                fam = familia_unspsc.strip()
+                # Búsqueda exacta si tiene 8 dígitos (código completo de familia)
+                # Búsqueda por prefijo si tiene menos (ej. "72" → todos los 72xxxxxx)
+                if len(fam) >= 8:
+                    art_result = supabase.table("articulos_proceso") \
+                        .select("codigo_proceso") \
+                        .eq("familia_unspsc", fam) \
+                        .execute()
+                else:
+                    art_result = supabase.table("articulos_proceso") \
+                        .select("codigo_proceso") \
+                        .or_(f"familia_unspsc.like.{fam}%,clase_unspsc.like.{fam}%,subclase_unspsc.like.{fam}%") \
+                        .execute()
                 codigos_unspsc = list(set(a["codigo_proceso"] for a in art_result.data))
                 if not codigos_unspsc:
                     return {"procesos": [], "total": 0, "page": page, "limit": limit, "pages": 0}
@@ -1747,6 +1759,95 @@ def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
     )
 
     return diag
+
+
+@app.get("/api/admin/html-articulos")
+def debug_html_articulos(codigo: str):
+    """
+    Endpoint de diagnóstico: obtiene el noticeUID y devuelve el HTML de la
+    página de detalle del proceso para analizar la estructura de la tabla de artículos.
+    Uso: GET /api/admin/html-articulos?codigo=DIE-CCC-SO-2026-0004
+    """
+    import re as _re
+    import requests as _req
+
+    PORTAL_BASE = "https://comunidad.comprasdominicana.gob.do"
+    HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "es-ES,es;q=0.9",
+    }
+
+    session = _req.Session()
+    session.verify = False
+
+    resultado = {"codigo": codigo, "pasos": []}
+
+    # Paso 1: sesión
+    try:
+        session.get(f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index",
+                    headers=HEADERS, timeout=15)
+        resultado["cookies"] = [c.name for c in session.cookies]
+    except Exception as e:
+        resultado["error_sesion"] = str(e)
+        return resultado
+
+    # Paso 2: obtener noticeUID
+    url_busqueda = (f"{PORTAL_BASE}/Public/Tendering/ContractNoticeManagement/Index"
+                    f"?currentLanguage=es&Country=DO&Theme=DGCP&NoticeReference={codigo}")
+    try:
+        resp = session.get(url_busqueda, headers=HEADERS, timeout=15)
+        html_lista = resp.text
+        match = _re.search(
+            r"/Public/Tendering/OpportunityDetail/Index\?noticeUID=(DO1\.NTC\.[\w\.]+)",
+            html_lista
+        )
+        if not match:
+            resultado["error"] = "noticeUID no encontrado en HTML de lista"
+            resultado["html_lista_muestra"] = html_lista[:3000]
+            return resultado
+
+        notice_uid = match.group(1)
+        resultado["notice_uid"] = notice_uid
+        resultado["pasos"].append(f"✅ noticeUID encontrado: {notice_uid}")
+    except Exception as e:
+        resultado["error_busqueda"] = str(e)
+        return resultado
+
+    # Paso 3: cargar detalle del proceso (modal/popup)
+    url_detalle = f"{PORTAL_BASE}/Public/Tendering/OpportunityDetail/Index?noticeUID={notice_uid}"
+    for sufijo in ["&isModal=true&asPopupView=true", "&asPopupView=true", ""]:
+        try:
+            url_intento = url_detalle + sufijo
+            resp2 = session.get(url_intento, headers={**HEADERS,
+                "Referer": url_busqueda,
+                "X-Requested-With": "XMLHttpRequest"
+            }, timeout=20)
+            html_detalle = resp2.text
+            resultado["pasos"].append(f"✅ Detalle cargado ({len(html_detalle)} chars) - {url_intento[-40:]}")
+
+            # Buscar keywords de artículos
+            keywords = ["UNSPSC", "unspsc", "Articulo", "articulo", "Lote", "lote",
+                        "Cuestionario", "familia", "clase", "subclase", "Cantidad", "Precio"]
+            encontradas = {k: k in html_detalle for k in keywords}
+            resultado["keywords_articulos"] = encontradas
+
+            # Zona donde aparecen los artículos
+            for kw in ["UNSPSC", "Cuestionario", "Lote"]:
+                idx = html_detalle.find(kw)
+                if idx >= 0:
+                    resultado[f"zona_{kw}"] = html_detalle[max(0, idx-200):idx+2000]
+                    break
+
+            # HTML completo (primeros 15000 chars para no saturar)
+            resultado["html_detalle_inicio"] = html_detalle[:5000]
+            resultado["html_detalle_final"] = html_detalle[-3000:]
+            resultado["url_usada"] = url_intento
+            break
+        except Exception as e:
+            resultado["pasos"].append(f"❌ Error con {sufijo}: {e}")
+
+    return resultado
 
 
 @app.post("/api/webhook/analizar-pliego")
