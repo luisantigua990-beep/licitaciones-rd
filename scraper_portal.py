@@ -235,13 +235,13 @@ def obtener_url_proceso(codigo_proceso, url_portal=None):
         f"?currentLanguage=es&Country=DO&Theme=DGCP&NoticeReference={codigo_proceso}"
     )
 
-def obtener_articulos_rapido(codigo_proceso):
+def obtener_articulos_rapido(codigo_proceso, url_portal=None):
     """
     Alias de compatibilidad — ahora intenta primero scraping del portal (inmediato)
     y hace fallback a la API de datos abiertos (tiene delay de 8h).
     """
     # Intentar scraping directo del portal con noticeUID
-    articulos = scraper_articulos_portal(codigo_proceso)
+    articulos = scraper_articulos_portal(codigo_proceso, url_portal=url_portal)
     if articulos:
         return articulos
 
@@ -933,13 +933,19 @@ def ejecutar_scraper_portal():
             if url_oficial:
                 proceso["url"] = url_oficial
 
-        # 3. Obtener artículos UNSPSC inmediatamente de la API
-        articulos = obtener_articulos_rapido(codigo)
+        # 3. Obtener artículos UNSPSC directamente del portal (ya tenemos noticeUID)
+        # scraper_articulos_portal usa la URL con noticeUID guardada en proceso["url"]
+        articulos = obtener_articulos_rapido(codigo, url_portal=proceso.get("url"))
         if articulos:
             guardar_articulos_portal(codigo, articulos)
-            print(f"   📦 [{codigo}] {len(articulos)} artículos UNSPSC obtenidos")
+            # Marcar como enriquecido para no reintentar innecesariamente
+            try:
+                supabase.table("procesos").update({"enriquecido_api": True}).eq("codigo_proceso", codigo).execute()
+            except Exception:
+                pass
+            print(f"   📦 [{codigo}] {len(articulos)} artículos UNSPSC scrapeados del portal")
         else:
-            print(f"   ⚠️  [{codigo}] Sin artículos UNSPSC aún (API puede tener delay)")
+            print(f"   ⏳ [{codigo}] Sin artículos aún — se reintentará en próximo ciclo")
 
         # 3. Notificar solo a usuarios con intereses coincidentes
         n = notificar_proceso_inmediato(proceso, articulos)
