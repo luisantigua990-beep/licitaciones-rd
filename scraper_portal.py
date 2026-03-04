@@ -438,10 +438,10 @@ def scraper_articulos_portal(codigo_proceso, url_portal=None):
             # PriceCell (168px) = precio_unitario (data-prop="ClnP")
             # PriceCell (168px) = precio_total   (data-prop="ClnPT")
             qty_cells = fila.find_all(
-                "td", class_=lambda x: x and "PriceListLineTableQuantityCell" in " ".join(x)
+                "td", class_=lambda x: x and "PriceListLineTableQuantityCell" in x
             )
             price_cells = fila.find_all(
-                "td", class_=lambda x: x and "PriceListLineTablePriceCell" in " ".join(x)
+                "td", class_=lambda x: x and "PriceListLineTablePriceCell" in x
             )
 
             if len(qty_cells) >= 1:
