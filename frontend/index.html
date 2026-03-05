@@ -1531,7 +1531,7 @@ function renderProcesos(procesos, data, page) {
       </div>`;
   }).join('');
 
-  const pages = data.pages || 1; = data.pages || 1;
+  const pages = data.pages || 1;
   if (pages <= 1) { document.getElementById('pagination').innerHTML = ''; return; }
   let pag = '';
   if (page > 1) pag += `<button class="page-btn" onclick="cargarProcesos(${page-1})">← Anterior</button>`;
