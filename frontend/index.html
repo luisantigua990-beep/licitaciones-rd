@@ -120,6 +120,25 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 .filter-select:focus{border-color:var(--green)}
 .filter-clear{padding:9px 14px;background:var(--red-dim);border:1px solid rgba(239,68,68,.2);border-radius:var(--r-sm);color:var(--red);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body);transition:all .2s;white-space:nowrap}
 .filter-clear:hover{background:var(--red);color:#fff}
+/* ── FILTROS AVANZADOS COLAPSABLES (móvil) ── */
+.btn-filtros-avanzados{display:none;padding:8px 14px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r-sm);color:var(--text2);font-size:12px;font-weight:600;font-family:var(--font-body);cursor:pointer;align-items:center;gap:6px;transition:all .2s;position:relative;white-space:nowrap}
+.btn-filtros-avanzados:hover{border-color:var(--green);color:var(--green)}
+.btn-filtros-avanzados.activo{border-color:var(--green);color:var(--green);background:var(--green-dim)}
+.filtros-badge{display:none;min-width:17px;height:17px;padding:0 5px;background:var(--green);color:#000;border-radius:20px;font-size:10px;font-weight:800;align-items:center;justify-content:center;line-height:1}
+.filtros-badge.visible{display:flex}
+.filtros-avanzados-panel{overflow:hidden;max-height:0;transition:max-height .3s cubic-bezier(.4,0,.2,1),opacity .25s;opacity:0;pointer-events:none}
+.filtros-avanzados-panel.abierto{max-height:200px;opacity:1;pointer-events:auto}
+/* ── BOTÓN ANÁLISIS IA — estados de carga ── */
+.btn-analizar-pliego{width:100%;padding:12px;background:linear-gradient(135deg,var(--green-dark),var(--green));border:none;border-radius:var(--r-md);color:#000;font-size:14px;font-weight:700;font-family:var(--font-body);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .25s;margin-top:8px}
+.btn-analizar-pliego:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px)}
+.btn-analizar-pliego:disabled{opacity:.6;cursor:not-allowed;transform:none}
+.btn-analizar-pliego .btn-spinner{width:15px;height:15px;border:2px solid rgba(0,0,0,.25);border-top-color:#000;border-radius:50%;animation:spin .6s linear infinite;display:none;flex-shrink:0}
+.btn-analizar-pliego.cargando .btn-spinner{display:block}
+.btn-analizar-pliego.cargando .btn-texto::before{content:'Analizando pliego...'}
+.btn-analizar-pliego:not(.cargando) .btn-texto::before{content:'🤖 Solicitar análisis IA'}
+@media(max-width:600px){
+  .btn-filtros-avanzados{display:flex}
+}
 .unspsc-dropdown{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-md);max-height:220px;overflow-y:auto;z-index:200;box-shadow:var(--shadow-md);display:none}
 .unspsc-dropdown-item{padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);transition:background .15s;display:flex;align-items:center;justify-content:space-between}
 .unspsc-dropdown-item:hover{background:var(--green-dim)}
@@ -454,19 +473,24 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
           <option value="true">Solo activos</option>
           <option value="false">Todos</option>
         </select>
+        <button class="btn-filtros-avanzados" id="btn-filtros-avanzados" onclick="toggleFiltrosAvanzados()">
+          ⚙️ Filtros <span class="filtros-badge" id="filtros-badge">0</span>
+        </button>
         <button class="filter-clear" onclick="limpiarFiltros()">✕ Limpiar</button>
       </div>
-      <div class="filter-row">
-        <input class="filter-input" type="number" id="filtro-monto-min" placeholder="💰 Monto mín (RD$)" oninput="debounceSearch()">
-        <input class="filter-input" type="number" id="filtro-monto-max" placeholder="💰 Monto máx (RD$)" oninput="debounceSearch()">
-      </div>
-      <div class="filter-row" style="position:relative">
-        <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="🔎 Buscar por nombre o código (ej: 1512, lubricantes...)" oninput="buscarUnspsc()" autocomplete="off">
-        <div class="unspsc-dropdown" id="unspsc-dropdown"></div>
-      </div>
-      <div class="unspsc-active-tag" id="unspsc-activo">
-        <span id="unspsc-activo-label"></span>
-        <button onclick="limpiarUnspsc()" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:15px;padding:0;line-height:1">✕</button>
+      <div class="filtros-avanzados-panel" id="filtros-avanzados-panel">
+        <div class="filter-row" style="margin-top:8px">
+          <input class="filter-input" type="number" id="filtro-monto-min" placeholder="💰 Monto mín (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
+          <input class="filter-input" type="number" id="filtro-monto-max" placeholder="💰 Monto máx (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
+        </div>
+        <div class="filter-row" style="position:relative;margin-top:8px">
+          <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="🔎 Buscar por nombre o código (ej: 1512, lubricantes...)" oninput="buscarUnspsc()" autocomplete="off">
+          <div class="unspsc-dropdown" id="unspsc-dropdown"></div>
+        </div>
+        <div class="unspsc-active-tag" id="unspsc-activo">
+          <span id="unspsc-activo-label"></span>
+          <button onclick="limpiarUnspsc()" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:15px;padding:0;line-height:1">✕</button>
+        </div>
       </div>
     </div>
 
@@ -832,13 +856,60 @@ function limpiarFiltros() {
   });
   document.getElementById('filtro-objeto').value = '';
   limpiarUnspsc();
+  actualizarBadgeFiltros();
   cargarProcesos(1);
+}
+
+// ── FILTROS AVANZADOS (móvil) ──
+function toggleFiltrosAvanzados() {
+  const panel = document.getElementById('filtros-avanzados-panel');
+  const btn   = document.getElementById('btn-filtros-avanzados');
+  if (!panel || !btn) return;
+  const abierto = panel.classList.toggle('abierto');
+  btn.classList.toggle('activo', abierto);
+}
+
+function actualizarBadgeFiltros() {
+  const montoMin = document.getElementById('filtro-monto-min')?.value || '';
+  const montoMax = document.getElementById('filtro-monto-max')?.value || '';
+  const unspsc   = unspscFiltro ? 1 : 0;
+  const count    = (montoMin ? 1 : 0) + (montoMax ? 1 : 0) + unspsc;
+  const badge    = document.getElementById('filtros-badge');
+  const btn      = document.getElementById('btn-filtros-avanzados');
+  if (!badge) return;
+  badge.textContent = count;
+  badge.classList.toggle('visible', count > 0);
+  if (btn) btn.classList.toggle('activo', count > 0);
+}
+
+// ── ANÁLISIS IA — solicitar con estado de carga ──
+async function solicitarAnalisisIA(codigo) {
+  const btn = document.getElementById(`btn-analizar-${codigo}`);
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  btn.classList.add('cargando');
+  try {
+    const res  = await fetch(`${API}/api/procesos/${codigo}/analizar`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    const data = await res.json();
+    if (res.ok) {
+      await verDetalle(codigo);  // recarga la vista con el nuevo análisis
+    } else {
+      showMsg(data.detail || 'Error al solicitar análisis', 'error');
+      btn.disabled = false;
+      btn.classList.remove('cargando');
+    }
+  } catch(e) {
+    showMsg('Error de conexión al solicitar análisis', 'error');
+    btn.disabled = false;
+    btn.classList.remove('cargando');
+  }
 }
 
 function limpiarUnspsc() {
   unspscFiltro = null;
   const el = document.getElementById('filtro-unspsc-text'); if(el) el.value='';
   document.getElementById('unspsc-activo').style.display = 'none';
+  actualizarBadgeFiltros();
   cargarProcesos(1);
 }
 
@@ -867,6 +938,7 @@ function seleccionarUnspsc(codigo, nombre) {
   const tag = document.getElementById('unspsc-activo');
   tag.style.display = 'flex';
   document.getElementById('unspsc-activo-label').textContent = `${nombre} (${codigo})`;
+  actualizarBadgeFiltros();
   cargarProcesos(1);
 }
 
@@ -1968,9 +2040,18 @@ function renderChecklistHTML(analisis, codigo) {
   const enSeguimiento = estaEnSeguimiento(codigo);
 
   if (!checklist || (!checklist.legal?.length && !checklist.tecnica?.length && !checklist.financiera?.length)) {
+    const msgTexto = analisis ? 'El análisis no incluye checklist de documentos.' : 'Sin análisis IA para este proceso.';
+    const btnHtml = !analisis ? `
+      <button class="btn-analizar-pliego" id="btn-analizar-${codigo}" onclick="solicitarAnalisisIA('${codigo}')">
+        <span class="btn-spinner"></span>
+        <span class="btn-texto"></span>
+      </button>` : '';
     return `<div class="checklist-card">
       <div class="checklist-header"><div class="checklist-titulo">📋 Checklist de documentos</div></div>
-      <div class="checklist-sin-analisis">${analisis ? 'El análisis no incluye checklist de documentos.' : 'Sin análisis Gemini para este proceso.'}</div>
+      <div class="checklist-sin-analisis">
+        ${msgTexto}
+        ${btnHtml}
+      </div>
     </div>`;
   }
 
