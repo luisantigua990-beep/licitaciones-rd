@@ -10,55 +10,7 @@
 <link rel="manifest" href="/frontend/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js">
-// ── TIPS DE INTELIGENCIA (se muestran en el widget) ──
-var TIPS_DATA = [
-  {tag:'LEY 47-25', text:'Toda oferta debe incluir Certificacion DGII y TSS al dia. Sin estos tu oferta es descalificada automaticamente.'},
-  {tag:'CONSEJO',   text:'Revisa los Criterios de Evaluacion antes de cotizar: el precio puede valer solo 40% del puntaje total.'},
-  {tag:'OBRAS',     text:'Para contratos sobre RD$5M exige Programa de Trabajo con ruta critica. Sin el los pagos de avance se bloquean.'},
-  {tag:'MIPYMES',   text:'Las MIPYMES certificadas por el MICM reciben 5% adicional en puntaje de precio bajo Ley 47-25.'},
-  {tag:'PLAZOS',    text:'El plazo minimo para Licitacion Publica Nacional es 15 dias habiles desde la publicacion del aviso.'},
-  {tag:'SUBSANACION', text:'La subsanacion tiene maximo 3 dias habiles. Identifica que es subsanable antes de presentar la oferta.'},
-  {tag:'CONSORCIO', text:'En consorcio las capacidades tecnicas y financieras se suman. Usalo si no calificas solo para el contrato.'}
-];
-
-async function cargarNoticias() {
-  var feed = document.getElementById('news-feed');
-  if (!feed) return;
-
-  // Mezclar tips y mostrar 3
-  var tips = TIPS_DATA.slice().sort(function() { return Math.random() - 0.5; }).slice(0, 3);
-  var html = '';
-  tips.forEach(function(t) {
-    html += '<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:4px">'
-          + '<span style="font-size:9px;font-weight:800;font-family:monospace;letter-spacing:.1em;color:var(--amber);background:var(--amber-dim);border-radius:3px;padding:1px 5px;display:inline-block;width:fit-content">' + t.tag + '</span>'
-          + '<span style="font-size:12px;color:var(--text2);line-height:1.45">' + t.text + '</span>'
-          + '</div>';
-  });
-
-  // Intentar cargar noticias reales del DGCP
-  try {
-    var r = await fetch('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent('https://www.dgcp.gob.do/feed/') + '&count=2');
-    if (r.ok) {
-      var d = await r.json();
-      if (d.status === 'ok' && d.items && d.items.length) {
-        var newsHtml = '';
-        d.items.slice(0, 2).forEach(function(item) {
-          var fecha = item.pubDate ? new Date(item.pubDate).toLocaleDateString('es-DO', {day:'2-digit', month:'short'}) : '';
-          newsHtml += '<a href="' + item.link + '" target="_blank" style="display:block;padding:10px 14px;border-bottom:1px solid var(--border);text-decoration:none;cursor:pointer">'
-                    + '<div style="font-size:12px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + item.title + '</div>'
-                    + '<div style="font-size:10px;color:var(--muted)"><span style="color:var(--green);font-family:monospace;font-weight:700">DGCP</span>' + (fecha ? ' &middot; ' + fecha : '') + '</div>'
-                    + '</a>';
-        });
-        html = newsHtml + html;
-      }
-    }
-  } catch(e) { /* silencioso — muestra solo tips */ }
-
-  feed.innerHTML = html || '<div style="padding:16px;text-align:center;color:var(--muted);font-size:13px">Sin datos</div>';
-}
-
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap');
 
@@ -661,24 +613,16 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 let currentUser = null;
 let searchTimer = null;
 let pushSubscription = null;
-let seguimientoData = [];  // declarada aquí para evitar ReferenceError en cargarSeguimiento
 
 // ── AUTH ──
 async function supabaseRequest(endpoint, method, body) {
   const token = localStorage.getItem('sb_token');
   const headers = { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  try {
-    const res = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
-      method, headers, body: body ? JSON.stringify(body) : undefined
-    });
-    const data = await res.json();
-    console.log('[auth]', endpoint, res.status, data && data.error ? data.error : 'OK');
-    return data;
-  } catch(e) {
-    console.error('[auth] Error de red:', e.message);
-    return { error: 'network_error', error_description: 'Error de conexion. Verifica tu internet.' };
-  }
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
+    method, headers, body: body ? JSON.stringify(body) : undefined
+  });
+  return res.json();
 }
 
 async function login() {
@@ -765,7 +709,6 @@ function showApp() {
   cargarProcesos(1);
   checkPushStatus();
   cargarInteresesGuardados();
-  cargarNoticias();
 }
 
 function showMsg(msg, type) {
@@ -1657,6 +1600,7 @@ async function sbRest(path, method = 'GET', body = null, extraHeaders = {}) {
 // SEGUIMIENTO DE PROCESOS
 // ═══════════════════════════════════════════════════════════════
 
+let seguimientoData = [];
 let segFiltroActivo = 'todos';
 let segModalCodigo  = null;
 
