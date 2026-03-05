@@ -1313,10 +1313,17 @@ async function supabaseRequest(endpoint, method, body) {
   const token = localStorage.getItem('sb_token');
   const headers = { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
-    method, headers, body: body ? JSON.stringify(body) : undefined
-  });
-  return res.json();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
+      method, headers, body: body ? JSON.stringify(body) : undefined
+    });
+    const data = await res.json();
+    console.log('[supabaseRequest]', endpoint, res.status, data);
+    return data;
+  } catch(e) {
+    console.error('[supabaseRequest] Error de red:', e);
+    return { error: 'network_error', error_description: 'Error de conexión. Verifica tu internet.' };
+  }
 }
 
 async function login() {
@@ -1325,7 +1332,13 @@ async function login() {
   if (!email || !password) return showMsg('Ingresa correo y contraseña', 'error');
   const btn = document.getElementById('btn-login');
   btn.disabled = true; btn.textContent = 'Entrando...';
-  const data = await supabaseRequest('token?grant_type=password', 'POST', { email, password });
+  let data;
+  try {
+    data = await supabaseRequest('token?grant_type=password', 'POST', { email, password });
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Entrar';
+    return showMsg('❌ Error de conexión. Intenta de nuevo.', 'error');
+  }
   btn.disabled = false; btn.textContent = 'Entrar';
   if (data.error) {
     const msg = (data.error_description || data.error || '').toLowerCase();
