@@ -11,273 +11,51 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js">
-// ── SCORE DE OPORTUNIDAD ──
-function calcularScore(p) {
-  let score = 0;
-  const tipo = (p.objeto_proceso || '').toLowerCase();
-  const monto = Number(p.monto_estimado) || 0;
-  const titulo = (p.titulo || '').toLowerCase();
-
-  // Factor 1: Alineación con intereses del usuario (rubros)
-  const interesObras    = document.getElementById('interes-obras')?.checked;
-  const interesBienes   = document.getElementById('interes-bienes')?.checked;
-  const interesServicios = document.getElementById('interes-servicios')?.checked;
-  const hayIntereses = interesObras || interesBienes || interesServicios;
-
-  if (hayIntereses) {
-    if (tipo.includes('obra') && interesObras)       score += 30;
-    if (tipo.includes('bien') && interesBienes)      score += 30;
-    if (tipo.includes('servicio') && interesServicios) score += 30;
-  } else {
-    score += 20; // neutral si no hay intereses configurados
-  }
-
-  // Factor 2: Monto en rango accesible (entre 1M y 200M RD$)
-  if (monto >= 1_000_000 && monto <= 200_000_000) score += 25;
-  else if (monto > 200_000_000) score += 10;
-  else if (monto > 0) score += 15;
-
-  // Factor 3: Días hasta cierre (más tiempo = más score)
-  if (p.fecha_fin_recepcion_ofertas) {
-    const diasRestantes = Math.ceil((new Date(p.fecha_fin_recepcion_ofertas) - new Date()) / 86400000);
-    if (diasRestantes >= 15) score += 25;
-    else if (diasRestantes >= 7) score += 15;
-    else if (diasRestantes >= 3) score += 5;
-  }
-
-  // Factor 4: MIPYMES = acceso preferencial
-  if (p.dirigido_mipymes) score += 10;
-
-  // Factor 5: UNSPSC match con perfil del usuario
-  if (unspscFiltro && p.familia_unspsc && String(p.familia_unspsc).startsWith(String(unspscFiltro.codigo).substring(0,4))) {
-    score += 10;
-  }
-
-  return Math.min(100, Math.round(score));
-}
-
-// ── SWIPE EN CARDS ──
-let _swipeCodigo = null, _swipeStartX = 0, _swipeStartY = 0, _swipeMoved = false;
-function cardTouchStart(e, codigo) {
-  _swipeCodigo = codigo;
-  _swipeStartX = e.touches[0].clientX;
-  _swipeStartY = e.touches[0].clientY;
-  _swipeMoved  = false;
-}
-function cardTouchMove(e, codigo) {
-  const dx = e.touches[0].clientX - _swipeStartX;
-  const dy = Math.abs(e.touches[0].clientY - _swipeStartY);
-  if (dy > 20) return; // scroll vertical — no swipe
-  if (dx < -30) { _swipeMoved = true; }
-}
-function cardTouchEnd(e, codigo) {
-  const dx = e.changedTouches[0].clientX - _swipeStartX;
-  const dy = Math.abs(e.changedTouches[0].clientY - _swipeStartY);
-  if (dy > 40) return;
-  if (dx < -60) {
-    // Cerrar otros abiertos
-    document.querySelectorAll('.proceso-card-wrap.swiped').forEach(el => {
-      if (el.id !== 'wrap-' + codigo) el.classList.remove('swiped');
-    });
-    document.getElementById('wrap-' + codigo)?.classList.add('swiped');
-    _swipeMoved = true;
-  } else if (dx > 40) {
-    document.getElementById('wrap-' + codigo)?.classList.remove('swiped');
-    _swipeMoved = true;
-  }
-  if (_swipeMoved) { e.preventDefault(); e.stopPropagation(); }
-}
-function cerrarSwipe(codigo) {
-  document.getElementById('wrap-' + codigo)?.classList.remove('swiped');
-}
-
-// Cerrar swipe al tocar fuera
-document.addEventListener('click', e => {
-  if (!e.target.closest('.proceso-card-wrap')) {
-    document.querySelectorAll('.proceso-card-wrap.swiped').forEach(el => el.classList.remove('swiped'));
-  }
-});
-
-async function toggleSeguimientoSwipe(codigo) {
-  await toggleSeguimiento(codigo);
-  cerrarSwipe(codigo);
-  // Actualizar icono en el botón swipe
-  const btn = document.getElementById('swipe-star-' + codigo);
-  if (btn) {
-    const sig = estaEnSeguimiento(codigo);
-    btn.innerHTML = `<span class="swipe-action-icon">${sig ? '★' : '☆'}</span><span>${sig ? 'Siguiendo' : 'Seguir'}</span>`;
-    btn.classList.toggle('siguiendo-active', sig);
-  }
-}
-
-// ── AUTOCOMPLETE INSTITUCIÓN ──
-let instTimer = null;
-const INSTITUCIONES_CONOCIDAS = [
-  'Ministerio de Obras Públicas (MOPC)',
-  'Ministerio de Hacienda',
-  'Ministerio de Salud Pública',
-  'Ministerio de Educación',
-  'Ministerio de Agricultura',
-  'Ministerio de Medio Ambiente',
-  'Ministerio de Interior y Policía',
-  'CAASD','INAPA','EGEHID','CORAASAN','CORAAVEGA',
-  'Ayuntamiento del Distrito Nacional',
-  'Ayuntamiento de Santiago',
-  'EDES Este','EDES Norte','EDES Sur',
-  'Liga Municipal Dominicana',
-  'Presidencia de la República',
-  'Instituto Nacional de Aguas Potables (INAPA)',
-  'Corporación de Acueducto (CAASD)',
-  'Dirección General de Contrataciones (DGCP)',
-  'Instituto Nacional de Vivienda (INVI)',
-  'Banco de Reservas','BanReservas',
-  'INFOTEP','UASD','INTEC',
-  'INDOTEL','Pro-Consumidor',
-  'Fondo Patrimonial de las Empresas (FONPER)',
-  'Instituto Dominicano de las Telecomunicaciones',
-  'Oficina Nacional de Estadística (ONE)',
-];
-
-function buscarInstitucion() {
-  clearTimeout(instTimer);
-  instTimer = setTimeout(() => {
-    const q = document.getElementById('filtro-institucion')?.value.trim().toLowerCase() || '';
-    const dd = document.getElementById('inst-dropdown');
-    if (!dd) return;
-    if (q.length < 2) { dd.style.display = 'none'; return; }
-    const matches = INSTITUCIONES_CONOCIDAS.filter(i => i.toLowerCase().includes(q)).slice(0, 8);
-    if (!matches.length) { dd.style.display = 'none'; return; }
-    dd.innerHTML = matches.map(i =>
-      `<div class="inst-item" onclick="seleccionarInstitucion('${i.replace(/'/g,"\\'")}')">🏛️ ${i}</div>`
-    ).join('');
-    dd.style.display = 'block';
-  }, 200);
-}
-
-function seleccionarInstitucion(nombre) {
-  document.getElementById('filtro-institucion').value = nombre;
-  document.getElementById('inst-dropdown').style.display = 'none';
-  cargarProcesos(1);
-}
-
-// ── COMPARADOR DE PROCESOS ──
-let comparadorSeleccionados = [];
-function toggleComparador(codigo, titulo, monto, tipo, fechaCierre, entidad) {
-  const idx = comparadorSeleccionados.findIndex(x => x.codigo === codigo);
-  if (idx >= 0) {
-    comparadorSeleccionados.splice(idx, 1);
-  } else {
-    if (comparadorSeleccionados.length >= 2) {
-      mostrarToast('Máximo 2 procesos para comparar');
-      return;
-    }
-    comparadorSeleccionados.push({codigo, titulo, monto, tipo, fechaCierre, entidad});
-  }
-  actualizarBtnComparador();
-}
-
-function actualizarBtnComparador() {
-  const btn = document.getElementById('comparador-fab');
-  if (!btn) return;
-  const n = comparadorSeleccionados.length;
-  btn.style.display = n > 0 ? 'flex' : 'none';
-  btn.innerHTML = n === 2
-    ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Comparar (2)`
-    : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Selecciona 1 más`;
-  if (n === 2) btn.onclick = abrirComparador;
-}
-
-function abrirComparador() {
-  if (comparadorSeleccionados.length < 2) return;
-  const [a, b] = comparadorSeleccionados;
-  const scoreA = a._score || 0, scoreB = b._score || 0;
-  const modal = document.getElementById('comparador-modal');
-  document.getElementById('comp-titulo-a').textContent = a.titulo;
-  document.getElementById('comp-titulo-b').textContent = b.titulo;
-  document.getElementById('comp-entidad-a').textContent = a.entidad || '—';
-  document.getElementById('comp-entidad-b').textContent = b.entidad || '—';
-  document.getElementById('comp-monto-a').textContent = formatMonto(a.monto);
-  document.getElementById('comp-monto-b').textContent = formatMonto(b.monto);
-  document.getElementById('comp-tipo-a').textContent = a.tipo || '—';
-  document.getElementById('comp-tipo-b').textContent = b.tipo || '—';
-  document.getElementById('comp-fecha-a').textContent = a.fechaCierre ? new Date(a.fechaCierre).toLocaleDateString('es-DO') : '—';
-  document.getElementById('comp-fecha-b').textContent = b.fechaCierre ? new Date(b.fechaCierre).toLocaleDateString('es-DO') : '—';
-  modal.classList.add('open');
-}
-
-function cerrarComparador() {
-  document.getElementById('comparador-modal')?.classList.remove('open');
-}
-
-
-// ── WIDGET DE NOTICIAS E INTELIGENCIA ──
-const TIPS_LICITACIONES = [
-  { icon: '⚖️', tag: 'LEY 47-25', text: 'Toda oferta debe incluir Certificación de la DGII y el TSS al día. Sin estos documentos tu oferta es descalificada automáticamente.' },
-  { icon: '📋', tag: 'CONSEJO', text: 'Revisa el acápite de Criterios de Evaluación antes de cotizar — el precio puede valer solo 40% del puntaje total.' },
-  { icon: '🏗️', tag: 'OBRAS', text: 'Para contratos de obras sobre RD$5M, exige un Programa de Trabajo con ruta crítica. Sin él el pago de avances puede bloquearse.' },
-  { icon: '💰', tag: 'MIPYMES', text: 'Las empresas MIPYMES certificadas por el MICM reciben 5% adicional en el puntaje de precio en contrataciones bajo Ley 47-25.' },
-  { icon: '📅', tag: 'PLAZOS', text: 'El plazo mínimo legal para presentar ofertas en Licitaciones Públicas Nacionales es de 15 días hábiles desde la publicación.' },
-  { icon: '🔍', tag: 'DUE DILIGENCE', text: 'Verifica el historial de adjudicaciones de la institución en el portal DGCP antes de invertir tiempo en preparar tu oferta.' },
-  { icon: '📄', tag: 'DOCUMENTOS', text: 'La subsanación de documentos tiene un plazo máximo de 3 días hábiles. Identifica qué es subsanable antes de presentar.' },
-  { icon: '🤝', tag: 'CONSORCIO', text: 'Si no calificas solo, puedes presentarte en consorcio. La suma de capacidades técnicas y financieras se evalúa de forma agregada.' },
+// ── TIPS DE INTELIGENCIA (se muestran en el widget) ──
+var TIPS_DATA = [
+  {tag:'LEY 47-25', text:'Toda oferta debe incluir Certificacion DGII y TSS al dia. Sin estos tu oferta es descalificada automaticamente.'},
+  {tag:'CONSEJO',   text:'Revisa los Criterios de Evaluacion antes de cotizar: el precio puede valer solo 40% del puntaje total.'},
+  {tag:'OBRAS',     text:'Para contratos sobre RD$5M exige Programa de Trabajo con ruta critica. Sin el los pagos de avance se bloquean.'},
+  {tag:'MIPYMES',   text:'Las MIPYMES certificadas por el MICM reciben 5% adicional en puntaje de precio bajo Ley 47-25.'},
+  {tag:'PLAZOS',    text:'El plazo minimo para Licitacion Publica Nacional es 15 dias habiles desde la publicacion del aviso.'},
+  {tag:'SUBSANACION', text:'La subsanacion tiene maximo 3 dias habiles. Identifica que es subsanable antes de presentar la oferta.'},
+  {tag:'CONSORCIO', text:'En consorcio las capacidades tecnicas y financieras se suman. Usalo si no calificas solo para el contrato.'}
 ];
 
 async function cargarNoticias() {
-  const feed = document.getElementById('news-feed');
+  var feed = document.getElementById('news-feed');
   if (!feed) return;
-  
-  // Mostrar tips siempre (confiables sin API)
-  const shuffled = TIPS_LICITACIONES.sort(() => Math.random() - 0.5).slice(0, 4);
-  
-  // Intentar cargar noticias reales via RSS2JSON (servicio gratuito)
-  let newsItems = [];
-  try {
-    const RSS_URL = encodeURIComponent('https://www.dgcp.gob.do/feed/');
-    const r = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${RSS_URL}&count=3`, {signal: AbortSignal.timeout(4000)});
-    if (r.ok) {
-      const d = await r.json();
-      if (d.status === 'ok' && d.items?.length) {
-        newsItems = d.items.slice(0, 3).map(item => ({
-          title: item.title,
-          link:  item.link,
-          date:  item.pubDate ? new Date(item.pubDate).toLocaleDateString('es-DO',{day:'2-digit',month:'short'}) : '',
-          source: 'DGCP.GOB.DO'
-        }));
-      }
-    }
-  } catch(e) { /* silencioso */ }
 
-  let html = '';
-  
-  // Noticias reales primero si hay
-  if (newsItems.length) {
-    newsItems.forEach(n => {
-      html += `<a class="news-item" href="${n.link}" target="_blank">
-        <div class="news-item-title">${n.title}</div>
-        <div class="news-item-meta">
-          <span class="news-item-source">${n.source}</span>
-          ${n.date ? `<span>· ${n.date}</span>` : ''}
-        </div>
-      </a>`;
-    });
-  }
-  
-  // Tips siempre
-  shuffled.forEach(t => {
-    html += `<div class="news-tip">
-      <span class="news-tip-icon">${t.icon}</span>
-      <div class="news-tip-text">
-        <div class="news-tip-tag">${t.tag}</div>
-        ${t.text}
-      </div>
-    </div>`;
+  // Mezclar tips y mostrar 3
+  var tips = TIPS_DATA.slice().sort(function() { return Math.random() - 0.5; }).slice(0, 3);
+  var html = '';
+  tips.forEach(function(t) {
+    html += '<div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:4px">'
+          + '<span style="font-size:9px;font-weight:800;font-family:monospace;letter-spacing:.1em;color:var(--amber);background:var(--amber-dim);border-radius:3px;padding:1px 5px;display:inline-block;width:fit-content">' + t.tag + '</span>'
+          + '<span style="font-size:12px;color:var(--text2);line-height:1.45">' + t.text + '</span>'
+          + '</div>';
   });
 
-  feed.innerHTML = html || '<div style="padding:16px;text-align:center;color:var(--muted);font-size:13px">Sin datos disponibles</div>';
-  
-  // Pulso activo si hay noticias reales
-  const dot = document.getElementById('news-dot');
-  if (dot) dot.style.color = newsItems.length ? 'var(--green)' : 'var(--muted)';
+  // Intentar cargar noticias reales del DGCP
+  try {
+    var r = await fetch('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent('https://www.dgcp.gob.do/feed/') + '&count=2');
+    if (r.ok) {
+      var d = await r.json();
+      if (d.status === 'ok' && d.items && d.items.length) {
+        var newsHtml = '';
+        d.items.slice(0, 2).forEach(function(item) {
+          var fecha = item.pubDate ? new Date(item.pubDate).toLocaleDateString('es-DO', {day:'2-digit', month:'short'}) : '';
+          newsHtml += '<a href="' + item.link + '" target="_blank" style="display:block;padding:10px 14px;border-bottom:1px solid var(--border);text-decoration:none;cursor:pointer">'
+                    + '<div style="font-size:12px;font-weight:600;color:var(--text);line-height:1.4;margin-bottom:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + item.title + '</div>'
+                    + '<div style="font-size:10px;color:var(--muted)"><span style="color:var(--green);font-family:monospace;font-weight:700">DGCP</span>' + (fecha ? ' &middot; ' + fecha : '') + '</div>'
+                    + '</a>';
+        });
+        html = newsHtml + html;
+      }
+    }
+  } catch(e) { /* silencioso — muestra solo tips */ }
+
+  feed.innerHTML = html || '<div style="padding:16px;text-align:center;color:var(--muted);font-size:13px">Sin datos</div>';
 }
 
 </script>
@@ -424,9 +202,8 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 .empty{text-align:center;padding:48px 20px;color:var(--muted)}
 .empty-icon{font-size:36px;margin-bottom:10px;opacity:.5}
 .empty-text{font-size:14px}
-.pagination{display:flex;gap:8px;justify-content:center;margin-top:16px;padding-bottom:16px;flex-wrap:wrap}
-.page-btn.active{background:var(--green-dim);border-color:var(--green-border);color:var(--green);cursor:default}
-.page-btn{padding:8px 16px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap;min-width:44px;text-align:center}
+.pagination{display:flex;gap:8px;justify-content:center;margin-top:16px}
+.page-btn{padding:8px 16px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
 .page-btn:hover{background:var(--green-dim);border-color:var(--green-border);color:var(--green)}
 
 /* ── DETALLE ── */
@@ -614,372 +391,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 #tab-dashboard{overflow-y:auto;-webkit-overflow-scrolling:touch}
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-md);padding:10px 18px;font-size:13px;font-weight:600;color:var(--text);box-shadow:var(--shadow-md);z-index:1000;opacity:0;transition:all .3s cubic-bezier(.4,0,.2,1);white-space:nowrap}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-
-/* ── SWIPE ACTIONS EN CARDS ── */
-.proceso-card-wrap{position:relative;overflow:hidden;border-radius:var(--r-md);margin-bottom:0}
-.proceso-card-actions-reveal{
-  position:absolute;right:0;top:0;bottom:0;
-  display:flex;align-items:center;gap:0;
-  transform:translateX(100%);
-  transition:transform .25s cubic-bezier(.4,0,.2,1);
-  z-index:2;
-}
-.proceso-card-wrap.swiped .proceso-card-actions-reveal{transform:translateX(0)}
-.proceso-card-wrap.swiped .proceso-card{transform:translateX(-130px)}
-.proceso-card{transition:transform .25s cubic-bezier(.4,0,.2,1),border-color .2s,background .2s,box-shadow .2s}
-.swipe-action-btn{
-  height:100%;width:65px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:4px;border:none;cursor:pointer;
-  font-size:10px;font-weight:700;font-family:var(--font-body);
-  letter-spacing:.04em;
-}
-.swipe-btn-wa{background:#22C55E;color:#fff}
-.swipe-btn-wa:hover{background:#16A34A}
-.swipe-btn-star{background:var(--surface2);color:var(--text2);border-left:1px solid var(--border)}
-.swipe-btn-star:hover{background:var(--amber-dim);color:var(--amber)}
-.swipe-btn-star.siguiendo-active{background:var(--green-dim);color:var(--green)}
-.swipe-action-icon{font-size:20px}
-
-
-/* ── AUTOCOMPLETE INSTITUCIÓN ── */
-#inst-dropdown{position:absolute;top:calc(100% + 2px);left:0;right:0;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-md);max-height:200px;overflow-y:auto;z-index:200;box-shadow:var(--shadow-md);display:none}
-.inst-item{padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);transition:background .15s}
-.inst-item:hover{background:var(--green-dim)}
-.inst-item:last-child{border-bottom:none}
-
-
-/* ══════════════════════════════════════════
-   LAB AESTHETIC — Detalles técnicos sutiles
-══════════════════════════════════════════ */
-
-/* Grid técnico de fondo en dashboard */
-#tab-dashboard::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(34,197,94,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(34,197,94,0.03) 1px, transparent 1px);
-  background-size: 40px 40px;
-  pointer-events: none;
-  z-index: 0;
-}
-#tab-dashboard > * { position: relative; z-index: 1; }
-
-/* Códigos de proceso en monospace verde */
-.proceso-card [data-tipo], 
-.proceso-entidad { font-family: var(--font-body); }
-
-/* Barra de scan en cards al hover */
-.proceso-card::after {
-  content: '';
-  position: absolute;
-  top: 0; left: -100%; right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--green), transparent);
-  transition: left .6s ease;
-  pointer-events: none;
-}
-.proceso-card:hover::after { left: 100%; }
-
-/* Navbar — línea inferior con pulso */
-.navbar::after {
-  content: '';
-  position: absolute;
-  bottom: -1px; left: 0; right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, var(--green) 50%, transparent 100%);
-  opacity: 0.4;
-}
-
-/* Tag "LAB" en el brand */
-.nav-brand-tag {
-  font-size: 8px;
-  font-weight: 800;
-  font-family: 'Courier New', monospace;
-  letter-spacing: .15em;
-  color: var(--green);
-  background: var(--green-dim);
-  border: 1px solid var(--green-border);
-  border-radius: 3px;
-  padding: 1px 4px;
-  vertical-align: middle;
-  margin-left: 2px;
-}
-
-/* Terminales / código monospace en campos clave */
-.codigo-proceso {
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  color: var(--green);
-  background: var(--green-dim);
-  padding: 2px 6px;
-  border-radius: 4px;
-  letter-spacing: .04em;
-}
-
-/* Score badge — estilo data readout */
-.score-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 4px;
-  border: 1px solid;
-}
-.score-alto  { color: var(--green); border-color: var(--green-border); background: var(--green-dim); }
-.score-medio { color: var(--amber); border-color: rgba(245,158,11,.3); background: var(--amber-dim); }
-.score-bajo  { color: var(--muted); border-color: var(--border2);      background: var(--surface2); }
-
-/* Auth screen — scanline overlay sutil */
-#screen-auth::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0,0,0,0.03) 2px,
-    rgba(0,0,0,0.03) 4px
-  );
-  pointer-events: none;
-  z-index: 0;
-}
-.auth-card { position: relative; z-index: 1; }
-
-/* Stat cards — estilo monitor de datos */
-.stat-value { letter-spacing: -0.03em; }
-
-/* ── WIDGET NOTICIAS ── */
-.news-widget {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  margin-bottom: 14px;
-  overflow: hidden;
-  position: relative;
-}
-.news-widget::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--green), transparent);
-  opacity: .5;
-}
-.news-widget-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-}
-.news-widget-title {
-  font-size: 10px;
-  font-weight: 800;
-  font-family: 'Courier New', monospace;
-  letter-spacing: .14em;
-  color: var(--green);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.news-widget-dot {
-  font-size: 10px;
-  color: var(--green);
-  animation: blink 1.4s step-end infinite;
-}
-@keyframes blink { 50% { opacity: 0; } }
-
-.news-feed {
-  display: flex;
-  flex-direction: column;
-  max-height: 220px;
-  overflow: hidden;
-}
-.news-loading { padding: 20px; display: flex; justify-content: center; }
-.news-item {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  cursor: pointer;
-  transition: background .15s;
-  text-decoration: none;
-  display: block;
-}
-.news-item:last-child { border-bottom: none; }
-.news-item:hover { background: var(--bg2); }
-.news-item-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  line-height: 1.4;
-  margin-bottom: 3px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.news-item-meta {
-  font-size: 10px;
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.news-item-source {
-  color: var(--green);
-  font-weight: 700;
-  font-family: 'Courier New', monospace;
-  font-size: 10px;
-}
-.news-tip {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-.news-tip:last-child { border-bottom: none; }
-.news-tip-icon {
-  font-size: 16px;
-  flex-shrink: 0;
-  margin-top: 1px;
-}
-.news-tip-text {
-  font-size: 12px;
-  color: var(--text2);
-  line-height: 1.45;
-}
-.news-tip-tag {
-  font-size: 9px;
-  font-weight: 800;
-  font-family: 'Courier New', monospace;
-  letter-spacing: .1em;
-  color: var(--amber);
-  background: var(--amber-dim);
-  border-radius: 3px;
-  padding: 1px 5px;
-  margin-bottom: 3px;
-  display: inline-block;
-}
-
-/* ── COMPARADOR FAB ── */
-.comparador-fab {
-  position: fixed;
-  bottom: 80px;
-  right: 16px;
-  z-index: 90;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 16px;
-  background: linear-gradient(135deg, #1a1a2e, var(--surface2));
-  border: 1.5px solid var(--green-border);
-  border-radius: 24px;
-  color: var(--green);
-  font-family: var(--font-body);
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 4px 20px rgba(0,0,0,.5), 0 0 20px var(--green-glow);
-  transition: all .2s;
-  animation: fabPop .35s cubic-bezier(.16,1,.3,1);
-}
-.comparador-fab:hover { transform: translateY(-2px); box-shadow: 0 6px 28px rgba(0,0,0,.5), 0 0 30px var(--green-glow); }
-@keyframes fabPop { from { transform: scale(.7) translateY(10px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
-
-/* ── MODAL COMPARADOR ── */
-.comp-modal-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.75);
-  z-index: 400;
-  backdrop-filter: blur(8px);
-  align-items: flex-end;
-  justify-content: center;
-  padding: 16px;
-}
-.comp-modal-overlay.open { display: flex; }
-.comp-modal {
-  background: var(--surface2);
-  border: 1px solid var(--border2);
-  border-radius: var(--r-xl);
-  padding: 20px;
-  width: 100%;
-  max-width: 500px;
-  max-height: 80dvh;
-  overflow-y: auto;
-  animation: slideUp .35s cubic-bezier(.16,1,.3,1);
-}
-.comp-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
-}
-.comp-grid {
-  display: flex;
-  gap: 0;
-}
-.comp-col {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-.comp-divider {
-  width: 1px;
-  background: var(--border2);
-  margin: 0 12px;
-  flex-shrink: 0;
-}
-.comp-col-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text);
-  line-height: 1.4;
-  margin-bottom: 12px;
-  min-height: 36px;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.comp-row {
-  display: flex;
-  flex-direction: column;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--border);
-}
-.comp-row:last-of-type { border-bottom: none; }
-.comp-lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 2px; font-family: 'Courier New', monospace; }
-.comp-val { font-size: 12px; font-weight: 600; color: var(--text); }
-.comp-monto { color: var(--green); font-family: var(--font-display); font-size: 13px; }
-.comp-score { font-family: 'Courier New', monospace; color: var(--green); }
-.comp-ver-btn {
-  margin-top: 12px;
-  padding: 9px;
-  background: var(--green-dim);
-  border: 1px solid var(--green-border);
-  border-radius: var(--r-sm);
-  color: var(--green);
-  font-family: var(--font-body);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all .2s;
-  width: 100%;
-}
-.comp-ver-btn:hover { background: var(--green); color: #fff; }
-
 </style>
 </head>
 <body>
@@ -1036,7 +447,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
   <nav class="navbar">
     <div class="nav-brand">
       <div class="nav-brand-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
-      <span class="nav-brand-name">Licitaciones <span class="nav-brand-tag">LAB</span></span>
+      <span class="nav-brand-name">Licitaciones Lab</span>
     </div>
     <div class="nav-right">
       <div class="nav-user">
@@ -1069,73 +480,16 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
         <div class="stat-label">Servicios</div>
         <div class="stat-value" id="stat-servicios">—</div>
       </div>
-
-    </div>
-
-
-    <!-- ── WIDGET NOTICIAS + TIPS ── -->
-    <div class="news-widget" id="news-widget">
-      <div class="news-widget-header">
-        <span class="news-widget-title">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6z"/></svg>
-          INTELIGENCIA
-        </span>
-        <span class="news-widget-dot" id="news-dot">●</span>
-      </div>
-      <div class="news-feed" id="news-feed">
-        <div class="news-loading"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div></div>
-      </div>
-    </div>
-
-    <!-- ── COMPARADOR FAB ── -->
-    <button class="comparador-fab" id="comparador-fab" style="display:none" onclick="abrirComparador()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="7" height="18"/><rect x="14" y="3" width="7" height="18"/></svg>
-      Comparar (2)
-    </button>
-
-    <!-- ── MODAL COMPARADOR ── -->
-    <div class="comp-modal-overlay" id="comparador-modal" onclick="if(event.target===this) cerrarComparador()">
-      <div class="comp-modal">
-        <div class="comp-modal-header">
-          <span style="font-family:var(--font-display);font-size:16px;font-weight:700">Comparar Procesos</span>
-          <button onclick="cerrarComparador()" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1">✕</button>
-        </div>
-        <div class="comp-grid">
-          <div class="comp-col">
-            <div class="comp-col-title" id="comp-titulo-a">—</div>
-            <div class="comp-row"><span class="comp-lbl">Institución</span><span class="comp-val" id="comp-entidad-a">—</span></div>
-            <div class="comp-row"><span class="comp-lbl">Monto</span><span class="comp-val comp-monto" id="comp-monto-a">—</span></div>
-            <div class="comp-row"><span class="comp-lbl">Tipo</span><span class="comp-val" id="comp-tipo-a">—</span></div>
-            <div class="comp-row"><span class="comp-lbl">Cierre</span><span class="comp-val" id="comp-fecha-a">—</span></div>
-            <div class="comp-row"><span class="comp-lbl">Score</span><span class="comp-val comp-score" id="comp-score-a">—</span></div>
-            <button class="comp-ver-btn" id="comp-ver-a">Ver detalle →</button>
-          </div>
-          <div class="comp-divider"></div>
-          <div class="comp-col">
-            <div class="comp-col-title" id="comp-titulo-b">—</div>
-            <div class="comp-row"><span class="comp-lbl">Institución</span><span class="comp-val" id="comp-entidad-b">—</span></div>
-            <div class="comp-row"><span class="comp-lbl">Monto</span><span class="comp-val comp-monto" id="comp-monto-b">—</span></div>
-            <div class="comp-row"><span class="comp-lbl">Tipo</span><span class="comp-val" id="comp-tipo-b">—</span></div>
-            <div class="comp-row"><span class="comp-lbl">Cierre</span><span class="comp-val" id="comp-fecha-b">—</span></div>
-            <div class="comp-row"><span class="comp-lbl">Score</span><span class="comp-val comp-score" id="comp-score-b">—</span></div>
-            <button class="comp-ver-btn" id="comp-ver-b">Ver detalle →</button>
-          </div>
-        </div>
-        <button onclick="comparadorSeleccionados=[];actualizarBtnComparador();cerrarComparador()" 
-          style="width:100%;margin-top:14px;padding:10px;background:var(--red-dim);border:1px solid rgba(239,68,68,.2);border-radius:var(--r-sm);color:var(--red);font-family:var(--font-body);font-size:13px;font-weight:700;cursor:pointer">
-          Limpiar selección
-        </button>
+      <div class="stat-card total-card">
+        <div class="stat-label">Total en base de datos</div>
+        <div class="stat-value" id="stat-total">—</div>
       </div>
     </div>
 
     <div class="filters-block">
       <div class="filter-row">
         <input class="filter-input" type="text" id="busqueda" placeholder="🔍 Título o código proceso..." oninput="debounceSearch()" style="flex:2">
-        <div style="position:relative;flex:1">
-          <input class="filter-input" type="text" id="filtro-institucion" placeholder="🏛️ Institución..." 
-            oninput="buscarInstitucion();debounceSearch()" autocomplete="off" style="width:100%">
-          <div id="inst-dropdown"></div>
-        </div>
+        <input class="filter-input" type="text" id="filtro-institucion" placeholder="🏛️ Institución..." oninput="debounceSearch()">
       </div>
       <div class="filter-row">
         <select class="filter-select" id="filtro-objeto" onchange="cargarProcesos(1)">
@@ -1307,6 +661,7 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 let currentUser = null;
 let searchTimer = null;
 let pushSubscription = null;
+let seguimientoData = [];  // declarada aquí para evitar ReferenceError en cargarSeguimiento
 
 // ── AUTH ──
 async function supabaseRequest(endpoint, method, body) {
@@ -1318,11 +673,11 @@ async function supabaseRequest(endpoint, method, body) {
       method, headers, body: body ? JSON.stringify(body) : undefined
     });
     const data = await res.json();
-    console.log('[supabaseRequest]', endpoint, res.status, data);
+    console.log('[auth]', endpoint, res.status, data && data.error ? data.error : 'OK');
     return data;
   } catch(e) {
-    console.error('[supabaseRequest] Error de red:', e);
-    return { error: 'network_error', error_description: 'Error de conexión. Verifica tu internet.' };
+    console.error('[auth] Error de red:', e.message);
+    return { error: 'network_error', error_description: 'Error de conexion. Verifica tu internet.' };
   }
 }
 
@@ -1332,13 +687,7 @@ async function login() {
   if (!email || !password) return showMsg('Ingresa correo y contraseña', 'error');
   const btn = document.getElementById('btn-login');
   btn.disabled = true; btn.textContent = 'Entrando...';
-  let data;
-  try {
-    data = await supabaseRequest('token?grant_type=password', 'POST', { email, password });
-  } catch(e) {
-    btn.disabled = false; btn.textContent = 'Entrar';
-    return showMsg('❌ Error de conexión. Intenta de nuevo.', 'error');
-  }
+  const data = await supabaseRequest('token?grant_type=password', 'POST', { email, password });
   btn.disabled = false; btn.textContent = 'Entrar';
   if (data.error) {
     const msg = (data.error_description || data.error || '').toLowerCase();
@@ -1405,7 +754,6 @@ function logout() {
 }
 
 function showApp() {
-  cargarNoticias();
   document.getElementById('screen-auth').classList.remove('active');
   document.getElementById('screen-app').classList.add('active');
   
@@ -1417,6 +765,7 @@ function showApp() {
   cargarProcesos(1);
   checkPushStatus();
   cargarInteresesGuardados();
+  cargarNoticias();
 }
 
 function showMsg(msg, type) {
@@ -1502,44 +851,20 @@ function renderProcesos(procesos, data, page) {
     const tipo = p.objeto_proceso || '';
     const badgeClass = tipo === 'Obras' ? 'badge-obras' : tipo === 'Bienes' ? 'badge-bienes' : tipo === 'Servicios' ? 'badge-servicios' : 'badge-general';
     const cierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO',{day:'2-digit',month:'short'}) : '—';
-    const tipoData = tipo.includes('Obra') ? 'Obras' : tipo.includes('Bien') ? 'Bienes' : tipo.includes('Servicio') ? 'Servicios' : '';
-    const score = calcularScore(p);
-    const scoreColor = score >= 70 ? 'var(--green)' : score >= 40 ? 'var(--amber)' : 'var(--muted)';
-    const siguiendoCard = estaEnSeguimiento(p.codigo_proceso);
-    const msgWA = encodeURIComponent(`Hola Lonny, vi esta licitación en LicitacionLab: *${p.titulo}* (${p.codigo_proceso}). ¿Puedes ayudarme?`);
     return `
-      <div class="proceso-card-wrap" id="wrap-${p.codigo_proceso}">
-        <div class="proceso-card-actions-reveal">
-          <a class="swipe-action-btn swipe-btn-wa" href="https://wa.me/18299999999?text=${msgWA}" target="_blank" onclick="cerrarSwipe('${p.codigo_proceso}')">
-            <span class="swipe-action-icon">💬</span>
-            <span>Experto</span>
-          </a>
-          <button class="swipe-action-btn swipe-btn-star ${siguiendoCard ? 'siguiendo-active' : ''}" id="swipe-star-${p.codigo_proceso}" onclick="toggleSeguimientoSwipe('${p.codigo_proceso}')">
-            <span class="swipe-action-icon">${siguiendoCard ? '★' : '☆'}</span>
-            <span>${siguiendoCard ? 'Siguiendo' : 'Seguir'}</span>
-          </button>
+      <div class="proceso-card" data-tipo="${(p.objeto_proceso||'').includes('Obra')?'Obras':(p.objeto_proceso||'').includes('Bien')?'Bienes':(p.objeto_proceso||'').includes('Servicio')?'Servicios':''}" onclick="verDetalle('${p.codigo_proceso}')">
+        <div class="proceso-card-top">
+          <div class="proceso-titulo">${p.titulo || 'Sin título'}</div>
+          <div class="proceso-monto">${formatMonto(p.monto_estimado)}</div>
         </div>
-        <div class="proceso-card" data-tipo="${tipoData}" data-codigo="${p.codigo_proceso}"
-          onclick="verDetalle('${p.codigo_proceso}')"
-          ontouchstart="cardTouchStart(event,'${p.codigo_proceso}')"
-          ontouchmove="cardTouchMove(event,'${p.codigo_proceso}')"
-          ontouchend="cardTouchEnd(event,'${p.codigo_proceso}')">
-          <div class="proceso-card-top">
-            <div class="proceso-titulo">${p.titulo || 'Sin título'}</div>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
-              <div class="proceso-monto">${formatMonto(p.monto_estimado)}</div>
-              <div style="font-size:10px;font-weight:700;color:${scoreColor};font-family:monospace">${score > 0 ? score + ' pts' : ''}</div>
-            </div>
-          </div>
-          <div class="proceso-card-bottom">
-            <span class="proceso-entidad">${p.unidad_compra || '—'}</span>
-            <span class="proceso-fecha">📅 ${cierre}</span>
-          </div>
-          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
-            ${tipo ? `<span class="badge ${badgeClass}">${tipo}</span>` : ''}
-            ${p.modalidad ? `<span class="badge badge-modalidad">${p.modalidad}</span>` : ''}
-            ${p.dirigido_mipymes ? '<span class="badge badge-mipymes">MIPYMES</span>' : ''}
-          </div>
+        <div class="proceso-card-bottom">
+          <span class="proceso-entidad">${p.unidad_compra || '—'}</span>
+          <span class="proceso-fecha">📅 ${cierre}</span>
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
+          ${tipo ? `<span class="badge ${badgeClass}">${tipo}</span>` : ''}
+          ${p.modalidad ? `<span class="badge badge-modalidad">${p.modalidad}</span>` : ''}
+          ${p.dirigido_mipymes ? '<span class="badge badge-mipymes">MIPYMES</span>' : ''}
         </div>
       </div>`;
   }).join('');
@@ -1579,21 +904,17 @@ async function buscarUnspsc() {
   const q  = document.getElementById('filtro-unspsc-text').value.trim();
   const dd = document.getElementById('unspsc-dropdown');
   if (q.length < 2) { dd.style.display = 'none'; return; }
+  const res  = await fetch(`${API}/api/unspsc/buscar?q=${encodeURIComponent(q)}`);
+  const data = await res.json();
+  if (!data.length) { dd.style.display = 'none'; return; }
   const esCodigo = /^\d+$/.test(q);
-  const url = `${API}/api/unspsc/buscar?q=${encodeURIComponent(q)}${esCodigo ? '&tipo=codigo' : ''}`;
-  try {
-    const res  = await fetch(url);
-    const data = await res.json();
-    if (!data.length) { dd.style.display = 'none'; return; }
-    dd.innerHTML = data.map(f =>
-      `<div class="unspsc-dropdown-item" onclick="seleccionarUnspsc('${f.familia}','${f.descripcion_familia.replace(/'/g,"\\'")}')">
-        ${esCodigo
-          ? `<span style="font-family:monospace;font-size:12px;color:var(--green);margin-right:8px">${f.familia}</span>${f.descripcion_familia}`
-          : `${f.descripcion_familia}<span style="font-family:monospace;font-size:11px;color:var(--green);margin-left:8px">${f.familia}</span>`
-        }
-      </div>`).join('');
-    dd.style.display = 'block';
-  } catch(e) { dd.style.display = 'none'; }
+  dd.innerHTML = data.map(f =>
+    `<div class="unspsc-dropdown-item" onclick="seleccionarUnspsc('${f.familia}','${f.descripcion_familia.replace(/'/g,"\\'")}')">${
+      esCodigo
+        ? `<span class="code" style="margin-left:0;margin-right:6px">${f.familia}</span>${f.descripcion_familia}`
+        : `${f.descripcion_familia}<span class="code">${f.familia}</span>`
+    }</div>`).join('');
+  dd.style.display = 'block';
 }
 
 function seleccionarUnspsc(codigo, nombre) {
@@ -1754,18 +1075,6 @@ function mostrarDashboard() {
 
 // ── NAV ──
 function switchTab2(tab) {
-  // Scroll arriba en el tab activo
-  const tabs = {dashboard: 'tab-dashboard', seguimiento: 'tab-seguimiento', perfil: 'tab-perfil'};
-  const activeId = tabs[tab];
-  if (activeId) { const el = document.getElementById(activeId); if(el) el.scrollTop = 0; }
-  // Nav active state
-  ['nav-dashboard','nav-seguimiento','nav-perfil'].forEach(id => {
-    const el = document.getElementById(id); if(el) el.classList.remove('active');
-  });
-  if (tab==='dashboard')   document.getElementById('nav-dashboard')?.classList.add('active');
-  if (tab==='seguimiento') document.getElementById('nav-seguimiento')?.classList.add('active');
-  if (tab==='perfil')      document.getElementById('nav-perfil')?.classList.add('active');
-
   document.getElementById('tab-dashboard').style.display = tab==='dashboard' ? 'block' : 'none';
   document.getElementById('tab-detalle').style.display   = 'none';
   document.getElementById('tab-perfil').style.display      = tab==='perfil'      ? 'block' : 'none';
@@ -1860,15 +1169,10 @@ document.addEventListener('touchend', e=>{
 
 // ── CERRAR DROPDOWNS AL TOCAR FUERA ──
 document.addEventListener('click', e=>{
-  if (!e.target.closest('#filtro-unspsc-text') && !e.target.closest('#unspsc-dropdown')) {
+  if (!e.target.closest('#filtro-unspsc-text') && !e.target.closest('#unspsc-dropdown'))
     document.getElementById('unspsc-dropdown').style.display='none';
-  }
-  if (!e.target.closest('#filtro-institucion') && !e.target.closest('#inst-dropdown')) {
-    const dd = document.getElementById('inst-dropdown');
-    if (dd) dd.style.display='none';
-  }
   if (!e.target.closest('#perfil-unspsc-text') && !e.target.closest('#perfil-unspsc-dropdown')) {
-    document.getElementById('perfil-unspsc-dropdown').style.display='none';
+    const dd=document.getElementById('perfil-unspsc-dropdown'); if(dd) dd.style.display='none';
   }
 });
 
@@ -2353,7 +1657,6 @@ async function sbRest(path, method = 'GET', body = null, extraHeaders = {}) {
 // SEGUIMIENTO DE PROCESOS
 // ═══════════════════════════════════════════════════════════════
 
-let seguimientoData = [];
 let segFiltroActivo = 'todos';
 let segModalCodigo  = null;
 
