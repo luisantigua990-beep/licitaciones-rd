@@ -181,14 +181,14 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 .back-btn{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border2);border-radius:20px;color:var(--text2);font-family:var(--font-body);font-size:13px;font-weight:600;padding:7px 14px;cursor:pointer;margin-bottom:14px;transition:all .2s}
 .back-btn:hover{color:var(--text);border-color:var(--green-border)}
 .detalle-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:12px}
-.detalle-header-bar{padding:18px 18px 14px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,var(--surface2) 0%,var(--surface) 100%)}
+.detalle-header-bar{padding:18px 18px 14px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,var(--surface2) 0%,var(--surface) 100%);overflow:hidden;word-break:break-word}
 .detalle-badges{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
 .detalle-badge{font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;letter-spacing:.06em;text-transform:uppercase}
 .detalle-badge-tipo{background:var(--green-dim);color:var(--green);border:1px solid var(--green-border)}
 .detalle-badge-modal{background:var(--blue-dim);color:var(--blue);border:1px solid rgba(56,189,248,.2)}
 .detalle-badge-estado{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
 .detalle-titulo{font-family:var(--font-display);font-size:17px;font-weight:700;line-height:1.35;color:var(--text);margin-bottom:8px}
-.detalle-monto{font-family:var(--font-display);font-size:clamp(16px,5.5vw,26px);font-weight:800;color:var(--green);letter-spacing:-.5px;word-break:break-word;line-height:1.15;max-width:100%}
+.detalle-monto{font-family:var(--font-display);font-size:clamp(15px,5vw,26px);font-weight:800;color:var(--green);letter-spacing:-.3px;word-break:break-all;overflow-wrap:anywhere;line-height:1.2;display:block;width:100%}
 .detalle-body{padding:16px 18px}
 .detalle-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:16px;border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden}
 .detalle-field{padding:10px 12px;border-bottom:1px solid var(--border);border-right:1px solid var(--border)}
@@ -369,7 +369,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 <div id="screen-auth" class="screen active">
   <div class="auth-card">
     <div class="auth-brand">
-      <div class="auth-brand-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+      <div class="auth-brand-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v5l-4 8a2 2 0 0 0 1.8 3h8.4a2 2 0 0 0 1.8-3l-4-8V3"/><path d="M8.5 16h7"/></svg></div>
       <div>
         <div class="auth-brand-name">Licitaciones Lab</div>
         <div class="auth-brand-sub">INTELIGENCIA EN COMPRAS PÚBLICAS</div>
@@ -417,7 +417,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 
   <nav class="navbar">
     <div class="nav-brand">
-      <div class="nav-brand-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+      <div class="nav-brand-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v5l-4 8a2 2 0 0 0 1.8 3h8.4a2 2 0 0 0 1.8-3l-4-8V3"/><path d="M8.5 16h7"/></svg></div>
       <span class="nav-brand-name">Licitaciones Lab</span>
     </div>
     <div class="nav-right">
