@@ -1164,6 +1164,43 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         print(f"⚠️ Respuesta pequeña final: {repr(resp_pdf.content[:300])}")
         raise Exception(f"Respuesta demasiado pequeña ({len(resp_pdf.content)} bytes) tras seguir redirect")
 
+    content_type_final = resp_pdf.headers.get("Content-Type", "").lower()
+    # Si el portal devolvió un ZIP en vez de un PDF, no intentar parsear como PDF
+    if "zip" in content_type_final or resp_pdf.content[:4] == b"PK\x03\x04":
+        print(f"⚠️ El documento seleccionado es un ZIP, no un PDF — buscando alternativa PDF en el inventario...")
+        # Buscar el primer documentFileId cuyo nombre termine en .pdf y no esté excluido
+        import re as _re_zip
+        pdf_alt = None
+        for fid_alt, mk_alt in patrones:
+            idx_alt = html_final.find(str(fid_alt))
+            ctx_alt = html_final[max(0, idx_alt - 600):idx_alt + 100].lower()
+            nombre_alt_m = _re_zip.search(r'["\>]([\w\s\-\._\(\)]+\.pdf)[<\"]', ctx_alt, _re_zip.IGNORECASE)
+            if nombre_alt_m:
+                nombre_alt = nombre_alt_m.group(1).lower()
+                if not any(x in nombre_alt for x in KEYWORDS_EXCLUIR) and fid_alt != file_id_sel:
+                    pdf_alt = (fid_alt, mk_alt, nombre_alt)
+                    break
+        if pdf_alt:
+            fid_alt, mk_alt, nombre_alt = pdf_alt
+            enlace_alt = f"{BASE_DOWNLOAD}?documentFileId={fid_alt}&mkey={mk_alt}"
+            print(f"🔄 Reintentando con PDF alternativo: documentFileId={fid_alt} → '{nombre_alt}'")
+            resp_pdf = session.get(enlace_alt, headers=headers_download, timeout=60)
+            # Seguir redirect JS si aplica
+            if len(resp_pdf.content) < 2000 and b"window.location.href" in resp_pdf.content:
+                import re as _re_zip2
+                js_body2 = resp_pdf.content.decode("utf-8", errors="ignore")
+                m2 = _re_zip2.search(r"window\.location\.href\s*=\s*['\"]([^'\"]+)", js_body2)
+                if m2:
+                    url_alt2 = m2.group(1)
+                    if not url_alt2.startswith("http"):
+                        url_alt2 = "https://comunidad.comprasdominicana.gob.do" + url_alt2
+                    resp_pdf = session.get(url_alt2, headers={**hdrs_exitosos, "Referer": enlace_alt}, timeout=60)
+            content_type_final = resp_pdf.headers.get("Content-Type", "").lower()
+            if "zip" in content_type_final or resp_pdf.content[:4] == b"PK\x03\x04":
+                raise Exception(f"El documento alternativo también es un ZIP — no hay PDF disponible para analizar.")
+        else:
+            raise Exception(f"El pliego seleccionado es un ZIP y no se encontró un PDF alternativo en el inventario.")
+
     print(f"📄 PDF: {len(resp_pdf.content):,} bytes. Extrayendo texto...")
     pdf_bytes = resp_pdf.content
     pdf_file = io.BytesIO(pdf_bytes)
@@ -1678,11 +1715,25 @@ def ejecutar_analisis_gemini(proceso_id: str):
                     espera = min(espera, 15)
                     print(f"⏳ Gemini 429 (burst) — esperando {espera}s ({intento+1}/{MAX_REINTENTOS})...")
                     time.sleep(espera)
+                elif "503" in msg or "UNAVAILABLE" in msg:
+                    # Gemini sobrecargado — backoff exponencial: 10s, 30s, 60s
+                    esperas = [10, 30, 60]
+                    espera = esperas[intento] if intento < len(esperas) else 60
+                    print(f"⏳ Gemini 503 (alta demanda) — esperando {espera}s ({intento+1}/{MAX_REINTENTOS})...")
+                    time.sleep(espera)
+                    if intento == MAX_REINTENTOS - 1:
+                        # Último intento fallido → marcar como pendiente para reprocesar
+                        supabase_admin.table("analisis_pliego").upsert({
+                            "proceso_id": proceso_id,
+                            "estado": "pendiente_analisis"
+                        }).execute()
+                        print(f"⚠️ Gemini 503 persistente — {proceso_id} marcado como pendiente_analisis")
+                        return
                 else:
                     raise  # error no recuperable
 
         if datos_json is None:
-            raise Exception(f"Gemini 429 persistente tras {MAX_REINTENTOS} reintentos — revisa cuota en Google AI Studio.")
+            raise Exception(f"Gemini sin respuesta tras {MAX_REINTENTOS} reintentos.")
         
         # 4. GUARDAR RESULTADOS EN LA BÓVEDA
         # Mapeo explícito: columnas reales de Supabase vs campos del JSON de Gemini.
