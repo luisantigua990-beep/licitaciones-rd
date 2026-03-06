@@ -547,7 +547,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 .checklist-sin-analisis{padding:20px 16px;text-align:center;color:var(--muted);font-size:13px}
 
 /* ── BOTTOM NAV ── */
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;z-index:100;display:flex;background:var(--navbar-bg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom)}
+.bottom-nav{position:relative;flex-shrink:0;z-index:100;display:flex;width:100%;background:var(--navbar-bg);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-top:1px solid var(--border);padding-bottom:env(safe-area-inset-bottom)}
 .bottom-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:10px 8px;background:transparent;border:none;color:var(--muted);font-family:var(--font-body);font-size:10px;font-weight:600;letter-spacing:.04em;cursor:pointer;transition:color .2s}
 .bottom-nav-item.active{color:var(--green)}
 .nav-icon-wrap{width:36px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:10px;transition:background .2s;position:relative}
@@ -666,7 +666,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 #tab-detalle{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:72px;display:none}
 #tab-perfil{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:72px;display:none}
 #tab-dashboard{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:72px;display:none}
-.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-md);padding:10px 18px;font-size:13px;font-weight:600;color:var(--text);box-shadow:var(--shadow-md);z-index:1000;opacity:0;transition:all .3s cubic-bezier(.4,0,.2,1);white-space:nowrap}
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-md);padding:10px 18px;font-size:13px;font-weight:600;color:var(--text);box-shadow:var(--shadow-md);z-index:1000;opacity:0;transition:all .3s cubic-bezier(.4,0,.2,1);white-space:nowrap}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 /* ── MERCADO DE PROVEEDORES ── */
@@ -1126,7 +1126,9 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
   </div>
 
   <!-- Overlay + Sheet de registro -->
-  <div class="mercado-form-overlay" id="mercado-form-overlay" onclick="cerrarFormProveedor()"></div>
+  </div><!-- /tabs-wrapper -->
+
+<div class="mercado-form-overlay" id="mercado-form-overlay" onclick="cerrarFormProveedor()"></div>
   <div class="mercado-form-sheet" id="mercado-form-sheet">
     <div class="form-sheet-handle"></div>
     <div class="form-sheet-title">Registrar proveedor</div>
@@ -1188,8 +1190,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     <div id="pf-msg" style="display:none;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:12px;text-align:center"></div>
     <button class="form-submit-btn" id="pf-submit-btn" onclick="enviarRegistroProveedor()">Registrar proveedor</button>
   </div>
-
-  </div><!-- /tabs-wrapper -->
 
   <!-- Modal cambio de estado -->
   <div class="seg-modal-overlay" id="seg-overlay" onclick="cerrarModalEstado()"></div>
@@ -2539,7 +2539,7 @@ function mostrarToast(msg) {
   if (!t) {
     t = document.createElement('div');
     t.id = 'll-toast';
-    t.style.cssText = `position:fixed;bottom:90px;left:50%;transform:translateX(-50%);
+    t.style.cssText = `position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
       background:#1F2937;color:#F9FAFB;padding:10px 18px;border-radius:20px;
       font-size:13px;font-weight:600;z-index:300;white-space:nowrap;
       box-shadow:0 4px 12px rgba(0,0,0,0.4);opacity:0;transition:opacity 0.2s;
