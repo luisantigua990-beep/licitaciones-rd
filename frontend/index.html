@@ -79,7 +79,7 @@ html,body{height:100%;overflow:hidden}
 body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
 
 /* ── SCREENS ── */
-.screen{display:none;position:fixed;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;z-index:1;background:var(--bg)}
+.screen{display:none;position:fixed;inset:0;overflow:hidden;z-index:1;background:var(--bg)}
 .screen.active{display:block}
 
 /* ── AUTH ── */
@@ -168,39 +168,44 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 .main{padding:16px;max-width:600px;margin:0 auto}
 .page-with-nav{padding-bottom:80px}
 
-/* ── STATS ── */
-.stats-bar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
-.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:14px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
-.stat-card::after{content:'';position:absolute;bottom:0;left:0;width:100%;height:2px;background:var(--green);transform:scaleX(0);transition:transform .25s}
-.stat-card:hover::after{transform:scaleX(1)}
-.stat-card:hover{border-color:var(--green-border);background:var(--surface2)}
-.stat-card:active{transform:scale(.98)}
-.stat-emoji{font-size:18px;margin-bottom:6px;display:block}
-.stat-label{font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
-.stat-value{font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-.stat-card.total-card{grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;gap:8px}
-.stat-card.total-card .stat-label{margin-bottom:0;flex-shrink:0}
-.stat-card.total-card .stat-value{font-size:20px;color:var(--green);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* ── DASHBOARD HEADER ── */
+.dash-header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 18px 8px}
+.dash-greeting{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-.3px;line-height:1.2}
+.dash-subtitle{font-size:12px;color:var(--muted);margin-top:3px;font-weight:500}
+.dash-notif-btn{width:40px;height:40px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);flex-shrink:0;transition:all .2s}
+.dash-notif-btn:active{background:var(--surface2)}
 
-/* ── FILTROS ── */
-.filters-block{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;margin-bottom:14px;display:flex;flex-direction:column;gap:8px}
-.filter-row{display:flex;gap:8px;align-items:center;position:relative;flex-wrap:wrap}
-.filter-row .filter-input,.filter-row .filter-select{min-width:0;flex:1 1 100px}
-.filter-input{flex:1;padding:9px 12px;background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--font-body);font-size:13px;outline:none;transition:border-color .2s,box-shadow .2s}
+/* ── SEARCH BAR ── */
+.dash-search-wrap{display:flex;align-items:center;gap:10px;padding:8px 16px 10px;position:relative}
+.dash-search-icon{position:absolute;left:28px;color:var(--muted);pointer-events:none;z-index:1}
+.dash-search-input{flex:1;padding:11px 12px 11px 38px;background:var(--surface);border:1.5px solid var(--border);border-radius:12px;color:var(--text);font-family:var(--font-body);font-size:14px;outline:none;transition:border-color .2s,box-shadow .2s}
+.dash-search-input:focus{border-color:var(--green);box-shadow:0 0 0 3px var(--green-glow)}
+.dash-search-input::placeholder{color:var(--muted)}
+.dash-filter-btn{width:42px;height:42px;border-radius:12px;background:var(--surface);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);flex-shrink:0;position:relative;transition:all .2s}
+.dash-filter-btn:active,.dash-filter-btn.activo{border-color:var(--green);color:var(--green);background:var(--green-dim)}
+
+/* ── CHIPS ── */
+.dash-chips{display:flex;gap:7px;padding:0 16px 12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.dash-chips::-webkit-scrollbar{display:none}
+.dash-chip{flex-shrink:0;padding:6px 13px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:600;font-family:var(--font-body);cursor:pointer;transition:all .18s;display:flex;align-items:center;gap:5px}
+.dash-chip.active{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.dash-chip:active{transform:scale(.96)}
+.chip-count{font-size:10px;color:var(--muted);font-weight:500}
+.dash-chip.active .chip-count{color:var(--green)}
+
+/* ── FILTROS AVANZADOS ── */
+.filtros-avanzados-panel{overflow:hidden;max-height:0;transition:max-height .35s cubic-bezier(.4,0,.2,1),opacity .25s;opacity:0;pointer-events:none;padding:0 16px}
+.filtros-avanzados-panel.abierto{max-height:280px;opacity:1;pointer-events:auto}
+.adv-filter-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-bottom:4px}
+.filter-input{flex:1;padding:9px 12px;background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--r-sm);color:var(--text);font-family:var(--font-body);font-size:13px;outline:none;transition:border-color .2s,box-shadow .2s;width:100%;box-sizing:border-box}
 .filter-input:focus{border-color:var(--green);box-shadow:0 0 0 3px var(--green-glow)}
 .filter-input::placeholder{color:var(--muted)}
-.filter-select{flex:1;padding:9px 12px;background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--r-sm);color:var(--text2);font-family:var(--font-body);font-size:13px;outline:none;cursor:pointer;transition:border-color .2s}
+.filter-select{width:100%;padding:9px 12px;background:var(--bg2);border:1.5px solid var(--border);border-radius:var(--r-sm);color:var(--text2);font-family:var(--font-body);font-size:13px;outline:none;cursor:pointer;transition:border-color .2s;box-sizing:border-box}
 .filter-select:focus{border-color:var(--green)}
-.filter-clear{padding:9px 14px;background:var(--red-dim);border:1px solid rgba(239,68,68,.2);border-radius:var(--r-sm);color:var(--red);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body);transition:all .2s;white-space:nowrap;flex-shrink:0}
-.filter-clear:hover{background:var(--red);color:#fff}
-/* ── FILTROS AVANZADOS COLAPSABLES (móvil) ── */
-.btn-filtros-avanzados{display:none;padding:8px 14px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--r-sm);color:var(--text2);font-size:12px;font-weight:600;font-family:var(--font-body);cursor:pointer;align-items:center;gap:6px;transition:all .2s;position:relative;white-space:nowrap}
-.btn-filtros-avanzados:hover{border-color:var(--green);color:var(--green)}
-.btn-filtros-avanzados.activo{border-color:var(--green);color:var(--green);background:var(--green-dim)}
+.filter-clear{padding:9px 16px;background:transparent;border:1.5px solid var(--border);border-radius:var(--r-sm);color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body);transition:all .2s;white-space:nowrap}
+.filter-clear:active{color:var(--red);border-color:var(--red)}
 .filtros-badge{display:none;min-width:17px;height:17px;padding:0 5px;background:var(--green);color:#000;border-radius:20px;font-size:10px;font-weight:800;align-items:center;justify-content:center;line-height:1}
 .filtros-badge.visible{display:flex}
-.filtros-avanzados-panel{overflow:hidden;max-height:0;transition:max-height .3s cubic-bezier(.4,0,.2,1),opacity .25s;opacity:0;pointer-events:none}
-.filtros-avanzados-panel.abierto{max-height:200px;opacity:1;pointer-events:auto}
 /* ── BOTÓN ANÁLISIS IA — estados de carga ── */
 .btn-analizar-pliego{width:100%;padding:12px;background:linear-gradient(135deg,var(--green-dark),var(--green));border:none;border-radius:var(--r-md);color:#000;font-size:14px;font-weight:700;font-family:var(--font-body);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .25s;margin-top:8px}
 .btn-analizar-pliego:hover:not(:disabled){filter:brightness(1.1);transform:translateY(-1px)}
@@ -224,8 +229,8 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 .unspsc-active-tag{display:none;align-items:center;gap:8px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:20px;padding:6px 12px;font-size:12px;font-weight:600;color:var(--green)}
 
 /* ── PROCESO CARDS ── */
-.procesos-list{display:flex;flex-direction:column;gap:8px}
-.proceso-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:14px 14px 14px 18px;cursor:pointer;transition:all .2s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden}
+.procesos-list{display:flex;flex-direction:column;gap:0;padding:0 16px}
+.proceso-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;cursor:pointer;transition:border-color .18s,transform .15s;position:relative;overflow:hidden;margin-bottom:10px}
 .proceso-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--muted)}
 .proceso-card[data-tipo="Obras"]::before{background:linear-gradient(to bottom,#38BDF8,#0284C7)}
 .proceso-card[data-tipo="Bienes"]::before{background:linear-gradient(to bottom,#A78BFA,#7C3AED)}
@@ -251,9 +256,10 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 .empty{text-align:center;padding:48px 20px;color:var(--muted)}
 .empty-icon{font-size:36px;margin-bottom:10px;opacity:.5}
 .empty-text{font-size:14px}
-.pagination{display:flex;gap:8px;justify-content:center;margin-top:16px}
-.page-btn{padding:8px 16px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-sm);color:var(--text2);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s}
+.pagination{display:flex;gap:8px;justify-content:center;align-items:center;padding:20px 16px 32px;flex-wrap:wrap}
+.page-btn{padding:9px 18px;background:var(--surface);border:1.5px solid var(--border);border-radius:20px;color:var(--text2);font-family:var(--font-body);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;white-space:nowrap}
 .page-btn:hover{background:var(--green-dim);border-color:var(--green-border);color:var(--green)}
+.page-btn.active{background:var(--green-dim);border-color:var(--green);color:var(--green);cursor:default}
 
 /* ── DETALLE ── */
 .back-btn{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border2);border-radius:20px;color:var(--text2);font-family:var(--font-body);font-size:13px;font-weight:600;padding:7px 14px;cursor:pointer;margin-bottom:14px;transition:all .2s}
@@ -437,7 +443,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 
 /* ── MISC ── */
 #tab-detalle{display:none;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:80px}
-#tab-dashboard{overflow-y:auto;-webkit-overflow-scrolling:touch}
+#tab-dashboard{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:80px}
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-md);padding:10px 18px;font-size:13px;font-weight:600;color:var(--text);box-shadow:var(--shadow-md);z-index:1000;opacity:0;transition:all .3s cubic-bezier(.4,0,.2,1);white-space:nowrap}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
@@ -581,68 +587,63 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     </div>
   </div>
 
-  <div id="tab-dashboard" class="main page-with-nav">
+  <div id="tab-dashboard" class="page-with-nav">
 
-    <div class="stats-bar" id="stats-bar">
-      <div class="stat-card" onclick="filtrarRubro('')">
-        <div class="stat-label">Total activos</div>
-        <div class="stat-value" id="stat-activos">—</div>
+    <!-- Cabecera saludo -->
+    <div class="dash-header">
+      <div>
+        <div class="dash-greeting" id="dash-greeting">Hola</div>
+        <div class="dash-subtitle" id="dash-subtitle">Tus licitaciones activas</div>
       </div>
-      <div class="stat-card" onclick="filtrarRubro('Obras')">
-        
-        <div class="stat-label">Obras</div>
-        <div class="stat-value" id="stat-obras">—</div>
-      </div>
-      <div class="stat-card" onclick="filtrarRubro('Bienes')">
-        
-        <div class="stat-label">Bienes</div>
-        <div class="stat-value" id="stat-bienes">—</div>
-      </div>
-      <div class="stat-card" onclick="filtrarRubro('Servicios')">
-        
-        <div class="stat-label">Servicios</div>
-        <div class="stat-value" id="stat-servicios">—</div>
-      </div>
-      <div class="stat-card total-card">
-        <div class="stat-label">Total en base de datos</div>
-        <div class="stat-value" id="stat-total">—</div>
-      </div>
+      <button class="dash-notif-btn" onclick="switchTab2('perfil')" aria-label="Notificaciones">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      </button>
     </div>
 
-    <div class="filters-block">
-      <div class="filter-row">
-        <input class="filter-input" type="text" id="busqueda" placeholder="Título o código proceso..." oninput="debounceSearch()" style="flex:2">
-        <input class="filter-input" type="text" id="filtro-institucion" placeholder="Institución..." oninput="debounceSearch()">
-      </div>
-      <div class="filter-row">
-        <select class="filter-select" id="filtro-objeto" onchange="cargarProcesos(1)">
-          <option value="">Todos los rubros</option>
-          <option value="Obras">Obras</option>
-          <option value="Bienes">Bienes</option>
-          <option value="Servicios">Servicios</option>
-        </select>
-        <select class="filter-select" id="filtro-activos" onchange="cargarProcesos(1)">
+    <!-- Barra de búsqueda principal -->
+    <div class="dash-search-wrap">
+      <svg class="dash-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="dash-search-input" type="text" id="busqueda" placeholder="Buscar por título, código o institución..." oninput="debounceSearch()" autocomplete="off">
+      <button class="dash-filter-btn" id="btn-filtros-avanzados" onclick="toggleFiltrosAvanzados()" aria-label="Filtros">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+        <span class="filtros-badge" id="filtros-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:14px;height:14px;background:var(--green);color:#000;border-radius:7px;font-size:9px;font-weight:800;align-items:center;justify-content:center;padding:0 3px">0</span>
+      </button>
+    </div>
+
+    <!-- Chips de filtro rápido por rubro -->
+    <div class="dash-chips">
+      <button class="dash-chip active" id="chip-all" onclick="filtrarRubroChip('')">Todos <span id="chip-count-all" class="chip-count"></span></button>
+      <button class="dash-chip" id="chip-obras" onclick="filtrarRubroChip('Obras')">Obras <span id="chip-count-obras" class="chip-count"></span></button>
+      <button class="dash-chip" id="chip-bienes" onclick="filtrarRubroChip('Bienes')">Bienes <span id="chip-count-bienes" class="chip-count"></span></button>
+      <button class="dash-chip" id="chip-servicios" onclick="filtrarRubroChip('Servicios')">Servicios <span id="chip-count-servicios" class="chip-count"></span></button>
+    </div>
+
+    <!-- Panel de filtros avanzados colapsable -->
+    <div class="filtros-avanzados-panel" id="filtros-avanzados-panel">
+      <div class="adv-filter-grid">
+        <select class="filter-select" id="filtro-objeto" onchange="cargarProcesos(1)" style="display:none"></select>
+        <select class="filter-select" id="filtro-activos" onchange="cargarProcesos(1)" style="display:none">
           <option value="true">Solo activos</option>
           <option value="false">Todos</option>
         </select>
-        <button class="btn-filtros-avanzados" id="btn-filtros-avanzados" onclick="toggleFiltrosAvanzados()">
-          Filtros <span class="filtros-badge" id="filtros-badge">0</span>
-        </button>
-        <button class="filter-clear" onclick="limpiarFiltros()">Limpiar</button>
-      </div>
-      <div class="filtros-avanzados-panel" id="filtros-avanzados-panel">
-        <div class="filter-row" style="margin-top:8px">
-          <input class="filter-input" type="number" id="filtro-monto-min" placeholder="Monto mín (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
-          <input class="filter-input" type="number" id="filtro-monto-max" placeholder="Monto máx (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
-        </div>
-        <div class="filter-row" style="position:relative;margin-top:8px">
-          <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="Buscar por nombre o código (ej: 1512, lubricantes...)" oninput="buscarUnspsc()" autocomplete="off">
+        <input class="filter-input" type="text" id="filtro-institucion" placeholder="Institución..." oninput="debounceSearch()">
+        <input class="filter-input" type="number" id="filtro-monto-min" placeholder="Monto mín (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
+        <input class="filter-input" type="number" id="filtro-monto-max" placeholder="Monto máx (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
+        <div style="position:relative;grid-column:1/-1">
+          <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="UNSPSC — nombre o código..." oninput="buscarUnspsc()" autocomplete="off" style="width:100%">
           <div class="unspsc-dropdown" id="unspsc-dropdown"></div>
         </div>
-        <div class="unspsc-active-tag" id="unspsc-activo">
+        <div class="unspsc-active-tag" id="unspsc-activo" style="grid-column:1/-1">
           <span id="unspsc-activo-label"></span>
           <button onclick="limpiarUnspsc()" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:15px;padding:0;line-height:1">✕</button>
         </div>
+      </div>
+      <div style="display:flex;gap:8px;padding:8px 0 4px">
+        <select class="filter-select" id="filtro-activos-visible" onchange="document.getElementById('filtro-activos').value=this.value;cargarProcesos(1)" style="flex:1">
+          <option value="true">Solo activos</option>
+          <option value="false">Todos</option>
+        </select>
+        <button class="filter-clear" onclick="limpiarFiltros()" style="flex:0 0 auto">Limpiar</button>
       </div>
     </div>
 
@@ -651,6 +652,13 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     </div>
 
     <div class="pagination" id="pagination"></div>
+
+    <!-- Stats ocultas (mantener IDs para el JS) -->
+    <span id="stat-activos" style="display:none"></span>
+    <span id="stat-obras" style="display:none"></span>
+    <span id="stat-bienes" style="display:none"></span>
+    <span id="stat-servicios" style="display:none"></span>
+    <span id="stat-total" style="display:none"></span>
   </div>
 
   <div id="tab-detalle" class="main page-with-nav" style="display:none">
@@ -954,6 +962,7 @@ function showApp() {
   cargarProcesos(1);
   checkPushStatus();
   cargarInteresesGuardados();
+  actualizarSaludo();
 }
 
 function showMsg(msg, type) {
@@ -1031,19 +1040,53 @@ async function sendRecovery() {
 
 // ── STATS ──
 async function cargarStats() {
-  const res = await fetch(`${API}/api/stats`);
-  const data = await res.json();
-  document.getElementById('stat-total').textContent     = (data.total_procesos||0).toLocaleString();
-  document.getElementById('stat-activos').textContent   = (data.procesos_activos||0).toLocaleString();
-  document.getElementById('stat-obras').textContent     = (data.obras_activas||0).toLocaleString();
-  document.getElementById('stat-bienes').textContent    = (data.bienes_activos||0).toLocaleString();
-  document.getElementById('stat-servicios').textContent = (data.servicios_activos||0).toLocaleString();
+  try {
+    const res = await fetch(`${API}/api/stats`);
+    const data = await res.json();
+    document.getElementById('stat-total').textContent     = (data.total_procesos||0).toLocaleString();
+    document.getElementById('stat-activos').textContent   = (data.procesos_activos||0).toLocaleString();
+    document.getElementById('stat-obras').textContent     = (data.obras_activas||0).toLocaleString();
+    document.getElementById('stat-bienes').textContent    = (data.bienes_activos||0).toLocaleString();
+    document.getElementById('stat-servicios').textContent = (data.servicios_activos||0).toLocaleString();
+    // Actualizar counts en chips
+    const activos = data.procesos_activos || 0;
+    const obras   = data.obras_activas    || 0;
+    const bienes  = data.bienes_activos   || 0;
+    const serv    = data.servicios_activos|| 0;
+    const cc = id => document.getElementById(id);
+    if (cc('chip-count-all'))      cc('chip-count-all').textContent      = activos;
+    if (cc('chip-count-obras'))    cc('chip-count-obras').textContent    = obras;
+    if (cc('chip-count-bienes'))   cc('chip-count-bienes').textContent   = bienes;
+    if (cc('chip-count-servicios'))cc('chip-count-servicios').textContent= serv;
+  } catch(e) { /* stats no críticas */ }
 }
 
 function filtrarRubro(rubro) {
   document.getElementById('filtro-objeto').value = rubro;
   cargarProcesos(1);
   switchTab2('dashboard');
+}
+
+function filtrarRubroChip(rubro) {
+  document.getElementById('filtro-objeto').value = rubro;
+  // Actualizar chip activo
+  ['chip-all','chip-obras','chip-bienes','chip-servicios'].forEach(id => {
+    document.getElementById(id)?.classList.remove('active');
+  });
+  const chipMap = { '': 'chip-all', 'Obras': 'chip-obras', 'Bienes': 'chip-bienes', 'Servicios': 'chip-servicios' };
+  document.getElementById(chipMap[rubro] || 'chip-all')?.classList.add('active');
+  cargarProcesos(1);
+}
+
+function actualizarSaludo() {
+  const h = new Date().getHours();
+  const saludo = h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
+  const nombre = currentUser?.user_metadata?.nombre
+    || currentUser?.user_metadata?.full_name
+    || currentUser?.email?.split('@')[0] || '';
+  const primerNombre = nombre.split(' ')[0];
+  const g = document.getElementById('dash-greeting');
+  if (g) g.textContent = primerNombre ? `${saludo}, ${primerNombre}` : saludo;
 }
 
 // ── PROCESOS ──
@@ -1543,13 +1586,13 @@ document.addEventListener('touchend', e=>{
 (function initPullToRefresh() {
   let ptrStartY = 0;
   let ptrActive = false;
-  const THRESHOLD = 70; // px a bajar para activar
+  const THRESHOLD = 65;
+  // El scroller es #tab-dashboard
 
   document.addEventListener('touchstart', e => {
-    // Solo activar si estamos en el tab dashboard y el scroll está arriba del todo
     const dash = document.getElementById('tab-dashboard');
     if (!dash || dash.style.display === 'none') return;
-    if (dash.scrollTop > 0) return;
+    if (dash.scrollTop > 2) return;
     ptrStartY = e.touches[0].clientY;
     ptrActive = true;
   }, { passive: true });
@@ -1559,9 +1602,8 @@ document.addEventListener('touchend', e=>{
     const dy = e.touches[0].clientY - ptrStartY;
     const indicator = document.getElementById('ptr-indicator');
     if (!indicator) return;
-    if (dy > 20 && dy < THRESHOLD + 30) {
-      indicator.classList.add('visible');
-    }
+    if (dy > 15) indicator.classList.add('visible');
+    else indicator.classList.remove('visible');
   }, { passive: true });
 
   document.addEventListener('touchend', e => {
@@ -1571,12 +1613,10 @@ document.addEventListener('touchend', e=>{
     const indicator = document.getElementById('ptr-indicator');
     if (!indicator) return;
     if (dy >= THRESHOLD) {
-      // Refrescar datos
       cargarStats();
       cargarProcesos(1);
     }
-    // Ocultar indicador después de un momento
-    setTimeout(() => indicator.classList.remove('visible'), 600);
+    setTimeout(() => indicator.classList.remove('visible'), 500);
   }, { passive: true });
 })();
 
