@@ -829,13 +829,16 @@ async function login() {
   }
   localStorage.setItem('sb_token', data.access_token);
   if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
-  // Supabase a veces devuelve el user en data.user, otras veces hay que decodificar el JWT
+  // Supabase devuelve el user en data.user con user_metadata (nombre, etc.)
   let user = data.user;
   if (!user || !user.id) {
-    // Decodificar el JWT para obtener el user_id
     try {
       const payload = JSON.parse(atob(data.access_token.split('.')[1]));
-      user = { id: payload.sub, email: payload.email || email };
+      user = {
+        id: payload.sub,
+        email: payload.email || email,
+        user_metadata: payload.user_metadata || {}
+      };
     } catch(e) { console.error('Error decodificando JWT:', e); }
   }
   localStorage.setItem('sb_user', JSON.stringify(user));
@@ -846,15 +849,21 @@ async function login() {
 }
 
 async function register() {
+  const nombre   = document.getElementById('reg-name').value.trim();
   const email    = document.getElementById('reg-email').value.trim();
   const password = document.getElementById('reg-password').value;
-  if (!email || !password) return showMsg('❌ Completa todos los campos', 'error');
+  if (!nombre)              return showMsg('❌ Ingresa tu nombre o empresa', 'error');
+  if (!email || !password)  return showMsg('❌ Completa todos los campos', 'error');
   if (password.length < 6)  return showMsg('❌ La contraseña debe tener al menos 6 caracteres', 'error');
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) return showMsg('❌ Ingresa un correo válido', 'error');
   const btn = document.getElementById('btn-register');
   btn.disabled = true; btn.textContent = 'Creando cuenta...';
-  const data = await supabaseRequest('signup', 'POST', { email, password });
+  // Guardar nombre en user_metadata de Supabase
+  const data = await supabaseRequest('signup', 'POST', {
+    email, password,
+    data: { nombre }          // queda en raw_user_meta_data
+  });
   btn.disabled = false; btn.textContent = 'Crear cuenta';
   if (data.error) {
     const msg = data.error_description || data.error || '';
@@ -881,13 +890,31 @@ function logout() {
 function showApp() {
   document.getElementById('screen-auth').classList.remove('active');
   document.getElementById('screen-app').classList.add('active');
-  
-  // Tu perfil siempre
-  document.getElementById('user-email-display') && (document.getElementById('user-email-display').textContent = 'Ing. Luis Antigua');
-  const dn = document.getElementById('drawer-name'); if(dn) dn.textContent = 'Ing. Luis Antigua';
-  const da = document.getElementById('drawer-avatar'); if(da) da.textContent = 'LA';
-  document.getElementById('perfil-email').textContent = 'Ing. Luis Antigua (' + (currentUser?.email || '') + ')';
-  
+
+  // Extraer nombre real del usuario desde user_metadata
+  const nombre = currentUser?.user_metadata?.nombre
+    || currentUser?.user_metadata?.full_name
+    || currentUser?.email?.split('@')[0]
+    || 'Usuario';
+
+  // Iniciales para el avatar (máximo 2 letras)
+  const partes = nombre.trim().split(/\s+/);
+  const iniciales = partes.length >= 2
+    ? (partes[0][0] + partes[1][0]).toUpperCase()
+    : nombre.substring(0, 2).toUpperCase();
+
+  // Actualizar navbar y drawer
+  const emailDisplay = document.getElementById('user-email-display');
+  if (emailDisplay) emailDisplay.textContent = nombre;
+  const dn = document.getElementById('drawer-name');
+  if (dn) dn.textContent = nombre;
+  const da = document.getElementById('drawer-avatar');
+  if (da) da.textContent = iniciales;
+
+  // Perfil: mostrar nombre + correo
+  const perfilEmail = document.getElementById('perfil-email');
+  if (perfilEmail) perfilEmail.textContent = nombre + (currentUser?.email ? ' — ' + currentUser.email : '');
+
   cargarStats();
   cargarProcesos(1);
   checkPushStatus();
@@ -1815,7 +1842,13 @@ async function sbRest(path, method = 'GET', body = null, extraHeaders = {}) {
         console.error('❌ Error refrescando token:', e);
       }
     } else {
-      console.warn('⚠️ Sin refresh_token guardado — el usuario debe volver a iniciar sesión');
+      console.warn('⚠️ Sin refresh_token guardado — cerrando sesión');
+      localStorage.removeItem('sb_token');
+      localStorage.removeItem('sb_refresh_token');
+      localStorage.removeItem('sb_user');
+      currentUser = null;
+      document.getElementById('screen-app')?.classList.remove('active');
+      document.getElementById('screen-auth')?.classList.add('active');
     }
   }
 
