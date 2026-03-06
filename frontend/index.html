@@ -457,6 +457,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     <div class="auth-tabs">
       <button class="auth-tab active" onclick="switchTab('login')">Iniciar sesión</button>
       <button class="auth-tab" onclick="switchTab('register')">Registrarse</button>
+      <button class="auth-tab" onclick="switchTab('recovery')" id="tab-recovery" style="font-size:11px">¿Olvidaste?</button>
     </div>
 
     <div id="form-login">
@@ -487,11 +488,28 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
       <button class="btn btn-primary" onclick="register()" id="btn-register">Crear cuenta</button>
     </div>
 
+    <div id="form-recovery" style="display:none">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5">
+        Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.
+      </p>
+      <div class="form-group">
+        <label>Correo electrónico</label>
+        <input type="email" id="recovery-email" placeholder="tu@empresa.com" onkeydown="if(event.key==='Enter')sendRecovery()">
+      </div>
+      <button class="btn btn-primary" onclick="sendRecovery()" id="btn-recovery">Enviar enlace</button>
+    </div>
+
     <div id="auth-msg" class="auth-msg"></div>
   </div>
 </div>
 
 <div id="screen-app" class="screen">
+
+  <!-- Pull-to-refresh indicator -->
+  <div id="ptr-indicator">
+    <div class="ptr-spinner"></div>
+    Actualizando...
+  </div>
 
   <nav class="navbar">
     <div class="nav-brand">
@@ -637,8 +655,14 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 
     <div class="perfil-card">
       <h2>⚙️ Mi cuenta</h2>
-      <div class="field-label">Ingeniero / Firma</div>
+      <div class="field-label">Correo electrónico</div>
       <div class="field-value" id="perfil-email">—</div>
+      <div class="field-label" style="margin-top:4px">Nombre / Empresa</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+        <input class="filter-input" type="text" id="perfil-nombre-input" placeholder="Tu nombre o empresa" style="flex:1;margin:0">
+        <button onclick="guardarNombrePerfil()" style="padding:10px 16px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-body);white-space:nowrap;transition:all .2s" onmouseover="this.style.background='var(--green)';this.style.color='#fff'" onmouseout="this.style.background='var(--green-dim)';this.style.color='var(--green)'">Guardar</button>
+      </div>
+      <div id="perfil-nombre-status" style="font-size:12px;color:var(--green);min-height:18px;margin-bottom:12px"></div>
       <button class="btn-outline" onclick="logout()">Cerrar sesión</button>
     </div>
 
@@ -915,6 +939,10 @@ function showApp() {
   const perfilEmail = document.getElementById('perfil-email');
   if (perfilEmail) perfilEmail.textContent = nombre + (currentUser?.email ? ' — ' + currentUser.email : '');
 
+  // Poblar input de nombre en perfil
+  const perfilNombreInput = document.getElementById('perfil-nombre-input');
+  if (perfilNombreInput) perfilNombreInput.value = nombre;
+
   cargarStats();
   cargarProcesos(1);
   checkPushStatus();
@@ -928,12 +956,26 @@ function showMsg(msg, type) {
 }
 
 function switchTab(tab) {
-  document.getElementById('form-login').style.display = tab === 'login' ? 'block' : 'none';
-  document.getElementById('form-register').style.display = tab === 'register' ? 'block' : 'none';
+  document.getElementById('form-login').style.display     = tab === 'login'    ? 'block' : 'none';
+  document.getElementById('form-register').style.display  = tab === 'register' ? 'block' : 'none';
+  document.getElementById('form-recovery').style.display  = tab === 'recovery' ? 'block' : 'none';
   document.querySelectorAll('.auth-tab').forEach((t, i) => {
-    t.classList.toggle('active', (i===0&&tab==='login')||(i===1&&tab==='register'));
+    t.classList.toggle('active',
+      (i===0 && tab==='login') || (i===1 && tab==='register') || (i===2 && tab==='recovery')
+    );
   });
   document.getElementById('auth-msg').className = 'auth-msg';
+}
+
+async function sendRecovery() {
+  const email = document.getElementById('recovery-email').value.trim().toLowerCase();
+  if (!email) return showMsg('❌ Ingresa tu correo', 'error');
+  const btn = document.getElementById('btn-recovery');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  const data = await supabaseRequest('recover', 'POST', { email });
+  btn.disabled = false; btn.textContent = 'Enviar enlace';
+  // Supabase siempre responde 200 en recover (no revela si el email existe)
+  showMsg('✅ Si ese correo está registrado, recibirás el enlace en minutos.', 'success');
 }
 
 // ── STATS ──
@@ -972,9 +1014,21 @@ async function cargarProcesos(page = 1) {
   if (montoMax)    url += `&monto_max=${montoMax}`;
   if (unspscFiltro) url += `&familia_unspsc=${encodeURIComponent(unspscFiltro.codigo)}`;
 
-  const res  = await fetch(url);
-  const data = await res.json();
-  renderProcesos(data.procesos || [], data, page);
+  try {
+    const res  = await fetch(url);
+    if (!res.ok) throw new Error(`Error del servidor (${res.status})`);
+    const data = await res.json();
+    renderProcesos(data.procesos || [], data, page);
+  } catch(e) {
+    document.getElementById('procesos-container').innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">⚠️</div>
+        <div class="empty-text">No se pudieron cargar las licitaciones</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px">${e.message}</div>
+        <button onclick="cargarProcesos(${page})" style="margin-top:14px;padding:8px 20px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-body)">🔄 Reintentar</button>
+      </div>`;
+    document.getElementById('pagination').innerHTML = '';
+  }
   // Al terminar la primera carga, verificar si hay un proceso pendiente de abrir
   _abrirProcesoDeNotificacion();
 }
@@ -1002,7 +1056,13 @@ function renderProcesos(procesos, data, page) {
 
   container.innerHTML = procesos.map(p => {
     const tipo = p.objeto_proceso || '';
-    const badgeClass = tipo === 'Obras' ? 'badge-obras' : tipo === 'Bienes' ? 'badge-bienes' : tipo === 'Servicios' ? 'badge-servicios' : 'badge-general';
+    const badgeTipo = tipo === 'Obras'
+      ? 'proceso-badge tipo-obras'
+      : tipo === 'Bienes'
+        ? 'proceso-badge tipo-bienes'
+        : tipo === 'Servicios'
+          ? 'proceso-badge tipo-servicios'
+          : 'proceso-badge tipo-default';
     const cierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO',{day:'2-digit',month:'short'}) : '—';
     return `
       <div class="proceso-card" data-tipo="${(p.objeto_proceso||'').includes('Obra')?'Obras':(p.objeto_proceso||'').includes('Bien')?'Bienes':(p.objeto_proceso||'').includes('Servicio')?'Servicios':''}" onclick="verDetalle('${p.codigo_proceso}')">
@@ -1015,9 +1075,9 @@ function renderProcesos(procesos, data, page) {
           <span class="proceso-fecha">📅 ${cierre}</span>
         </div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
-          ${tipo ? `<span class="badge ${badgeClass}">${tipo}</span>` : ''}
-          ${p.modalidad ? `<span class="badge badge-modalidad">${p.modalidad}</span>` : ''}
-          ${p.dirigido_mipymes ? '<span class="badge badge-mipymes">MIPYMES</span>' : ''}
+          ${tipo ? `<span class="${badgeTipo}">${tipo}</span>` : ''}
+          ${p.modalidad ? `<span class="proceso-badge tipo-default">${p.modalidad}</span>` : ''}
+          ${p.dirigido_mipymes ? '<span class="proceso-badge" style="background:var(--amber-dim);color:var(--amber)">MIPYMES</span>' : ''}
         </div>
       </div>`;
   }).join('');
@@ -1172,6 +1232,46 @@ function renderFamiliasPerfil() {
   ).join('');
 }
 
+async function guardarNombrePerfil() {
+  const input = document.getElementById('perfil-nombre-input');
+  const status = document.getElementById('perfil-nombre-status');
+  const nombre = input?.value.trim();
+  if (!nombre) { if(status) status.textContent = '❌ Ingresa un nombre'; return; }
+
+  const token = localStorage.getItem('sb_token');
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ data: { nombre } })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    // Actualizar en memoria y localStorage
+    if (currentUser) {
+      currentUser.user_metadata = { ...(currentUser.user_metadata || {}), nombre };
+      localStorage.setItem('sb_user', JSON.stringify(currentUser));
+    }
+    // Reflejar en navbar y drawer sin recargar
+    const partes = nombre.trim().split(/\s+/);
+    const iniciales = partes.length >= 2
+      ? (partes[0][0] + partes[1][0]).toUpperCase()
+      : nombre.substring(0, 2).toUpperCase();
+    const dn = document.getElementById('drawer-name'); if(dn) dn.textContent = nombre;
+    const da = document.getElementById('drawer-avatar'); if(da) da.textContent = iniciales;
+    const ed = document.getElementById('user-email-display'); if(ed) ed.textContent = nombre;
+
+    if (status) { status.textContent = '✅ Nombre actualizado'; setTimeout(()=>{ status.textContent=''; }, 2500); }
+  } catch(e) {
+    if (status) status.textContent = '❌ Error al guardar';
+  }
+}
+
 async function guardarIntereses() {
   const rubros = ['obras','bienes','servicios']
     .filter(r => document.getElementById(`interes-${r}`)?.checked)
@@ -1282,12 +1382,9 @@ function switchTab2(tab) {
   document.getElementById('tab-seguimiento').style.display = tab==='seguimiento' ? 'flex'  : 'none';
   if (tab==='seguimiento') cargarSeguimiento();
   
-  if (tab === 'mapa') { setTimeout(mapaInit, 100); }
-  
   document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
-  const navMap = {'dashboard':'nav-dashboard','perfil':'nav-perfil','mapa':'nav-mapa','seguimiento':'nav-seguimiento'};
+  const navMap = {'dashboard':'nav-dashboard','perfil':'nav-perfil','seguimiento':'nav-seguimiento'};
   if(navMap[tab]) document.getElementById(navMap[tab])?.classList.add('active');
-  document.getElementById('nav-' + tab)?.classList.add('active');
   document.getElementById('nav-dashboard').classList.toggle('active', tab==='dashboard');
   document.getElementById('nav-perfil').classList.toggle('active', tab==='perfil');
   window.scrollTo(0,0);
@@ -1368,6 +1465,47 @@ document.addEventListener('touchend', e=>{
   if (detalleVisible && dx > 80 && dy < 60) mostrarDashboard();
 }, {passive:true});
 
+// ── PULL TO REFRESH ──
+(function initPullToRefresh() {
+  let ptrStartY = 0;
+  let ptrActive = false;
+  const THRESHOLD = 70; // px a bajar para activar
+
+  document.addEventListener('touchstart', e => {
+    // Solo activar si estamos en el tab dashboard y el scroll está arriba del todo
+    const dash = document.getElementById('tab-dashboard');
+    if (!dash || dash.style.display === 'none') return;
+    if (dash.scrollTop > 0) return;
+    ptrStartY = e.touches[0].clientY;
+    ptrActive = true;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!ptrActive) return;
+    const dy = e.touches[0].clientY - ptrStartY;
+    const indicator = document.getElementById('ptr-indicator');
+    if (!indicator) return;
+    if (dy > 20 && dy < THRESHOLD + 30) {
+      indicator.classList.add('visible');
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', e => {
+    if (!ptrActive) return;
+    ptrActive = false;
+    const dy = e.changedTouches[0].clientY - ptrStartY;
+    const indicator = document.getElementById('ptr-indicator');
+    if (!indicator) return;
+    if (dy >= THRESHOLD) {
+      // Refrescar datos
+      cargarStats();
+      cargarProcesos(1);
+    }
+    // Ocultar indicador después de un momento
+    setTimeout(() => indicator.classList.remove('visible'), 600);
+  }, { passive: true });
+})();
+
 // ── CERRAR DROPDOWNS AL TOCAR FUERA ──
 document.addEventListener('click', e=>{
   if (!e.target.closest('#filtro-unspsc-text') && !e.target.closest('#unspsc-dropdown'))
@@ -1416,385 +1554,6 @@ async function _abrirProcesoDeNotificacion() {
   _procesoNotifPendiente = null;  // limpiar para no repetir
   await verDetalle(codigo);
 }
-
-// ═══════════════════════════════════════════════════════
-// MAPA DE PROYECTOS — Lógica completa
-// ═══════════════════════════════════════════════════════
-
-const PROVINCIAS_MAP = [
-  { id:'DN',  nombre:'Distrito Nacional',           keys:['distrito nacional','d.n.','dn ','ciudad de santo domingo'] },
-  { id:'SD',  nombre:'Santo Domingo',               keys:['santo domingo este','santo domingo norte','santo domingo oeste','los alcarrizos','pedro brand','san antonio de guerra','boca chica','sabana perdida','los alcarrizos'] },
-  { id:'STG', nombre:'Santiago',                    keys:['santiago de los caballeros','santiago ','gurabo','villa bisonó','licey','tamboril','jánico','san marcos de las vacas','villa gonzalez'] },
-  { id:'LRM', nombre:'La Romana',                   keys:['la romana','caleta','guaymate','villa hermosa'] },
-  { id:'SPM', nombre:'San Pedro de Macorís',        keys:['san pedro de macor','macoris del este','el puerto','guayacanes','los llanos','ramón santana','quisqueya','consuelo'] },
-  { id:'LVG', nombre:'La Vega',                     keys:['la vega','concepción de la vega','constanza','jarabacoa','moca','san francisco de macorís'] },
-  { id:'AZU', nombre:'Azua',                        keys:['azua','las charcas','las yayas','peralta','pueblo viejo','sabana yegua','tábara arriba','yayas de viajama'] },
-  { id:'BAR', nombre:'Barahona',                    keys:['barahona','cabral','enriquillo','fundación','jaquimeyes','la ciénaga','las salinas','paraíso','polo','vicente noble'] },
-  { id:'DAJ', nombre:'Dajabón',                     keys:['dajabón','el pino','loma de cabrera','partido','restauración'] },
-  { id:'DUA', nombre:'Duarte',                      keys:['duarte','arenoso','castillo','hostos','las guaranas','pimentel','san francisco de macorís','villa rivas','villa riva','cruce de las verdes','majagual'] },
-  { id:'ELP', nombre:'Elías Piña',                  keys:['elías piña','bánica','comendador','el llano','hondo valle','juan santiago','pedro santana'] },
-  { id:'LAL', nombre:'La Altagracia',               keys:['la altagracia','higüey','san rafael del yuma','salvaleón','punta cana','bávaro','bavaro','la otra banda'] },
-  { id:'MTS', nombre:'María Trinidad Sánchez',      keys:['maría trinidad','nagua','cabrera','el factor','río san juan'] },
-  { id:'MCR', nombre:'Monte Cristi',                keys:['monte cristi','castañuelas','guayubín','las matas de santa cruz','pepillo salcedo','villa vásquez'] },
-  { id:'PPL', nombre:'Puerto Plata',                keys:['puerto plata','altamira','guananico','imbert','los hidalgos','luperón','sosúa','villa isabela','villa montellano'] },
-  { id:'SMA', nombre:'Samaná',                      keys:['samaná','las terrenas','sanchez','sánchez','las galeras'] },
-  { id:'SCR', nombre:'San Cristóbal',               keys:['san cristóbal','bajos de haina','cambita','palenque','sabana grande de palenque','san gregorio de nigua','villa altagracia','yaguate'] },
-  { id:'SJO', nombre:'San José de Ocoa',            keys:['san josé de ocoa','ocoa','sabana larga','rancho arriba'] },
-  { id:'SJN', nombre:'San Juan',                    keys:['san juan de la maguana','san juan ','bohechio','el cercado','juan de herrera','las matas de farfán','vallejuelo'] },
-  { id:'STR', nombre:'Santiago Rodríguez',          keys:['santiago rodríguez','monción','sabaneta','villa los almácigos'] },
-  { id:'VLV', nombre:'Valverde',                    keys:['valverde','esperanza','laguna salada'] },
-  { id:'HMY', nombre:'Hato Mayor',                  keys:['hato mayor','el valle','sabana de la mar'] },
-  { id:'IND', nombre:'Independencia',               keys:['independencia','duvergé','jimaní','la descubierta','mella','postrer río'] },
-  { id:'ESP', nombre:'Espaillat',                   keys:['espaillat','cayetano germosén','gaspar hernández','jamao al norte','moca','san víctor','villa tapia'] },
-  { id:'SRM', nombre:'Sánchez Ramírez',             keys:['sánchez ramírez','cevicos','cotuí','fantino','la mata'] },
-  { id:'ESB', nombre:'El Seibo',                    keys:['el seibo','el seybo','miches','pedro sánchez'] },
-  { id:'PVA', nombre:'Peravia',                     keys:['peravia','baní','nizao','padre las casas','villa fundación'] },
-  { id:'PED', nombre:'Pedernales',                  keys:['pedernales','oviedo','juancho'] },
-  { id:'HMI', nombre:'Hermanas Mirabal',            keys:['hermanas mirabal','salcedo','tenares'] },
-  { id:'MNP', nombre:'Monte Plata',                 keys:['monte plata','bayaguana','peralvillo','sabana grande de boyá','yamasá'] },
-  { id:'BAO', nombre:'Baoruco',                     keys:['baoruco','galván','los ríos','neiba','tamayo'] },
-];
-
-// OJO: Esta base de datos de GeoJSON usa cajas (rectángulos) para cada provincia.
-const RD_GEOJSON = {type:"FeatureCollection",features:[
-  {type:"Feature",properties:{id:"DN",nombre:"Distrito Nacional"},geometry:{type:"Polygon",coordinates:[[[-70.00,18.44],[-69.90,18.44],[-69.90,18.52],[-70.00,18.52],[-70.00,18.44]]]}},
-  {type:"Feature",properties:{id:"SD",nombre:"Santo Domingo"},geometry:{type:"Polygon",coordinates:[[[-70.15,18.35],[-69.65,18.35],[-69.65,18.60],[-70.15,18.60],[-70.15,18.35]]]}},
-  {type:"Feature",properties:{id:"STG",nombre:"Santiago"},geometry:{type:"Polygon",coordinates:[[[-71.00,19.15],[-70.35,19.15],[-70.35,19.70],[-71.00,19.70],[-71.00,19.15]]]}},
-  {type:"Feature",properties:{id:"LRM",nombre:"La Romana"},geometry:{type:"Polygon",coordinates:[[[-69.10,18.35],[-68.72,18.35],[-68.72,18.60],[-69.10,18.60],[-69.10,18.35]]]}},
-  {type:"Feature",properties:{id:"SPM",nombre:"San Pedro de Macorís"},geometry:{type:"Polygon",coordinates:[[[-69.60,18.33],[-69.12,18.33],[-69.12,18.60],[-69.60,18.60],[-69.60,18.33]]]}},
-  {type:"Feature",properties:{id:"LVG",nombre:"La Vega"},geometry:{type:"Polygon",coordinates:[[[-70.70,18.85],[-70.05,18.85],[-70.05,19.30],[-70.70,19.30],[-70.70,18.85]]]}},
-  {type:"Feature",properties:{id:"AZU",nombre:"Azua"},geometry:{type:"Polygon",coordinates:[[[-70.95,18.20],[-70.30,18.20],[-70.30,18.72],[-70.95,18.72],[-70.95,18.20]]]}},
-  {type:"Feature",properties:{id:"BAR",nombre:"Barahona"},geometry:{type:"Polygon",coordinates:[[[-71.45,17.85],[-71.00,17.85],[-71.00,18.38],[-71.45,18.38],[-71.45,17.85]]]}},
-  {type:"Feature",properties:{id:"DAJ",nombre:"Dajabón"},geometry:{type:"Polygon",coordinates:[[[-71.85,19.42],[-71.50,19.42],[-71.50,19.82],[-71.85,19.82],[-71.85,19.42]]]}},
-  {type:"Feature",properties:{id:"DUA",nombre:"Duarte"},geometry:{type:"Polygon",coordinates:[[[-70.18,19.00],[-69.65,19.00],[-69.65,19.48],[-70.18,19.48],[-70.18,19.00]]]}},
-  {type:"Feature",properties:{id:"ELP",nombre:"Elías Piña"},geometry:{type:"Polygon",coordinates:[[[-71.88,18.75],[-71.42,18.75],[-71.42,19.22],[-71.88,19.22],[-71.88,18.75]]]}},
-  {type:"Feature",properties:{id:"LAL",nombre:"La Altagracia"},geometry:{type:"Polygon",coordinates:[[[-68.95,18.35],[-68.25,18.35],[-68.25,18.85],[-68.95,18.85],[-68.95,18.35]]]}},
-  {type:"Feature",properties:{id:"MTS",nombre:"María Trinidad Sánchez"},geometry:{type:"Polygon",coordinates:[[[-70.05,19.35],[-69.52,19.35],[-69.52,19.78],[-70.05,19.78],[-70.05,19.35]]]}},
-  {type:"Feature",properties:{id:"MCR",nombre:"Monte Cristi"},geometry:{type:"Polygon",coordinates:[[[-71.78,19.45],[-71.38,19.45],[-71.38,19.98],[-71.78,19.98],[-71.78,19.45]]]}},
-  {type:"Feature",properties:{id:"PPL",nombre:"Puerto Plata"},geometry:{type:"Polygon",coordinates:[[[-71.12,19.55],[-70.52,19.55],[-70.52,19.98],[-71.12,19.98],[-71.12,19.55]]]}},
-  {type:"Feature",properties:{id:"SMA",nombre:"Samaná"},geometry:{type:"Polygon",coordinates:[[[-69.65,19.08],[-69.12,19.08],[-69.12,19.42],[-69.65,19.42],[-69.65,19.08]]]}},
-  {type:"Feature",properties:{id:"SCR",nombre:"San Cristóbal"},geometry:{type:"Polygon",coordinates:[[[-70.35,18.32],[-69.98,18.32],[-69.98,18.62],[-70.35,18.62],[-70.35,18.32]]]}},
-  {type:"Feature",properties:{id:"SJO",nombre:"San José de Ocoa"},geometry:{type:"Polygon",coordinates:[[[-70.65,18.45],[-70.32,18.45],[-70.32,18.80],[-70.65,18.80],[-70.65,18.45]]]}},
-  {type:"Feature",properties:{id:"SJN",nombre:"San Juan"},geometry:{type:"Polygon",coordinates:[[[-71.42,18.50],[-70.88,18.50],[-70.88,18.98],[-71.42,18.98],[-71.42,18.50]]]}},
-  {type:"Feature",properties:{id:"STR",nombre:"Santiago Rodríguez"},geometry:{type:"Polygon",coordinates:[[[-71.45,19.30],[-71.08,19.30],[-71.08,19.65],[-71.45,19.65],[-71.45,19.30]]]}},
-  {type:"Feature",properties:{id:"VLV",nombre:"Valverde"},geometry:{type:"Polygon",coordinates:[[[-71.15,19.28],[-70.82,19.28],[-70.82,19.58],[-71.15,19.58],[-71.15,19.28]]]}},
-  {type:"Feature",properties:{id:"HMY",nombre:"Hato Mayor"},geometry:{type:"Polygon",coordinates:[[[-69.55,18.72],[-69.08,18.72],[-69.08,19.05],[-69.55,19.05],[-69.55,18.72]]]}},
-  {type:"Feature",properties:{id:"IND",nombre:"Independencia"},geometry:{type:"Polygon",coordinates:[[[-71.78,18.38],[-71.38,18.38],[-71.38,18.80],[-71.78,18.80],[-71.78,18.38]]]}},
-  {type:"Feature",properties:{id:"ESP",nombre:"Espaillat"},geometry:{type:"Polygon",coordinates:[[[-70.55,19.25],[-70.08,19.25],[-70.08,19.58],[-70.55,19.58],[-70.55,19.25]]]}},
-  {type:"Feature",properties:{id:"SRM",nombre:"Sánchez Ramírez"},geometry:{type:"Polygon",coordinates:[[[-70.25,18.90],[-69.78,18.90],[-69.78,19.22],[-70.25,19.22],[-70.25,18.90]]]}},
-  {type:"Feature",properties:{id:"ESB",nombre:"El Seibo"},geometry:{type:"Polygon",coordinates:[[[-69.25,18.60],[-68.82,18.60],[-68.82,18.95],[-69.25,18.95],[-69.25,18.60]]]}},
-  {type:"Feature",properties:{id:"PVA",nombre:"Peravia"},geometry:{type:"Polygon",coordinates:[[[-70.28,18.12],[-69.88,18.12],[-69.88,18.42],[-70.28,18.42],[-70.28,18.12]]]}},
-  {type:"Feature",properties:{id:"PED",nombre:"Pedernales"},geometry:{type:"Polygon",coordinates:[[[-72.02,17.85],[-71.58,17.85],[-71.58,18.42],[-72.02,18.42],[-72.02,17.85]]]}},
-  {type:"Feature",properties:{id:"HMI",nombre:"Hermanas Mirabal"},geometry:{type:"Polygon",coordinates:[[[-70.15,19.32],[-69.72,19.32],[-69.72,19.65],[-70.15,19.65],[-70.15,19.32]]]}},
-  {type:"Feature",properties:{id:"MNP",nombre:"Monte Plata"},geometry:{type:"Polygon",coordinates:[[[-69.85,18.62],[-69.48,18.62],[-69.48,18.95],[-69.85,18.95],[-69.85,18.62]]]}},
-  {type:"Feature",properties:{id:"BAO",nombre:"Baoruco"},geometry:{type:"Polygon",coordinates:[[[-71.62,18.32],[-71.28,18.32],[-71.28,18.72],[-71.62,18.72],[-71.62,18.32]]]}},
-]};
-
-let mapaProvMap = {};
-let mapaSinProv = [];
-let mapaSelectedProv = null;
-let mapaCurrentList = [];
-let mapaAssignTarget = null;
-let mapaBuilt = false;
-
-function mapaDetectarProvincia(texto) {
-  if (!texto) return null;
-  const t = texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  for (const p of PROVINCIAS_MAP) {
-    for (const k of p.keys) {
-      const kn = k.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-      if (t.includes(kn)) return p.id;
-    }
-  }
-  return null;
-}
-
-function mapaFmt(v) {
-  if (!v) return 'N/D';
-  v = parseFloat(v);
-  if (v >= 1e9) return `RD$${(v/1e9).toFixed(2)}B`;
-  if (v >= 1e6) return `RD$${(v/1e6).toFixed(1)}M`;
-  if (v >= 1e3) return `RD$${(v/1e3).toFixed(0)}K`;
-  return `RD$${v.toLocaleString()}`;
-}
-
-function mapaHeat(inv) {
-  if (!inv) return 'ph0';
-  if (inv < 50e6) return 'ph1';
-  if (inv < 150e6) return 'ph2';
-  if (inv < 400e6) return 'ph3';
-  if (inv < 900e6) return 'ph4';
-  return 'ph5';
-}
-
-function mapaBubbleR(inv) {
-  if (!inv) return 0;
-  if (inv < 50e6) return 8;
-  if (inv < 150e6) return 14;
-  if (inv < 400e6) return 20;
-  if (inv < 900e6) return 28;
-  return 36;
-}
-
-async function mapaInit() {
-  if (mapaBuilt) return;
-
-  const resp = await fetch(`${API}/api/procesos?limite=500`).catch(() => null);
-  let procesos = [];
-  if (resp && resp.ok) {
-    const data = await resp.json();
-    procesos = data.procesos || data.results || data || [];
-  }
-
-  mapaProvMap = {};
-  mapaSinProv = [];
-  PROVINCIAS_MAP.forEach(p => mapaProvMap[p.id] = []);
-
-  procesos.forEach(p => {
-    const provId = p.provincia || mapaDetectarProvincia(p.titulo || p.descripcion || '');
-    if (provId && mapaProvMap[provId]) {
-      p._prov = provId;
-      mapaProvMap[provId].push(p);
-    } else {
-      p._prov = null;
-      mapaSinProv.push(p);
-    }
-  });
-
-  const total = procesos.length;
-  const inv = procesos.reduce((s,p) => s + (parseFloat(p.monto_estimado)||0), 0);
-  document.getElementById('mapa-total').textContent = total;
-  document.getElementById('mapa-inv').textContent = mapaFmt(inv);
-  document.getElementById('mapa-sinprov').textContent = mapaSinProv.length;
-  document.getElementById('sinubic-count').textContent = mapaSinProv.length;
-  document.getElementById('sinubic-pill').style.display = mapaSinProv.length > 0 ? 'block' : 'none';
-
-  mapaBuildD3();
-  mapaBuilt = true;
-}
-
-// =================================================================
-// EL FIX ABSOLUTO: LIENZO Y ESCALA FIJOS
-// =================================================================
-function mapaBuildD3() {
-  // 1. Mentirle a D3 diciéndole que siempre está dibujando en una pantalla gigante de 800x800
-  const W = 800;
-  const H = 800;
-
-  const svg = d3.select('#mapaSVG')
-    .attr('viewBox', `0 0 ${W} ${H}`)
-    .attr('preserveAspectRatio', 'xMidYMid meet');
-    
-  svg.selectAll('*').remove();
-
-  // 2. Establecer la cámara manualmente en la Rep. Dom.
-  // El centro está en -70.2 (Longitud) y 18.9 (Latitud).
-  // La escala 15000 garantiza que ocupe todo el espacio visual sin importar el teléfono.
-  const proj = d3.geoMercator()
-    .center([-70.2, 18.9])
-    .scale(15000)
-    .translate([W / 2, H / 2]);
-  
-  const path = d3.geoPath().projection(proj);
-  const tooltip = document.getElementById('mapaTooltip');
-  const wrap = document.querySelector('.mapa-svg-wrap');
-
-  const defs = svg.append('defs');
-  const filter = defs.append('filter').attr('id','mapaglow');
-  filter.append('feGaussianBlur').attr('stdDeviation','3').attr('result','blur');
-  const merge = filter.append('feMerge');
-  merge.append('feMergeNode').attr('in','blur');
-  merge.append('feMergeNode').attr('in','SourceGraphic');
-
-  // Dibujar Cuadros de Provincias
-  svg.append('g').selectAll('path')
-    .data(RD_GEOJSON.features)
-    .enter().append('path')
-    .attr('d', path)
-    .attr('data-id', d => d.properties.id)
-    .attr('class', d => {
-      const pros = mapaProvMap[d.properties.id] || [];
-      const inv = pros.reduce((s,p) => s+(parseFloat(p.monto_estimado)||0), 0);
-      return `prov-shape ${mapaHeat(inv)}`;
-    })
-    .on('mouseenter', function(event, d) {
-      const pros = mapaProvMap[d.properties.id] || [];
-      const inv = pros.reduce((s,p) => s+(parseFloat(p.monto_estimado)||0), 0);
-      document.getElementById('mtt-name').textContent = d.properties.nombre;
-      document.getElementById('mtt-count').textContent = pros.length;
-      document.getElementById('mtt-inv').textContent = inv > 0 ? mapaFmt(inv) : 'Sin proyectos';
-      tooltip.style.display = 'block';
-    })
-    .on('mousemove', function(event) {
-      const rect = wrap.getBoundingClientRect();
-      let x = event.clientX - rect.left + 12;
-      let y = event.clientY - rect.top + 12;
-      if (x + 210 > rect.width) x -= 220;
-      tooltip.style.left = x + 'px';
-      tooltip.style.top = y + 'px';
-    })
-    .on('mouseleave', () => { tooltip.style.display = 'none'; })
-    .on('click', function(event, d) {
-      d3.selectAll('.prov-shape').classed('selected', false);
-      d3.select(this).classed('selected', true);
-      mapaShowProvince(d.properties.id, d.properties.nombre);
-    })
-    .on('touchstart', function(event, d) {
-      event.preventDefault();
-      d3.selectAll('.prov-shape').classed('selected', false);
-      d3.select(this).classed('selected', true);
-      mapaShowProvince(d.properties.id, d.properties.nombre);
-    }, { passive: false });
-
-  // Nombres de Provincias
-  svg.append('g').selectAll('text')
-    .data(RD_GEOJSON.features)
-    .enter().append('text')
-    .attr('transform', d => `translate(${proj(d3.geoCentroid(d))})`)
-    .attr('text-anchor','middle').attr('dominant-baseline','middle')
-    .attr('fill','rgba(255,255,255,0.6)')
-    .attr('font-size','11')
-    .attr('font-family','Plus Jakarta Sans')
-    .attr('pointer-events','none')
-    .text(d => {
-      const n = d.properties.nombre;
-      return n.length > 14 ? n.split(' ')[0] : n;
-    });
-
-  // Puntos de Inversión / Luces
-  const bg = svg.append('g');
-  RD_GEOJSON.features.forEach(feat => {
-    const pros = mapaProvMap[feat.properties.id] || [];
-    const inv = pros.reduce((s,p) => s+(parseFloat(p.monto_estimado)||0), 0);
-    const r = mapaBubbleR(inv);
-    if (r === 0) return;
-    const [cx,cy] = proj(d3.geoCentroid(feat));
-    const g = bg.append('g').style('pointer-events','none');
-    
-    g.append('circle').attr('cx',cx).attr('cy',cy).attr('r',r+8)
-      .attr('fill','rgba(255,159,0,0.15)').attr('class','mbubble-ring')
-      .style('animation-delay', Math.random()*2+'s');
-    
-    g.append('circle').attr('cx',cx).attr('cy',cy).attr('r',r)
-      .attr('fill','rgba(255,159,0,0.4)').attr('stroke','rgba(255,159,0,0.9)')
-      .attr('stroke-width','2').attr('filter','url(#mapaglow)')
-      .attr('class','mbubble-core').style('animation-delay', Math.random()*2+'s');
-  });
-}
-
-function mapaShowProvince(provId, nombre) {
-  mapaSelectedProv = provId;
-  mapaCurrentList = mapaProvMap[provId] || [];
-  const inv = mapaCurrentList.reduce((s,p) => s+(parseFloat(p.monto_estimado)||0), 0);
-
-  document.getElementById('mpanel-head').innerHTML = `
-    <div class="mpanel-prov">${nombre}</div>
-    <div class="mpanel-sub">Proyectos activos en licitación</div>
-    <div class="mpanel-kpis">
-      <div class="mpanel-kpi"><div class="mpanel-kpi-v">${mapaCurrentList.length}</div><div class="mpanel-kpi-l">Proyectos</div></div>
-      <div class="mpanel-kpi"><div class="mpanel-kpi-v">${inv>0?mapaFmt(inv):'N/D'}</div><div class="mpanel-kpi-l">Inversión</div></div>
-    </div>`;
-
-  document.getElementById('mpanel-search').style.display = 'block';
-  document.getElementById('mapa-search-input').value = '';
-  mapaRenderProjects(mapaCurrentList);
-}
-
-function mapaFilterProjects() {
-  const q = document.getElementById('mapa-search-input').value.toLowerCase();
-  const filtered = q ? mapaCurrentList.filter(p =>
-    (p.titulo||'').toLowerCase().includes(q) || (p.unidad_compra||'').toLowerCase().includes(q)
-  ) : mapaCurrentList;
-  mapaRenderProjects(filtered);
-}
-
-function mapaRenderProjects(list) {
-  const el = document.getElementById('mpanel-list');
-  if (!list.length) {
-    el.innerHTML = '<div class="mapa-empty"><div class="mapa-empty-icon">📋</div><div class="mapa-empty-title">Sin proyectos</div><div class="mapa-empty-sub">No hay licitaciones activas en esta provincia</div></div>';
-    return;
-  }
-  el.innerHTML = list.map(p => {
-    const cierre = p.fecha_fin_recepcion_ofertas;
-    const days = cierre ? Math.ceil((new Date(cierre)-new Date())/86400000) : null;
-    let deadStr = '';
-    if (days !== null) {
-      if (days < 0) deadStr = `<span class="urg">Cerrado</span>`;
-      else if (days <= 7) deadStr = `Cierre en <span class="urg">${days}d</span>`;
-      else deadStr = `Cierre en ${days}d`;
-    }
-    return `<div class="mproj-card" onclick="verDetalle('${p.codigo_proceso}')">
-      <div class="mproj-inst">${p.unidad_compra||'—'}</div>
-      <div class="mproj-name">${(p.titulo||'').slice(0,100)}${(p.titulo||'').length>100?'…':''}</div>
-      <div class="mproj-meta">
-        <div class="mproj-monto">${mapaFmt(p.monto_estimado)}</div>
-        <button onclick="event.stopPropagation();mapaOpenAssign(${JSON.stringify(p).replace(/"/g,'&quot;')})" style="font-size:.6rem;padding:2px 6px;border:1px solid var(--border);border-radius:5px;background:var(--bg2);color:var(--muted);cursor:pointer">📍</button>
-      </div>
-      ${deadStr?`<div class="mproj-dead">${deadStr}</div>`:''}
-    </div>`;
-  }).join('');
-}
-
-function mapaShowSinProv() {
-  d3.selectAll('.prov-shape').classed('selected', false);
-  mapaSelectedProv = null;
-  mapaCurrentList = mapaSinProv;
-  document.getElementById('mpanel-head').innerHTML = `
-    <div class="mpanel-prov" style="color:#FCA5A5">Sin Provincia</div>
-    <div class="mpanel-sub">Proyectos sin ubicación detectada — asígnalos manualmente</div>
-    <div class="mpanel-kpis">
-      <div class="mpanel-kpi"><div class="mpanel-kpi-v" style="color:#FCA5A5">${mapaSinProv.length}</div><div class="mpanel-kpi-l">Sin ubicar</div></div>
-    </div>`;
-  document.getElementById('mpanel-search').style.display = 'block';
-  document.getElementById('mapa-search-input').value = '';
-  mapaRenderProjects(mapaSinProv);
-}
-
-function mapaOpenAssign(p) {
-  mapaAssignTarget = p;
-  const titulo = (p.titulo||'Sin título').slice(0,80);
-  document.getElementById('massign-titulo').textContent = titulo + (p.titulo?.length>80?'…':'');
-  const sel = document.getElementById('massign-select');
-  sel.innerHTML = '<option value="">-- Selecciona una provincia --</option>' +
-    PROVINCIAS_MAP.map(pr => `<option value="${pr.id}"${p._prov===pr.id?' selected':''}>${pr.nombre}</option>`).join('');
-  document.getElementById('mapaAssignModal').classList.add('open');
-}
-
-async function mapaSaveAssign() {
-  if (!mapaAssignTarget) return;
-  const provId = document.getElementById('massign-select').value;
-  if (!provId) return;
-
-  const oldProv = mapaAssignTarget._prov;
-  mapaAssignTarget._prov = provId;
-
-  if (oldProv && mapaProvMap[oldProv]) {
-    mapaProvMap[oldProv] = mapaProvMap[oldProv].filter(x => x !== mapaAssignTarget);
-  } else {
-    mapaSinProv = mapaSinProv.filter(x => x !== mapaAssignTarget);
-  }
-  if (!mapaProvMap[provId]) mapaProvMap[provId] = [];
-  mapaProvMap[provId].push(mapaAssignTarget);
-
-  if (mapaAssignTarget.id) {
-    fetch(`${SUPABASE_URL}/rest/v1/procesos?id=eq.${mapaAssignTarget.id}`, {
-      method: 'PATCH',
-      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provincia: provId })
-    }).catch(() => {});
-  }
-
-  document.getElementById('mapaAssignModal').classList.remove('open');
-  document.getElementById('sinubic-count').textContent = mapaSinProv.length;
-  document.getElementById('sinubic-pill').style.display = mapaSinProv.length > 0 ? 'block' : 'none';
-  document.getElementById('mapa-sinprov').textContent = mapaSinProv.length;
-  mapaBuildD3();
-  if (mapaSelectedProv) mapaShowProvince(mapaSelectedProv, PROVINCIAS_MAP.find(x=>x.id===mapaSelectedProv)?.nombre||'');
-}
-
-document.getElementById('mapaAssignModal')?.addEventListener('click', e => {
-  if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
-});
 
 
 // ── SUPABASE REST (tablas) ──
