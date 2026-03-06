@@ -553,6 +553,59 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 .rnc-status.err{color:#EF4444}
 .rnc-status.loading{color:var(--muted)}
 
+
+/* ── Subcats del filtro ── */
+.mercado-subcats{display:none;padding:0 16px 10px;gap:6px;flex-wrap:wrap}
+.mercado-subcats.visible{display:flex}
+.mercado-subcat{flex-shrink:0;padding:5px 12px;border-radius:16px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;font-family:var(--font-body)}
+.mercado-subcat.active{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+/* ── Sugerencias de búsqueda ── */
+.mercado-suggestions{position:absolute;top:calc(100% - 2px);left:16px;right:16px;background:var(--surface2);border:1.5px solid var(--green);border-top:none;border-radius:0 0 12px 12px;z-index:50;max-height:200px;overflow-y:auto;display:none}
+.mercado-suggestions.visible{display:block}
+.mercado-sug-item{padding:10px 14px;font-size:13px;color:var(--text2);cursor:pointer;border-bottom:1px solid var(--border);font-family:var(--font-body);transition:background .1s}
+.mercado-sug-item:last-child{border-bottom:none}
+.mercado-sug-item:active{background:var(--green-dim);color:var(--green)}
+.mercado-sug-tipo{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+
+
+/* ── Cards rediseñadas ── */
+.prov-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;margin-bottom:12px;overflow:hidden;transition:border-color .15s}
+.prov-card-header{display:flex;gap:12px;padding:14px 14px 10px}
+.prov-logo{width:56px;height:56px;border-radius:12px;background:var(--surface2);border:1px solid var(--border);object-fit:cover;flex-shrink:0}
+.prov-logo-placeholder{width:56px;height:56px;border-radius:12px;background:var(--green-dim);border:1px solid var(--green-border);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:18px;font-weight:800;color:var(--green);font-family:var(--font-display);letter-spacing:-1px}
+.prov-info{flex:1;min-width:0}
+.prov-nombre{font-size:14px;font-weight:700;color:var(--text);line-height:1.3;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.prov-verificado{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--green);font-weight:700;background:var(--green-dim);border-radius:6px;padding:2px 6px}
+.prov-tipo-badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:8px;letter-spacing:.04em;text-transform:uppercase;margin-top:3px;display:inline-block}
+.prov-tipo-materiales{background:#DBEAFE;color:#1D4ED8}
+.prov-tipo-equipos{background:#FEF3C7;color:#D97706}
+.prov-tipo-mano_obra{background:#D1FAE5;color:#065F46}
+.prov-tipo-servicios{background:#EDE9FE;color:#6D28D9}
+.prov-tipo-subcontratista{background:#FCE7F3;color:#BE185D}
+.prov-card-body{padding:0 14px 12px}
+.prov-desc{font-size:12px;color:var(--muted);line-height:1.45;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.prov-cats{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.prov-cat-chip{font-size:11px;color:var(--text2);background:var(--bg2);padding:3px 8px;border-radius:6px;font-weight:500}
+.prov-meta{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.prov-meta-row{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.prov-meta-row svg{flex-shrink:0;color:var(--muted)}
+.prov-meta-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prov-social{display:flex;gap:8px;margin-bottom:10px}
+.prov-social-btn{width:30px;height:30px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);transition:all .15s;text-decoration:none}
+.prov-social-btn:active{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.prov-actions{display:flex;gap:7px;padding:0 14px 14px}
+.prov-btn-wa{flex:1;padding:9px 10px;background:var(--green-dim);border:1.5px solid var(--green-border);border-radius:10px;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:all .15s;text-align:center}
+.prov-btn-wa:active{background:var(--green);color:#fff}
+.prov-btn-call{flex:1;padding:9px 10px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:all .15s;text-align:center}
+.prov-btn-map{width:38px;padding:9px 0;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;color:var(--muted);font-size:12px;cursor:pointer;font-family:var(--font-body);transition:all .15s;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.prov-btn-lock{flex:1;padding:9px 10px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body)}
+/* ── Upload logo en el form ── */
+.logo-upload-wrap{display:flex;align-items:center;gap:12px;margin-top:6px}
+.logo-preview{width:56px;height:56px;border-radius:12px;background:var(--surface2);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);overflow:hidden;flex-shrink:0}
+.logo-preview img{width:100%;height:100%;object-fit:cover}
+.logo-upload-btn{flex:1;padding:10px 12px;background:var(--bg2);border:1.5px dashed var(--border);border-radius:10px;color:var(--muted);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-body);text-align:center;transition:border-color .2s}
+.logo-upload-btn:active{border-color:var(--green);color:var(--green)}
+
 </style>
 </head>
 <body>
@@ -888,19 +941,23 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
       <div class="mercado-subtitle">Encuentra proveedores para tus licitaciones</div>
     </div>
 
-    <div class="mercado-search-wrap">
+    <div class="mercado-search-wrap" style="position:relative">
       <svg class="mercado-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input class="mercado-search-input" id="mercado-busqueda" placeholder="Buscar por nombre o categoría..." oninput="debouncarMercado()">
+      <input class="mercado-search-input" id="mercado-busqueda" placeholder="Buscar por nombre o categoría..." oninput="debouncarMercado()" onfocus="mostrarSugerencias()" onblur="setTimeout(()=>ocultarSugerencias(),200)">
+      <div class="mercado-suggestions" id="mercado-suggestions"></div>
     </div>
 
     <div class="mercado-chips" id="mercado-chips">
       <button class="mercado-chip active" onclick="filtrarMercado('')" id="mchip-todos">Todos</button>
-      <button class="mercado-chip" onclick="filtrarMercado('materiales')" id="mchip-materiales">Materiales</button>
-      <button class="mercado-chip" onclick="filtrarMercado('equipos')" id="mchip-equipos">Equipos</button>
-      <button class="mercado-chip" onclick="filtrarMercado('mano_obra')" id="mchip-mano_obra">Mano de obra</button>
-      <button class="mercado-chip" onclick="filtrarMercado('servicios')" id="mchip-servicios">Servicios</button>
-      <button class="mercado-chip" onclick="filtrarMercado('subcontratista')" id="mchip-subcontratista">Subcontratistas</button>
+      <button class="mercado-chip" onclick="filtrarMercado('materiales')" id="mchip-materiales">Materiales ›</button>
+      <button class="mercado-chip" onclick="filtrarMercado('equipos')" id="mchip-equipos">Equipos ›</button>
+      <button class="mercado-chip" onclick="filtrarMercado('mano_obra')" id="mchip-mano_obra">Mano de obra ›</button>
+      <button class="mercado-chip" onclick="filtrarMercado('servicios')" id="mchip-servicios">Servicios ›</button>
+      <button class="mercado-chip" onclick="filtrarMercado('subcontratista')" id="mchip-subcontratista">Subcontratistas ›</button>
     </div>
+
+    <!-- Subcategorías del chip activo -->
+    <div class="mercado-subcats" id="mercado-subcats"></div>
 
     <div class="mercado-zona-wrap">
       <select class="mercado-zona-select" id="mercado-zona" onchange="cargarMercado()">
@@ -1060,6 +1117,59 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
           <div class="zona-pill" data-zona="Pedernales" onclick="toggleZonaPill(this)">Pedernales</div>
           <div class="zona-pill" data-zona="Hermanas Mirabal" onclick="toggleZonaPill(this)">Hermanas Mirabal</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Logo -->
+    <div class="form-field">
+      <label>Logo de la empresa (opcional)</label>
+      <div class="logo-upload-wrap">
+        <div class="logo-preview" id="pf-logo-preview">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </div>
+        <div>
+          <div class="logo-upload-btn" onclick="document.getElementById('pf-logo-file').click()">Seleccionar imagen</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">JPG o PNG, máx 1MB</div>
+        </div>
+        <input type="file" id="pf-logo-file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="previsualizarLogo(this)">
+      </div>
+    </div>
+
+    <!-- Dirección -->
+    <div class="form-field">
+      <label>Dirección física (opcional)</label>
+      <input type="text" id="pf-direccion" placeholder="Ej: Av. Winston Churchill 1099, Sto. Domingo">
+    </div>
+
+    <!-- Horario -->
+    <div class="form-field">
+      <label>Horario de atención (opcional)</label>
+      <input type="text" id="pf-horario" placeholder="Ej: Lun–Vie 8:00am – 5:00pm">
+    </div>
+
+    <!-- Redes sociales -->
+    <div class="form-field">
+      <label>Instagram (opcional)</label>
+      <input type="text" id="pf-instagram" placeholder="@tuempresa (sin el @)">
+    </div>
+    <div class="form-field">
+      <label>Facebook (opcional)</label>
+      <input type="text" id="pf-facebook" placeholder="facebook.com/tuempresa o usuario">
+    </div>
+    <div class="form-field">
+      <label>Sitio web (opcional)</label>
+      <input type="text" id="pf-website" placeholder="www.tuempresa.com">
+    </div>
+
+    <!-- Ubicación en mapa -->
+    <div class="form-field">
+      <label>Ubicación en mapa (opcional)</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="pf-latitud"  placeholder="Latitud  18.4861" style="flex:1">
+        <input type="text" id="pf-longitud" placeholder="Longitud -69.9312" style="flex:1">
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">
+        Abre Google Maps, busca tu local, clic derecho → "¿Qué hay aquí?" y copia las coordenadas.
       </div>
     </div>
 
@@ -2678,6 +2788,7 @@ if ('serviceWorker' in navigator) {
 // MERCADO DE PROVEEDORES
 // ══════════════════════════════════════════════════
 let mercadoTipoActivo = '';
+let mercadoSubcatActiva = '';
 let mercadoDebounceTimer = null;
 const TIPOS_MANO_OBRA = ['mano_obra', 'servicios', 'subcontratista'];
 
@@ -2698,15 +2809,26 @@ async function cargarMercado() {
   lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
     const busqueda = document.getElementById('mercado-busqueda').value.trim();
-    const zona = document.getElementById('mercado-zona').value;
-    const params = new URLSearchParams();
+    const zona     = document.getElementById('mercado-zona').value;
+    const params   = new URLSearchParams();
     if (mercadoTipoActivo) params.set('tipo', mercadoTipoActivo);
-    if (zona) params.set('zona', zona);
-    if (busqueda) params.set('busqueda', busqueda);
+    if (zona)              params.set('zona', zona);
+    if (busqueda)          params.set('busqueda', busqueda);
 
-    const res = await fetch(`${API}/api/mercado/proveedores?${params}`);
+    const res  = await fetch(`${API}/api/mercado/proveedores?${params}`);
     const data = await res.json();
-    renderProveedores(data.proveedores || []);
+    let provs  = data.proveedores || [];
+
+    // Filtro local por subcategoría si está activa
+    if (mercadoSubcatActiva) {
+      provs = provs.filter(p =>
+        (p.proveedor_categorias || []).some(c =>
+          c.categoria_nombre?.toLowerCase().includes(mercadoSubcatActiva.toLowerCase())
+        )
+      );
+    }
+
+    renderProveedores(provs);
   } catch(e) {
     lista.innerHTML = '<div class="mercado-empty">Error al cargar proveedores</div>';
   }
@@ -2724,54 +2846,157 @@ function renderProveedores(provs) {
 function renderProvCard(p) {
   const tipo = p.tipo || 'materiales';
   const cats = (p.proveedor_categorias || []).map(c => c.categoria_nombre);
-  const zonas = (p.zona_geografica || []).join(', ') || 'Zona no especificada';
   const esManoObra = TIPOS_MANO_OBRA.includes(tipo);
   const tieneAcceso = !esManoObra || esSuscriptor();
 
-  const catsHtml = cats.slice(0, 4).map(c =>
-    `<span class="prov-cat-chip">${c}</span>`
-  ).join('') + (cats.length > 4 ? `<span class="prov-cat-chip">+${cats.length - 4}</span>` : '');
+  // Logo o iniciales
+  const iniciales = p.nombre_empresa.trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+  const logoHtml = p.logo_url
+    ? `<img class="prov-logo" src="${p.logo_url}" alt="${p.nombre_empresa}" onerror="this.style.display='none';this.nextSibling.style.display='flex'">`
+    : '';
+  const placeholderHtml = `<div class="prov-logo-placeholder" ${p.logo_url ? 'style="display:none"' : ''}>${iniciales}</div>`;
 
+  // Verificado badge
   const verificadoHtml = p.verificado
-    ? `<span class="prov-verificado"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Verificado</span>`
+    ? `<span class="prov-verificado"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Verificado</span>`
     : '';
 
+  // Categorías chips
+  const catsHtml = cats.slice(0,4).map(c=>`<span class="prov-cat-chip">${c}</span>`).join('')
+    + (cats.length>4 ? `<span class="prov-cat-chip">+${cats.length-4}</span>` : '');
+
+  // Meta info
+  let metaHtml = '';
+  if (p.direccion) metaHtml += `<div class="prov-meta-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>${p.direccion}</span></div>`;
+  if (p.horario) metaHtml += `<div class="prov-meta-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>${p.horario}</span></div>`;
+  const zonas = (p.zona_geografica||[]).filter(z=>z!=='Todo el país');
+  if (zonas.length) metaHtml += `<div class="prov-meta-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg><span>${(p.zona_geografica||[]).join(' · ')}</span></div>`;
+
+  // Redes sociales
+  let socialHtml = '';
+  if (p.instagram) socialHtml += `<a class="prov-social-btn" href="https://instagram.com/${p.instagram.replace('@','')}" target="_blank" title="Instagram"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></a>`;
+  if (p.facebook) socialHtml += `<a class="prov-social-btn" href="${p.facebook.startsWith('http')?p.facebook:'https://facebook.com/'+p.facebook}" target="_blank" title="Facebook"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>`;
+  if (p.website) socialHtml += `<a class="prov-social-btn" href="${p.website.startsWith('http')?p.website:'https://'+p.website}" target="_blank" title="Sitio web"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></a>`;
+
+  // Acciones
   let accionHtml = '';
   if (tieneAcceso) {
-    const waNum = (p.whatsapp || p.telefono || '').replace(/\D/g, '');
-    const waMsg = encodeURIComponent(`Hola, los contacto desde LicitacionLab. ¿Pueden enviarme cotización?`);
+    const mapBtn = (p.latitud && p.longitud)
+      ? `<button class="prov-btn-map" onclick="abrirMapa(${p.latitud},${p.longitud},'${p.nombre_empresa}')" title="Ver en mapa"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></button>`
+      : '';
     accionHtml = `
-      <button class="prov-btn-wa" onclick="contactarProveedor('${p.id}','whatsapp','${p.whatsapp || p.telefono}')">
-        WhatsApp
-      </button>
-      ${p.telefono ? `<button class="prov-btn-wa" style="background:var(--surface2);border-color:var(--border);color:var(--text2)" onclick="window.location='tel:${p.telefono}'">Llamar</button>` : ''}
+      <button class="prov-btn-wa" onclick="contactarProveedor('${p.id}','whatsapp','${p.whatsapp||p.telefono}')">WhatsApp</button>
+      ${p.telefono ? `<button class="prov-btn-call" onclick="window.location='tel:${p.telefono}'">Llamar</button>` : ''}
+      ${mapBtn}
     `;
   } else {
-    accionHtml = `<button class="prov-btn-lock" onclick="mostrarToast('Activa tu suscripción para ver mano de obra')">🔒 Solo suscriptores</button>`;
+    accionHtml = `<button class="prov-btn-lock" onclick="mostrarToast('Activa tu suscripción para ver contactos de mano de obra')">Solo suscriptores</button>`;
   }
 
   return `
   <div class="prov-card">
-    <div class="prov-card-top">
-      <div class="prov-nombre">${p.nombre_empresa}${verificadoHtml}</div>
-      <span class="prov-tipo-badge prov-tipo-${tipo}">${TIPO_LABELS[tipo] || tipo}</span>
+    <div class="prov-card-header">
+      ${logoHtml}${placeholderHtml}
+      <div class="prov-info">
+        <div class="prov-nombre">${p.nombre_empresa} ${verificadoHtml}</div>
+        <span class="prov-tipo-badge prov-tipo-${tipo}">${TIPO_LABELS[tipo]||tipo}</span>
+      </div>
     </div>
-    ${p.descripcion ? `<div class="prov-desc">${p.descripcion}</div>` : ''}
-    ${cats.length ? `<div class="prov-cats">${catsHtml}</div>` : ''}
-    <div class="prov-zonas">${zonas}</div>
+    <div class="prov-card-body">
+      ${p.descripcion ? `<div class="prov-desc">${p.descripcion}</div>` : ''}
+      ${cats.length ? `<div class="prov-cats">${catsHtml}</div>` : ''}
+      ${metaHtml ? `<div class="prov-meta">${metaHtml}</div>` : ''}
+      ${socialHtml ? `<div class="prov-social">${socialHtml}</div>` : ''}
+    </div>
     <div class="prov-actions">${accionHtml}</div>
   </div>`;
 }
 
+function abrirMapa(lat, lng, nombre) {
+  window.open(`https://www.google.com/maps?q=${lat},${lng}&z=16&label=${encodeURIComponent(nombre)}`, '_blank');
+}
+
+// Subcats por tipo — reutiliza SUBCATEGORIAS del formulario
 function filtrarMercado(tipo) {
+  const mismo = mercadoTipoActivo === tipo && tipo !== '';
   mercadoTipoActivo = tipo;
+  mercadoSubcatActiva = '';
+
   document.querySelectorAll('.mercado-chip').forEach(c => c.classList.remove('active'));
   const id = tipo ? `mchip-${tipo}` : 'mchip-todos';
   document.getElementById(id)?.classList.add('active');
+
+  // Mostrar/ocultar subcats
+  const subcatsWrap = document.getElementById('mercado-subcats');
+  if (tipo && SUBCATEGORIAS[tipo]) {
+    const items = SUBCATEGORIAS[tipo].items;
+    subcatsWrap.innerHTML = items.map(s =>
+      `<button class="mercado-subcat" data-subcat="${s}" onclick="filtrarSubcat(this,'${s}')">${s}</button>`
+    ).join('');
+    subcatsWrap.classList.add('visible');
+  } else {
+    subcatsWrap.classList.remove('visible');
+    subcatsWrap.innerHTML = '';
+  }
+
+  cargarMercado();
+}
+
+function filtrarSubcat(el, subcat) {
+  const misma = mercadoSubcatActiva === subcat;
+  mercadoSubcatActiva = misma ? '' : subcat;
+  document.querySelectorAll('.mercado-subcat').forEach(c => c.classList.remove('active'));
+  if (!misma) el.classList.add('active');
+  // Buscar por subcategoría directamente en el campo de búsqueda
+  const input = document.getElementById('mercado-busqueda');
+  input.value = misma ? '' : subcat;
+  cargarMercado();
+}
+
+// ── Sugerencias de búsqueda (todas las subcats de todos los tipos) ──
+const TODAS_SUBCATS = Object.values(SUBCATEGORIAS).flatMap(v => v.items);
+const SUBCATS_CON_TIPO = Object.entries(SUBCATEGORIAS).flatMap(([tipo, v]) =>
+  v.items.map(item => ({ item, tipo, label: TIPO_LABELS[tipo] || tipo }))
+);
+
+function mostrarSugerencias() {
+  const val = document.getElementById('mercado-busqueda').value.trim().toLowerCase();
+  if (!val) { ocultarSugerencias(); return; }
+  const matches = SUBCATS_CON_TIPO
+    .filter(s => s.item.toLowerCase().includes(val))
+    .slice(0, 7);
+  const panel = document.getElementById('mercado-suggestions');
+  if (!matches.length) { ocultarSugerencias(); return; }
+  panel.innerHTML = matches.map(s =>
+    `<div class="mercado-sug-item" onmousedown="elegirSugerencia('${s.item}','${s.tipo}')">
+      ${s.item}
+      <span class="mercado-sug-tipo">${s.label}</span>
+    </div>`
+  ).join('');
+  panel.classList.add('visible');
+}
+
+function ocultarSugerencias() {
+  document.getElementById('mercado-suggestions')?.classList.remove('visible');
+}
+
+function elegirSugerencia(subcat, tipo) {
+  document.getElementById('mercado-busqueda').value = subcat;
+  ocultarSugerencias();
+  // Activar el chip del tipo correspondiente y la subcategoría
+  filtrarMercado(tipo);
+  mercadoSubcatActiva = subcat;
+  // Marcar el chip de subcategoría si ya se renderizó
+  setTimeout(() => {
+    document.querySelectorAll('.mercado-subcat').forEach(el => {
+      if (el.dataset.subcat === subcat) el.classList.add('active');
+    });
+  }, 50);
   cargarMercado();
 }
 
 function debouncarMercado() {
+  mostrarSugerencias();
   clearTimeout(mercadoDebounceTimer);
   mercadoDebounceTimer = setTimeout(cargarMercado, 350);
 }
@@ -2936,9 +3161,24 @@ async function verificarRNC() {
   }
 }
 
+let pfLogoBase64 = null;
+
+function previsualizarLogo(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 1048576) { mostrarToast('La imagen debe ser menor de 1MB'); input.value=''; return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    pfLogoBase64 = e.target.result; // data:image/...;base64,...
+    const preview = document.getElementById('pf-logo-preview');
+    preview.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`;
+  };
+  reader.readAsDataURL(file);
+}
+
 function abrirFormProveedor() {
   // Reset completo del form
-  ['pf-nombre','pf-descripcion','pf-whatsapp','pf-rnc','pf-email'].forEach(id => {
+  ['pf-nombre','pf-descripcion','pf-whatsapp','pf-rnc','pf-email','pf-direccion','pf-horario','pf-instagram','pf-facebook','pf-website','pf-latitud','pf-longitud'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -2950,6 +3190,11 @@ function abrirFormProveedor() {
   if (document.getElementById('zonas-panel').classList.contains('open')) toggleZonasPanel();
   pfSubcatsSeleccionadas = [];
   rncVerificado = false;
+  pfLogoBase64 = null;
+  const logoPreview = document.getElementById('pf-logo-preview');
+  if (logoPreview) logoPreview.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+  const logoFile = document.getElementById('pf-logo-file');
+  if (logoFile) logoFile.value = '';
   resetRncStatus();
   const msg = document.getElementById('pf-msg');
   if (msg) msg.style.display = 'none';
@@ -2992,6 +3237,9 @@ async function enviarRegistroProveedor() {
   msg.style.display = 'none';
 
   try {
+    const lat = parseFloat(document.getElementById('pf-latitud').value) || null;
+    const lng = parseFloat(document.getElementById('pf-longitud').value) || null;
+
     const res = await fetch(`${API}/api/mercado/proveedores`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -3006,6 +3254,14 @@ async function enviarRegistroProveedor() {
         zona_geografica: zonas,
         categorias:      pfSubcatsSeleccionadas,
         rnc_verificado:  rncVerificado,
+        logo_base64:     pfLogoBase64,
+        direccion:       document.getElementById('pf-direccion').value.trim(),
+        horario:         document.getElementById('pf-horario').value.trim(),
+        instagram:       document.getElementById('pf-instagram').value.trim().replace('@',''),
+        facebook:        document.getElementById('pf-facebook').value.trim(),
+        website:         document.getElementById('pf-website').value.trim(),
+        latitud:         lat,
+        longitud:        lng,
       })
     });
     const data = await res.json();
