@@ -184,13 +184,15 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 .dash-filter-btn:active,.dash-filter-btn.activo{border-color:var(--green);color:var(--green);background:var(--green-dim)}
 
 /* ── CHIPS ── */
-.dash-chips{display:flex;gap:7px;padding:0 16px 12px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.dash-chips{display:flex;gap:10px;padding:0 16px 14px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .dash-chips::-webkit-scrollbar{display:none}
-.dash-chip{flex-shrink:0;padding:6px 13px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:600;font-family:var(--font-body);cursor:pointer;transition:all .18s;display:flex;align-items:center;gap:5px}
-.dash-chip.active{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.dash-chip{flex-shrink:0;min-width:72px;padding:10px 14px;border-radius:14px;border:1.5px solid var(--border);background:var(--surface);color:var(--text2);font-family:var(--font-body);cursor:pointer;transition:all .18s;display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center}
+.dash-chip.active{background:var(--green-dim);border-color:var(--green)}
 .dash-chip:active{transform:scale(.96)}
-.chip-count{font-size:10px;color:var(--muted);font-weight:500}
-.dash-chip.active .chip-count{color:var(--green)}
+.chip-num{font-family:var(--font-display);font-size:20px;font-weight:800;line-height:1;color:var(--text)}
+.chip-label{font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+.dash-chip.active .chip-num{color:var(--green)}
+.dash-chip.active .chip-label{color:var(--green)}
 
 /* ── FILTROS AVANZADOS ── */
 .filtros-avanzados-panel{overflow:hidden;max-height:0;transition:max-height .35s cubic-bezier(.4,0,.2,1),opacity .25s;opacity:0;pointer-events:none;padding:0 16px}
@@ -611,16 +613,34 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 
     <!-- Chips de filtro rápido por rubro -->
     <div class="dash-chips">
-      <button class="dash-chip active" id="chip-all" onclick="filtrarRubroChip('')">Todos <span id="chip-count-all" class="chip-count"></span></button>
-      <button class="dash-chip" id="chip-obras" onclick="filtrarRubroChip('Obras')">Obras <span id="chip-count-obras" class="chip-count"></span></button>
-      <button class="dash-chip" id="chip-bienes" onclick="filtrarRubroChip('Bienes')">Bienes <span id="chip-count-bienes" class="chip-count"></span></button>
-      <button class="dash-chip" id="chip-servicios" onclick="filtrarRubroChip('Servicios')">Servicios <span id="chip-count-servicios" class="chip-count"></span></button>
+      <button class="dash-chip active" id="chip-all" onclick="filtrarRubroChip('')">
+        <span class="chip-num" id="chip-count-all">—</span>
+        <span class="chip-label">Todos</span>
+      </button>
+      <button class="dash-chip" id="chip-obras" onclick="filtrarRubroChip('Obras')">
+        <span class="chip-num" id="chip-count-obras">—</span>
+        <span class="chip-label">Obras</span>
+      </button>
+      <button class="dash-chip" id="chip-bienes" onclick="filtrarRubroChip('Bienes')">
+        <span class="chip-num" id="chip-count-bienes">—</span>
+        <span class="chip-label">Bienes</span>
+      </button>
+      <button class="dash-chip" id="chip-servicios" onclick="filtrarRubroChip('Servicios')">
+        <span class="chip-num" id="chip-count-servicios">—</span>
+        <span class="chip-label">Servicios</span>
+      </button>
     </div>
 
     <!-- Panel de filtros avanzados colapsable -->
     <div class="filtros-avanzados-panel" id="filtros-avanzados-panel">
       <div class="adv-filter-grid">
-        <select class="filter-select" id="filtro-objeto" onchange="cargarProcesos(1)" style="display:none"></select>
+        <select class="filter-select" id="filtro-objeto" onchange="rubroActivo=this.value;cargarProcesos(1)" style="display:none">
+          <option value="">Todos</option>
+          <option value="Obras">Obras</option>
+          <option value="Bienes">Bienes</option>
+          <option value="Servicios">Servicios</option>
+          <option value="Consultoría">Consultoría</option>
+        </select>
         <select class="filter-select" id="filtro-activos" onchange="cargarProcesos(1)" style="display:none">
           <option value="true">Solo activos</option>
           <option value="false">Todos</option>
@@ -1066,9 +1086,15 @@ function filtrarRubro(rubro) {
   switchTab2('dashboard');
 }
 
+// Rubro activo — se guarda aquí, no en un select oculto
+let rubroActivo = '';
+
 function filtrarRubroChip(rubro) {
-  document.getElementById('filtro-objeto').value = rubro;
-  // Actualizar chip activo
+  rubroActivo = rubro;
+  // Sincronizar el select oculto por compatibilidad
+  const sel = document.getElementById('filtro-objeto');
+  if (sel) sel.value = rubro;
+  // Actualizar chip activo visualmente
   ['chip-all','chip-obras','chip-bienes','chip-servicios'].forEach(id => {
     document.getElementById(id)?.classList.remove('active');
   });
@@ -1093,7 +1119,8 @@ let unspscFiltro = null;
 async function cargarProcesos(page = 1) {
   document.getElementById('procesos-container').innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando...</span></div>';
   const busqueda   = document.getElementById('busqueda').value;
-  const objeto     = document.getElementById('filtro-objeto').value;
+  const objeto     = (typeof rubroActivo !== 'undefined' ? rubroActivo : null)
+    || document.getElementById('filtro-objeto')?.value || '';
   const activos    = document.getElementById('filtro-activos').value;
   const institucion = document.getElementById('filtro-institucion')?.value || '';
   const montoMin   = document.getElementById('filtro-monto-min')?.value || '';
@@ -1193,7 +1220,14 @@ function limpiarFiltros() {
   ['busqueda','filtro-institucion','filtro-monto-min','filtro-monto-max'].forEach(id => {
     const el = document.getElementById(id); if(el) el.value = '';
   });
-  document.getElementById('filtro-objeto').value = '';
+  rubroActivo = '';
+  const sel = document.getElementById('filtro-objeto');
+  if (sel) sel.value = '';
+  // Resetear chip activo a Todos
+  ['chip-all','chip-obras','chip-bienes','chip-servicios'].forEach(id => {
+    document.getElementById(id)?.classList.remove('active');
+  });
+  document.getElementById('chip-all')?.classList.add('active');
   limpiarUnspsc();
   actualizarBadgeFiltros();
   cargarProcesos(1);
