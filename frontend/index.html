@@ -10,7 +10,219 @@
 <link rel="manifest" href="/frontend/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js">
+// ══════════════════════════════════════════════════
+// MERCADO DE PROVEEDORES
+// ══════════════════════════════════════════════════
+let mercadoTipoActivo = '';
+let mercadoDebounceTimer = null;
+const TIPOS_MANO_OBRA = ['mano_obra', 'servicios', 'subcontratista'];
+
+const TIPO_LABELS = {
+  materiales: 'Materiales', equipos: 'Equipos',
+  mano_obra: 'Mano de obra', servicios: 'Servicios', subcontratista: 'Subcontratista'
+};
+
+function esSuscriptor() {
+  // Reutiliza la variable global de sesión de LicitacionLab
+  // Si tienes plan_activo o suscripcion en el perfil del usuario, úsala aquí
+  // Por ahora retorna true para no bloquear durante pruebas
+  return true;
+}
+
+async function cargarMercado() {
+  const lista = document.getElementById('mercado-lista');
+  lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const busqueda = document.getElementById('mercado-busqueda').value.trim();
+    const zona = document.getElementById('mercado-zona').value;
+    const params = new URLSearchParams();
+    if (mercadoTipoActivo) params.set('tipo', mercadoTipoActivo);
+    if (zona) params.set('zona', zona);
+    if (busqueda) params.set('busqueda', busqueda);
+
+    const res = await fetch(`${API}/api/mercado/proveedores?${params}`);
+    const data = await res.json();
+    renderProveedores(data.proveedores || []);
+  } catch(e) {
+    lista.innerHTML = '<div class="mercado-empty">Error al cargar proveedores</div>';
+  }
+}
+
+function renderProveedores(provs) {
+  const lista = document.getElementById('mercado-lista');
+  if (!provs.length) {
+    lista.innerHTML = '<div class="mercado-empty">No hay proveedores registrados en esta categoría aún.<br>¡Sé el primero!</div>';
+    return;
+  }
+  lista.innerHTML = provs.map(p => renderProvCard(p)).join('');
+}
+
+function renderProvCard(p) {
+  const tipo = p.tipo || 'materiales';
+  const cats = (p.proveedor_categorias || []).map(c => c.categoria_nombre);
+  const zonas = (p.zona_geografica || []).join(', ') || 'Zona no especificada';
+  const esManoObra = TIPOS_MANO_OBRA.includes(tipo);
+  const tieneAcceso = !esManoObra || esSuscriptor();
+
+  const catsHtml = cats.slice(0, 4).map(c =>
+    `<span class="prov-cat-chip">${c}</span>`
+  ).join('') + (cats.length > 4 ? `<span class="prov-cat-chip">+${cats.length - 4}</span>` : '');
+
+  const verificadoHtml = p.verificado
+    ? `<span class="prov-verificado"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Verificado</span>`
+    : '';
+
+  let accionHtml = '';
+  if (tieneAcceso) {
+    const waNum = (p.whatsapp || p.telefono || '').replace(/\D/g, '');
+    const waMsg = encodeURIComponent(`Hola, los contacto desde LicitacionLab. ¿Pueden enviarme cotización?`);
+    accionHtml = `
+      <button class="prov-btn-wa" onclick="contactarProveedor('${p.id}','whatsapp','${p.whatsapp || p.telefono}')">
+        WhatsApp
+      </button>
+      ${p.telefono ? `<button class="prov-btn-wa" style="background:var(--surface2);border-color:var(--border);color:var(--text2)" onclick="window.location='tel:${p.telefono}'">Llamar</button>` : ''}
+    `;
+  } else {
+    accionHtml = `<button class="prov-btn-lock" onclick="mostrarToast('Activa tu suscripción para ver mano de obra')">🔒 Solo suscriptores</button>`;
+  }
+
+  return `
+  <div class="prov-card">
+    <div class="prov-card-top">
+      <div class="prov-nombre">${p.nombre_empresa}${verificadoHtml}</div>
+      <span class="prov-tipo-badge prov-tipo-${tipo}">${TIPO_LABELS[tipo] || tipo}</span>
+    </div>
+    ${p.descripcion ? `<div class="prov-desc">${p.descripcion}</div>` : ''}
+    ${cats.length ? `<div class="prov-cats">${catsHtml}</div>` : ''}
+    <div class="prov-zonas">${zonas}</div>
+    <div class="prov-actions">${accionHtml}</div>
+  </div>`;
+}
+
+function filtrarMercado(tipo) {
+  mercadoTipoActivo = tipo;
+  document.querySelectorAll('.mercado-chip').forEach(c => c.classList.remove('active'));
+  const id = tipo ? `mchip-${tipo}` : 'mchip-todos';
+  document.getElementById(id)?.classList.add('active');
+  cargarMercado();
+}
+
+function debouncarMercado() {
+  clearTimeout(mercadoDebounceTimer);
+  mercadoDebounceTimer = setTimeout(cargarMercado, 350);
+}
+
+async function contactarProveedor(proveedorId, tipo, numero) {
+  // Registrar contacto en analytics
+  try {
+    fetch(`${API}/api/mercado/contactos`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ proveedor_id: proveedorId, tipo_contacto: tipo })
+    });
+  } catch(e) {}
+  // Abrir WhatsApp
+  const num = numero.replace(/\D/g, '');
+  const msg = encodeURIComponent('Hola, los contacto desde LicitacionLab. ¿Pueden enviarme cotización?');
+  window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
+}
+
+// ── Formulario de registro ──
+let pfCategorias = [];
+
+function abrirFormProveedor() {
+  document.getElementById('mercado-form-overlay').style.display = 'block';
+  document.getElementById('mercado-form-sheet').classList.add('visible');
+}
+
+function cerrarFormProveedor() {
+  document.getElementById('mercado-form-overlay').style.display = 'none';
+  document.getElementById('mercado-form-sheet').classList.remove('visible');
+}
+
+function toggleZona(el) {
+  el.classList.toggle('selected');
+}
+
+function agregarCategoria() {
+  const input = document.getElementById('pf-cat-input');
+  const val = input.value.trim();
+  if (!val || pfCategorias.includes(val)) { input.value = ''; return; }
+  pfCategorias.push(val);
+  renderCatTags();
+  input.value = '';
+}
+
+function quitarCategoria(cat) {
+  pfCategorias = pfCategorias.filter(c => c !== cat);
+  renderCatTags();
+}
+
+function renderCatTags() {
+  document.getElementById('pf-cats-list').innerHTML = pfCategorias.map(c =>
+    `<span class="form-cat-tag">${c}<button onclick="quitarCategoria('${c}')">×</button></span>`
+  ).join('');
+}
+
+async function enviarRegistroProveedor() {
+  const btn = document.getElementById('pf-submit-btn');
+  const msg = document.getElementById('pf-msg');
+  const nombre = document.getElementById('pf-nombre').value.trim();
+  const tipo   = document.getElementById('pf-tipo').value;
+  const wa     = document.getElementById('pf-whatsapp').value.trim();
+
+  if (!nombre || !tipo || !wa) {
+    msg.style.display = 'block';
+    msg.style.background = 'var(--red-dim, #FEE2E2)';
+    msg.style.color = '#DC2626';
+    msg.textContent = 'Completa los campos obligatorios: nombre, tipo y WhatsApp';
+    return;
+  }
+
+  const zonas = [...document.querySelectorAll('.zona-checkbox.selected')].map(z => z.dataset.zona);
+
+  btn.disabled = true;
+  btn.textContent = 'Registrando...';
+  msg.style.display = 'none';
+
+  try {
+    const res = await fetch(`${API}/api/mercado/proveedores`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        nombre_empresa:  nombre,
+        tipo,
+        descripcion:     document.getElementById('pf-descripcion').value.trim(),
+        whatsapp:        wa,
+        telefono:        wa,
+        rnc:             document.getElementById('pf-rnc').value.trim(),
+        email_contacto:  document.getElementById('pf-email').value.trim(),
+        zona_geografica: zonas,
+        categorias:      pfCategorias,
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      cerrarFormProveedor();
+      mostrarToast('Proveedor registrado exitosamente');
+      pfCategorias = [];
+      cargarMercado();
+    } else {
+      throw new Error(data.detail || 'Error desconocido');
+    }
+  } catch(e) {
+    msg.style.display = 'block';
+    msg.style.background = 'var(--red-dim, #FEE2E2)';
+    msg.style.color = '#DC2626';
+    msg.textContent = `Error: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Registrar proveedor';
+  }
+}
+
+</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap');
 
@@ -456,6 +668,67 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 #tab-dashboard{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:72px;display:none}
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-md);padding:10px 18px;font-size:13px;font-weight:600;color:var(--text);box-shadow:var(--shadow-md);z-index:1000;opacity:0;transition:all .3s cubic-bezier(.4,0,.2,1);white-space:nowrap}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── MERCADO DE PROVEEDORES ── */
+#tab-mercado{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:72px;display:none}
+.mercado-header{padding:16px 16px 8px}
+.mercado-title{font-size:20px;font-weight:800;color:var(--text);letter-spacing:-.3px;font-family:var(--font-display)}
+.mercado-subtitle{font-size:13px;color:var(--muted);margin-top:2px}
+.mercado-search-wrap{padding:10px 16px;position:relative}
+.mercado-search-input{width:100%;padding:11px 16px 11px 40px;background:var(--surface);border:1.5px solid var(--border);border-radius:12px;color:var(--text);font-family:var(--font-body);font-size:14px;outline:none;box-sizing:border-box;transition:border-color .2s}
+.mercado-search-input:focus{border-color:var(--green)}
+.mercado-search-icon{position:absolute;left:28px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+.mercado-chips{display:flex;gap:8px;padding:0 16px 12px;overflow-x:auto;scrollbar-width:none}
+.mercado-chips::-webkit-scrollbar{display:none}
+.mercado-chip{flex-shrink:0;padding:7px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;font-family:var(--font-body)}
+.mercado-chip.active{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.mercado-zona-wrap{padding:0 16px 14px}
+.mercado-zona-select{width:100%;padding:9px 12px;background:var(--surface);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:13px;outline:none;box-sizing:border-box}
+.mercado-lista{padding:0 16px}
+.prov-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:10px;transition:border-color .15s}
+.prov-card:active{border-color:var(--green-border)}
+.prov-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px}
+.prov-nombre{font-size:14px;font-weight:700;color:var(--text);line-height:1.3;flex:1}
+.prov-tipo-badge{flex-shrink:0;font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;letter-spacing:.04em;text-transform:uppercase}
+.prov-tipo-materiales{background:#DBEAFE;color:#1D4ED8}
+.prov-tipo-equipos{background:#FEF3C7;color:#D97706}
+.prov-tipo-mano_obra{background:#D1FAE5;color:#065F46}
+.prov-tipo-servicios{background:#EDE9FE;color:#6D28D9}
+.prov-tipo-subcontratista{background:#FCE7F3;color:#BE185D}
+.prov-desc{font-size:12px;color:var(--muted);line-height:1.4;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.prov-cats{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px}
+.prov-cat-chip{font-size:11px;color:var(--text2);background:var(--bg2);padding:3px 8px;border-radius:6px;font-weight:500}
+.prov-zonas{font-size:11px;color:var(--muted);margin-bottom:10px}
+.prov-actions{display:flex;gap:8px}
+.prov-btn-wa{flex:1;padding:9px 12px;background:var(--green-dim);border:1.5px solid var(--green-border);border-radius:10px;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:all .15s}
+.prov-btn-wa:active{background:var(--green);color:#fff}
+.prov-btn-lock{flex:1;padding:9px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body)}
+.prov-verificado{display:inline-flex;align-items:center;gap:3px;font-size:10px;color:var(--green);font-weight:700;margin-left:4px}
+.mercado-empty{padding:48px 24px;text-align:center;color:var(--muted);font-size:14px}
+.mercado-registro-btn{display:block;margin:16px 16px 8px;padding:13px;background:var(--green);border:none;border-radius:12px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:var(--font-body);width:calc(100% - 32px);text-align:center;transition:opacity .15s}
+.mercado-registro-btn:active{opacity:.85}
+.mercado-form-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:400;backdrop-filter:blur(4px)}
+.mercado-form-sheet{position:fixed;bottom:0;left:0;right:0;z-index:401;background:var(--surface2);border-radius:20px 20px 0 0;padding:20px 20px 40px;max-height:90vh;overflow-y:auto;transform:translateY(100%);transition:transform .35s cubic-bezier(.16,1,.3,1)}
+.mercado-form-sheet.visible{transform:translateY(0)}
+.form-sheet-handle{width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px}
+.form-sheet-title{font-size:16px;font-weight:800;color:var(--text);margin-bottom:16px;font-family:var(--font-display)}
+.form-field{margin-bottom:14px}
+.form-field label{display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+.form-field input,.form-field select,.form-field textarea{width:100%;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border);border-radius:10px;color:var(--text);font-family:var(--font-body);font-size:13px;outline:none;box-sizing:border-box;transition:border-color .2s}
+.form-field input:focus,.form-field select:focus,.form-field textarea:focus{border-color:var(--green)}
+.form-field textarea{resize:vertical;min-height:72px}
+.form-zonas-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.zona-checkbox{display:flex;align-items:center;gap:6px;padding:7px 10px;background:var(--bg2);border:1.5px solid var(--border);border-radius:8px;cursor:pointer;font-size:12px;color:var(--text2);font-weight:500;transition:all .15s}
+.zona-checkbox.selected{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.form-cats-input{display:flex;gap:8px;margin-bottom:8px}
+.form-cats-input input{flex:1}
+.form-cats-list{display:flex;flex-wrap:wrap;gap:6px;min-height:28px}
+.form-cat-tag{display:flex;align-items:center;gap:4px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:8px;padding:4px 10px;font-size:12px;color:var(--green);font-weight:600}
+.form-cat-tag button{background:none;border:none;color:var(--green);cursor:pointer;padding:0;font-size:14px;line-height:1}
+.form-submit-btn{width:100%;padding:14px;background:var(--green);border:none;border-radius:12px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-body);margin-top:8px;transition:opacity .15s}
+.form-submit-btn:active{opacity:.85}
+.form-submit-btn:disabled{opacity:.5;cursor:not-allowed}
+
 </style>
 </head>
 <body>
@@ -783,6 +1056,139 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     <div id="seg-lista"></div>
   </div>
 
+
+  <!-- ══ TAB MERCADO ══ -->
+  <div id="tab-mercado">
+    <div class="mercado-header">
+      <div class="mercado-title">Mercado</div>
+      <div class="mercado-subtitle">Encuentra proveedores para tus licitaciones</div>
+    </div>
+
+    <div class="mercado-search-wrap">
+      <svg class="mercado-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="mercado-search-input" id="mercado-busqueda" placeholder="Buscar por nombre o categoría..." oninput="debouncarMercado()">
+    </div>
+
+    <div class="mercado-chips" id="mercado-chips">
+      <button class="mercado-chip active" onclick="filtrarMercado('')" id="mchip-todos">Todos</button>
+      <button class="mercado-chip" onclick="filtrarMercado('materiales')" id="mchip-materiales">Materiales</button>
+      <button class="mercado-chip" onclick="filtrarMercado('equipos')" id="mchip-equipos">Equipos</button>
+      <button class="mercado-chip" onclick="filtrarMercado('mano_obra')" id="mchip-mano_obra">Mano de obra</button>
+      <button class="mercado-chip" onclick="filtrarMercado('servicios')" id="mchip-servicios">Servicios</button>
+      <button class="mercado-chip" onclick="filtrarMercado('subcontratista')" id="mchip-subcontratista">Subcontratistas</button>
+    </div>
+
+    <div class="mercado-zona-wrap">
+      <select class="mercado-zona-select" id="mercado-zona" onchange="cargarMercado()">
+        <option value="">Todas las provincias</option>
+        <option>Distrito Nacional</option>
+        <option>Santo Domingo</option>
+        <option>Santiago</option>
+        <option>La Vega</option>
+        <option>San Pedro de Macorís</option>
+        <option>La Romana</option>
+        <option>San Cristóbal</option>
+        <option>Puerto Plata</option>
+        <option>Duarte</option>
+        <option>Espaillat</option>
+        <option>Barahona</option>
+        <option>San Juan</option>
+        <option>Azua</option>
+        <option>Peravia</option>
+        <option>Monseñor Nouel</option>
+        <option>Sánchez Ramírez</option>
+        <option>Hato Mayor</option>
+        <option>El Seibo</option>
+        <option>La Altagracia</option>
+        <option>Monte Plata</option>
+        <option>Valverde</option>
+        <option>María Trinidad Sánchez</option>
+        <option>Samaná</option>
+        <option>Monte Cristi</option>
+        <option>Dajabón</option>
+        <option>Santiago Rodríguez</option>
+        <option>Elías Piña</option>
+        <option>San José de Ocoa</option>
+        <option>Independencia</option>
+        <option>Baoruco</option>
+        <option>Pedernales</option>
+        <option>Hermanas Mirabal</option>
+      </select>
+    </div>
+
+    <div class="mercado-lista" id="mercado-lista">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+
+    <button class="mercado-registro-btn" onclick="abrirFormProveedor()">
+      + Registrar mi empresa como proveedor
+    </button>
+  </div>
+
+  <!-- Overlay + Sheet de registro -->
+  <div class="mercado-form-overlay" id="mercado-form-overlay" onclick="cerrarFormProveedor()"></div>
+  <div class="mercado-form-sheet" id="mercado-form-sheet">
+    <div class="form-sheet-handle"></div>
+    <div class="form-sheet-title">Registrar proveedor</div>
+
+    <div class="form-field">
+      <label>Nombre de empresa o persona *</label>
+      <input type="text" id="pf-nombre" placeholder="Ej: Suministros del Este, S.R.L.">
+    </div>
+    <div class="form-field">
+      <label>Tipo de proveedor *</label>
+      <select id="pf-tipo">
+        <option value="">Seleccionar...</option>
+        <option value="materiales">Materiales de construcción</option>
+        <option value="equipos">Equipos y maquinaria</option>
+        <option value="mano_obra">Mano de obra</option>
+        <option value="servicios">Servicios técnicos</option>
+        <option value="subcontratista">Subcontratista especializado</option>
+      </select>
+    </div>
+    <div class="form-field">
+      <label>Descripción breve</label>
+      <textarea id="pf-descripcion" placeholder="¿Qué ofreces? Ej: Suplidor de cemento, varilla y materiales de ferretería para proyectos de construcción." maxlength="300"></textarea>
+    </div>
+    <div class="form-field">
+      <label>WhatsApp / Teléfono *</label>
+      <input type="tel" id="pf-whatsapp" placeholder="809-000-0000">
+    </div>
+    <div class="form-field">
+      <label>RNC (opcional)</label>
+      <input type="text" id="pf-rnc" placeholder="000-00000-0">
+    </div>
+    <div class="form-field">
+      <label>Correo de contacto (opcional)</label>
+      <input type="email" id="pf-email" placeholder="ventas@empresa.com">
+    </div>
+    <div class="form-field">
+      <label>Zonas donde operas</label>
+      <div class="form-zonas-grid" id="pf-zonas-grid">
+        <div class="zona-checkbox" data-zona="Distrito Nacional" onclick="toggleZona(this)">Distrito Nacional</div>
+        <div class="zona-checkbox" data-zona="Santo Domingo" onclick="toggleZona(this)">Santo Domingo</div>
+        <div class="zona-checkbox" data-zona="Santiago" onclick="toggleZona(this)">Santiago</div>
+        <div class="zona-checkbox" data-zona="La Vega" onclick="toggleZona(this)">La Vega</div>
+        <div class="zona-checkbox" data-zona="San Pedro de Macorís" onclick="toggleZona(this)">San Pedro</div>
+        <div class="zona-checkbox" data-zona="La Romana" onclick="toggleZona(this)">La Romana</div>
+        <div class="zona-checkbox" data-zona="San Cristóbal" onclick="toggleZona(this)">San Cristóbal</div>
+        <div class="zona-checkbox" data-zona="Puerto Plata" onclick="toggleZona(this)">Puerto Plata</div>
+        <div class="zona-checkbox" data-zona="Todo el país" onclick="toggleZona(this)">Todo el país</div>
+      </div>
+    </div>
+    <div class="form-field">
+      <label>Categorías / productos que ofreces</label>
+      <div class="form-cats-input">
+        <input type="text" id="pf-cat-input" placeholder="Ej: Cemento, varilla, tubería..." onkeydown="if(event.key==='Enter'){event.preventDefault();agregarCategoria()}">
+        <button onclick="agregarCategoria()" style="padding:8px 14px;background:var(--green-dim);border:1.5px solid var(--green-border);border-radius:10px;color:var(--green);font-weight:700;cursor:pointer;font-size:13px;font-family:var(--font-body);white-space:nowrap">Agregar</button>
+      </div>
+      <div class="form-cats-list" id="pf-cats-list"></div>
+    </div>
+
+    <div id="pf-msg" style="display:none;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:12px;text-align:center"></div>
+    <button class="form-submit-btn" id="pf-submit-btn" onclick="enviarRegistroProveedor()">Registrar proveedor</button>
+  </div>
+
   </div><!-- /tabs-wrapper -->
 
   <!-- Modal cambio de estado -->
@@ -829,6 +1235,10 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     <button class="bottom-nav-item" id="nav-perfil" onclick="switchTab2('perfil')">
       <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
       Mi Perfil
+    </button>
+    <button class="bottom-nav-item" id="nav-mercado" onclick="switchTab2('mercado')">
+      <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+      Mercado
     </button>
   </nav>
 </div>
@@ -1546,13 +1956,15 @@ function switchTab2(tab) {
   document.getElementById('tab-detalle').style.display     = 'none';
   document.getElementById('tab-perfil').style.display      = tab==='perfil'      ? 'block' : 'none';
   document.getElementById('tab-seguimiento').style.display = tab==='seguimiento' ? 'block' : 'none';
+  document.getElementById('tab-mercado').style.display     = tab==='mercado'     ? 'block' : 'none';
   if (tab==='seguimiento') cargarSeguimiento();
-  
+  if (tab==='mercado') cargarMercado();
   document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
-  const navMap = {'dashboard':'nav-dashboard','perfil':'nav-perfil','seguimiento':'nav-seguimiento'};
+  const navMap = {
+    'dashboard':'nav-dashboard','perfil':'nav-perfil',
+    'seguimiento':'nav-seguimiento','mercado':'nav-mercado'
+  };
   if(navMap[tab]) document.getElementById(navMap[tab])?.classList.add('active');
-  document.getElementById('nav-dashboard').classList.toggle('active', tab==='dashboard');
-  document.getElementById('nav-perfil').classList.toggle('active', tab==='perfil');
 }
 
 // ── PUSH ──
