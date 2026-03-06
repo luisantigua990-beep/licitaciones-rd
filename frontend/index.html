@@ -208,7 +208,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 .btn-analizar-pliego .btn-spinner{width:15px;height:15px;border:2px solid rgba(0,0,0,.25);border-top-color:#000;border-radius:50%;animation:spin .6s linear infinite;display:none;flex-shrink:0}
 .btn-analizar-pliego.cargando .btn-spinner{display:block}
 .btn-analizar-pliego.cargando .btn-texto::before{content:'Analizando pliego...'}
-.btn-analizar-pliego:not(.cargando) .btn-texto::before{content:'🤖 Solicitar análisis IA'}
+.btn-analizar-pliego:not(.cargando) .btn-texto::before{content:'Solicitar análisis IA'}
 @media(max-width:600px){
   .btn-filtros-avanzados{display:flex}
   .filter-row .filter-select{flex:1 1 80px;min-width:80px}
@@ -457,7 +457,6 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     <div class="auth-tabs">
       <button class="auth-tab active" onclick="switchTab('login')">Iniciar sesión</button>
       <button class="auth-tab" onclick="switchTab('register')">Registrarse</button>
-      <button class="auth-tab" onclick="switchTab('recovery')" id="tab-recovery" style="font-size:11px">¿Olvidaste?</button>
     </div>
 
     <div id="form-login">
@@ -470,6 +469,9 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
         <input type="password" id="login-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')login()">
       </div>
       <button class="btn btn-primary" onclick="login()" id="btn-login">Entrar</button>
+      <div style="text-align:center;margin-top:14px">
+        <button onclick="switchTab('recovery')" style="background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;font-family:var(--font-body);text-decoration:underline;padding:0">Olvidé mi contraseña</button>
+      </div>
     </div>
 
     <div id="form-register" style="display:none">
@@ -489,14 +491,19 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     </div>
 
     <div id="form-recovery" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+        <button onclick="switchTab('login')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;padding:0;line-height:1">←</button>
+        <span style="font-size:14px;font-weight:600;color:var(--text)">Restablecer contraseña</span>
+      </div>
       <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5">
-        Ingresa tu correo y te enviaremos un enlace para restablecer tu contraseña.
+        Ingresa tu correo registrado y te enviaremos el enlace de restablecimiento.
       </p>
       <div class="form-group">
         <label>Correo electrónico</label>
         <input type="email" id="recovery-email" placeholder="tu@empresa.com" onkeydown="if(event.key==='Enter')sendRecovery()">
       </div>
       <button class="btn btn-primary" onclick="sendRecovery()" id="btn-recovery">Enviar enlace</button>
+      <div id="recovery-result" style="display:none;margin-top:14px;padding:12px 14px;border-radius:8px;font-size:13px;font-weight:600;text-align:center"></div>
     </div>
 
     <div id="auth-msg" class="auth-msg"></div>
@@ -544,7 +551,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     <div class="drawer-section">
       <div class="drawer-theme-toggle">
         <div class="drawer-theme-info">
-          <div class="drawer-item-icon" id="drawer-theme-icon">🌙</div>
+          <div class="drawer-item-icon" id="drawer-theme-icon">●</div>
           <div>
             <div class="drawer-item-label" id="drawer-theme-label">Modo oscuro</div>
             <div class="drawer-item-sub">Cambiar apariencia</div>
@@ -554,15 +561,15 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
       </div>
       <div class="drawer-divider"></div>
       <button class="drawer-item" onclick="switchTab2('dashboard');closeDrawer()">
-        <div class="drawer-item-icon">📋</div>
+        <div class="drawer-item-icon">≡</div>
         <div><div class="drawer-item-label">Licitaciones</div><div class="drawer-item-sub">Ver todos los procesos</div></div>
       </button>
       <button class="drawer-item" onclick="switchTab2('seguimiento');limpiarBadge();closeDrawer()">
-        <div class="drawer-item-icon">⭐</div>
+        <div class="drawer-item-icon">★</div>
         <div><div class="drawer-item-label">Mis Procesos</div><div class="drawer-item-sub">Procesos seguidos</div></div>
       </button>
       <button class="drawer-item" onclick="switchTab2('perfil');closeDrawer()">
-        <div class="drawer-item-icon">👤</div>
+        <div class="drawer-item-icon">○</div>
         <div><div class="drawer-item-label">Mi Perfil</div><div class="drawer-item-sub">Cuenta y notificaciones</div></div>
       </button>
     </div>
@@ -582,17 +589,17 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
         <div class="stat-value" id="stat-activos">—</div>
       </div>
       <div class="stat-card" onclick="filtrarRubro('Obras')">
-        <span class="stat-emoji">🏗️</span>
+        
         <div class="stat-label">Obras</div>
         <div class="stat-value" id="stat-obras">—</div>
       </div>
       <div class="stat-card" onclick="filtrarRubro('Bienes')">
-        <span class="stat-emoji">📦</span>
+        
         <div class="stat-label">Bienes</div>
         <div class="stat-value" id="stat-bienes">—</div>
       </div>
       <div class="stat-card" onclick="filtrarRubro('Servicios')">
-        <span class="stat-emoji">🛠️</span>
+        
         <div class="stat-label">Servicios</div>
         <div class="stat-value" id="stat-servicios">—</div>
       </div>
@@ -604,32 +611,32 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 
     <div class="filters-block">
       <div class="filter-row">
-        <input class="filter-input" type="text" id="busqueda" placeholder="🔍 Título o código proceso..." oninput="debounceSearch()" style="flex:2">
-        <input class="filter-input" type="text" id="filtro-institucion" placeholder="🏛️ Institución..." oninput="debounceSearch()">
+        <input class="filter-input" type="text" id="busqueda" placeholder="Título o código proceso..." oninput="debounceSearch()" style="flex:2">
+        <input class="filter-input" type="text" id="filtro-institucion" placeholder="Institución..." oninput="debounceSearch()">
       </div>
       <div class="filter-row">
         <select class="filter-select" id="filtro-objeto" onchange="cargarProcesos(1)">
           <option value="">Todos los rubros</option>
-          <option value="Obras">🏗️ Obras</option>
-          <option value="Bienes">📦 Bienes</option>
-          <option value="Servicios">🛠️ Servicios</option>
+          <option value="Obras">Obras</option>
+          <option value="Bienes">Bienes</option>
+          <option value="Servicios">Servicios</option>
         </select>
         <select class="filter-select" id="filtro-activos" onchange="cargarProcesos(1)">
           <option value="true">Solo activos</option>
           <option value="false">Todos</option>
         </select>
         <button class="btn-filtros-avanzados" id="btn-filtros-avanzados" onclick="toggleFiltrosAvanzados()">
-          ⚙️ Filtros <span class="filtros-badge" id="filtros-badge">0</span>
+          Filtros <span class="filtros-badge" id="filtros-badge">0</span>
         </button>
-        <button class="filter-clear" onclick="limpiarFiltros()">✕ Limpiar</button>
+        <button class="filter-clear" onclick="limpiarFiltros()">Limpiar</button>
       </div>
       <div class="filtros-avanzados-panel" id="filtros-avanzados-panel">
         <div class="filter-row" style="margin-top:8px">
-          <input class="filter-input" type="number" id="filtro-monto-min" placeholder="💰 Monto mín (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
-          <input class="filter-input" type="number" id="filtro-monto-max" placeholder="💰 Monto máx (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
+          <input class="filter-input" type="number" id="filtro-monto-min" placeholder="Monto mín (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
+          <input class="filter-input" type="number" id="filtro-monto-max" placeholder="Monto máx (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
         </div>
         <div class="filter-row" style="position:relative;margin-top:8px">
-          <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="🔎 Buscar por nombre o código (ej: 1512, lubricantes...)" oninput="buscarUnspsc()" autocomplete="off">
+          <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="Buscar por nombre o código (ej: 1512, lubricantes...)" oninput="buscarUnspsc()" autocomplete="off">
           <div class="unspsc-dropdown" id="unspsc-dropdown"></div>
         </div>
         <div class="unspsc-active-tag" id="unspsc-activo">
@@ -654,7 +661,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
   <div id="tab-perfil" class="main page-with-nav" style="display:none">
 
     <div class="perfil-card">
-      <h2>⚙️ Mi cuenta</h2>
+      <h2>Mi cuenta</h2>
       <div class="field-label">Correo electrónico</div>
       <div class="field-value" id="perfil-email">—</div>
       <div class="field-label" style="margin-top:4px">Nombre / Empresa</div>
@@ -667,7 +674,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     </div>
 
     <div class="perfil-card">
-      <h2>🔔 Notificaciones Push</h2>
+      <h2>Notificaciones Push</h2>
       <div class="toggle-row">
         <div class="toggle-info">
           <div class="toggle-label">Activar alertas en este dispositivo</div>
@@ -676,27 +683,27 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
         <div class="toggle" id="toggle-push" onclick="togglePush()"></div>
       </div>
       <div id="push-status" class="push-status-tag" style="display:none">
-        ✅ Notificaciones activas en este dispositivo
+        Notificaciones activas en este dispositivo
       </div>
     </div>
 
     <div class="perfil-card">
-      <h2>🎯 Mis intereses de notificación</h2>
+      <h2>Mis intereses de notificación</h2>
       <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Solo recibirás alertas de las categorías que selecciones.</p>
 
       <div class="section-label">Rubros</div>
       <div class="rubros-grid">
         <label class="rubro-chip">
           <input type="checkbox" id="interes-obras" value="Obras" onchange="guardarIntereses()">
-          🏗️ Obras
+          Obras
         </label>
         <label class="rubro-chip">
           <input type="checkbox" id="interes-bienes" value="Bienes" onchange="guardarIntereses()">
-          📦 Bienes
+          Bienes
         </label>
         <label class="rubro-chip">
           <input type="checkbox" id="interes-servicios" value="Servicios" onchange="guardarIntereses()">
-          🛠️ Servicios
+          Servicios
         </label>
       </div>
 
@@ -723,11 +730,11 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 
     <div class="seg-filtros">
       <button class="seg-filtro-btn active" onclick="filtrarSeguimiento('todos')" id="sfbtn-todos">Todos</button>
-      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('analizando')" id="sfbtn-analizando">🔍 Analizando</button>
-      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('preparando')" id="sfbtn-preparando">📝 Preparando</button>
-      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('presentado')" id="sfbtn-presentado">✅ Presentado</button>
-      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('adjudicado')" id="sfbtn-adjudicado">🏆 Adjudicado</button>
-      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('no-adj')" id="sfbtn-no-adj">❌ No adj.</button>
+      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('analizando')" id="sfbtn-analizando">Analizando</button>
+      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('preparando')" id="sfbtn-preparando">Preparando</button>
+      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('presentado')" id="sfbtn-presentado">Presentado</button>
+      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('adjudicado')" id="sfbtn-adjudicado">Adjudicado</button>
+      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('no-adj')" id="sfbtn-no-adj">No adj.</button>
     </div>
 
     <div id="seg-lista"></div>
@@ -740,30 +747,30 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     <div class="seg-modal-title" id="seg-modal-titulo">Cambiar estado</div>
     <div class="seg-estado-opciones">
       <div class="seg-estado-opcion" onclick="cambiarEstado('analizando')">
-        <span class="seg-opc-icon">🔍</span>
+        <span class="seg-opc-icon">·</span>
         <div><div class="seg-opc-label">Analizando pliego</div><div class="seg-opc-sub">Revisando si califico</div></div>
       </div>
       <div class="seg-estado-opcion" onclick="cambiarEstado('preparando')">
-        <span class="seg-opc-icon">📝</span>
+        <span class="seg-opc-icon">·</span>
         <div><div class="seg-opc-label">Preparando oferta</div><div class="seg-opc-sub">Armando documentos y precios</div></div>
       </div>
       <div class="seg-estado-opcion" onclick="cambiarEstado('presentado')">
-        <span class="seg-opc-icon">📤</span>
+        <span class="seg-opc-icon">·</span>
         <div><div class="seg-opc-label">Oferta presentada</div><div class="seg-opc-sub">Ya entregué, esperando resultado</div></div>
       </div>
       <div class="seg-estado-opcion" onclick="cambiarEstado('adjudicado')">
-        <span class="seg-opc-icon">🏆</span>
+        <span class="seg-opc-icon">·</span>
         <div><div class="seg-opc-label">Adjudicado</div><div class="seg-opc-sub">¡Ganamos el contrato!</div></div>
       </div>
       <div class="seg-estado-opcion" onclick="cambiarEstado('no-adj')">
-        <span class="seg-opc-icon">❌</span>
+        <span class="seg-opc-icon">·</span>
         <div><div class="seg-opc-label">No adjudicado</div><div class="seg-opc-sub">Esta vez no fue</div></div>
       </div>
     </div>
   </div>
 
   <nav class="bottom-nav">
-    <button class="bottom-nav-item active" id="nav-dashboard" onclick="switchTab2('dashboard')">
+    <button class="bottom-nav-item active" id="nav-dashboard" onclick="navDashboardTap()">
       <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
       Licitaciones
     </button>
@@ -791,7 +798,7 @@ function applyTheme(theme) {
   const icon  = document.getElementById('drawer-theme-icon');
   const label = document.getElementById('drawer-theme-label');
   if (track)  track.classList.toggle('on', isLight);
-  if (icon)   icon.textContent  = isLight ? '☀️' : '🌙';
+  if (icon)   icon.textContent  = isLight ? '○' : '●';
   if (label)  label.textContent = isLight ? 'Modo claro' : 'Modo oscuro';
   localStorage.setItem('ll_theme', theme);
 }
@@ -840,13 +847,13 @@ async function login() {
   btn.disabled = false; btn.textContent = 'Entrar';
   if (data.error) {
     const msg = (data.error_description || data.error || '').toLowerCase();
-    let msgEs = '❌ Error al iniciar sesión';
+    let msgEs = 'Error al iniciar sesión';
     if (msg.includes('invalid login') || msg.includes('invalid credentials') || msg.includes('email not confirmed')) {
-      msgEs = '❌ Correo o contraseña incorrectos';
+      msgEs = 'Correo o contraseña incorrectos';
     } else if (msg.includes('rate limit') || msg.includes('too many')) {
       msgEs = '⏳ Demasiados intentos. Espera un momento.';
     } else if (data.error_description || data.error) {
-      msgEs = '❌ ' + (data.error_description || data.error);
+      msgEs = '' + (data.error_description || data.error);
     }
     btn.disabled = false; btn.textContent = 'Entrar';
     return showMsg(msgEs, 'error');
@@ -867,7 +874,7 @@ async function login() {
   }
   localStorage.setItem('sb_user', JSON.stringify(user));
   currentUser = user;
-  console.log('✅ Login OK, user:', currentUser?.id);
+  console.log('Login OK, user:', currentUser?.id);
   cargarSeguimiento();
   showApp();
 }
@@ -876,11 +883,11 @@ async function register() {
   const nombre   = document.getElementById('reg-name').value.trim();
   const email    = document.getElementById('reg-email').value.trim();
   const password = document.getElementById('reg-password').value;
-  if (!nombre)              return showMsg('❌ Ingresa tu nombre o empresa', 'error');
-  if (!email || !password)  return showMsg('❌ Completa todos los campos', 'error');
-  if (password.length < 6)  return showMsg('❌ La contraseña debe tener al menos 6 caracteres', 'error');
+  if (!nombre)              return showMsg('Ingresa tu nombre o empresa', 'error');
+  if (!email || !password)  return showMsg('Completa todos los campos', 'error');
+  if (password.length < 6)  return showMsg('La contraseña debe tener al menos 6 caracteres', 'error');
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) return showMsg('❌ Ingresa un correo válido', 'error');
+  if (!emailRegex.test(email)) return showMsg('Ingresa un correo válido', 'error');
   const btn = document.getElementById('btn-register');
   btn.disabled = true; btn.textContent = 'Creando cuenta...';
   // Guardar nombre en user_metadata de Supabase
@@ -891,15 +898,15 @@ async function register() {
   btn.disabled = false; btn.textContent = 'Crear cuenta';
   if (data.error) {
     const msg = data.error_description || data.error || '';
-    let msgEs = '❌ Error al registrarse';
+    let msgEs = 'Error al registrarse';
     if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already exists')) {
-      msgEs = '❌ Este correo ya está registrado. Intenta iniciar sesión.';
+      msgEs = 'Este correo ya está registrado. Intenta iniciar sesión.';
     } else if (msg.toLowerCase().includes('password')) {
-      msgEs = '❌ La contraseña debe tener al menos 6 caracteres';
+      msgEs = 'La contraseña debe tener al menos 6 caracteres';
     } else if (msg) { msgEs = '❌ ' + msg; }
     return showMsg(msgEs, 'error');
   }
-  showMsg('✅ ¡Cuenta creada! Revisa tu correo para confirmar.', 'success');
+  showMsg('Cuenta creada. Revisa tu correo para confirmar.', 'success');
 }
 
 function logout() {
@@ -960,22 +967,66 @@ function switchTab(tab) {
   document.getElementById('form-register').style.display  = tab === 'register' ? 'block' : 'none';
   document.getElementById('form-recovery').style.display  = tab === 'recovery' ? 'block' : 'none';
   document.querySelectorAll('.auth-tab').forEach((t, i) => {
-    t.classList.toggle('active',
-      (i===0 && tab==='login') || (i===1 && tab==='register') || (i===2 && tab==='recovery')
-    );
+    t.classList.toggle('active', (i===0 && tab==='login') || (i===1 && tab==='register'));
   });
   document.getElementById('auth-msg').className = 'auth-msg';
+  const rr = document.getElementById('recovery-result');
+  if (rr) { rr.style.display = 'none'; rr.textContent = ''; }
 }
 
 async function sendRecovery() {
   const email = document.getElementById('recovery-email').value.trim().toLowerCase();
-  if (!email) return showMsg('❌ Ingresa tu correo', 'error');
+  const result = document.getElementById('recovery-result');
   const btn = document.getElementById('btn-recovery');
-  btn.disabled = true; btn.textContent = 'Enviando...';
-  const data = await supabaseRequest('recover', 'POST', { email });
-  btn.disabled = false; btn.textContent = 'Enviar enlace';
-  // Supabase siempre responde 200 en recover (no revela si el email existe)
-  showMsg('✅ Si ese correo está registrado, recibirás el enlace en minutos.', 'success');
+
+  if (!email) {
+    result.style.display = 'block';
+    result.style.background = 'var(--red-dim)';
+    result.style.color = 'var(--red)';
+    result.textContent = 'Ingresa tu correo';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+      body: JSON.stringify({ email })
+    });
+
+    btn.disabled = false;
+    btn.textContent = 'Enviar enlace';
+    result.style.display = 'block';
+
+    if (res.ok) {
+      result.style.background = 'var(--green-dim)';
+      result.style.color = 'var(--green)';
+      result.textContent = 'Enlace enviado. Revisa tu correo.';
+      document.getElementById('recovery-email').value = '';
+    } else {
+      const data = await res.json().catch(() => ({}));
+      const msg = (data?.msg || data?.message || data?.error_description || '').toLowerCase();
+      if (res.status === 400 || res.status === 422 || msg.includes('not found') || msg.includes('user')) {
+        result.style.background = 'var(--red-dim)';
+        result.style.color = 'var(--red)';
+        result.textContent = 'Ese correo no está registrado.';
+      } else {
+        result.style.background = 'var(--red-dim)';
+        result.style.color = 'var(--red)';
+        result.textContent = 'Error al enviar. Intenta de nuevo.';
+      }
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Enviar enlace';
+    result.style.display = 'block';
+    result.style.background = 'var(--red-dim)';
+    result.style.color = 'var(--red)';
+    result.textContent = 'Error de conexión.';
+  }
 }
 
 // ── STATS ──
@@ -1022,10 +1073,10 @@ async function cargarProcesos(page = 1) {
   } catch(e) {
     document.getElementById('procesos-container').innerHTML = `
       <div class="empty">
-        <div class="empty-icon">⚠️</div>
+        <div class="empty-icon"></div>
         <div class="empty-text">No se pudieron cargar las licitaciones</div>
         <div style="font-size:12px;color:var(--muted);margin-top:8px">${e.message}</div>
-        <button onclick="cargarProcesos(${page})" style="margin-top:14px;padding:8px 20px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-body)">🔄 Reintentar</button>
+        <button onclick="cargarProcesos(${page})" style="margin-top:14px;padding:8px 20px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-body)">Reintentar</button>
       </div>`;
     document.getElementById('pagination').innerHTML = '';
   }
@@ -1049,7 +1100,7 @@ function formatMontoFull(v) {
 function renderProcesos(procesos, data, page) {
   const container = document.getElementById('procesos-container');
   if (!procesos.length) {
-    container.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-text">No se encontraron licitaciones</div></div>';
+    container.innerHTML = '<div class="empty"><div class="empty-icon"></div><div class="empty-text">No se encontraron licitaciones</div></div>';
     document.getElementById('pagination').innerHTML = '';
     return;
   }
@@ -1072,7 +1123,7 @@ function renderProcesos(procesos, data, page) {
         </div>
         <div class="proceso-card-bottom">
           <span class="proceso-entidad">${p.unidad_compra || '—'}</span>
-          <span class="proceso-fecha">📅 ${cierre}</span>
+          <span class="proceso-fecha">${cierre}</span>
         </div>
         <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
           ${tipo ? `<span class="${badgeTipo}">${tipo}</span>` : ''}
@@ -1266,9 +1317,9 @@ async function guardarNombrePerfil() {
     const da = document.getElementById('drawer-avatar'); if(da) da.textContent = iniciales;
     const ed = document.getElementById('user-email-display'); if(ed) ed.textContent = nombre;
 
-    if (status) { status.textContent = '✅ Nombre actualizado'; setTimeout(()=>{ status.textContent=''; }, 2500); }
+    if (status) { status.textContent = 'Nombre actualizado'; setTimeout(()=>{ status.textContent=''; }, 2500); }
   } catch(e) {
-    if (status) status.textContent = '❌ Error al guardar';
+    if (status) status.textContent = 'Error al guardar';
   }
 }
 
@@ -1285,7 +1336,7 @@ async function guardarIntereses() {
     });
   }
   const st = document.getElementById('intereses-status');
-  if(st){ st.textContent='✅ Preferencias guardadas'; setTimeout(()=>{st.textContent=''},2000); }
+  if(st){ st.textContent='Preferencias guardadas'; setTimeout(()=>{st.textContent=''},2000); }
 }
 
 function cargarInteresesGuardados() {
@@ -1335,8 +1386,8 @@ async function verDetalle(codigo) {
           <div class="detalle-field"><label>Divisa</label><span>${p.divisa || 'DOP'}</span></div>
           ${p.duracion_contrato ? `<div class="detalle-field"><label>Duración contrato</label><span>${p.duracion_contrato}</span></div>` : ''}
         </div>
-        ${p.url ? `<a href="${p.url}" target="_blank" class="detalle-link">🔗 Ver en portal DGCP</a>` : ''}
-      <button id="btn-seguir-${p.codigo_proceso}" class="btn-seguir no-siguiendo" onclick="toggleSeguimiento('${p.codigo_proceso}')">＋ Seguir proceso</button>
+        ${p.url ? `<a href="${p.url}" target="_blank" class="detalle-link">Ver en portal DGCP</a>` : ''}
+      <button id="btn-seguir-${p.codigo_proceso}" class="btn-seguir no-siguiendo" onclick="toggleSeguimiento('${p.codigo_proceso}')">Seguir proceso</button>
       </div>
     </div>
 
@@ -1372,6 +1423,29 @@ function mostrarDashboard() {
   document.getElementById('tab-dashboard').style.display = 'block';
   document.getElementById('tab-detalle').style.display   = 'none';
   document.getElementById('tab-perfil').style.display    = 'none';
+}
+
+// ── NAV DASHBOARD TAP — comportamiento tipo Instagram ──
+// • Si ya estás en dashboard y en el top: refresca datos
+// • Si ya estás en dashboard pero scrolleado: sube suave al top
+// • Si estás en otra pantalla: navega al dashboard
+function navDashboardTap() {
+  const dash = document.getElementById('tab-dashboard');
+  const yaEnDashboard = dash && dash.style.display !== 'none';
+
+  if (yaEnDashboard) {
+    if (dash.scrollTop <= 10) {
+      // Ya está arriba — refrescar como Instagram
+      cargarStats();
+      cargarProcesos(1);
+      mostrarToast('Actualizando...');
+    } else {
+      // Scrollear suave al top
+      dash.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  } else {
+    switchTab2('dashboard');
+  }
 }
 
 // ── NAV ──
@@ -1578,7 +1652,7 @@ async function sbRest(path, method = 'GET', body = null, extraHeaders = {}) {
 
   // Si 401, intentar refrescar el token una vez
   if (res.status === 401) {
-    console.warn('⚠️ 401 en sbRest, intentando refresh de token...');
+    console.warn('401 en sbRest, intentando refresh de token...');
     const refreshToken = localStorage.getItem('sb_refresh_token');
     if (refreshToken) {
       try {
@@ -1628,11 +1702,11 @@ let segFiltroActivo = 'todos';
 let segModalCodigo  = null;
 
 const ESTADOS_CONFIG = {
-  'analizando': { label: 'Analizando',  icon: '🔍', cls: 'analizando' },
-  'preparando' : { label: 'Preparando', icon: '📝', cls: 'preparando' },
-  'presentado' : { label: 'Presentado', icon: '📤', cls: 'presentado' },
-  'adjudicado' : { label: 'Adjudicado', icon: '🏆', cls: 'adjudicado' },
-  'no-adj'     : { label: 'No adj.',    icon: '❌', cls: 'no-adj' },
+  'analizando': { label: 'Analizando',  icon: '', cls: 'analizando' },
+  'preparando' : { label: 'Preparando', icon: '', cls: 'preparando' },
+  'presentado' : { label: 'Presentado', icon: '', cls: 'presentado' },
+  'adjudicado' : { label: 'Adjudicado', icon: '', cls: 'adjudicado' },
+  'no-adj'     : { label: 'No adj.',    icon: '', cls: 'no-adj' },
 };
 
 function extraerFechasClaves(p) {
@@ -1683,14 +1757,14 @@ function diasRestantesTexto(fechas) {
 
 function renderFechaRow(f) {
   const iconos = {
-    'Publicación':               '📅',
-    'Preguntas y subsanaciones': '❓',
-    'Presentación de ofertas':   '📝',
-    'Apertura de sobres':        '📂',
-    'Adjudicación estimada':     '🏆',
-    'Suscripción del contrato':  '✍️',
+    'Publicación':               '·',
+    'Preguntas y subsanaciones': '·',
+    'Presentación de ofertas':   '·',
+    'Apertura de sobres':        '·',
+    'Adjudicación estimada':     '·',
+    'Suscripción del contrato':  '·',
   };
-  const icono = iconos[f.label] || '📌';
+  const icono = iconos[f.label] || '·';
   const fechaStr = f.valor.toLocaleDateString('es-DO', { day:'2-digit', month:'short', year:'numeric' });
   const horaStr  = f.valor.toLocaleTimeString('es-DO', { hour:'2-digit', minute:'2-digit' });
   const rowCls = f.destacada ? (f.estado === 'vencida' ? 'vencida' : 'destacada') : f.estado;
@@ -1756,12 +1830,12 @@ async function cargarSeguimiento() {
   const lista = document.getElementById('seg-lista');
   if (lista) lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
-    console.log('🔍 cargarSeguimiento - user_id:', currentUser?.id);
+    console.log('cargarSeguimiento - user_id:', currentUser?.id);
     // 1. Traer registros de seguimiento del usuario
     const segs = await sbRest(
       `seguimiento_procesos?user_id=eq.${currentUser.id}&order=created_at.desc`
     );
-    console.log('📋 seguimientos raw:', segs);
+    console.log('seguimientos raw:', segs);
     if (!Array.isArray(segs) || segs.length === 0) {
       seguimientoData = [];
       renderSeguimiento();
@@ -1788,7 +1862,7 @@ async function cargarSeguimiento() {
     renderSeguimiento();
   } catch(e) {
     console.error('Error cargando seguimiento:', e);
-    if (lista) lista.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Error cargando. Intenta de nuevo.</div></div>';
+    if (lista) lista.innerHTML = '<div class="empty"><div class="empty-icon"></div><div class="empty-text">Error cargando. Intenta de nuevo.</div></div>';
   }
 }
 
@@ -1805,7 +1879,7 @@ function renderSeguimiento() {
   if (!datos.length) {
     lista.innerHTML = `
       <div class="seg-empty">
-        <div class="seg-empty-icon">📋</div>
+        <div class="seg-empty-icon"></div>
         <div class="seg-empty-title">${segFiltroActivo === 'todos' ? 'Sin procesos en seguimiento' : 'Sin procesos en este estado'}</div>
         <div class="seg-empty-sub">${segFiltroActivo === 'todos'
           ? 'Entra al detalle de un proceso y presiona "Seguir proceso" para agregarlo aquí.'
@@ -1836,19 +1910,19 @@ async function toggleSeguimiento(codigo) {
 
 async function agregarSeguimiento(codigo) {
   try {
-    console.log('➕ Guardando seguimiento - user_id:', currentUser?.id, 'codigo:', codigo);
+    console.log('Guardando seguimiento - user_id:', currentUser?.id, 'codigo:', codigo);
     const result = await sbRest('seguimiento_procesos', 'POST', {
       user_id: currentUser.id,
       proceso_codigo: codigo,
       estado: 'analizando'
     });
-    console.log('💾 Resultado POST seguimiento:', result);
+    console.log('Resultado POST seguimiento:', result);
     await cargarSeguimiento();
     actualizarBtnSeguir(codigo);
-    mostrarToast('✅ Proceso agregado a seguimiento');
+    mostrarToast('Proceso agregado al seguimiento');
   } catch(e) {
     console.error('Error agregando seguimiento:', e);
-    mostrarToast('❌ Error al agregar. Intenta de nuevo.');
+    mostrarToast('Error al agregar. Intenta de nuevo.');
   }
 }
 
@@ -1866,7 +1940,7 @@ async function quitarSeguimiento(codigo) {
     actualizarBtnSeguir(codigo);
     mostrarToast('Proceso eliminado del seguimiento');
   } catch(e) {
-    mostrarToast('❌ Error al quitar');
+    mostrarToast('Error al quitar');
   }
 }
 
@@ -1888,14 +1962,14 @@ async function actualizarBtnSeguir(codigo) {
       );
       const siguiendo = Array.isArray(data) && data.length > 0;
       btn.className = `btn-seguir ${siguiendo ? 'siguiendo' : 'no-siguiendo'}`;
-      btn.innerHTML  = siguiendo ? '⭐ Siguiendo proceso' : '＋ Seguir proceso';
+      btn.innerHTML  = siguiendo ? 'Siguiendo proceso' : 'Seguir proceso';
       return;
     } catch(e) {}
   }
 
   const siguiendo = estaEnSeguimiento(codigo);
   btn.className = `btn-seguir ${siguiendo ? 'siguiendo' : 'no-siguiendo'}`;
-  btn.innerHTML  = siguiendo ? '⭐ Siguiendo proceso' : '＋ Seguir proceso';
+  btn.innerHTML  = siguiendo ? 'Siguiendo proceso' : 'Seguir proceso';
 }
 
 function abrirModalEstado(codigo, estadoActual) {
@@ -1929,7 +2003,7 @@ async function cambiarEstado(nuevoEstado) {
     cerrarModalEstado();
     mostrarToast(`Estado: ${ESTADOS_CONFIG[nuevoEstado]?.label}`);
   } catch(e) {
-    mostrarToast('❌ Error actualizando estado');
+    mostrarToast('Error actualizando estado');
   }
 }
 
@@ -2007,9 +2081,9 @@ function renderChecklistHTML(analisis, codigo) {
   }
 
   const secciones = [
-    { key: 'legal',      icon: '⚖️',  label: 'Legal',      items: checklist.legal      || [] },
-    { key: 'tecnica',    icon: '🔧',  label: 'Técnica',    items: checklist.tecnica    || [] },
-    { key: 'financiera', icon: '💰',  label: 'Financiera', items: checklist.financiera || [] },
+    { key: 'legal',      icon: '',      label: 'Legal',      items: checklist.legal      || [] },
+    { key: 'tecnica',    icon: '',      label: 'Técnica',    items: checklist.tecnica    || [] },
+    { key: 'financiera', icon: '',      label: 'Financiera', items: checklist.financiera || [] },
   ];
 
   const totalItems = secciones.reduce((s, sec) => s + sec.items.length, 0);
@@ -2169,7 +2243,7 @@ offlineBanner.style.cssText = `
   font-family:'Plus Jakarta Sans',sans-serif;
   padding-top: calc(8px + env(safe-area-inset-top));
 `;
-offlineBanner.textContent = '⚠️ Sin conexión — Mostrando datos en caché';
+offlineBanner.textContent = 'Sin conexión — datos en caché';
 document.body.appendChild(offlineBanner);
 
 window.addEventListener('offline', () => {
@@ -2177,7 +2251,7 @@ window.addEventListener('offline', () => {
 });
 window.addEventListener('online', () => {
   offlineBanner.style.display = 'none';
-  mostrarToast('✅ Conexión restaurada');
+  mostrarToast('Conexión restaurada');
   cargarProcesos(1);
 });
 // Verificar estado inicial
