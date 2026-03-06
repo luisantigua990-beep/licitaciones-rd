@@ -7,6 +7,7 @@ API de Licitaciones RD — Backend FastAPI
 """
 
 import os
+import asyncio
 import threading
 import time
 import urllib3
@@ -47,6 +48,10 @@ supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 # ============================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 cliente_gemini = None
+
+# Semáforo: máximo 5 análisis de pliego simultáneos.
+# Evita que 50 usuarios pidan análisis al mismo tiempo y saturen RAM + Gemini.
+_semaforo_analisis = asyncio.Semaphore(5)
 
 if GEMINI_API_KEY:
     cliente_gemini = genai.Client(api_key=GEMINI_API_KEY)
@@ -1921,11 +1926,16 @@ def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
 async def forzar_analisis(background_tasks: BackgroundTasks, codigo: str):
     """Re-corre el análisis Gemini ignorando el cache. Limpia el estado primero."""
     try:
-        # Limpiar estado para que ejecutar_analisis_gemini no use el cache
         supabase_admin.table("analisis_pliego").update({
             "estado": "pendiente",
         }).eq("proceso_id", codigo).execute()
-        background_tasks.add_task(ejecutar_analisis_gemini, codigo)
+
+        async def _forzar_con_semaforo():
+            async with _semaforo_analisis:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, ejecutar_analisis_gemini, codigo)
+
+        background_tasks.add_task(_forzar_con_semaforo)
         return {"status": "iniciado", "codigo": codigo, "mensaje": "Análisis re-iniciado. Revisa logs de Railway."}
     except Exception as e:
         import traceback
@@ -2293,8 +2303,15 @@ async def webhook_analisis_pliego(request: Request, background_tasks: Background
     proceso_id = registro.get("proceso_codigo")
     
     if proceso_id:
-        # Enviamos la tarea al fondo para no bloquear el sistema
-        background_tasks.add_task(ejecutar_analisis_gemini, proceso_id)
+        async def _analizar_con_semaforo():
+            # Esperar turno — máximo 5 análisis simultáneos
+            async with _semaforo_analisis:
+                # Ejecutar en threadpool para no bloquear el event loop
+                # (ejecutar_analisis_gemini es síncrona y hace I/O pesado)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, ejecutar_analisis_gemini, proceso_id)
+
+        background_tasks.add_task(_analizar_con_semaforo)
         return {"status": "success", "message": f"IA encolada para {proceso_id}"}
     
     return {"status": "error", "message": "Payload inválido o sin proceso_codigo"}
