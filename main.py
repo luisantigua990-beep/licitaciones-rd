@@ -220,7 +220,7 @@ def listar_procesos(
             query = query.gt("fecha_fin_recepcion_ofertas", datetime.now().isoformat())
 
         if objeto:
-            query = query.eq("objeto_proceso", objeto)
+            query = query.ilike("objeto_proceso", f"%{objeto}%")
         if modalidad:
             query = query.eq("modalidad", modalidad)
         if unidad_compra:
@@ -529,21 +529,21 @@ def estadisticas():
             .select("id", count="exact") \
             .eq("estado_proceso", "Proceso publicado") \
             .gt("fecha_fin_recepcion_ofertas", now_iso) \
-            .eq("objeto_proceso", "Obras") \
+            .ilike("objeto_proceso", "%Obras%") \
             .execute()
         
         bienes = supabase.table("procesos") \
             .select("id", count="exact") \
             .eq("estado_proceso", "Proceso publicado") \
             .gt("fecha_fin_recepcion_ofertas", now_iso) \
-            .eq("objeto_proceso", "Bienes") \
+            .ilike("objeto_proceso", "%Bienes%") \
             .execute()
         
         servicios = supabase.table("procesos") \
             .select("id", count="exact") \
             .eq("estado_proceso", "Proceso publicado") \
             .gt("fecha_fin_recepcion_ofertas", now_iso) \
-            .eq("objeto_proceso", "Servicios") \
+            .ilike("objeto_proceso", "%Servicios%") \
             .execute()
         
         articulos = supabase.table("articulos_proceso").select("id", count="exact").execute()
