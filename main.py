@@ -2381,3 +2381,146 @@ async def webhook_analisis_pliego(request: Request, background_tasks: Background
         return {"status": "success", "message": f"IA encolada para {proceso_id}"}
     
     return {"status": "error", "message": "Payload inválido o sin proceso_codigo"}
+
+
+# ══════════════════════════════════════════════════
+# MERCADO DE PROVEEDORES
+# ══════════════════════════════════════════════════
+
+@app.get("/api/mercado/proveedores")
+def listar_proveedores(
+    tipo:      str = Query(None),
+    zona:      str = Query(None),
+    busqueda:  str = Query(None),
+    page:      int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=50),
+):
+    """Listar proveedores activos con filtros. Contacto de mano_obra/servicios/subcontratista
+    se devuelve siempre — el control de acceso lo hace el frontend según suscripción."""
+    try:
+        q = supabase.table("proveedores").select(
+            "id, nombre_empresa, tipo, descripcion, zona_geografica, "
+            "telefono, whatsapp, email_contacto, verificado, created_at, "
+            "proveedor_categorias(categoria_nombre, unspsc_codigo)"
+        ).eq("activo", True)
+
+        if tipo:
+            q = q.eq("tipo", tipo)
+        if zona:
+            q = q.contains("zona_geografica", [zona])
+        if busqueda:
+            q = q.ilike("nombre_empresa", f"%{busqueda}%")
+
+        offset = (page - 1) * page_size
+        q = q.order("created_at", desc=True).range(offset, offset + page_size - 1)
+
+        res = q.execute()
+        return {"proveedores": res.data, "page": page, "page_size": page_size}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/mercado/proveedores/{proveedor_id}")
+def detalle_proveedor(proveedor_id: str):
+    """Perfil completo de un proveedor."""
+    try:
+        res = supabase.table("proveedores").select(
+            "*, proveedor_categorias(*)"
+        ).eq("id", proveedor_id).eq("activo", True).single().execute()
+        if not res.data:
+            raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+        return res.data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mercado/proveedores")
+async def registrar_proveedor(request: Request):
+    """Registrar un nuevo proveedor. Público — no requiere autenticación."""
+    try:
+        data = await request.json()
+
+        # Validaciones mínimas
+        required = ["nombre_empresa", "tipo", "telefono"]
+        for field in required:
+            if not data.get(field):
+                raise HTTPException(status_code=400, detail=f"Campo requerido: {field}")
+
+        tipos_validos = ["materiales", "equipos", "mano_obra", "servicios", "subcontratista"]
+        if data["tipo"] not in tipos_validos:
+            raise HTTPException(status_code=400, detail="Tipo de proveedor inválido")
+
+        categorias = data.pop("categorias", [])
+
+        proveedor_data = {
+            "nombre_empresa":  data.get("nombre_empresa"),
+            "rnc":             data.get("rnc"),
+            "tipo":            data.get("tipo"),
+            "descripcion":     data.get("descripcion"),
+            "zona_geografica": data.get("zona_geografica", []),
+            "telefono":        data.get("telefono"),
+            "whatsapp":        data.get("whatsapp") or data.get("telefono"),
+            "email_contacto":  data.get("email_contacto"),
+        }
+
+        res = supabase.table("proveedores").insert(proveedor_data).execute()
+        proveedor_id = res.data[0]["id"]
+
+        if categorias:
+            cats = [{"proveedor_id": proveedor_id, "categoria_nombre": c} for c in categorias if c]
+            supabase.table("proveedor_categorias").insert(cats).execute()
+
+        return {"ok": True, "id": proveedor_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mercado/contactos")
+async def registrar_contacto(request: Request):
+    """Registrar que un usuario contactó a un proveedor (analytics)."""
+    try:
+        data = await request.json()
+        proveedor_id  = data.get("proveedor_id")
+        tipo_contacto = data.get("tipo_contacto", "whatsapp")
+        proceso_codigo = data.get("proceso_codigo")
+
+        # Obtener user_id del header Authorization si existe
+        auth_header = request.headers.get("Authorization", "")
+        user_id = None
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            try:
+                user_res = supabase.auth.get_user(token)
+                user_id = user_res.user.id if user_res.user else None
+            except:
+                pass
+
+        supabase.table("proveedor_contactos").insert({
+            "proveedor_id":     proveedor_id,
+            "buscador_user_id": user_id,
+            "proceso_codigo":   proceso_codigo,
+            "tipo_contacto":    tipo_contacto,
+        }).execute()
+
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/mercado/stats")
+def stats_mercado():
+    """Conteos por tipo para los chips del Mercado."""
+    try:
+        tipos = ["materiales", "equipos", "mano_obra", "servicios", "subcontratista"]
+        resultado = {}
+        for t in tipos:
+            r = supabase.table("proveedores").select("id", count="exact").eq("activo", True).eq("tipo", t).execute()
+            resultado[t] = r.count or 0
+        resultado["total"] = sum(resultado.values())
+        return resultado
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
