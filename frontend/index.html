@@ -1004,10 +1004,60 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
     <button class="mercado-registro-btn" onclick="abrirFormProveedor()">
       + Registrar mi empresa como proveedor
     </button>
+  </div><!-- /tab-mercado -->
+  </div><!-- /tabs-wrapper -->
+  <nav class="bottom-nav">
+    <button class="bottom-nav-item active" id="nav-dashboard" onclick="navDashboardTap()">
+      <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+      Licitaciones
+    </button>
+    <button class="bottom-nav-item" id="nav-seguimiento" onclick="switchTab2('seguimiento');limpiarBadge()">
+      <div class="nav-icon-wrap" style="position:relative">
+        <svg class="nav-svg" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span id="notif-badge" style="display:none;position:absolute;top:-2px;right:-2px;width:9px;height:9px;background:#EF4444;border-radius:50%;border:2px solid var(--bg);"></span>
+      </div>
+      Mis Procesos
+    </button>
+    <button class="bottom-nav-item" id="nav-perfil" onclick="switchTab2('perfil')">
+      <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+      Mi Perfil
+    </button>
+    <button class="bottom-nav-item" id="nav-mercado" onclick="switchTab2('mercado')">
+      <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+      Mercado
+    </button>
+  </nav>
+</div><!-- /screen-app -->
+
+  <!-- Modal cambio de estado -->
+  <div class="seg-modal-overlay" id="seg-overlay" onclick="cerrarModalEstado()"></div>
+  <div class="seg-estado-modal" id="seg-estado-modal">
+    <div class="seg-modal-handle"></div>
+    <div class="seg-modal-title" id="seg-modal-titulo">Cambiar estado</div>
+    <div class="seg-estado-opciones">
+      <div class="seg-estado-opcion" onclick="cambiarEstado('analizando')">
+        <span class="seg-opc-icon">·</span>
+        <div><div class="seg-opc-label">Analizando pliego</div><div class="seg-opc-sub">Revisando si califico</div></div>
+      </div>
+      <div class="seg-estado-opcion" onclick="cambiarEstado('preparando')">
+        <span class="seg-opc-icon">·</span>
+        <div><div class="seg-opc-label">Preparando oferta</div><div class="seg-opc-sub">Armando documentos y precios</div></div>
+      </div>
+      <div class="seg-estado-opcion" onclick="cambiarEstado('presentado')">
+        <span class="seg-opc-icon">·</span>
+        <div><div class="seg-opc-label">Oferta presentada</div><div class="seg-opc-sub">Ya entregué, esperando resultado</div></div>
+      </div>
+      <div class="seg-estado-opcion" onclick="cambiarEstado('adjudicado')">
+        <span class="seg-opc-icon">·</span>
+        <div><div class="seg-opc-label">Adjudicado</div><div class="seg-opc-sub">¡Ganamos el contrato!</div></div>
+      </div>
+      <div class="seg-estado-opcion" onclick="cambiarEstado('no-adj')">
+        <span class="seg-opc-icon">·</span>
+        <div><div class="seg-opc-label">No adjudicado</div><div class="seg-opc-sub">Esta vez no fue</div></div>
+      </div>
+    </div>
   </div>
 
-  <!-- Overlay + Sheet de registro -->
-  </div><!-- /tabs-wrapper -->
 
 <div class="mercado-form-overlay" id="mercado-form-overlay" onclick="cerrarFormProveedor()"></div>
   <div class="mercado-form-sheet" id="mercado-form-sheet">
@@ -1175,58 +1225,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 
     <div id="pf-msg" style="display:none;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:12px;text-align:center"></div>
     <button class="form-submit-btn" id="pf-submit-btn" onclick="enviarRegistroProveedor()">Registrar proveedor</button>
-  </div>
-
-  <!-- Modal cambio de estado -->
-  <div class="seg-modal-overlay" id="seg-overlay" onclick="cerrarModalEstado()"></div>
-  <div class="seg-estado-modal" id="seg-estado-modal">
-    <div class="seg-modal-handle"></div>
-    <div class="seg-modal-title" id="seg-modal-titulo">Cambiar estado</div>
-    <div class="seg-estado-opciones">
-      <div class="seg-estado-opcion" onclick="cambiarEstado('analizando')">
-        <span class="seg-opc-icon">·</span>
-        <div><div class="seg-opc-label">Analizando pliego</div><div class="seg-opc-sub">Revisando si califico</div></div>
-      </div>
-      <div class="seg-estado-opcion" onclick="cambiarEstado('preparando')">
-        <span class="seg-opc-icon">·</span>
-        <div><div class="seg-opc-label">Preparando oferta</div><div class="seg-opc-sub">Armando documentos y precios</div></div>
-      </div>
-      <div class="seg-estado-opcion" onclick="cambiarEstado('presentado')">
-        <span class="seg-opc-icon">·</span>
-        <div><div class="seg-opc-label">Oferta presentada</div><div class="seg-opc-sub">Ya entregué, esperando resultado</div></div>
-      </div>
-      <div class="seg-estado-opcion" onclick="cambiarEstado('adjudicado')">
-        <span class="seg-opc-icon">·</span>
-        <div><div class="seg-opc-label">Adjudicado</div><div class="seg-opc-sub">¡Ganamos el contrato!</div></div>
-      </div>
-      <div class="seg-estado-opcion" onclick="cambiarEstado('no-adj')">
-        <span class="seg-opc-icon">·</span>
-        <div><div class="seg-opc-label">No adjudicado</div><div class="seg-opc-sub">Esta vez no fue</div></div>
-      </div>
-    </div>
-  </div>
-
-  <nav class="bottom-nav">
-    <button class="bottom-nav-item active" id="nav-dashboard" onclick="navDashboardTap()">
-      <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
-      Licitaciones
-    </button>
-    <button class="bottom-nav-item" id="nav-seguimiento" onclick="switchTab2('seguimiento');limpiarBadge()">
-      <div class="nav-icon-wrap" style="position:relative">
-        <svg class="nav-svg" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        <span id="notif-badge" style="display:none;position:absolute;top:-2px;right:-2px;width:9px;height:9px;background:#EF4444;border-radius:50%;border:2px solid var(--bg);"></span>
-      </div>
-      Mis Procesos
-    </button>
-    <button class="bottom-nav-item" id="nav-perfil" onclick="switchTab2('perfil')">
-      <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-      Mi Perfil
-    </button>
-    <button class="bottom-nav-item" id="nav-mercado" onclick="switchTab2('mercado')">
-      <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
-      Mercado
-    </button>
-  </nav>
+  
 </div>
 
 <script>
@@ -2954,6 +2953,29 @@ function filtrarSubcat(el, subcat) {
 }
 
 // ── Sugerencias de búsqueda (todas las subcats de todos los tipos) ──
+const SUBCATEGORIAS = {
+  materiales: {
+    label: 'Subcategoría de materiales',
+    items: ['Eléctrico','Plomería','Agregados','Cemento y mezclas','Varilla y acero','Madera y carpintería','Pintura y recubrimientos','Cerámica y pisos','Impermeabilizantes','Tubería y drenaje','Bloques y mampostería','Vidrio y aluminio','Herramientas','Ferretería general']
+  },
+  equipos: {
+    label: 'Subcategoría de equipos',
+    items: ['Excavación y movimiento de tierra','Compactación','Grúas y elevación','Andamios y encofrado','Generadores','Bombas y equipos hidráulicos','Equipos de soldadura','Maquinaria pesada (alquiler)','Vehículos de carga','Herramientas eléctricas']
+  },
+  mano_obra: {
+    label: 'Especialidad de mano de obra',
+    items: ['Albañilería','Carpintería','Electricidad','Plomería','Soldadura','Pintura','Impermeabilización','Acero estructural','Acabados finos','Topografía','Excavación manual','Cuadrilla general']
+  },
+  servicios: {
+    label: 'Tipo de servicio',
+    items: ['Diseño estructural','Diseño eléctrico','Diseño hidráulico','Supervisión de obras','Topografía y levantamiento','Estudios de suelo','Laboratorio de materiales','Gestión ambiental','Seguridad e higiene','Instalaciones MEP','Consultoría técnica']
+  },
+  subcontratista: {
+    label: 'Especialidad de subcontrato',
+    items: ['Impermeabilización','Estructura metálica','Instalaciones eléctricas','Instalaciones sanitarias','Climatización (HVAC)','Acabados y revestimientos','Pavimentación','Sistemas contra incendio','Ascensores','Paisajismo','Demolición','Movimiento de tierra']
+  }
+};
+
 const TODAS_SUBCATS = Object.values(SUBCATEGORIAS).flatMap(v => v.items);
 const SUBCATS_CON_TIPO = Object.entries(SUBCATEGORIAS).flatMap(([tipo, v]) =>
   v.items.map(item => ({ item, tipo, label: TIPO_LABELS[tipo] || tipo }))
@@ -3019,28 +3041,6 @@ async function contactarProveedor(proveedorId, tipo, numero) {
 // ── Formulario de registro ──
 let pfSubcatsSeleccionadas = [];
 
-const SUBCATEGORIAS = {
-  materiales: {
-    label: 'Subcategoría de materiales',
-    items: ['Eléctrico','Plomería','Agregados','Cemento y mezclas','Varilla y acero','Madera y carpintería','Pintura y recubrimientos','Cerámica y pisos','Impermeabilizantes','Tubería y drenaje','Bloques y mampostería','Vidrio y aluminio','Herramientas','Ferretería general']
-  },
-  equipos: {
-    label: 'Subcategoría de equipos',
-    items: ['Excavación y movimiento de tierra','Compactación','Grúas y elevación','Andamios y encofrado','Generadores','Bombas y equipos hidráulicos','Equipos de soldadura','Maquinaria pesada (alquiler)','Vehículos de carga','Herramientas eléctricas']
-  },
-  mano_obra: {
-    label: 'Especialidad de mano de obra',
-    items: ['Albañilería','Carpintería','Electricidad','Plomería','Soldadura','Pintura','Impermeabilización','Acero estructural','Acabados finos','Topografía','Excavación manual','Cuadrilla general']
-  },
-  servicios: {
-    label: 'Tipo de servicio',
-    items: ['Diseño estructural','Diseño eléctrico','Diseño hidráulico','Supervisión de obras','Topografía y levantamiento','Estudios de suelo','Laboratorio de materiales','Gestión ambiental','Seguridad e higiene','Instalaciones MEP','Consultoría técnica']
-  },
-  subcontratista: {
-    label: 'Especialidad de subcontrato',
-    items: ['Impermeabilización','Estructura metálica','Instalaciones eléctricas','Instalaciones sanitarias','Climatización (HVAC)','Acabados y revestimientos','Pavimentación','Sistemas contra incendio','Ascensores','Paisajismo','Demolición','Movimiento de tierra']
-  }
-};
 
 function seleccionarTipo(btn) {
   document.querySelectorAll('.pf-tipo-btn').forEach(b => b.classList.remove('selected'));
@@ -3177,17 +3177,21 @@ function previsualizarLogo(input) {
 }
 
 function abrirFormProveedor() {
+  try {
   // Reset completo del form
   ['pf-nombre','pf-descripcion','pf-whatsapp','pf-rnc','pf-email','pf-direccion','pf-horario','pf-instagram','pf-facebook','pf-website','pf-latitud','pf-longitud'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
   document.querySelectorAll('.pf-tipo-btn').forEach(b => b.classList.remove('selected'));
-  document.getElementById('pf-tipo').value = '';
-  document.getElementById('pf-subcats-wrap').classList.remove('visible');
+  const pfTipo = document.getElementById('pf-tipo');
+  if (pfTipo) pfTipo.value = '';
+  const subcatsWrap = document.getElementById('pf-subcats-wrap');
+  if (subcatsWrap) subcatsWrap.classList.remove('visible');
   document.querySelectorAll('#zonas-panel .zona-pill').forEach(p => p.classList.remove('selected'));
   actualizarContadorZonas();
-  if (document.getElementById('zonas-panel').classList.contains('open')) toggleZonasPanel();
+  const zonasPanel = document.getElementById('zonas-panel');
+  if (zonasPanel && zonasPanel.classList.contains('open')) toggleZonasPanel();
   pfSubcatsSeleccionadas = [];
   rncVerificado = false;
   pfLogoBase64 = null;
@@ -3198,10 +3202,12 @@ function abrirFormProveedor() {
   resetRncStatus();
   const msg = document.getElementById('pf-msg');
   if (msg) msg.style.display = 'none';
-  document.getElementById('mercado-form-overlay').style.display = 'block';
-  document.getElementById('mercado-form-sheet').classList.add('visible');
-  // Scroll al top del sheet
-  document.getElementById('mercado-form-sheet').scrollTop = 0;
+  } catch(e) { console.error('abrirFormProveedor reset error:', e); }
+  // Mostrar overlay y sheet siempre, aunque el reset falle
+  const overlay = document.getElementById('mercado-form-overlay');
+  const sheet   = document.getElementById('mercado-form-sheet');
+  if (overlay) overlay.style.display = 'block';
+  if (sheet) { sheet.classList.add('visible'); sheet.scrollTop = 0; }
 }
 
 function cerrarFormProveedor() {
