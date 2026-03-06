@@ -230,7 +230,7 @@ def listar_procesos(
         if monto_max:
             query = query.lte("monto_estimado", monto_max)
         if busqueda:
-            query = query.or_(f"titulo.ilike.%{busqueda}%,descripcion.ilike.%{busqueda}%")
+            query = query.or_(f"titulo.ilike.%{busqueda}%,descripcion.ilike.%{busqueda}%,codigo_proceso.ilike.%{busqueda}%")
         if institucion:
             query = query.ilike("unidad_compra", f"%{institucion}%")
 
