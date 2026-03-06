@@ -87,20 +87,35 @@ self.addEventListener('push', function(event) {
 // ── NOTIFICATION CLICK: abrir app en el proceso ──
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  const targetUrl = event.notification.data.url || '/';
+  const targetUrl = event.notification.data?.url || '/';
+
+  // Construir URL absoluta correcta apuntando al frontend
+  const appBase = self.registration.scope; // ej: https://licitacionlab.railway.app/
+  // Si la URL ya es absoluta, usarla; si no, construirla desde la raíz
+  let fullUrl;
+  try {
+    fullUrl = new URL(targetUrl, appBase).href;
+  } catch(e) {
+    fullUrl = appBase;
+  }
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(windowClients) {
+      // Buscar si ya hay una ventana de la app abierta
       for (let client of windowClients) {
-        const clientUrl = new URL(client.url);
-        const targetParsed = new URL(targetUrl, self.location.origin);
-        if (clientUrl.origin === targetParsed.origin) {
-          return client.focus().then(function(focusedClient) {
-            return focusedClient.navigate(targetUrl);
-          });
-        }
+        try {
+          const clientOrigin = new URL(client.url).origin;
+          const targetOrigin = new URL(fullUrl).origin;
+          if (clientOrigin === targetOrigin) {
+            // Enfocar la ventana existente y navegar al proceso
+            return client.focus().then(function(focusedClient) {
+              return focusedClient.navigate(fullUrl);
+            });
+          }
+        } catch(e) {}
       }
-      return clients.openWindow(targetUrl);
+      // No hay ventana abierta — abrir nueva
+      return clients.openWindow(fullUrl);
     })
   );
 });
