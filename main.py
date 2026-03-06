@@ -515,16 +515,45 @@ def procesos_por_rubros(
 def estadisticas():
     try:
         procesos = supabase.table("procesos").select("id", count="exact").execute()
+        
+        now_iso = datetime.now().isoformat()
+        filtro_activo = {"estado_proceso": "eq.Proceso publicado"}
+        
         activos = supabase.table("procesos") \
             .select("id", count="exact") \
             .eq("estado_proceso", "Proceso publicado") \
-            .gt("fecha_fin_recepcion_ofertas", datetime.now().isoformat()) \
+            .gt("fecha_fin_recepcion_ofertas", now_iso) \
             .execute()
+        
+        obras = supabase.table("procesos") \
+            .select("id", count="exact") \
+            .eq("estado_proceso", "Proceso publicado") \
+            .gt("fecha_fin_recepcion_ofertas", now_iso) \
+            .eq("objeto_proceso", "Obras") \
+            .execute()
+        
+        bienes = supabase.table("procesos") \
+            .select("id", count="exact") \
+            .eq("estado_proceso", "Proceso publicado") \
+            .gt("fecha_fin_recepcion_ofertas", now_iso) \
+            .eq("objeto_proceso", "Bienes") \
+            .execute()
+        
+        servicios = supabase.table("procesos") \
+            .select("id", count="exact") \
+            .eq("estado_proceso", "Proceso publicado") \
+            .gt("fecha_fin_recepcion_ofertas", now_iso) \
+            .eq("objeto_proceso", "Servicios") \
+            .execute()
+        
         articulos = supabase.table("articulos_proceso").select("id", count="exact").execute()
         
         return {
             "total_procesos": procesos.count,
             "procesos_activos": activos.count,
+            "obras_activas": obras.count,
+            "bienes_activos": bienes.count,
+            "servicios_activos": servicios.count,
             "total_articulos": articulos.count,
             "ultima_actualizacion": datetime.now().isoformat()
         }
