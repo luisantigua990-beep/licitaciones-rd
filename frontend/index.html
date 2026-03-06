@@ -10,219 +10,7 @@
 <link rel="manifest" href="/frontend/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js">
-// ══════════════════════════════════════════════════
-// MERCADO DE PROVEEDORES
-// ══════════════════════════════════════════════════
-let mercadoTipoActivo = '';
-let mercadoDebounceTimer = null;
-const TIPOS_MANO_OBRA = ['mano_obra', 'servicios', 'subcontratista'];
-
-const TIPO_LABELS = {
-  materiales: 'Materiales', equipos: 'Equipos',
-  mano_obra: 'Mano de obra', servicios: 'Servicios', subcontratista: 'Subcontratista'
-};
-
-function esSuscriptor() {
-  // Reutiliza la variable global de sesión de LicitacionLab
-  // Si tienes plan_activo o suscripcion en el perfil del usuario, úsala aquí
-  // Por ahora retorna true para no bloquear durante pruebas
-  return true;
-}
-
-async function cargarMercado() {
-  const lista = document.getElementById('mercado-lista');
-  lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-  try {
-    const busqueda = document.getElementById('mercado-busqueda').value.trim();
-    const zona = document.getElementById('mercado-zona').value;
-    const params = new URLSearchParams();
-    if (mercadoTipoActivo) params.set('tipo', mercadoTipoActivo);
-    if (zona) params.set('zona', zona);
-    if (busqueda) params.set('busqueda', busqueda);
-
-    const res = await fetch(`${API}/api/mercado/proveedores?${params}`);
-    const data = await res.json();
-    renderProveedores(data.proveedores || []);
-  } catch(e) {
-    lista.innerHTML = '<div class="mercado-empty">Error al cargar proveedores</div>';
-  }
-}
-
-function renderProveedores(provs) {
-  const lista = document.getElementById('mercado-lista');
-  if (!provs.length) {
-    lista.innerHTML = '<div class="mercado-empty">No hay proveedores registrados en esta categoría aún.<br>¡Sé el primero!</div>';
-    return;
-  }
-  lista.innerHTML = provs.map(p => renderProvCard(p)).join('');
-}
-
-function renderProvCard(p) {
-  const tipo = p.tipo || 'materiales';
-  const cats = (p.proveedor_categorias || []).map(c => c.categoria_nombre);
-  const zonas = (p.zona_geografica || []).join(', ') || 'Zona no especificada';
-  const esManoObra = TIPOS_MANO_OBRA.includes(tipo);
-  const tieneAcceso = !esManoObra || esSuscriptor();
-
-  const catsHtml = cats.slice(0, 4).map(c =>
-    `<span class="prov-cat-chip">${c}</span>`
-  ).join('') + (cats.length > 4 ? `<span class="prov-cat-chip">+${cats.length - 4}</span>` : '');
-
-  const verificadoHtml = p.verificado
-    ? `<span class="prov-verificado"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Verificado</span>`
-    : '';
-
-  let accionHtml = '';
-  if (tieneAcceso) {
-    const waNum = (p.whatsapp || p.telefono || '').replace(/\D/g, '');
-    const waMsg = encodeURIComponent(`Hola, los contacto desde LicitacionLab. ¿Pueden enviarme cotización?`);
-    accionHtml = `
-      <button class="prov-btn-wa" onclick="contactarProveedor('${p.id}','whatsapp','${p.whatsapp || p.telefono}')">
-        WhatsApp
-      </button>
-      ${p.telefono ? `<button class="prov-btn-wa" style="background:var(--surface2);border-color:var(--border);color:var(--text2)" onclick="window.location='tel:${p.telefono}'">Llamar</button>` : ''}
-    `;
-  } else {
-    accionHtml = `<button class="prov-btn-lock" onclick="mostrarToast('Activa tu suscripción para ver mano de obra')">🔒 Solo suscriptores</button>`;
-  }
-
-  return `
-  <div class="prov-card">
-    <div class="prov-card-top">
-      <div class="prov-nombre">${p.nombre_empresa}${verificadoHtml}</div>
-      <span class="prov-tipo-badge prov-tipo-${tipo}">${TIPO_LABELS[tipo] || tipo}</span>
-    </div>
-    ${p.descripcion ? `<div class="prov-desc">${p.descripcion}</div>` : ''}
-    ${cats.length ? `<div class="prov-cats">${catsHtml}</div>` : ''}
-    <div class="prov-zonas">${zonas}</div>
-    <div class="prov-actions">${accionHtml}</div>
-  </div>`;
-}
-
-function filtrarMercado(tipo) {
-  mercadoTipoActivo = tipo;
-  document.querySelectorAll('.mercado-chip').forEach(c => c.classList.remove('active'));
-  const id = tipo ? `mchip-${tipo}` : 'mchip-todos';
-  document.getElementById(id)?.classList.add('active');
-  cargarMercado();
-}
-
-function debouncarMercado() {
-  clearTimeout(mercadoDebounceTimer);
-  mercadoDebounceTimer = setTimeout(cargarMercado, 350);
-}
-
-async function contactarProveedor(proveedorId, tipo, numero) {
-  // Registrar contacto en analytics
-  try {
-    fetch(`${API}/api/mercado/contactos`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ proveedor_id: proveedorId, tipo_contacto: tipo })
-    });
-  } catch(e) {}
-  // Abrir WhatsApp
-  const num = numero.replace(/\D/g, '');
-  const msg = encodeURIComponent('Hola, los contacto desde LicitacionLab. ¿Pueden enviarme cotización?');
-  window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
-}
-
-// ── Formulario de registro ──
-let pfCategorias = [];
-
-function abrirFormProveedor() {
-  document.getElementById('mercado-form-overlay').style.display = 'block';
-  document.getElementById('mercado-form-sheet').classList.add('visible');
-}
-
-function cerrarFormProveedor() {
-  document.getElementById('mercado-form-overlay').style.display = 'none';
-  document.getElementById('mercado-form-sheet').classList.remove('visible');
-}
-
-function toggleZona(el) {
-  el.classList.toggle('selected');
-}
-
-function agregarCategoria() {
-  const input = document.getElementById('pf-cat-input');
-  const val = input.value.trim();
-  if (!val || pfCategorias.includes(val)) { input.value = ''; return; }
-  pfCategorias.push(val);
-  renderCatTags();
-  input.value = '';
-}
-
-function quitarCategoria(cat) {
-  pfCategorias = pfCategorias.filter(c => c !== cat);
-  renderCatTags();
-}
-
-function renderCatTags() {
-  document.getElementById('pf-cats-list').innerHTML = pfCategorias.map(c =>
-    `<span class="form-cat-tag">${c}<button onclick="quitarCategoria('${c}')">×</button></span>`
-  ).join('');
-}
-
-async function enviarRegistroProveedor() {
-  const btn = document.getElementById('pf-submit-btn');
-  const msg = document.getElementById('pf-msg');
-  const nombre = document.getElementById('pf-nombre').value.trim();
-  const tipo   = document.getElementById('pf-tipo').value;
-  const wa     = document.getElementById('pf-whatsapp').value.trim();
-
-  if (!nombre || !tipo || !wa) {
-    msg.style.display = 'block';
-    msg.style.background = 'var(--red-dim, #FEE2E2)';
-    msg.style.color = '#DC2626';
-    msg.textContent = 'Completa los campos obligatorios: nombre, tipo y WhatsApp';
-    return;
-  }
-
-  const zonas = [...document.querySelectorAll('.zona-checkbox.selected')].map(z => z.dataset.zona);
-
-  btn.disabled = true;
-  btn.textContent = 'Registrando...';
-  msg.style.display = 'none';
-
-  try {
-    const res = await fetch(`${API}/api/mercado/proveedores`, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        nombre_empresa:  nombre,
-        tipo,
-        descripcion:     document.getElementById('pf-descripcion').value.trim(),
-        whatsapp:        wa,
-        telefono:        wa,
-        rnc:             document.getElementById('pf-rnc').value.trim(),
-        email_contacto:  document.getElementById('pf-email').value.trim(),
-        zona_geografica: zonas,
-        categorias:      pfCategorias,
-      })
-    });
-    const data = await res.json();
-    if (data.ok) {
-      cerrarFormProveedor();
-      mostrarToast('Proveedor registrado exitosamente');
-      pfCategorias = [];
-      cargarMercado();
-    } else {
-      throw new Error(data.detail || 'Error desconocido');
-    }
-  } catch(e) {
-    msg.style.display = 'block';
-    msg.style.background = 'var(--red-dim, #FEE2E2)';
-    msg.style.color = '#DC2626';
-    msg.textContent = `Error: ${e.message}`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Registrar proveedor';
-  }
-}
-
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap');
 
@@ -2794,6 +2582,219 @@ if ('serviceWorker' in navigator) {
       mostrarBadge();
     }
   });
+}
+
+
+
+// ══════════════════════════════════════════════════
+// MERCADO DE PROVEEDORES
+// ══════════════════════════════════════════════════
+let mercadoTipoActivo = '';
+let mercadoDebounceTimer = null;
+const TIPOS_MANO_OBRA = ['mano_obra', 'servicios', 'subcontratista'];
+
+const TIPO_LABELS = {
+  materiales: 'Materiales', equipos: 'Equipos',
+  mano_obra: 'Mano de obra', servicios: 'Servicios', subcontratista: 'Subcontratista'
+};
+
+function esSuscriptor() {
+  // Reutiliza la variable global de sesión de LicitacionLab
+  // Si tienes plan_activo o suscripcion en el perfil del usuario, úsala aquí
+  // Por ahora retorna true para no bloquear durante pruebas
+  return true;
+}
+
+async function cargarMercado() {
+  const lista = document.getElementById('mercado-lista');
+  lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const busqueda = document.getElementById('mercado-busqueda').value.trim();
+    const zona = document.getElementById('mercado-zona').value;
+    const params = new URLSearchParams();
+    if (mercadoTipoActivo) params.set('tipo', mercadoTipoActivo);
+    if (zona) params.set('zona', zona);
+    if (busqueda) params.set('busqueda', busqueda);
+
+    const res = await fetch(`${API}/api/mercado/proveedores?${params}`);
+    const data = await res.json();
+    renderProveedores(data.proveedores || []);
+  } catch(e) {
+    lista.innerHTML = '<div class="mercado-empty">Error al cargar proveedores</div>';
+  }
+}
+
+function renderProveedores(provs) {
+  const lista = document.getElementById('mercado-lista');
+  if (!provs.length) {
+    lista.innerHTML = '<div class="mercado-empty">No hay proveedores registrados en esta categoría aún.<br>¡Sé el primero!</div>';
+    return;
+  }
+  lista.innerHTML = provs.map(p => renderProvCard(p)).join('');
+}
+
+function renderProvCard(p) {
+  const tipo = p.tipo || 'materiales';
+  const cats = (p.proveedor_categorias || []).map(c => c.categoria_nombre);
+  const zonas = (p.zona_geografica || []).join(', ') || 'Zona no especificada';
+  const esManoObra = TIPOS_MANO_OBRA.includes(tipo);
+  const tieneAcceso = !esManoObra || esSuscriptor();
+
+  const catsHtml = cats.slice(0, 4).map(c =>
+    `<span class="prov-cat-chip">${c}</span>`
+  ).join('') + (cats.length > 4 ? `<span class="prov-cat-chip">+${cats.length - 4}</span>` : '');
+
+  const verificadoHtml = p.verificado
+    ? `<span class="prov-verificado"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Verificado</span>`
+    : '';
+
+  let accionHtml = '';
+  if (tieneAcceso) {
+    const waNum = (p.whatsapp || p.telefono || '').replace(/\D/g, '');
+    const waMsg = encodeURIComponent(`Hola, los contacto desde LicitacionLab. ¿Pueden enviarme cotización?`);
+    accionHtml = `
+      <button class="prov-btn-wa" onclick="contactarProveedor('${p.id}','whatsapp','${p.whatsapp || p.telefono}')">
+        WhatsApp
+      </button>
+      ${p.telefono ? `<button class="prov-btn-wa" style="background:var(--surface2);border-color:var(--border);color:var(--text2)" onclick="window.location='tel:${p.telefono}'">Llamar</button>` : ''}
+    `;
+  } else {
+    accionHtml = `<button class="prov-btn-lock" onclick="mostrarToast('Activa tu suscripción para ver mano de obra')">🔒 Solo suscriptores</button>`;
+  }
+
+  return `
+  <div class="prov-card">
+    <div class="prov-card-top">
+      <div class="prov-nombre">${p.nombre_empresa}${verificadoHtml}</div>
+      <span class="prov-tipo-badge prov-tipo-${tipo}">${TIPO_LABELS[tipo] || tipo}</span>
+    </div>
+    ${p.descripcion ? `<div class="prov-desc">${p.descripcion}</div>` : ''}
+    ${cats.length ? `<div class="prov-cats">${catsHtml}</div>` : ''}
+    <div class="prov-zonas">${zonas}</div>
+    <div class="prov-actions">${accionHtml}</div>
+  </div>`;
+}
+
+function filtrarMercado(tipo) {
+  mercadoTipoActivo = tipo;
+  document.querySelectorAll('.mercado-chip').forEach(c => c.classList.remove('active'));
+  const id = tipo ? `mchip-${tipo}` : 'mchip-todos';
+  document.getElementById(id)?.classList.add('active');
+  cargarMercado();
+}
+
+function debouncarMercado() {
+  clearTimeout(mercadoDebounceTimer);
+  mercadoDebounceTimer = setTimeout(cargarMercado, 350);
+}
+
+async function contactarProveedor(proveedorId, tipo, numero) {
+  // Registrar contacto en analytics
+  try {
+    fetch(`${API}/api/mercado/contactos`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ proveedor_id: proveedorId, tipo_contacto: tipo })
+    });
+  } catch(e) {}
+  // Abrir WhatsApp
+  const num = numero.replace(/\D/g, '');
+  const msg = encodeURIComponent('Hola, los contacto desde LicitacionLab. ¿Pueden enviarme cotización?');
+  window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
+}
+
+// ── Formulario de registro ──
+let pfCategorias = [];
+
+function abrirFormProveedor() {
+  document.getElementById('mercado-form-overlay').style.display = 'block';
+  document.getElementById('mercado-form-sheet').classList.add('visible');
+}
+
+function cerrarFormProveedor() {
+  document.getElementById('mercado-form-overlay').style.display = 'none';
+  document.getElementById('mercado-form-sheet').classList.remove('visible');
+}
+
+function toggleZona(el) {
+  el.classList.toggle('selected');
+}
+
+function agregarCategoria() {
+  const input = document.getElementById('pf-cat-input');
+  const val = input.value.trim();
+  if (!val || pfCategorias.includes(val)) { input.value = ''; return; }
+  pfCategorias.push(val);
+  renderCatTags();
+  input.value = '';
+}
+
+function quitarCategoria(cat) {
+  pfCategorias = pfCategorias.filter(c => c !== cat);
+  renderCatTags();
+}
+
+function renderCatTags() {
+  document.getElementById('pf-cats-list').innerHTML = pfCategorias.map(c =>
+    `<span class="form-cat-tag">${c}<button onclick="quitarCategoria('${c}')">×</button></span>`
+  ).join('');
+}
+
+async function enviarRegistroProveedor() {
+  const btn = document.getElementById('pf-submit-btn');
+  const msg = document.getElementById('pf-msg');
+  const nombre = document.getElementById('pf-nombre').value.trim();
+  const tipo   = document.getElementById('pf-tipo').value;
+  const wa     = document.getElementById('pf-whatsapp').value.trim();
+
+  if (!nombre || !tipo || !wa) {
+    msg.style.display = 'block';
+    msg.style.background = 'var(--red-dim, #FEE2E2)';
+    msg.style.color = '#DC2626';
+    msg.textContent = 'Completa los campos obligatorios: nombre, tipo y WhatsApp';
+    return;
+  }
+
+  const zonas = [...document.querySelectorAll('.zona-checkbox.selected')].map(z => z.dataset.zona);
+
+  btn.disabled = true;
+  btn.textContent = 'Registrando...';
+  msg.style.display = 'none';
+
+  try {
+    const res = await fetch(`${API}/api/mercado/proveedores`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        nombre_empresa:  nombre,
+        tipo,
+        descripcion:     document.getElementById('pf-descripcion').value.trim(),
+        whatsapp:        wa,
+        telefono:        wa,
+        rnc:             document.getElementById('pf-rnc').value.trim(),
+        email_contacto:  document.getElementById('pf-email').value.trim(),
+        zona_geografica: zonas,
+        categorias:      pfCategorias,
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      cerrarFormProveedor();
+      mostrarToast('Proveedor registrado exitosamente');
+      pfCategorias = [];
+      cargarMercado();
+    } else {
+      throw new Error(data.detail || 'Error desconocido');
+    }
+  } catch(e) {
+    msg.style.display = 'block';
+    msg.style.background = 'var(--red-dim, #FEE2E2)';
+    msg.style.color = '#DC2626';
+    msg.textContent = `Error: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Registrar proveedor';
+  }
 }
 
 </script>
