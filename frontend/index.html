@@ -517,6 +517,42 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 .form-submit-btn:active{opacity:.85}
 .form-submit-btn:disabled{opacity:.5;cursor:not-allowed}
 
+
+/* ── FORM HEADER con back ── */
+.form-sheet-header{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+.form-back-btn{width:32px;height:32px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text2);flex-shrink:0;transition:all .15s}
+.form-back-btn:active{background:var(--surface2)}
+.form-sheet-title{font-size:16px;font-weight:800;color:var(--text);font-family:var(--font-display);flex:1}
+/* ── Subcategorías ── */
+.pf-tipo-selector{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
+.pf-tipo-btn{padding:10px 8px;border-radius:10px;border:1.5px solid var(--border);background:var(--bg2);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body);text-align:center;transition:all .15s;line-height:1.3}
+.pf-tipo-btn.selected{border-color:var(--green);background:var(--green-dim);color:var(--green)}
+.pf-subcats-wrap{margin-top:10px;display:none}
+.pf-subcats-wrap.visible{display:block}
+.pf-subcats-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
+.pf-subcats-grid{display:flex;flex-wrap:wrap;gap:6px}
+.pf-subcat-chip{padding:6px 12px;border-radius:20px;border:1.5px solid var(--border);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-body)}
+.pf-subcat-chip.selected{border-color:var(--green);background:var(--green-dim);color:var(--green)}
+/* ── Provincias desplegable ── */
+.zonas-dropdown-trigger{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border);border-radius:10px;cursor:pointer;font-size:13px;color:var(--text2);font-family:var(--font-body);transition:border-color .2s;user-select:none}
+.zonas-dropdown-trigger.open{border-color:var(--green);border-radius:10px 10px 0 0}
+.zonas-dropdown-trigger .zdrop-count{font-size:11px;font-weight:700;color:var(--green);background:var(--green-dim);padding:2px 8px;border-radius:10px}
+.zonas-dropdown-panel{display:none;background:var(--bg2);border:1.5px solid var(--green);border-top:none;border-radius:0 0 10px 10px;padding:10px;max-height:220px;overflow-y:auto}
+.zonas-dropdown-panel.open{display:block}
+.zonas-panel-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.zona-pill{padding:7px 10px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;transition:all .12s;font-family:var(--font-body);text-align:center}
+.zona-pill.selected{border-color:var(--green);background:var(--green-dim);color:var(--green)}
+.zona-pill-todo{grid-column:1/-1;background:var(--surface2)}
+/* ── RNC verificación ── */
+.rnc-wrap{display:flex;gap:8px;align-items:flex-start}
+.rnc-wrap input{flex:1}
+.rnc-verify-btn{flex-shrink:0;padding:10px 12px;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body);white-space:nowrap;transition:all .15s}
+.rnc-verify-btn:active{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.rnc-status{margin-top:5px;font-size:12px;font-weight:600;min-height:16px}
+.rnc-status.ok{color:var(--green)}
+.rnc-status.err{color:#EF4444}
+.rnc-status.loading{color:var(--muted)}
+
 </style>
 </head>
 <body>
@@ -919,60 +955,112 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 <div class="mercado-form-overlay" id="mercado-form-overlay" onclick="cerrarFormProveedor()"></div>
   <div class="mercado-form-sheet" id="mercado-form-sheet">
     <div class="form-sheet-handle"></div>
-    <div class="form-sheet-title">Registrar proveedor</div>
 
+    <div class="form-sheet-header">
+      <button class="form-back-btn" onclick="cerrarFormProveedor()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="form-sheet-title">Registrar proveedor</div>
+    </div>
+
+    <!-- Nombre -->
     <div class="form-field">
       <label>Nombre de empresa o persona *</label>
       <input type="text" id="pf-nombre" placeholder="Ej: Suministros del Este, S.R.L.">
     </div>
+
+    <!-- Tipo con botones visuales -->
     <div class="form-field">
       <label>Tipo de proveedor *</label>
-      <select id="pf-tipo">
-        <option value="">Seleccionar...</option>
-        <option value="materiales">Materiales de construcción</option>
-        <option value="equipos">Equipos y maquinaria</option>
-        <option value="mano_obra">Mano de obra</option>
-        <option value="servicios">Servicios técnicos</option>
-        <option value="subcontratista">Subcontratista especializado</option>
-      </select>
+      <div class="pf-tipo-selector">
+        <button class="pf-tipo-btn" data-tipo="materiales" onclick="seleccionarTipo(this)">Materiales</button>
+        <button class="pf-tipo-btn" data-tipo="equipos" onclick="seleccionarTipo(this)">Equipos y maquinaria</button>
+        <button class="pf-tipo-btn" data-tipo="mano_obra" onclick="seleccionarTipo(this)">Mano de obra</button>
+        <button class="pf-tipo-btn" data-tipo="servicios" onclick="seleccionarTipo(this)">Servicios técnicos</button>
+        <button class="pf-tipo-btn" data-tipo="subcontratista" style="grid-column:1/-1" onclick="seleccionarTipo(this)">Subcontratista especializado</button>
+      </div>
+      <input type="hidden" id="pf-tipo" value="">
     </div>
-    <div class="form-field">
+
+    <!-- Subcategorías — aparecen según el tipo -->
+    <div class="pf-subcats-wrap" id="pf-subcats-wrap">
+      <div class="pf-subcats-label" id="pf-subcats-label">Subcategorías</div>
+      <div class="pf-subcats-grid" id="pf-subcats-grid"></div>
+    </div>
+
+    <!-- Descripción -->
+    <div class="form-field" style="margin-top:14px">
       <label>Descripción breve</label>
-      <textarea id="pf-descripcion" placeholder="¿Qué ofreces? Ej: Suplidor de cemento, varilla y materiales de ferretería para proyectos de construcción." maxlength="300"></textarea>
+      <textarea id="pf-descripcion" placeholder="¿Qué ofreces específicamente?" maxlength="300"></textarea>
     </div>
+
+    <!-- WhatsApp -->
     <div class="form-field">
       <label>WhatsApp / Teléfono *</label>
       <input type="tel" id="pf-whatsapp" placeholder="809-000-0000">
     </div>
+
+    <!-- RNC con verificación -->
     <div class="form-field">
-      <label>RNC (opcional)</label>
-      <input type="text" id="pf-rnc" placeholder="000-00000-0">
+      <label>RNC — requerido para verificación</label>
+      <div class="rnc-wrap">
+        <input type="text" id="pf-rnc" placeholder="000-00000-0" oninput="resetRncStatus()">
+        <button class="rnc-verify-btn" onclick="verificarRNC()">Verificar</button>
+      </div>
+      <div class="rnc-status" id="rnc-status"></div>
     </div>
+
+    <!-- Email -->
     <div class="form-field">
       <label>Correo de contacto (opcional)</label>
       <input type="email" id="pf-email" placeholder="ventas@empresa.com">
     </div>
+
+    <!-- Provincias desplegable -->
     <div class="form-field">
-      <label>Zonas donde operas</label>
-      <div class="form-zonas-grid" id="pf-zonas-grid">
-        <div class="zona-checkbox" data-zona="Distrito Nacional" onclick="toggleZona(this)">Distrito Nacional</div>
-        <div class="zona-checkbox" data-zona="Santo Domingo" onclick="toggleZona(this)">Santo Domingo</div>
-        <div class="zona-checkbox" data-zona="Santiago" onclick="toggleZona(this)">Santiago</div>
-        <div class="zona-checkbox" data-zona="La Vega" onclick="toggleZona(this)">La Vega</div>
-        <div class="zona-checkbox" data-zona="San Pedro de Macorís" onclick="toggleZona(this)">San Pedro</div>
-        <div class="zona-checkbox" data-zona="La Romana" onclick="toggleZona(this)">La Romana</div>
-        <div class="zona-checkbox" data-zona="San Cristóbal" onclick="toggleZona(this)">San Cristóbal</div>
-        <div class="zona-checkbox" data-zona="Puerto Plata" onclick="toggleZona(this)">Puerto Plata</div>
-        <div class="zona-checkbox" data-zona="Todo el país" onclick="toggleZona(this)">Todo el país</div>
+      <label>Provincias donde operas</label>
+      <div class="zonas-dropdown-trigger" id="zonas-trigger" onclick="toggleZonasPanel()">
+        <span id="zonas-trigger-text">Seleccionar provincias...</span>
+        <span id="zonas-count" class="zdrop-count" style="display:none">0</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" id="zonas-arrow"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
-    </div>
-    <div class="form-field">
-      <label>Categorías / productos que ofreces</label>
-      <div class="form-cats-input">
-        <input type="text" id="pf-cat-input" placeholder="Ej: Cemento, varilla, tubería..." onkeydown="if(event.key==='Enter'){event.preventDefault();agregarCategoria()}">
-        <button onclick="agregarCategoria()" style="padding:8px 14px;background:var(--green-dim);border:1.5px solid var(--green-border);border-radius:10px;color:var(--green);font-weight:700;cursor:pointer;font-size:13px;font-family:var(--font-body);white-space:nowrap">Agregar</button>
+      <div class="zonas-dropdown-panel" id="zonas-panel">
+        <div class="zonas-panel-grid">
+          <div class="zona-pill zona-pill-todo" data-zona="Todo el país" onclick="toggleZonaPill(this)">Todo el país</div>
+          <div class="zona-pill" data-zona="Distrito Nacional" onclick="toggleZonaPill(this)">Distrito Nacional</div>
+          <div class="zona-pill" data-zona="Santo Domingo" onclick="toggleZonaPill(this)">Santo Domingo</div>
+          <div class="zona-pill" data-zona="Santiago" onclick="toggleZonaPill(this)">Santiago</div>
+          <div class="zona-pill" data-zona="La Vega" onclick="toggleZonaPill(this)">La Vega</div>
+          <div class="zona-pill" data-zona="San Pedro de Macorís" onclick="toggleZonaPill(this)">San Pedro de Macorís</div>
+          <div class="zona-pill" data-zona="La Romana" onclick="toggleZonaPill(this)">La Romana</div>
+          <div class="zona-pill" data-zona="San Cristóbal" onclick="toggleZonaPill(this)">San Cristóbal</div>
+          <div class="zona-pill" data-zona="Puerto Plata" onclick="toggleZonaPill(this)">Puerto Plata</div>
+          <div class="zona-pill" data-zona="Duarte" onclick="toggleZonaPill(this)">Duarte</div>
+          <div class="zona-pill" data-zona="Espaillat" onclick="toggleZonaPill(this)">Espaillat</div>
+          <div class="zona-pill" data-zona="Barahona" onclick="toggleZonaPill(this)">Barahona</div>
+          <div class="zona-pill" data-zona="San Juan" onclick="toggleZonaPill(this)">San Juan</div>
+          <div class="zona-pill" data-zona="Azua" onclick="toggleZonaPill(this)">Azua</div>
+          <div class="zona-pill" data-zona="Peravia" onclick="toggleZonaPill(this)">Peravia</div>
+          <div class="zona-pill" data-zona="Monte Plata" onclick="toggleZonaPill(this)">Monte Plata</div>
+          <div class="zona-pill" data-zona="Hato Mayor" onclick="toggleZonaPill(this)">Hato Mayor</div>
+          <div class="zona-pill" data-zona="El Seibo" onclick="toggleZonaPill(this)">El Seibo</div>
+          <div class="zona-pill" data-zona="La Altagracia" onclick="toggleZonaPill(this)">La Altagracia</div>
+          <div class="zona-pill" data-zona="Valverde" onclick="toggleZonaPill(this)">Valverde</div>
+          <div class="zona-pill" data-zona="Santiago Rodríguez" onclick="toggleZonaPill(this)">Santiago Rodríguez</div>
+          <div class="zona-pill" data-zona="Monseñor Nouel" onclick="toggleZonaPill(this)">Monseñor Nouel</div>
+          <div class="zona-pill" data-zona="Sánchez Ramírez" onclick="toggleZonaPill(this)">Sánchez Ramírez</div>
+          <div class="zona-pill" data-zona="Samaná" onclick="toggleZonaPill(this)">Samaná</div>
+          <div class="zona-pill" data-zona="María Trinidad Sánchez" onclick="toggleZonaPill(this)">M.T. Sánchez</div>
+          <div class="zona-pill" data-zona="Monte Cristi" onclick="toggleZonaPill(this)">Monte Cristi</div>
+          <div class="zona-pill" data-zona="Dajabón" onclick="toggleZonaPill(this)">Dajabón</div>
+          <div class="zona-pill" data-zona="Elías Piña" onclick="toggleZonaPill(this)">Elías Piña</div>
+          <div class="zona-pill" data-zona="San José de Ocoa" onclick="toggleZonaPill(this)">San José de Ocoa</div>
+          <div class="zona-pill" data-zona="Independencia" onclick="toggleZonaPill(this)">Independencia</div>
+          <div class="zona-pill" data-zona="Baoruco" onclick="toggleZonaPill(this)">Baoruco</div>
+          <div class="zona-pill" data-zona="Pedernales" onclick="toggleZonaPill(this)">Pedernales</div>
+          <div class="zona-pill" data-zona="Hermanas Mirabal" onclick="toggleZonaPill(this)">Hermanas Mirabal</div>
+        </div>
       </div>
-      <div class="form-cats-list" id="pf-cats-list"></div>
     </div>
 
     <div id="pf-msg" style="display:none;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:12px;text-align:center"></div>
@@ -2704,11 +2792,171 @@ async function contactarProveedor(proveedorId, tipo, numero) {
 }
 
 // ── Formulario de registro ──
-let pfCategorias = [];
+let pfSubcatsSeleccionadas = [];
+
+const SUBCATEGORIAS = {
+  materiales: {
+    label: 'Subcategoría de materiales',
+    items: ['Eléctrico','Plomería','Agregados','Cemento y mezclas','Varilla y acero','Madera y carpintería','Pintura y recubrimientos','Cerámica y pisos','Impermeabilizantes','Tubería y drenaje','Bloques y mampostería','Vidrio y aluminio','Herramientas','Ferretería general']
+  },
+  equipos: {
+    label: 'Subcategoría de equipos',
+    items: ['Excavación y movimiento de tierra','Compactación','Grúas y elevación','Andamios y encofrado','Generadores','Bombas y equipos hidráulicos','Equipos de soldadura','Maquinaria pesada (alquiler)','Vehículos de carga','Herramientas eléctricas']
+  },
+  mano_obra: {
+    label: 'Especialidad de mano de obra',
+    items: ['Albañilería','Carpintería','Electricidad','Plomería','Soldadura','Pintura','Impermeabilización','Acero estructural','Acabados finos','Topografía','Excavación manual','Cuadrilla general']
+  },
+  servicios: {
+    label: 'Tipo de servicio',
+    items: ['Diseño estructural','Diseño eléctrico','Diseño hidráulico','Supervisión de obras','Topografía y levantamiento','Estudios de suelo','Laboratorio de materiales','Gestión ambiental','Seguridad e higiene','Instalaciones MEP','Consultoría técnica']
+  },
+  subcontratista: {
+    label: 'Especialidad de subcontrato',
+    items: ['Impermeabilización','Estructura metálica','Instalaciones eléctricas','Instalaciones sanitarias','Climatización (HVAC)','Acabados y revestimientos','Pavimentación','Sistemas contra incendio','Ascensores','Paisajismo','Demolición','Movimiento de tierra']
+  }
+};
+
+function seleccionarTipo(btn) {
+  document.querySelectorAll('.pf-tipo-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  document.getElementById('pf-tipo').value = btn.dataset.tipo;
+  pfSubcatsSeleccionadas = [];
+  renderSubcats(btn.dataset.tipo);
+}
+
+function renderSubcats(tipo) {
+  const wrap = document.getElementById('pf-subcats-wrap');
+  const grid = document.getElementById('pf-subcats-grid');
+  const lbl  = document.getElementById('pf-subcats-label');
+  const cfg  = SUBCATEGORIAS[tipo];
+  if (!cfg) { wrap.classList.remove('visible'); return; }
+  lbl.textContent = cfg.label;
+  grid.innerHTML = cfg.items.map(item =>
+    `<button class="pf-subcat-chip" onclick="toggleSubcat(this,'${item}')">${item}</button>`
+  ).join('');
+  wrap.classList.add('visible');
+}
+
+function toggleSubcat(el, nombre) {
+  el.classList.toggle('selected');
+  if (el.classList.contains('selected')) {
+    if (!pfSubcatsSeleccionadas.includes(nombre)) pfSubcatsSeleccionadas.push(nombre);
+  } else {
+    pfSubcatsSeleccionadas = pfSubcatsSeleccionadas.filter(s => s !== nombre);
+  }
+}
+
+// ── Provincias desplegable ──
+function toggleZonasPanel() {
+  const panel   = document.getElementById('zonas-panel');
+  const trigger = document.getElementById('zonas-trigger');
+  const arrow   = document.getElementById('zonas-arrow');
+  const isOpen  = panel.classList.contains('open');
+  panel.classList.toggle('open', !isOpen);
+  trigger.classList.toggle('open', !isOpen);
+  arrow.style.transform = isOpen ? '' : 'rotate(180deg)';
+}
+
+function toggleZonaPill(el) {
+  const esTodo = el.dataset.zona === 'Todo el país';
+  if (esTodo) {
+    const allSelected = el.classList.contains('selected');
+    document.querySelectorAll('#zonas-panel .zona-pill').forEach(p => {
+      p.classList.toggle('selected', !allSelected);
+    });
+  } else {
+    el.classList.toggle('selected');
+    // Desmarcar "Todo el país" si deseleccionamos algo
+    const todoPill = document.querySelector('.zona-pill-todo');
+    if (todoPill && !el.classList.contains('selected')) todoPill.classList.remove('selected');
+  }
+  actualizarContadorZonas();
+}
+
+function actualizarContadorZonas() {
+  const seleccionadas = [...document.querySelectorAll('#zonas-panel .zona-pill.selected')]
+    .filter(p => p.dataset.zona !== 'Todo el país');
+  const count   = document.getElementById('zonas-count');
+  const texto   = document.getElementById('zonas-trigger-text');
+  const todoSel = document.querySelector('.zona-pill-todo')?.classList.contains('selected');
+  if (todoSel || seleccionadas.length === 0) {
+    if (todoSel) {
+      texto.textContent = 'Todo el país';
+      count.style.display = 'none';
+    } else {
+      texto.textContent = 'Seleccionar provincias...';
+      count.style.display = 'none';
+    }
+  } else {
+    texto.textContent = seleccionadas.length === 1
+      ? seleccionadas[0].dataset.zona
+      : `${seleccionadas[0].dataset.zona} y ${seleccionadas.length - 1} más`;
+    count.textContent = seleccionadas.length;
+    count.style.display = 'inline-block';
+  }
+}
+
+// ── RNC Verificación ──
+let rncVerificado = false;
+
+function resetRncStatus() {
+  rncVerificado = false;
+  const st = document.getElementById('rnc-status');
+  if (st) { st.textContent = ''; st.className = 'rnc-status'; }
+}
+
+async function verificarRNC() {
+  const rnc = document.getElementById('pf-rnc').value.replace(/[-\s]/g, '').trim();
+  const st  = document.getElementById('rnc-status');
+  if (!rnc || rnc.length < 9) {
+    st.textContent = 'Ingresa el RNC completo (9 u 11 dígitos)';
+    st.className = 'rnc-status err';
+    return;
+  }
+  st.textContent = 'Consultando DGII...';
+  st.className = 'rnc-status loading';
+  try {
+    const res  = await fetch(`https://api.digital.gob.do/v3/contribuyentes/${rnc}`);
+    const data = await res.json();
+    if (data && data.nombre) {
+      rncVerificado = true;
+      st.textContent = `Verificado: ${data.nombre}`;
+      st.className = 'rnc-status ok';
+      // Pre-llenar el nombre si está vacío
+      const nomInput = document.getElementById('pf-nombre');
+      if (nomInput && !nomInput.value.trim()) nomInput.value = data.nombre;
+    } else {
+      st.textContent = 'RNC no encontrado en DGII';
+      st.className = 'rnc-status err';
+    }
+  } catch(e) {
+    st.textContent = 'Error al consultar DGII. Continúa sin verificar.';
+    st.className = 'rnc-status err';
+  }
+}
 
 function abrirFormProveedor() {
+  // Reset completo del form
+  ['pf-nombre','pf-descripcion','pf-whatsapp','pf-rnc','pf-email'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.querySelectorAll('.pf-tipo-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('pf-tipo').value = '';
+  document.getElementById('pf-subcats-wrap').classList.remove('visible');
+  document.querySelectorAll('#zonas-panel .zona-pill').forEach(p => p.classList.remove('selected'));
+  actualizarContadorZonas();
+  if (document.getElementById('zonas-panel').classList.contains('open')) toggleZonasPanel();
+  pfSubcatsSeleccionadas = [];
+  rncVerificado = false;
+  resetRncStatus();
+  const msg = document.getElementById('pf-msg');
+  if (msg) msg.style.display = 'none';
   document.getElementById('mercado-form-overlay').style.display = 'block';
   document.getElementById('mercado-form-sheet').classList.add('visible');
+  // Scroll al top del sheet
+  document.getElementById('mercado-form-sheet').scrollTop = 0;
 }
 
 function cerrarFormProveedor() {
@@ -2716,46 +2964,28 @@ function cerrarFormProveedor() {
   document.getElementById('mercado-form-sheet').classList.remove('visible');
 }
 
-function toggleZona(el) {
-  el.classList.toggle('selected');
-}
-
-function agregarCategoria() {
-  const input = document.getElementById('pf-cat-input');
-  const val = input.value.trim();
-  if (!val || pfCategorias.includes(val)) { input.value = ''; return; }
-  pfCategorias.push(val);
-  renderCatTags();
-  input.value = '';
-}
-
-function quitarCategoria(cat) {
-  pfCategorias = pfCategorias.filter(c => c !== cat);
-  renderCatTags();
-}
-
-function renderCatTags() {
-  document.getElementById('pf-cats-list').innerHTML = pfCategorias.map(c =>
-    `<span class="form-cat-tag">${c}<button onclick="quitarCategoria('${c}')">×</button></span>`
-  ).join('');
-}
-
 async function enviarRegistroProveedor() {
-  const btn = document.getElementById('pf-submit-btn');
-  const msg = document.getElementById('pf-msg');
+  const btn    = document.getElementById('pf-submit-btn');
+  const msg    = document.getElementById('pf-msg');
   const nombre = document.getElementById('pf-nombre').value.trim();
   const tipo   = document.getElementById('pf-tipo').value;
   const wa     = document.getElementById('pf-whatsapp').value.trim();
 
   if (!nombre || !tipo || !wa) {
     msg.style.display = 'block';
-    msg.style.background = 'var(--red-dim, #FEE2E2)';
+    msg.style.background = '#FEE2E2';
     msg.style.color = '#DC2626';
-    msg.textContent = 'Completa los campos obligatorios: nombre, tipo y WhatsApp';
+    msg.textContent = 'Completa: nombre, tipo de proveedor y WhatsApp';
+    document.getElementById('mercado-form-sheet').scrollTop = 0;
     return;
   }
 
-  const zonas = [...document.querySelectorAll('.zona-checkbox.selected')].map(z => z.dataset.zona);
+  const todoSel = document.querySelector('.zona-pill-todo')?.classList.contains('selected');
+  const zonas = todoSel
+    ? ['Todo el país']
+    : [...document.querySelectorAll('#zonas-panel .zona-pill.selected')]
+        .filter(p => p.dataset.zona !== 'Todo el país')
+        .map(p => p.dataset.zona);
 
   btn.disabled = true;
   btn.textContent = 'Registrando...';
@@ -2774,21 +3004,21 @@ async function enviarRegistroProveedor() {
         rnc:             document.getElementById('pf-rnc').value.trim(),
         email_contacto:  document.getElementById('pf-email').value.trim(),
         zona_geografica: zonas,
-        categorias:      pfCategorias,
+        categorias:      pfSubcatsSeleccionadas,
+        rnc_verificado:  rncVerificado,
       })
     });
     const data = await res.json();
     if (data.ok) {
       cerrarFormProveedor();
       mostrarToast('Proveedor registrado exitosamente');
-      pfCategorias = [];
       cargarMercado();
     } else {
       throw new Error(data.detail || 'Error desconocido');
     }
   } catch(e) {
     msg.style.display = 'block';
-    msg.style.background = 'var(--red-dim, #FEE2E2)';
+    msg.style.background = '#FEE2E2';
     msg.style.color = '#DC2626';
     msg.textContent = `Error: ${e.message}`;
   } finally {
