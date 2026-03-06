@@ -293,7 +293,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--text);-webkit
 /* ── SCREENS ── */
 .screen{position:fixed;inset:0;z-index:1;background:var(--bg);display:none;flex-direction:column}
 .screen.active{display:flex}
-#tabs-wrapper{flex:1;position:relative;overflow:hidden;min-height:0}
+#tabs-wrapper{flex:1;position:relative;overflow:clip;min-height:0}
 /* ── AUTH ── */
 #screen-auth{display:flex;align-items:center;justify-content:center;padding:24px 20px;background:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(34,197,94,0.15) 0%,transparent 60%),var(--bg)}
 .auth-card{width:100%;max-width:400px;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-xl);padding:36px 28px;box-shadow:var(--shadow-lg);animation:slideUp .45s cubic-bezier(.16,1,.3,1) both}
@@ -1405,6 +1405,7 @@ function showApp() {
   const perfilNombreInput = document.getElementById('perfil-nombre-input');
   if (perfilNombreInput) perfilNombreInput.value = nombre;
 
+  switchTab2('dashboard');
   cargarStats();
   cargarProcesos(1);
   checkPushStatus();
@@ -1820,6 +1821,8 @@ async function guardarNombrePerfil() {
     const dn = document.getElementById('drawer-name'); if(dn) dn.textContent = nombre;
     const da = document.getElementById('drawer-avatar'); if(da) da.textContent = iniciales;
     const ed = document.getElementById('user-email-display'); if(ed) ed.textContent = nombre;
+    // Actualizar saludo del dashboard de inmediato
+    actualizarSaludo();
 
     if (status) { status.textContent = 'Nombre actualizado'; setTimeout(()=>{ status.textContent=''; }, 2500); }
   } catch(e) {
