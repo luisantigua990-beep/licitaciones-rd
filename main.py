@@ -291,6 +291,43 @@ def detalle_proceso(codigo_proceso: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/procesos/{codigo_proceso}/analizar")
+async def solicitar_analisis_proceso(codigo_proceso: str, background_tasks: BackgroundTasks):
+    """
+    Solicita análisis IA de un proceso desde el frontend.
+    Verifica que el proceso exista, crea/resetea el registro en analisis_pliego
+    y encola el análisis con semáforo para no saturar recursos.
+    """
+    try:
+        # Verificar que el proceso existe
+        proc = supabase.table("procesos") \
+            .select("codigo_proceso, titulo") \
+            .eq("codigo_proceso", codigo_proceso) \
+            .execute()
+        if not proc.data:
+            raise HTTPException(status_code=404, detail="Proceso no encontrado")
+
+        # Crear o resetear el registro de análisis
+        supabase_admin.table("analisis_pliego").upsert({
+            "proceso_id": codigo_proceso,
+            "estado": "pendiente"
+        }).execute()
+
+        # Encolar con semáforo igual que el webhook
+        async def _analizar_con_semaforo():
+            async with _semaforo_analisis:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, ejecutar_analisis_gemini, codigo_proceso)
+
+        background_tasks.add_task(_analizar_con_semaforo)
+        return {"status": "encolado", "proceso_id": codigo_proceso, "mensaje": "Análisis IA iniciado"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 # ============================================
 # ENDPOINTS — CHECKLIST DE DOCUMENTOS
