@@ -2398,7 +2398,7 @@ def listar_proveedores(
     """Listar proveedores activos con filtros. Contacto de mano_obra/servicios/subcontratista
     se devuelve siempre — el control de acceso lo hace el frontend según suscripción."""
     try:
-        q = supabase.table("proveedores").select(
+        q = supabase_admin.table("proveedores").select(
             "id, nombre_empresa, tipo, descripcion, zona_geografica, "
             "telefono, whatsapp, email_contacto, verificado, created_at, "
             "proveedor_categorias(categoria_nombre, unspsc_codigo)"
@@ -2424,7 +2424,7 @@ def listar_proveedores(
 def detalle_proveedor(proveedor_id: str):
     """Perfil completo de un proveedor."""
     try:
-        res = supabase.table("proveedores").select(
+        res = supabase_admin.table("proveedores").select(
             "*, proveedor_categorias(*)"
         ).eq("id", proveedor_id).eq("activo", True).single().execute()
         if not res.data:
@@ -2465,12 +2465,12 @@ async def registrar_proveedor(request: Request):
             "email_contacto":  data.get("email_contacto"),
         }
 
-        res = supabase.table("proveedores").insert(proveedor_data).execute()
+        res = supabase_admin.table("proveedores").insert(proveedor_data).execute()
         proveedor_id = res.data[0]["id"]
 
         if categorias:
             cats = [{"proveedor_id": proveedor_id, "categoria_nombre": c} for c in categorias if c]
-            supabase.table("proveedor_categorias").insert(cats).execute()
+            supabase_admin.table("proveedor_categorias").insert(cats).execute()
 
         return {"ok": True, "id": proveedor_id}
     except HTTPException:
@@ -2499,7 +2499,7 @@ async def registrar_contacto(request: Request):
             except:
                 pass
 
-        supabase.table("proveedor_contactos").insert({
+        supabase_admin.table("proveedor_contactos").insert({
             "proveedor_id":     proveedor_id,
             "buscador_user_id": user_id,
             "proceso_codigo":   proceso_codigo,
@@ -2518,7 +2518,7 @@ def stats_mercado():
         tipos = ["materiales", "equipos", "mano_obra", "servicios", "subcontratista"]
         resultado = {}
         for t in tipos:
-            r = supabase.table("proveedores").select("id", count="exact").eq("activo", True).eq("tipo", t).execute()
+            r = supabase_admin.table("proveedores").select("id", count="exact").eq("activo", True).eq("tipo", t).execute()
             resultado[t] = r.count or 0
         resultado["total"] = sum(resultado.values())
         return resultado
