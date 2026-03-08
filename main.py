@@ -1005,6 +1005,13 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         "oferta económica",
         "formulario de presentacion",
         "formulario de oferta",
+        "sncc_f0",                  # formularios SNCC (oferta económica, presentación, etc.)
+        "sncc-prov",                # formularios de proveedores
+        "convocatoria.pdf",         # convocatoria suelta ≠ pliego
+        "fondos.pdf",               # certificado de apropiación presupuestaria
+        "solicitud de compras",
+        "certificacion",            # certificaciones varias
+        "certificación",
     ]
 
     # Grupos de prioridad — se evalúan en orden, el primer grupo con match gana
@@ -1021,24 +1028,30 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
             "pliego corregido",
             "pliego actualizado",
             "condiciones especiales",
+            "contratacion menor",       # ej: "PLIEGO CONTRATACION MENOR 2026-CM-0006.pdf"
+            "contratación menor",
+            "pliego contratacion",
+            "pliego contratación",
         ],
-        # Prioridad 2: TDR / Términos de Referencia (servicios/consultoría)
+        # Prioridad 2: Especificaciones Técnicas
+        [
+            "especificaciones tecnicas",
+            "especificaciones técnicas",
+            "especificaciones tecnicas.pdf",
+            "ficha tecnica",
+            "ficha técnica",
+            "especificaciones generales",
+        ],
+        # Prioridad 3: cualquier PDF que diga "pliego" en el nombre
+        ["pliego"],
+        # Prioridad 4: TDR / Términos de Referencia (servicios/consultoría)
+        # — DESPUÉS de pliego genérico para no desplazar pliegos con nombre atípico
         [
             "terminos de referencia",
             "términos de referencia",
             "tdr",
             "términos de referencia (tdr)",
         ],
-        # Prioridad 3: Especificaciones Técnicas
-        [
-            "especificaciones tecnicas",
-            "especificaciones técnicas",
-            "ficha tecnica",
-            "ficha técnica",
-            "especificaciones generales",
-        ],
-        # Prioridad 4: cualquier PDF que diga "pliego" en el nombre
-        ["pliego"],
         # Prioridad 5: condiciones o bases (último recurso)
         ["condiciones generales", "bases tecnicas"],
     ]
