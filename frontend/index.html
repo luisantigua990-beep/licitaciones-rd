@@ -132,11 +132,28 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px 20px;
+  overflow: hidden;
+  position: relative;
   background:
-    radial-gradient(ellipse 70% 45% at 50% -5%, rgba(46,204,113,0.18) 0%, transparent 65%),
-    radial-gradient(ellipse 50% 30% at 80% 100%, rgba(93,173,226,0.08) 0%, transparent 60%),
-    var(--bg);
+    radial-gradient(ellipse 90% 55% at 50% -10%, rgba(46,204,113,0.22) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 10% 110%, rgba(93,173,226,0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 40% 30% at 90% 90%, rgba(46,204,113,0.06) 0%, transparent 50%),
+    #0D1B2A;
 }
+/* Palabras flotantes auth */
+.auth-bg-words {
+  position: absolute; inset: 0; z-index: 0;
+  pointer-events: none; overflow: hidden; user-select: none;
+}
+.auth-bg-words span {
+  position: absolute;
+  font-family: 'Outfit', sans-serif; font-weight: 900;
+  color: #fff; white-space: nowrap; letter-spacing: -0.02em; line-height: 1;
+}
+.auth-bg-words .w-far  { opacity: 0.04; font-size: clamp(28px, 8vw, 44px); }
+.auth-bg-words .w-mid  { opacity: 0.07; font-size: clamp(36px, 10vw, 56px); }
+.auth-bg-words .w-near { opacity: 0.12; font-size: clamp(48px, 13vw, 72px); }
+.auth-card { position: relative; z-index: 1; }
 
 .auth-card {
   width: 100%;
@@ -352,11 +369,42 @@ body {
 .main { padding: 16px; max-width: 600px; margin: 0 auto; }
 .page-with-nav { padding-bottom: 80px; }
 
-/* ── DASHBOARD HEADER ── */
+/* ── DASHBOARD HEADER con fondo cenital ── */
 .dash-header {
   display: flex; align-items: flex-start; justify-content: space-between;
-  padding: 20px 18px 12px;
+  padding: 24px 18px 20px;
+  position: relative;
+  overflow: hidden;
+  border-radius: 0 0 20px 20px;
+  margin-bottom: 4px;
+  background:
+    radial-gradient(ellipse 100% 80% at 50% -20%, rgba(46,204,113,0.18) 0%, transparent 65%),
+    radial-gradient(ellipse 50% 40% at 90% 120%, rgba(93,173,226,0.08) 0%, transparent 50%),
+    var(--surface);
+  border-bottom: 1px solid var(--border2);
 }
+/* Palabras flotantes dashboard */
+.dash-header::before {
+  content: 'Licitaciones Contratos';
+  position: absolute;
+  top: -6px; right: -10px;
+  font-family: 'Outfit', sans-serif; font-weight: 900;
+  font-size: clamp(38px, 11vw, 58px);
+  color: #fff; opacity: 0.04;
+  white-space: nowrap; pointer-events: none; user-select: none;
+  letter-spacing: -2px; line-height: 1;
+}
+.dash-header::after {
+  content: 'Análisis';
+  position: absolute;
+  bottom: 2px; left: -4px;
+  font-family: 'Outfit', sans-serif; font-weight: 900;
+  font-size: clamp(48px, 14vw, 72px);
+  color: #2ECC71; opacity: 0.07;
+  white-space: nowrap; pointer-events: none; user-select: none;
+  letter-spacing: -3px; line-height: 1;
+}
+.dash-header > * { position: relative; z-index: 1; }
 .dash-greeting { font-size: 24px; font-weight: 800; color: var(--text); letter-spacing: -0.5px; line-height: 1.2; }
 .dash-subtitle { font-size: 12px; color: var(--muted); margin-top: 4px; font-weight: 500; }
 .dash-notif-btn {
@@ -709,7 +757,39 @@ body {
 
 /* ── SEGUIMIENTO ── */
 #tab-seguimiento { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 72px; display: none; }
-.seg-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 16px 10px; }
+.seg-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 24px 16px 18px;
+  position: relative; overflow: hidden;
+  border-radius: 0 0 20px 20px;
+  background:
+    radial-gradient(ellipse 100% 80% at 50% -20%, rgba(46,204,113,0.16) 0%, transparent 65%),
+    radial-gradient(ellipse 40% 35% at 95% 110%, rgba(93,173,226,0.07) 0%, transparent 50%),
+    var(--surface);
+  border-bottom: 1px solid var(--border2);
+  margin-bottom: 4px;
+}
+.seg-header::before {
+  content: 'Ofertas';
+  position: absolute;
+  bottom: -8px; right: -6px;
+  font-family: 'Outfit', sans-serif; font-weight: 900;
+  font-size: clamp(52px, 15vw, 80px);
+  color: #2ECC71; opacity: 0.07;
+  white-space: nowrap; pointer-events: none; user-select: none;
+  letter-spacing: -3px; line-height: 1;
+}
+.seg-header::after {
+  content: 'DGCP · MOPC';
+  position: absolute;
+  top: 4px; left: -2px;
+  font-family: 'Outfit', sans-serif; font-weight: 900;
+  font-size: clamp(24px, 7vw, 38px);
+  color: #fff; opacity: 0.04;
+  white-space: nowrap; pointer-events: none; user-select: none;
+  letter-spacing: -1px; line-height: 1;
+}
+.seg-header > * { position: relative; z-index: 1; }
 .seg-title { font-size: 24px; font-weight: 900; color: var(--text); letter-spacing: -0.5px; }
 .seg-count { background: var(--green-dim); border: 1px solid var(--green-border); border-radius: var(--r-full); padding: 4px 12px; font-size: 12px; font-weight: 800; color: var(--green); }
 .seg-filtros { display: flex; gap: 6px; padding: 0 16px 14px; overflow-x: auto; scrollbar-width: none; }
@@ -988,6 +1068,21 @@ body {
 <body>
 
 <div id="screen-auth" class="screen active">
+
+  <!-- Palabras flotantes de fondo -->
+  <div class="auth-bg-words" aria-hidden="true">
+    <!-- Plano lejano -->
+    <span class="w-far" style="top:8%;left:-2%">Licitaciones</span>
+    <span class="w-far" style="top:62%;right:-1%">INAPA</span>
+    <span class="w-far" style="bottom:10%;left:5%">MOPC</span>
+    <span class="w-far" style="top:38%;right:3%">DGCP</span>
+    <!-- Plano medio -->
+    <span class="w-mid" style="top:22%;right:-4%">Contratos</span>
+    <span class="w-mid" style="bottom:28%;left:-3%">CAASD</span>
+    <!-- Plano cercano -->
+    <span class="w-near" style="top:52%;left:-5%">Ofertas</span>
+    <span class="w-near" style="top:4%;right:-2%">Análisis</span>
+  </div>
   <div class="auth-card">
     <div class="auth-brand">
       <div class="auth-brand-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v5l-4 8a2 2 0 0 0 1.8 3h8.4a2 2 0 0 0 1.8-3l-4-8V3"/><path d="M8.5 16h7"/></svg></div>
