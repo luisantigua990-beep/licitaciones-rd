@@ -1016,10 +1016,12 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
 
     # Grupos de prioridad — se evalúan en orden, el primer grupo con match gana
     PRIORIDADES = [
-        # Prioridad 1: Pliego de Condiciones (cualquier variante)
+        # Prioridad 1: Pliego de Condiciones (cualquier variante, incluyendo nombres truncados)
         [
             "pliego de condiciones",
             "pliego condiciones",
+            "pliego estándar",          # ← cubre "pliego estándar de condiciones para..."
+            "pliego estandar",          # ← sin tilde
             "bases de la contratacion",
             "bases de la contratación",
             "bases de contratacion",
@@ -1056,27 +1058,26 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         ["condiciones generales", "bases tecnicas"],
     ]
 
-    def construir_mapa_filas(html: str) -> dict:
+    def construir_mapa_filas(html: str) -> tuple:
         """
         Parsea la tabla de documentos del portal DGCP por filas <tr>.
 
-        Estructura del portal:
-          <tr id="grdGridDocumentList_trN">
-            <td id="...thColumnDocumentName">NombreArchivo.pdf</td>
-            <td id="...thColumnDocumentType"><span>Tipo del documento</span></td>
-            <td id="...thColumnDownloadDocument">
-              ... 'documentFileId=' + '12345' + '&mkey=...'
-            </td>
-          </tr>
+        Estrategia dual nombre + tipo:
+          - Nombre del archivo: criterio principal de selección.
+          - Tipo del documento: criterio de desempate cuando el nombre está truncado
+            o es genérico. El portal a veces trunca nombres largos en la celda visual,
+            ej: "pliego estándar de condiciones para" (sin el resto del título).
+            En ese caso el tipo "Terms and Conditions" / "Bases de la Contratación"
+            confirma cuál es el pliego real, aunque "especificaciones tecnicas.pdf"
+            también exista en la lista con nombre completo.
 
-        CRÍTICO: solo se usa el nombre del archivo para selección.
-        El campo Tipo NO se usa — un doc puede ser tipo "Pliego de Condiciones"
-        pero llamarse "Especificaciones tecnicas.pdf", causando selección incorrecta.
-
-        Devuelve dict: {file_id: nombre_archivo_lower}
+        Devuelve tuple: (mapa_nombres, mapa_tipos)
+          mapa_nombres: {file_id: nombre_archivo_lower}
+          mapa_tipos:   {file_id: tipo_documento_lower}
         """
         import re as _re
-        mapa = {}
+        mapa_nombres = {}
+        mapa_tipos = {}
 
         filas = _re.findall(
             r'<tr[^>]+id=["\']grdGridDocumentList_tr\d+["\'][^>]*>(.*?)</tr>',
@@ -1092,40 +1093,76 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
                 continue
             file_id = m_id.group(1) or m_id.group(2)
 
-            # Solo extraer nombre del archivo (thColumnDocumentName)
+            # Extraer nombre del archivo (thColumnDocumentName)
             m_nombre = _re.search(
                 r'thColumnDocumentName[^>]*>(.*?)</td>',
                 fila, _re.IGNORECASE | _re.DOTALL
             )
             if m_nombre:
                 nombre_raw = _re.sub(r'<[^>]+>', '', m_nombre.group(1)).strip()
-                mapa[file_id] = nombre_raw.lower()
+                mapa_nombres[file_id] = nombre_raw.lower()
             else:
-                mapa[file_id] = ""
+                mapa_nombres[file_id] = ""
 
-        if mapa:
-            print(f"📋 Tabla TR parseada ({len(mapa)} docs): { {k: v[:35] or '[sin nombre]' for k, v in mapa.items()} }")
+            # Extraer tipo del documento (thColumnDocumentType) — para desempate
+            m_tipo = _re.search(
+                r'thColumnDocumentType[^>]*>(.*?)</td>',
+                fila, _re.IGNORECASE | _re.DOTALL
+            )
+            if m_tipo:
+                tipo_raw = _re.sub(r'<[^>]+>', '', m_tipo.group(1)).strip()
+                mapa_tipos[file_id] = tipo_raw.lower()
+            else:
+                mapa_tipos[file_id] = ""
+
+        if mapa_nombres:
+            print(f"📋 Tabla TR parseada ({len(mapa_nombres)} docs): { {k: v[:35] or '[sin nombre]' for k, v in mapa_nombres.items()} }")
+            # Log tipos para diagnóstico
+            tipos_log = {k: v[:40] for k, v in mapa_tipos.items() if v}
+            if tipos_log:
+                print(f"📋 Tipos documentos: {tipos_log}")
         else:
             print("⚠️ No se encontraron filas grdGridDocumentList en el HTML")
 
-        return mapa
+        return mapa_nombres, mapa_tipos
 
     def buscar_por_prioridad(patrones, html):
         """
-        Selecciona el pliego correcto basándose SOLO en el nombre del archivo.
+        Selecciona el pliego correcto usando nombre del archivo como criterio
+        principal y tipo del documento como criterio de desempate.
 
-        FASE 1 — Parser TR: extrae nombre del archivo de cada <tr> de la tabla.
-          Busca keyword del grupo en el nombre. Nunca usa el campo "Tipo" del portal.
+        FASE 1 — Parser TR: extrae nombre Y tipo de cada <tr>.
+          Busca keyword del grupo en el nombre. Si hay empate o el nombre
+          está truncado, el tipo rompe el empate:
+            - "terms and conditions", "bases de la contratación",
+              "especificaciones / fichas técnicas / pliego de condiciones"
+              → confirman que es el pliego principal.
 
-        FASE 2 — Fallback ventana: si no hubo filas TR, busca el nombre del archivo
+        FASE 2 — Fallback ventana: si no hubo filas TR, busca el nombre
           en ventana corta hacia atrás del fileId en el HTML.
 
-        FASE 3 — Último recurso: primer doc cuyo nombre no esté en KEYWORDS_EXCLUIR.
+        FASE 3 — Desempate por tipo: si varios docs matchean el mismo grupo
+          de prioridad, preferir el que tenga tipo de pliego confirmado.
+
+        FASE 4 — Último recurso: primer doc cuyo nombre no esté en KEYWORDS_EXCLUIR.
         """
         import re as _re_fase
 
-        # FASE 1: parsear tabla TR
-        nombres_map = construir_mapa_filas(html)
+        # Tipos de documento que confirman que es el pliego principal
+        TIPOS_PLIEGO = [
+            "terms and conditions",
+            "bases de la contratacion",
+            "bases de la contratación",
+            "bases de contratacion",
+            "especificaciones / fichas técnicas / pliego de condiciones",
+            "especificaciones / fichas tecnicas / pliego de condiciones",
+            "pliego de condiciones",
+            "condiciones especiales de contratacion",
+            "condiciones especiales de contratación",
+        ]
+
+        # FASE 1: parsear tabla TR (nombre + tipo)
+        nombres_map, tipos_map = construir_mapa_filas(html)
 
         # Si el parser TR no encontró nada, usar ventana de contexto (solo nombre)
         if not nombres_map:
@@ -1136,7 +1173,6 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
                 if idx == -1:
                     nombres_map[file_id] = ""
                     continue
-                # Solo hacia atrás — el nombre del archivo está antes del fileId en el HTML
                 ctx = html[max(0, idx - 500):idx]
                 m = _re_fase.search(PAT_NOM, ctx, _re_fase.IGNORECASE) or \
                     _re_fase.search(PAT_NOM2, ctx, _re_fase.IGNORECASE)
@@ -1147,6 +1183,13 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         for file_id, mkey in patrones:
             if file_id not in nombres_map:
                 nombres_map[file_id] = ""
+            if file_id not in tipos_map:
+                tipos_map[file_id] = ""
+
+        def tipo_es_pliego(file_id):
+            """True si el tipo del documento confirma que es el pliego principal."""
+            tipo = tipos_map.get(file_id, "")
+            return any(t in tipo for t in TIPOS_PLIEGO)
 
         # Buscar por nombre del archivo según grupos de prioridad
         for grupo in PRIORIDADES:
@@ -1157,13 +1200,32 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
                 and any(x in nombres_map[fid] for x in grupo)
             ]
             if docs_match:
-                file_id, mkey = docs_match[0]
-                nombre = nombres_map[file_id]
-                print(f"✅ Pliego por NOMBRE (grupo '{grupo[0]}'): documentFileId={file_id} → '{nombre[:70]}'")
-                return file_id, mkey
+                # FASE 3: si hay varios matches, preferir el que tenga tipo confirmado
+                docs_con_tipo = [(fid, mk) for fid, mk in docs_match if tipo_es_pliego(fid)]
+                ganador_id, ganador_mk = (docs_con_tipo[0] if docs_con_tipo else docs_match[0])
+                nombre = nombres_map[ganador_id]
+                tipo_log = tipos_map.get(ganador_id, "")
+                if docs_con_tipo and len(docs_match) > 1:
+                    print(f"✅ Pliego por NOMBRE+TIPO (grupo '{grupo[0]}'): documentFileId={ganador_id} → '{nombre[:70]}' [tipo: {tipo_log[:50]}]")
+                else:
+                    print(f"✅ Pliego por NOMBRE (grupo '{grupo[0]}'): documentFileId={ganador_id} → '{nombre[:70]}'")
+                return ganador_id, ganador_mk
 
-        # FASE 3: primer doc cuyo nombre no esté excluido
-        print("⚠️ Sin match por nombre — usando primer doc no excluido por nombre")
+        # FASE 4: sin match por nombre — buscar por tipo de documento directamente
+        docs_por_tipo = [
+            (fid, mk) for fid, mk in patrones
+            if tipo_es_pliego(fid)
+            and not any(x in nombres_map.get(fid, "") for x in KEYWORDS_EXCLUIR)
+        ]
+        if docs_por_tipo:
+            file_id, mkey = docs_por_tipo[0]
+            nombre = nombres_map.get(file_id, "sin nombre")
+            tipo_log = tipos_map.get(file_id, "")
+            print(f"✅ Pliego por TIPO (sin match de nombre): documentFileId={file_id} → '{nombre[:70]}' [tipo: {tipo_log[:50]}]")
+            return file_id, mkey
+
+        # FASE 5: último recurso — primer doc no excluido
+        print("⚠️ Sin match por nombre ni tipo — usando primer doc no excluido")
         for file_id, mkey in patrones:
             nombre = nombres_map.get(file_id, "")
             if not nombre or not any(x in nombre for x in KEYWORDS_EXCLUIR):
