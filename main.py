@@ -215,9 +215,34 @@ def listar_procesos(
             # Supabase .in_() tiene límite de ~100 items — paginar si hace falta
             query = query.in_("codigo_proceso", codigos_unspsc[:500])
 
+        import re as _re_busq
+
+        # Detectar si la búsqueda es un código de proceso o código UNSPSC numérico
+        es_codigo_proceso = busqueda and (
+            bool(_re_busq.search(r'\d{4}', busqueda)) and '-' in busqueda
+            or (len(busqueda) > 10 and ' ' not in busqueda.strip())
+        )
+        es_codigo_unspsc = busqueda and bool(_re_busq.match(r'^\d+$', busqueda.strip()))
+
+        # Si la búsqueda es numérica, buscar también como código UNSPSC
+        codigos_por_busqueda_unspsc = None
+        if es_codigo_unspsc:
+            try:
+                fam = busqueda.strip()
+                art_result = supabase.table("articulos_proceso") \
+                    .select("codigo_proceso") \
+                    .or_(f"familia_unspsc.like.{fam}%,clase_unspsc.like.{fam}%,subclase_unspsc.like.{fam}%") \
+                    .execute()
+                codigos_por_busqueda_unspsc = list(set(a["codigo_proceso"] for a in art_result.data))
+                print(f"🔍 Búsqueda UNSPSC '{fam}': {len(codigos_por_busqueda_unspsc)} procesos encontrados")
+            except Exception as e:
+                print(f"⚠️ Error buscando UNSPSC desde búsqueda general: {e}")
+
         if solo_activos:
-            query = query.eq("estado_proceso", "Proceso publicado")
-            query = query.gt("fecha_fin_recepcion_ofertas", datetime.now().isoformat())
+            # Si es código de proceso específico, no filtrar por activos
+            if not es_codigo_proceso:
+                query = query.eq("estado_proceso", "Proceso publicado")
+                query = query.gt("fecha_fin_recepcion_ofertas", datetime.now().isoformat())
 
         if objeto:
             query = query.ilike("objeto_proceso", f"%{objeto}%")
@@ -230,7 +255,19 @@ def listar_procesos(
         if monto_max:
             query = query.lte("monto_estimado", monto_max)
         if busqueda:
-            query = query.or_(f"titulo.ilike.%{busqueda}%,descripcion.ilike.%{busqueda}%,codigo_proceso.ilike.%{busqueda}%")
+            if codigos_por_busqueda_unspsc is not None:
+                # Búsqueda numérica → filtrar por códigos UNSPSC encontrados
+                if not codigos_por_busqueda_unspsc:
+                    return {"procesos": [], "total": 0, "page": page, "limit": limit, "pages": 0}
+                # Combinar con codigos_unspsc si también hay filtro UNSPSC activo
+                codigos_finales = codigos_por_busqueda_unspsc
+                if codigos_unspsc is not None:
+                    codigos_finales = list(set(codigos_por_busqueda_unspsc) & set(codigos_unspsc))
+                query = query.in_("codigo_proceso", codigos_finales[:500])
+            else:
+                # Búsqueda de texto → titulo, descripcion, codigo_proceso
+                query = query.or_(f"titulo.ilike.%{busqueda}%,descripcion.ilike.%{busqueda}%,codigo_proceso.ilike.%{busqueda}%")
+
         if institucion:
             query = query.ilike("unidad_compra", f"%{institucion}%")
 
