@@ -528,7 +528,7 @@ body {
 
 /* ── FILTROS AVANZADOS ── */
 .filtros-avanzados-panel { overflow: hidden; max-height: 0; transition: max-height .35s cubic-bezier(.4,0,.2,1), opacity .25s; opacity: 0; pointer-events: none; padding: 0 16px; }
-.filtros-avanzados-panel.abierto { max-height: 280px; opacity: 1; pointer-events: auto; }
+.filtros-avanzados-panel.abierto { max-height: 340px; opacity: 1; pointer-events: auto; }
 .adv-filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-bottom: 4px; }
 .filter-input {
   flex: 1; padding: 10px 12px;
@@ -1307,7 +1307,7 @@ html { background: #0D1B2A; }
     <!-- Barra de búsqueda principal -->
     <div class="dash-search-wrap">
       <svg class="dash-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input class="dash-search-input" type="text" id="busqueda" placeholder="Buscar por título, código o institución..." oninput="debounceSearch()" autocomplete="off">
+      <input class="dash-search-input" type="text" id="busqueda" placeholder="Título, código proceso o UNSPSC (ej: 7210)..." oninput="debounceSearch()" autocomplete="off">
       <button class="dash-filter-btn" id="btn-filtros-avanzados" onclick="toggleFiltrosAvanzados()" aria-label="Filtros">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
         <span class="filtros-badge" id="filtros-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:14px;height:14px;background:var(--green);color:#000;border-radius:7px;font-size:9px;font-weight:800;align-items:center;justify-content:center;padding:0 3px">0</span>
@@ -1334,7 +1334,20 @@ html { background: #0D1B2A; }
       </button>
     </div>
 
-    <!-- Panel de filtros avanzados colapsable -->
+    <!-- Campo UNSPSC siempre visible — filtro principal por rubro -->
+    <div style="padding:0 16px 8px;position:relative">
+      <input class="dash-search-input" type="text" id="filtro-unspsc-text"
+        placeholder="🔢 Filtrar por UNSPSC: código (7210) o nombre (construcción)..."
+        oninput="buscarUnspsc()" autocomplete="off"
+        style="padding-left:16px;font-size:13px">
+      <div class="unspsc-dropdown" id="unspsc-dropdown"></div>
+    </div>
+    <div class="unspsc-active-tag" id="unspsc-activo" style="margin:0 16px 8px">
+      <span id="unspsc-activo-label"></span>
+      <button onclick="limpiarUnspsc()" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:15px;padding:0;line-height:1">✕</button>
+    </div>
+
+    <!-- Panel de filtros avanzados colapsable (institución + montos) -->
     <div class="filtros-avanzados-panel" id="filtros-avanzados-panel">
       <div class="adv-filter-grid">
         <select class="filter-select" id="filtro-objeto" onchange="rubroActivo=this.value;cargarProcesos(1)" style="display:none">
@@ -1351,14 +1364,6 @@ html { background: #0D1B2A; }
         <input class="filter-input" type="text" id="filtro-institucion" placeholder="Institución..." oninput="debounceSearch()">
         <input class="filter-input" type="number" id="filtro-monto-min" placeholder="Monto mín (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
         <input class="filter-input" type="number" id="filtro-monto-max" placeholder="Monto máx (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
-        <div style="position:relative;grid-column:1/-1">
-          <input class="filter-input" type="text" id="filtro-unspsc-text" placeholder="UNSPSC — nombre o código..." oninput="buscarUnspsc()" autocomplete="off" style="width:100%">
-          <div class="unspsc-dropdown" id="unspsc-dropdown"></div>
-        </div>
-        <div class="unspsc-active-tag" id="unspsc-activo" style="grid-column:1/-1">
-          <span id="unspsc-activo-label"></span>
-          <button onclick="limpiarUnspsc()" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:15px;padding:0;line-height:1">✕</button>
-        </div>
       </div>
       <div style="display:flex;gap:8px;padding:8px 0 4px">
         <select class="filter-select" id="filtro-activos-visible" onchange="document.getElementById('filtro-activos').value=this.value;cargarProcesos(1)" style="flex:1">
