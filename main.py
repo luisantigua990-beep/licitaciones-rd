@@ -31,6 +31,11 @@ from google import genai
 from monitor import ejecutar_monitor
 from notifications import enviar_notificacion
 
+# --- AGREGADOS PARA INTEGRACIÓN CON N8N ---
+from pydantic import BaseModel
+from typing import List
+# ------------------------------------------
+
 # Silenciamos los warnings del SSL de la DGCP
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -311,7 +316,10 @@ def detalle_proceso(codigo_proceso: str):
         # Traer análisis Gemini si existe
         analisis_data = None
         try:
-            analisis = supabase_admin.table("analisis_pliego")                 .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion")                 .eq("proceso_id", codigo_proceso)                 .execute()
+            analisis = supabase_admin.table("analisis_pliego") \
+                .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion") \
+                .eq("proceso_id", codigo_proceso) \
+                .execute()
             if analisis.data:
                 analisis_data = analisis.data[0]
         except Exception:
@@ -1673,19 +1681,16 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
 <tr><td align="center">
 <table width="620" cellpadding="0" cellspacing="0" style="background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);max-width:100%;">
 
-  <!-- Header -->
   <tr><td style="background:linear-gradient(135deg,#1e40af,#2563eb);padding:24px 28px;">
     <h1 style="margin:0;color:white;font-size:20px;font-weight:800;">📋 LicitacionLab</h1>
     <p style="margin:4px 0 0;color:#bfdbfe;font-size:12px;">Análisis de pliego · República Dominicana</p>
   </td></tr>
 
-  <!-- Saludo -->
   <tr><td style="padding:20px 28px 8px;">
     <p style="margin:0;font-size:15px;color:#1e293b;">Hola <strong>{{nombre}}</strong>,</p>
     <p style="margin:6px 0 0;font-size:13px;color:#64748b;">Tu análisis de IA está listo. Aquí tienes el resumen completo:</p>
   </td></tr>
 
-  <!-- Info proceso -->
   <tr><td style="padding:8px 28px;">
     <table width="100%" style="background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;" cellpadding="0" cellspacing="0">
       <tr><td style="padding:14px 16px;">
@@ -1700,38 +1705,27 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
     </table>
   </td></tr>
 
-  <!-- Resumen ejecutivo -->
   {'<tr><td style="padding:8px 28px;"><div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 14px;border-radius:0 8px 8px 0;"><p style="margin:0;font-size:13px;color:#1e40af;font-weight:bold;">💡 Resumen ejecutivo</p><p style="margin:6px 0 0;font-size:13px;color:#1e3a8a;line-height:1.5;">' + resumen + '</p></div></td></tr>' if resumen else ''}
 
-  <!-- Competitividad -->
   {'<tr><td style="padding:8px 28px;"><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><p style="margin:0;font-size:13px;font-weight:bold;color:#1e293b;">📊 Evaluación de competitividad</p><p style="margin:4px 0 0;font-size:12px;color:#64748b;">' + razon_dif + '</p></td><td style="text-align:right;vertical-align:top;"><span style="background:' + color_dif + ';color:white;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:bold;">Dificultad: ' + dificultad + '</span><br><span style="font-size:11px;color:#64748b;display:block;margin-top:4px;">' + recomendacion + '</span></td></tr></table></div></td></tr>' if dificultad else ''}
 
-  <!-- Alertas de fraude -->
   {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#dc2626;">🚨 Alertas de posible irregularidad</p><p style="margin:0 0 6px;font-size:11px;color:#9ca3af;">Indicadores identificados según Ley 47-25. No implican irregularidad confirmada.</p><table width="100%" style="border:1px solid #fee2e2;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + alertas_html + '</table></td></tr>' if alertas_html else '<tr><td style="padding:8px 28px;"><div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:10px 14px;border-radius:8px;font-size:13px;color:#166534;">✅ No se detectaron alertas de irregularidad significativas.</div></td></tr>'}
 
-  <!-- Restricciones participación -->
   {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#7c3aed;">🚫 Restricciones de participación</p><ul style="margin:0;padding-left:18px;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:10px 10px 10px 26px;">' + restricciones_html + '</ul></td></tr>' if restricciones_html else ''}
 
-  <!-- Plazos clave -->
   {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">📅 Plazos clave</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + plazos_html + '</table></td></tr>' if plazos_html else ''}
 
-  <!-- Documentos requeridos -->
   {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">📑 Documentos requeridos</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + checklist_html + '</table><p style="margin:5px 0 0;font-size:11px;color:#9ca3af;">⚠️ Los documentos NO subsanables son críticos — su ausencia puede descalificarte directamente.</p></td></tr>' if checklist_html else ''}
 
-  <!-- Garantías -->
   {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">🔒 Garantías exigidas</p><ul style="margin:0;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 10px 10px 26px;">' + garantias_html + '</ul></td></tr>' if garantias_html else ''}
 
-  <!-- Experiencia -->
   {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">🏗️ Requisitos de experiencia</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + exp_rows + '</table></td></tr>' if exp_rows else ''}
 
-  <!-- Financiero -->
   {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">💰 Requisitos financieros</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + fin_rows + '</table></td></tr>' if fin_rows else ''}
 
-  <!-- Personal y equipos -->
   {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">👷 Personal clave requerido</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + personal_html + '</table></td></tr>' if personal_html else ''}
   {'<tr><td style="padding:4px 28px 8px;"><p style="margin:0 0 4px;font-size:12px;font-weight:bold;color:#6b7280;">🚜 Equipos mínimos:</p><ul style="margin:0;padding-left:18px;font-size:13px;color:#374151;">' + equipos_html + '</ul></td></tr>' if equipos_html else ''}
 
-  <!-- CTA WhatsApp -->
   <tr><td style="padding:16px 28px 24px;" align="center">
     <p style="margin:0 0 12px;font-size:13px;color:#64748b;">¿Te interesa participar en este proceso?</p>
     <a href="{ws_url}" style="display:inline-block;background:#25d366;color:white;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:bold;letter-spacing:0.3px;">
@@ -1740,7 +1734,6 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
     <p style="margin:10px 0 0;font-size:11px;color:#94a3b8;">Respuesta en menos de 24 horas · LicitacionLab</p>
   </td></tr>
 
-  <!-- Footer -->
   <tr><td style="background:#f8fafc;padding:14px 28px;border-top:1px solid #e5e7eb;">
     <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;line-height:1.6;">
       LicitacionLab · Monitoreo de licitaciones públicas · República Dominicana<br>
@@ -2653,3 +2646,23 @@ def stats_mercado():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- NUEVA FUNCIONALIDAD PARA N8N ---
+
+class ComparacionSchema(BaseModel):
+    requeridos: List[str]
+    encontrados: List[str]
+
+@app.post("/api/v1/generar-oferta")
+async def comparar_documentos(datos: ComparacionSchema):
+    # Comparamos lo que pide la licitación vs lo que hay en Drive
+    faltantes = [doc for doc in datos.requeridos if doc not in datos.encontrados]
+    
+    return {
+        "status": "success",
+        "faltantes": faltantes,
+        "conteo": {
+            "requeridos": len(datos.requeridos),
+            "encontrados": len(datos.encontrados),
+            "faltantes": len(faltantes)
+        }
+    }
