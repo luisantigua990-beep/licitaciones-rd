@@ -19,8 +19,7 @@ import requests
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from typing import List
+
 
 from fastapi import FastAPI, Query, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -2654,24 +2653,3 @@ def stats_mercado():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- Nueva funcionalidad para n8n ---
-
-class ComparacionSchema(BaseModel):
-    requeridos: List[str]
-    encontrados: List[str]
-
-@app.post("/api/v1/generar-oferta")
-async def comparar_documentos(datos: ComparacionSchema):
-    # Comparamos lo que pide la licitación vs lo que hay en Drive
-    # Nota: podrías mejorar esto luego con normalización de nombres
-    faltantes = [doc for doc in datos.requeridos if doc not in datos.encontrados]
-    
-    return {
-        "status": "success",
-        "faltantes": faltantes,
-        "conteo": {
-            "requeridos": len(datos.requeridos),
-            "encontrados": len(datos.encontrados),
-            "faltantes": len(faltantes)
-        }
-    }
