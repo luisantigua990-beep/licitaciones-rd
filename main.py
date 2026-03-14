@@ -331,15 +331,18 @@ def detalle_proceso(codigo_proceso: str):
             .eq("codigo_proceso", codigo_proceso) \
             .execute()
         
-        # Traer análisis Gemini si existe
+        # Traer análisis Gemini si existe — ordenar para que completado tenga prioridad
         analisis_data = None
         try:
             analisis = supabase_admin.table("analisis_pliego") \
                 .select("estado, checklist_categorizado, checklist_legal, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion") \
                 .eq("proceso_id", codigo_proceso) \
+                .order("estado", desc=False) \
                 .execute()
             if analisis.data:
-                analisis_data = analisis.data[0]
+                # Preferir la fila con estado completado si hay varias
+                completados = [r for r in analisis.data if r.get("estado") == "completado"]
+                analisis_data = completados[0] if completados else analisis.data[0]
                 # Normalizar checklist — puede estar en varios campos según cuándo se analizó
                 if not analisis_data.get("checklist_categorizado"):
                     # Caso 1: solo tiene checklist_legal (análisis antiguo)
