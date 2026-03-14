@@ -1993,19 +1993,30 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
                 "subject": f"📋 Análisis listo: {proceso_id}",
                 "html": html_body.replace("{{nombre}}", nombre),
             }
-            resp = requests.post(
-                "https://api.resend.com/emails",
-                headers={
-                    "Authorization": f"Bearer {RESEND_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-                timeout=15,
-            )
-            if resp.status_code in (200, 201):
-                print(f"📧 Email enviado a {email}")
-            else:
-                print(f"⚠️ Error enviando email a {email}: {resp.status_code} {resp.text[:200]}")
+            # Retry hasta 3 veces por el error de ConnectionTerminated en HTTP/2
+            enviado = False
+            for intento in range(3):
+                try:
+                    resp = requests.post(
+                        "https://api.resend.com/emails",
+                        headers={
+                            "Authorization": f"Bearer {RESEND_API_KEY}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                        timeout=20,
+                    )
+                    if resp.status_code in (200, 201):
+                        print(f"📧 Email enviado a {email}")
+                        enviado = True
+                        break
+                    else:
+                        print(f"⚠️ Intento {intento+1} fallido ({resp.status_code}): {resp.text[:100]}")
+                except Exception as e_req:
+                    print(f"⚠️ Intento {intento+1} error conexión: {e_req}")
+                    time.sleep(2)
+            if not enviado:
+                print(f"❌ No se pudo enviar email a {email} tras 3 intentos")
 
     except Exception as e:
         # El email no debe romper el flujo principal
@@ -2435,7 +2446,26 @@ def ejecutar_analisis_gemini(proceso_id: str):
         
         print(f"✅ Análisis de {proceso_id} completado y guardado.")
 
-        # 5. ENVIAR EMAIL AL USUARIO
+        # 5. NOTIFICACIÓN PUSH — avisar que el análisis está listo
+        try:
+            APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+            seg = supabase_admin.table("seguimiento_procesos") \
+                .select("user_id").eq("proceso_codigo", proceso_id).execute()
+            user_ids_push = list(set(s["user_id"] for s in (seg.data or [])))
+            for uid in user_ids_push:
+                subs = supabase.table("user_subscriptions") \
+                    .select("endpoint,auth,p256dh").eq("user_id", uid).eq("active", True).execute().data or []
+                for sub in subs:
+                    enviar_notificacion(
+                        subscription_info={"endpoint": sub["endpoint"], "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}},
+                        titulo="✅ Análisis listo — Revisa tu correo",
+                        cuerpo=f"El análisis de {proceso_id} está completo. Te enviamos los detalles por correo.",
+                        url=f"{APP_URL}?proceso={proceso_id}"
+                    )
+        except Exception as e_push:
+            print(f"⚠️ Error enviando push de análisis: {e_push}")
+
+        # 6. ENVIAR EMAIL AL USUARIO
         enviar_email_analisis(proceso_id, datos_json)
 
     except Exception as e:
