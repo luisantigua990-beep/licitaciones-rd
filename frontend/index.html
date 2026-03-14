@@ -2974,8 +2974,16 @@ function extraerFechasClaves(p) {
   const fechas = [];
   const ahora = new Date();
   const agregar = (label, valor, destacada = false, sublabel = null) => {
-    if (!valor) return;
-    const dt = new Date(valor);
+    if (!valor || valor === 'N/A') return;
+    // Soportar formato DD/MM/YYYY HH:MM (del análisis IA) e ISO (de la BD)
+    let dt;
+    if (typeof valor === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(valor)) {
+      const [fecha, hora] = valor.split(' ');
+      const [d, m, y] = fecha.split('/');
+      dt = hora ? new Date(`${y}-${m}-${d}T${hora}`) : new Date(`${y}-${m}-${d}`);
+    } else {
+      dt = new Date(valor);
+    }
     if (isNaN(dt.getTime())) return;
     const dias = Math.ceil((dt - ahora) / 86400000);
     let estado = 'normal';
@@ -2986,15 +2994,30 @@ function extraerFechasClaves(p) {
     fechas.push({ label, sublabel, valor: dt, dias, estado, destacada });
   };
 
-  // Todas las fechas que trae la API DGCP
-  agregar('Publicación',               p.fecha_publicacion,           false, 'Inicio del proceso');
-  agregar('Preguntas y subsanaciones', p.fecha_enmienda,              false, 'Último día para preguntas');
-  agregar('Presentación de ofertas',   p.fecha_fin_recepcion_ofertas, true,  'Fecha límite de entrega');
-  agregar('Apertura de sobres',        p.fecha_apertura_ofertas,      false, 'Evaluación de ofertas');
-  agregar('Adjudicación estimada',     p.fecha_estimada_adjudicacion, false, 'Resultado esperado');
-  agregar('Suscripción del contrato',  p.fecha_suscripcion,           false, 'Firma del contrato');
+  // Fechas de la tabla procesos (scraper)
+  agregar('Publicación',             p.fecha_publicacion,           false, 'Inicio del proceso');
+  agregar('Presentación de ofertas', p.fecha_fin_recepcion_ofertas, true,  'Fecha límite de entrega');
+  agregar('Apertura de sobres',      p.fecha_apertura_ofertas,      false, 'Evaluación de ofertas');
+  agregar('Adjudicación estimada',   p.fecha_estimada_adjudicacion, false, 'Resultado esperado');
+  agregar('Cierre de preguntas',     p.fecha_enmienda,              false, 'Último día para preguntas');
+  agregar('Suscripción contrato',    p.fecha_suscripcion,           false, 'Firma del contrato');
 
-  return fechas.sort((a, b) => a.valor - b.valor);
+  // Plazos del análisis IA (más completos — vienen del pliego)
+  const ia = p._plazos_ia || {};
+  agregar('Visita al sitio',         ia.visita_sitio,               false, 'Reconocimiento del lugar');
+  agregar('Cierre de consultas',     ia.consultas,                  false, 'Último día para preguntas');
+  agregar('Presentación de ofertas', ia.presentacion_ofertas,       true,  'Fecha límite de entrega');
+  agregar('Apertura de sobres',      ia.apertura_ofertas,           false, 'Evaluación de ofertas');
+
+  // Deduplicar por label — si ya existe una con ese nombre, no agregar duplicado
+  const vistos = new Set();
+  const unicas = fechas.filter(f => {
+    if (vistos.has(f.label)) return false;
+    vistos.add(f.label);
+    return true;
+  });
+
+  return unicas.sort((a, b) => a.valor - b.valor);
 }
 
 function urgenciaClase(fechas) {
@@ -3153,16 +3176,31 @@ async function cargarSeguimiento() {
       `procesos?codigo_proceso=in.(${codigos})&select=codigo_proceso,titulo,unidad_compra,monto_estimado,modalidad,objeto_proceso,url,fecha_publicacion,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda,fecha_suscripcion`
     );
 
-    // 3. Combinar
+    // 3. Traer plazos_clave del análisis IA para enriquecer fechas
+    const analisisMap = {};
+    await Promise.all(segs.map(async s => {
+      try {
+        const res = await fetch(`${API}/api/procesos/${s.proceso_codigo}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const plazos = data.analisis?.plazos_clave;
+        if (plazos) analisisMap[s.proceso_codigo] = plazos;
+      } catch(e) { /* silencioso */ }
+    }));
+
+    // 4. Combinar proceso + plazos IA
     const procesosMap = {};
     (Array.isArray(procesos) ? procesos : []).forEach(p => {
       procesosMap[p.codigo_proceso] = p;
     });
 
-    seguimientoData = segs.map(s => ({
-      ...s,
-      proceso: procesosMap[s.proceso_codigo] || { codigo_proceso: s.proceso_codigo, titulo: 'Cargando...' }
-    }));
+    seguimientoData = segs.map(s => {
+      const proc = procesosMap[s.proceso_codigo] || { codigo_proceso: s.proceso_codigo, titulo: 'Cargando...' };
+      const plazos = analisisMap[s.proceso_codigo] || {};
+      // Fusionar plazos IA en el objeto proceso como fechas adicionales
+      proc._plazos_ia = plazos;
+      return { ...s, proceso: proc };
+    });
 
     renderSeguimiento();
   } catch(e) {
