@@ -2687,7 +2687,6 @@ async function verDetalle(codigo) {
   // Actualizar botón seguir DESPUÉS de que el DOM esté listo
   setTimeout(async () => {
     actualizarBtnSeguir(p.codigo_proceso);
-    // Abrir primera sección del checklist y cargar estado guardado
     ['legal','tecnica','financiera'].forEach(secKey => {
       const sec = document.getElementById(`cl-sec-${p.codigo_proceso}-${secKey}`);
       if (sec && !sec.classList.contains('abierta')) {
@@ -2697,9 +2696,43 @@ async function verDetalle(codigo) {
     });
     await cargarEstadoChecklist(p.codigo_proceso);
   }, 10);
+
+  // Polling automático si el análisis está procesando
+  if (data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') {
+    iniciarPollingAnalisis(p.codigo_proceso);
+  }
+}
+
+let _pollingTimer = null;
+function iniciarPollingAnalisis(codigo) {
+  // Limpiar cualquier polling previo
+  if (_pollingTimer) { clearInterval(_pollingTimer); _pollingTimer = null; }
+  let intentos = 0;
+  const MAX = 20; // máximo ~5 minutos
+  _pollingTimer = setInterval(async () => {
+    intentos++;
+    // Detener si el usuario salió del detalle o se alcanzó el máximo
+    const detalleVisible = document.getElementById('tab-detalle')?.style.display !== 'none';
+    if (!detalleVisible || intentos > MAX) {
+      clearInterval(_pollingTimer); _pollingTimer = null; return;
+    }
+    try {
+      const res  = await fetch(`${API}/api/procesos/${codigo}`);
+      const data = await res.json();
+      const estado = data.analisis?.estado;
+      if (estado === 'completado') {
+        clearInterval(_pollingTimer); _pollingTimer = null;
+        mostrarToast('✅ Análisis listo — revisa tu correo');
+        // Recargar el detalle completo para mostrar el checklist
+        verDetalle(codigo);
+      }
+    } catch(e) { /* silencioso */ }
+  }, 15000); // cada 15 segundos
 }
 
 function mostrarDashboard() {
+  // Limpiar polling de análisis si estaba corriendo
+  if (_pollingTimer) { clearInterval(_pollingTimer); _pollingTimer = null; }
   document.getElementById('tab-dashboard').style.display = 'block';
   document.getElementById('tab-detalle').style.display   = 'none';
   document.getElementById('tab-perfil').style.display    = 'none';
