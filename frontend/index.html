@@ -2691,6 +2691,9 @@ async function verDetalle(codigo) {
     <div class="analisis-procesando">
       <div class="analisis-procesando-spinner"></div>
       <div class="analisis-procesando-texto">Estamos procesando el análisis del pliego, puede tomar unos minutos. Te llegará un correo cuando esté listo.</div>
+    </div>` : data.analisis?.estado === 'error' || data.analisis?.estado === 'pendiente_analisis' ? `
+    <div class="analisis-procesando" style="background:rgba(231,76,60,0.08);border-color:rgba(231,76,60,0.2)">
+      <div class="analisis-procesando-texto" style="color:var(--red)">Hubo un problema al analizar este proceso. Contacta soporte por WhatsApp.</div>
     </div>` : ''}
     ${renderChecklistHTML(data.analisis, p.codigo_proceso)}`;
   // Actualizar botón seguir DESPUÉS de que el DOM esté listo
@@ -2710,17 +2713,20 @@ async function verDetalle(codigo) {
   if (data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') {
     iniciarPollingAnalisis(p.codigo_proceso);
   }
+
+  // Polling automático si el análisis está procesando
+  if (data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') {
+    iniciarPollingAnalisis(p.codigo_proceso);
+  }
 }
 
 let _pollingTimer = null;
 function iniciarPollingAnalisis(codigo) {
-  // Limpiar cualquier polling previo
   if (_pollingTimer) { clearInterval(_pollingTimer); _pollingTimer = null; }
   let intentos = 0;
-  const MAX = 20; // máximo ~5 minutos
+  const MAX = 24; // máximo 6 minutos (24 x 15s)
   _pollingTimer = setInterval(async () => {
     intentos++;
-    // Detener si el usuario salió del detalle o se alcanzó el máximo
     const detalleVisible = document.getElementById('tab-detalle')?.style.display !== 'none';
     if (!detalleVisible || intentos > MAX) {
       clearInterval(_pollingTimer); _pollingTimer = null; return;
@@ -2731,12 +2737,22 @@ function iniciarPollingAnalisis(codigo) {
       const estado = data.analisis?.estado;
       if (estado === 'completado') {
         clearInterval(_pollingTimer); _pollingTimer = null;
-        mostrarToast('✅ Análisis listo — revisa tu correo');
-        // Recargar el detalle completo para mostrar el checklist
+        mostrarToast('Análisis listo — revisa tu correo');
         verDetalle(codigo);
+      } else if (estado === 'error' || estado === 'pendiente_analisis') {
+        clearInterval(_pollingTimer); _pollingTimer = null;
+        // Quitar el spinner y mostrar mensaje de error
+        const spinner = document.querySelector('.analisis-procesando');
+        if (spinner) {
+          spinner.style.background = 'rgba(231,76,60,0.08)';
+          spinner.style.borderColor = 'rgba(231,76,60,0.2)';
+          spinner.querySelector('.analisis-procesando-spinner').style.display = 'none';
+          spinner.querySelector('.analisis-procesando-texto').style.color = 'var(--red)';
+          spinner.querySelector('.analisis-procesando-texto').textContent = 'Hubo un problema al analizar este proceso. Contacta soporte por WhatsApp.';
+        }
       }
     } catch(e) { /* silencioso */ }
-  }, 15000); // cada 15 segundos
+  }, 15000);
 }
 
 function mostrarDashboard() {
