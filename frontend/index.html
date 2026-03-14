@@ -11,6 +11,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
 /* ─────────────────────────────────────────────────────────
    LICITACIONES LAB — DESIGN SYSTEM v2
@@ -772,7 +774,25 @@ body {
 
 /* ── ARTÍCULOS ── */
 .articulos-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r-lg); overflow: hidden; margin-bottom: 12px; box-shadow: var(--shadow-card); }
-.articulos-header { padding: 12px 16px; font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); }
+.articulos-header { padding: 12px 16px; font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.btn-pdf-arts {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: var(--r-sm);
+  background: var(--green-dim); border: 1px solid var(--green-border);
+  color: var(--green); font-family: var(--font-body);
+  font-size: 11px; font-weight: 800; cursor: pointer;
+  transition: all .15s; letter-spacing: .02em;
+}
+.btn-pdf-arts:active { background: var(--green); color: #0D1B2A; }
+/* Estado análisis procesando */
+.analisis-procesando {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px; background: rgba(93,173,226,0.08);
+  border: 1px solid rgba(93,173,226,0.2); border-radius: var(--r-md);
+  margin-bottom: 12px;
+}
+.analisis-procesando-spinner { width: 16px; height: 16px; border: 2px solid rgba(93,173,226,0.3); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+.analisis-procesando-texto { font-size: 13px; color: var(--blue); font-weight: 600; line-height: 1.4; }
 .articulo-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); transition: background .15s; }
 .articulo-row:hover { background: var(--bg2); }
 .articulo-row:last-child { border-bottom: none; }
@@ -2078,6 +2098,12 @@ async function register() {
     return showMsg(msgEs, 'error');
   }
   showMsg('Cuenta creada. Revisa tu correo para confirmar.', 'success');
+  // Enviar correo de bienvenida en background (silencioso)
+  fetch(`${API}/api/bienvenida`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ email, nombre, user_id: data.user?.id || '' })
+  }).catch(() => {});
 }
 
 function logout() {
@@ -2635,7 +2661,13 @@ async function verDetalle(codigo) {
     </div>
 
     <div class="articulos-card">
-      <div class="articulos-header">Artículos del proceso (${arts.length})</div>
+      <div class="articulos-header">
+        <span>Artículos del proceso (${arts.length})</span>
+        ${arts.length ? `<button class="btn-pdf-arts" onclick="descargarArticulosPDF('${p.codigo_proceso}')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          PDF
+        </button>` : ''}
+      </div>
       ${arts.length ? arts.map(a => `
         <div class="articulo-row">
           <div>
@@ -2646,6 +2678,11 @@ async function verDetalle(codigo) {
         </div>`).join('')
       : '<div style="padding:20px;color:var(--muted);font-size:13px">Sin artículos registrados</div>'}
     </div>
+    ${data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente' ? `
+    <div class="analisis-procesando">
+      <div class="analisis-procesando-spinner"></div>
+      <div class="analisis-procesando-texto">Estamos procesando el análisis del pliego, puede tomar unos minutos. Te llegará un correo cuando esté listo.</div>
+    </div>` : ''}
     ${renderChecklistHTML(data.analisis, p.codigo_proceso)}`;
   // Actualizar botón seguir DESPUÉS de que el DOM esté listo
   setTimeout(async () => {
@@ -4217,6 +4254,100 @@ async function enviarRegistroProveedor() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Registrar proveedor';
+  }
+}
+
+// ── DESCARGA PDF ARTÍCULOS ────────────────────────────────
+async function descargarArticulosPDF(codigo) {
+  try {
+    mostrarToast('Generando PDF...');
+    const res  = await fetch(`${API}/api/procesos/${codigo}`);
+    const data = await res.json();
+    const p    = data.proceso;
+    const arts = data.articulos || [];
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    // ── Encabezado ──
+    doc.setFillColor(23, 47, 70);
+    doc.rect(0, 0, 210, 28, 'F');
+    doc.setTextColor(46, 204, 113);
+    doc.setFontSize(13); doc.setFont('helvetica', 'bold');
+    doc.text('LicitacionLab', 14, 11);
+    doc.setTextColor(143, 174, 201);
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+    doc.text('Inteligencia en Compras Públicas — República Dominicana', 14, 17);
+
+    // ── Info del proceso ──
+    doc.setTextColor(240, 248, 255);
+    doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+    const titulo = (p.titulo || codigo).substring(0, 90);
+    const tituloLines = doc.splitTextToSize(titulo, 182);
+    doc.text(tituloLines, 14, 24);
+
+    let y = 34;
+    doc.setTextColor(30, 30, 30);
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+    doc.text(`Código: ${p.codigo_proceso}`, 14, y);
+    doc.text(`Institución: ${p.unidad_compra || '—'}`, 80, y);
+    const monto = p.monto_estimado ? `RD$ ${Number(p.monto_estimado).toLocaleString('es-DO')}` : '—';
+    doc.text(`Monto estimado: ${monto}`, 14, y + 5);
+    const fCierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO') : '—';
+    doc.text(`Cierre de ofertas: ${fCierre}`, 80, y + 5);
+    y += 14;
+
+    // ── Tabla de artículos ──
+    doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+    doc.setTextColor(46, 204, 113);
+    doc.text(`ARTÍCULOS DEL PROCESO (${arts.length})`, 14, y);
+    y += 4;
+
+    const rows = arts.map(a => [
+      a.descripcion_articulo || a.descripcion_usuario || 'Sin descripción',
+      `${a.cantidad || '—'} ${a.unidad_medida || ''}`.trim(),
+      a.clase_unspsc || '—',
+      a.precio_total_estimado ? 'RD$' + Number(a.precio_total_estimado).toLocaleString('es-DO') : '—'
+    ]);
+
+    doc.autoTable({
+      startY: y,
+      head: [['Descripción', 'Cantidad', 'UNSPSC', 'Precio']],
+      body: rows,
+      styles: { fontSize: 8, cellPadding: 3, textColor: [30,30,30] },
+      headStyles: { fillColor: [23,47,70], textColor: [46,204,113], fontStyle: 'bold', fontSize: 8 },
+      alternateRowStyles: { fillColor: [245,248,252] },
+      columnStyles: {
+        0: { cellWidth: 90 },
+        1: { cellWidth: 28, halign: 'center' },
+        2: { cellWidth: 28, halign: 'center' },
+        3: { cellWidth: 36, halign: 'right' }
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // ── Total ──
+    const finalY = doc.lastAutoTable.finalY + 4;
+    const total = arts.reduce((s, a) => s + (Number(a.precio_total_estimado) || 0), 0);
+    if (total > 0) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+      doc.setTextColor(30,30,30);
+      doc.text('Total estimado:', 140, finalY);
+      doc.setTextColor(46, 204, 113);
+      doc.text(`RD$ ${total.toLocaleString('es-DO')}`, 196, finalY, { align: 'right' });
+    }
+
+    // ── Pie ──
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+    doc.setTextColor(150,150,150);
+    doc.text(`Generado por LicitacionLab · ${new Date().toLocaleDateString('es-DO')}`, 14, 290);
+    doc.text('licitacionlab.com', 196, 290, { align: 'right' });
+
+    doc.save(`${codigo}_articulos.pdf`);
+    mostrarToast('PDF descargado');
+  } catch(e) {
+    console.error('Error PDF:', e);
+    mostrarToast('Error generando PDF');
   }
 }
 
