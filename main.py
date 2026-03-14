@@ -317,11 +317,14 @@ def detalle_proceso(codigo_proceso: str):
         analisis_data = None
         try:
             analisis = supabase_admin.table("analisis_pliego") \
-                .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion") \
+                .select("estado, checklist_categorizado, checklist_legal, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion") \
                 .eq("proceso_id", codigo_proceso) \
                 .execute()
             if analisis.data:
                 analisis_data = analisis.data[0]
+                # Normalizar: si checklist_categorizado es null pero checklist_legal tiene datos, usarlo
+                if not analisis_data.get("checklist_categorizado") and analisis_data.get("checklist_legal"):
+                    analisis_data["checklist_categorizado"] = {"legal": analisis_data["checklist_legal"]}
         except Exception:
             pass
 
@@ -1491,8 +1494,10 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
         TEST_EMAIL = os.getenv("RESEND_TEST_EMAIL")
         if TEST_EMAIL:
             print(f"🧪 Modo prueba — redirigiendo email a {TEST_EMAIL}")
+            # Conservar el nombre real del usuario, solo redirigir el destino
+            nombre_real = nombres_destino[0] if nombres_destino else "Cliente"
             emails_destino  = [TEST_EMAIL]
-            nombres_destino = ["Usuario de prueba"]
+            nombres_destino = [nombre_real]
 
         if not emails_destino:
             print(f"⚠️ No se encontraron emails para {proceso_id}")
@@ -1683,12 +1688,12 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
 
   <tr><td style="background:linear-gradient(135deg,#1e40af,#2563eb);padding:24px 28px;">
     <h1 style="margin:0;color:white;font-size:20px;font-weight:800;">📋 LicitacionLab</h1>
-    <p style="margin:4px 0 0;color:#bfdbfe;font-size:12px;">Análisis de pliego · República Dominicana</p>
+    <p style="margin:4px 0 0;color:#bfdbfe;font-size:12px;">Análisis de proceso · República Dominicana</p>
   </td></tr>
 
   <tr><td style="padding:20px 28px 8px;">
     <p style="margin:0;font-size:15px;color:#1e293b;">Hola <strong>{{nombre}}</strong>,</p>
-    <p style="margin:6px 0 0;font-size:13px;color:#64748b;">Tu análisis de IA está listo. Aquí tienes el resumen completo:</p>
+    <p style="margin:6px 0 0;font-size:13px;color:#64748b;">El análisis del siguiente proceso está listo. Aquí tienes el resumen completo:</p>
   </td></tr>
 
   <tr><td style="padding:8px 28px;">
@@ -1737,7 +1742,7 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
   <tr><td style="background:#f8fafc;padding:14px 28px;border-top:1px solid #e5e7eb;">
     <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;line-height:1.6;">
       LicitacionLab · Monitoreo de licitaciones públicas · República Dominicana<br>
-      Este análisis es generado por IA con base en la Ley 47-25 y debe ser verificado por un profesional.<br>
+      Este análisis está basado en la Ley 47-25 y debe ser verificado por un profesional.<br>
       <a href="{ws_url}" style="color:#9ca3af;">Recibiste este email porque sigues el proceso {proceso_id}</a>
     </p>
   </td></tr>
@@ -1762,7 +1767,15 @@ def ejecutar_analisis_gemini(proceso_id: str):
             .execute()
         if existente.data:
             print(f"⚡ Cache hit — {proceso_id} ya analizado, enviando email igual.")
-            analisis_cacheado = existente.data[0]
+            # Re-consultar con todos los campos necesarios para el email
+            full = supabase_admin.table("analisis_pliego")\
+                .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos")\
+                .eq("proceso_id", proceso_id)\
+                .execute()
+            analisis_cacheado = full.data[0] if full.data else existente.data[0]
+            # Normalizar: checklist_categorizado -> checklist_documentos para que el email lo encuentre
+            if analisis_cacheado.get("checklist_categorizado") and not analisis_cacheado.get("checklist_documentos"):
+                analisis_cacheado["checklist_documentos"] = analisis_cacheado["checklist_categorizado"]
             enviar_email_analisis(proceso_id, analisis_cacheado)
             return
         
