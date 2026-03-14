@@ -2313,14 +2313,23 @@ async function cargarProcesos(page = 1) {
     const data = await res.json();
     renderProcesos(data.procesos || [], data, page);
   } catch(e) {
+    // Si es un error de red (no de servidor), intentar de nuevo en 5 segundos
+    const esErrorRed = e.message === 'Load failed' || e.message === 'Failed to fetch' || e.message.includes('NetworkError');
     document.getElementById('procesos-container').innerHTML = `
       <div class="empty">
-        <div class="empty-icon"></div>
-        <div class="empty-text">No se pudieron cargar las licitaciones</div>
-        <div style="font-size:12px;color:var(--muted);margin-top:8px">${e.message}</div>
-        <button onclick="cargarProcesos(${page})" style="margin-top:14px;padding:8px 20px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-body)">Reintentar</button>
+        <div class="empty-icon" style="font-size:28px;opacity:.4">📡</div>
+        <div class="empty-text">${esErrorRed ? 'Sin conexión al servidor' : 'No se pudieron cargar las licitaciones'}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:6px">${esErrorRed ? 'Reconectando automáticamente...' : e.message}</div>
+        <button onclick="cargarProcesos(${page})" style="margin-top:14px;padding:8px 20px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-body)">Reintentar ahora</button>
       </div>`;
     document.getElementById('pagination').innerHTML = '';
+    // Retry automático a los 5 segundos si es error de red
+    if (esErrorRed) {
+      setTimeout(() => {
+        const contenedor = document.getElementById('procesos-container');
+        if (contenedor?.innerHTML?.includes('Sin conexión')) cargarProcesos(page);
+      }, 5000);
+    }
   }
   // Al terminar la primera carga, verificar si hay un proceso pendiente de abrir
   _abrirProcesoDeNotificacion();
