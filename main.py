@@ -340,9 +340,17 @@ def detalle_proceso(codigo_proceso: str):
                 .execute()
             if analisis.data:
                 analisis_data = analisis.data[0]
-                # Normalizar: si checklist_categorizado es null pero checklist_legal tiene datos, usarlo
-                if not analisis_data.get("checklist_categorizado") and analisis_data.get("checklist_legal"):
-                    analisis_data["checklist_categorizado"] = {"legal": analisis_data["checklist_legal"]}
+                # Normalizar checklist — puede estar en varios campos según cuándo se analizó
+                if not analisis_data.get("checklist_categorizado"):
+                    # Caso 1: solo tiene checklist_legal (análisis antiguo)
+                    if analisis_data.get("checklist_legal"):
+                        analisis_data["checklist_categorizado"] = {"legal": analisis_data["checklist_legal"]}
+                # Asegurar que checklist_categorizado tenga la estructura correcta
+                ck = analisis_data.get("checklist_categorizado")
+                if ck and isinstance(ck, dict):
+                    # Si tiene subclave anidada extra (ej: {"checklist_documentos": {...}})
+                    if "checklist_documentos" in ck and not any(k in ck for k in ["legal","tecnica","financiera"]):
+                        analisis_data["checklist_categorizado"] = ck["checklist_documentos"]
         except Exception:
             pass
 
@@ -825,7 +833,19 @@ async def solicitar_analisis_proceso(codigo_proceso: str, background_tasks: Back
         if not proc.data:
             raise HTTPException(status_code=404, detail="Proceso no encontrado")
 
-        # Crear o resetear el registro de análisis
+        # Crear o resetear el registro de análisis — SOLO si no está ya completado
+        existente_check = supabase_admin.table("analisis_pliego") \
+            .select("estado") \
+            .eq("proceso_id", codigo_proceso) \
+            .execute()
+        estado_actual = existente_check.data[0].get("estado") if existente_check.data else None
+
+        if estado_actual == "completado":
+            # Ya está analizado — solo enviar el email, no reprocesar
+            print(f"⚡ solicitar_analisis: {codigo_proceso} ya completado, enviando email sin reprocesar")
+            background_tasks.add_task(ejecutar_analisis_gemini, codigo_proceso)
+            return {"ok": True, "status": "cache_hit"}
+
         supabase_admin.table("analisis_pliego").upsert({
             "proceso_id": codigo_proceso,
             "estado": "pendiente"
