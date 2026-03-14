@@ -3176,17 +3176,16 @@ async function cargarSeguimiento() {
       `procesos?codigo_proceso=in.(${codigos})&select=codigo_proceso,titulo,unidad_compra,monto_estimado,modalidad,objeto_proceso,url,fecha_publicacion,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda,fecha_suscripcion`
     );
 
-    // 3. Traer plazos_clave del análisis IA para enriquecer fechas
+    // 3. Traer plazos_clave del análisis IA — una sola llamada bulk
     const analisisMap = {};
-    await Promise.all(segs.map(async s => {
-      try {
-        const res = await fetch(`${API}/api/procesos/${s.proceso_codigo}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const plazos = data.analisis?.plazos_clave;
-        if (plazos) analisisMap[s.proceso_codigo] = plazos;
-      } catch(e) { /* silencioso */ }
-    }));
+    try {
+      const codigos_bulk = segs.map(s => s.proceso_codigo).join(',');
+      const resPlazos = await fetch(`${API}/api/plazos-bulk?codigos=${encodeURIComponent(codigos_bulk)}`);
+      if (resPlazos.ok) {
+        const plazosData = await resPlazos.json();
+        Object.assign(analisisMap, plazosData);
+      }
+    } catch(e) { /* silencioso — las fechas base del scraper igual se muestran */ }
 
     // 4. Combinar proceso + plazos IA
     const procesosMap = {};
