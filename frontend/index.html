@@ -487,10 +487,10 @@ body {
 .dash-search-input:focus { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-glow); }
 .dash-search-input::placeholder { color: var(--muted); }
 .dash-search-clear {
-  position: absolute; right: 64px; top: 50%; transform: translateY(-55%);
-  width: 20px; height: 20px; border-radius: 50%;
+  position: absolute; right: 64px; top: 50%; transform: translateY(-50%);
+  width: 18px; height: 18px; border-radius: 50%;
   background: var(--muted); color: var(--bg); border: none;
-  font-size: 11px; font-weight: 800; cursor: pointer;
+  font-size: 10px; font-weight: 800; cursor: pointer;
   display: none; align-items: center; justify-content: center;
   line-height: 1; padding: 0; flex-shrink: 0;
   transition: background .15s;
@@ -651,17 +651,17 @@ body {
   position: absolute;
   right: 0; top: 0; bottom: 0;
   width: 90px;
-  background: linear-gradient(135deg, var(--green-dark), var(--green));
+  background: var(--green);
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 4px; border-radius: var(--r-lg);
+  gap: 5px; border-radius: var(--r-lg);
   opacity: 0; transition: opacity .15s;
   pointer-events: none;
   z-index: 0;
 }
 .proceso-swipe-action.visible { opacity: 1; pointer-events: auto; }
-.proceso-swipe-action-icon { font-size: 22px; }
-.proceso-swipe-action-label { font-size: 10px; font-weight: 800; color: #fff; letter-spacing: .04em; text-align: center; line-height: 1.2; padding: 0 6px; }
+.proceso-swipe-action-icon { font-size: 18px; line-height: 1; }
+.proceso-swipe-action-label { font-size: 9px; font-weight: 700; color: #fff; letter-spacing: .06em; text-align: center; line-height: 1.3; padding: 0 8px; text-transform: uppercase; }
 .proceso-card {
   background: var(--surface);
   border: 1.5px solid var(--border);
@@ -936,6 +936,37 @@ body {
 .seg-fecha-val.proximo  { color: var(--amber); }
 .seg-fecha-val.normal   { color: var(--text2); }
 .seg-card-actions { display: flex; gap: 6px; }
+/* ── TIMELINE EXPANDIBLE ── */
+.seg-timeline-wrap { overflow: hidden; max-height: 0; transition: max-height .3s cubic-bezier(.4,0,.2,1); }
+.seg-timeline-wrap.abierto { max-height: 400px; }
+.seg-timeline { border-top: 1px solid var(--border); padding-top: 10px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 0; }
+.seg-tl-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); position: relative; }
+.seg-tl-row:last-child { border-bottom: none; }
+.seg-tl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border2); flex-shrink: 0; margin-left: 2px; }
+.seg-tl-dot.vencida  { background: var(--muted); }
+.seg-tl-dot.hoy      { background: var(--red); box-shadow: 0 0 0 3px var(--red-dim); }
+.seg-tl-dot.critico  { background: var(--red); }
+.seg-tl-dot.proximo  { background: var(--amber); }
+.seg-tl-dot.normal   { background: var(--green); }
+.seg-tl-info { flex: 1; }
+.seg-tl-label { font-size: 11px; font-weight: 700; color: var(--text2); line-height: 1.2; }
+.seg-tl-sub   { font-size: 10px; color: var(--muted); margin-top: 1px; }
+.seg-tl-right { text-align: right; flex-shrink: 0; }
+.seg-tl-fecha { font-size: 12px; font-weight: 700; color: var(--text2); }
+.seg-tl-fecha.vencida { color: var(--muted); text-decoration: line-through; }
+.seg-tl-fecha.hoy     { color: var(--red); }
+.seg-tl-fecha.critico { color: var(--red); }
+.seg-tl-fecha.proximo { color: var(--amber); }
+.seg-tl-dias  { font-size: 10px; font-weight: 700; margin-top: 1px; }
+.seg-tl-dias.vencida { color: var(--muted); }
+.seg-tl-dias.hoy     { color: var(--red); }
+.seg-tl-dias.critico { color: var(--red); }
+.seg-tl-dias.proximo { color: var(--amber); }
+.seg-tl-dias.normal  { color: var(--green); }
+.seg-toggle-fechas { width: 100%; background: none; border: none; border-top: 1px solid var(--border); padding: 8px 0 2px; font-size: 11px; font-weight: 700; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 5px; letter-spacing: .04em; text-transform: uppercase; transition: color .15s; font-family: var(--font-body); }
+.seg-toggle-fechas:active { color: var(--green); }
+.seg-toggle-chevron { font-size: 9px; transition: transform .3s; display: inline-block; }
+.seg-toggle-fechas.abierto .seg-toggle-chevron { transform: rotate(180deg); }
 .seg-btn { flex: 1; padding: 8px 10px; border-radius: var(--r-sm); font-family: var(--font-body); font-size: 12px; font-weight: 800; cursor: pointer; transition: all .2s; border: none; text-align: center; }
 .seg-btn-ver    { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
 .seg-btn-ver:hover { background: var(--green); color: #fff; }
@@ -2212,10 +2243,9 @@ function renderProcesos(procesos, data, page) {
           : 'proceso-badge tipo-default';
     const cierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO',{day:'2-digit',month:'short'}) : '—';
     return `
-      <div class="proceso-swipe-wrap" data-codigo="${p.codigo_proceso}">
+      <div class="proceso-swipe-wrap" data-codigo="${p.codigo_proceso}" data-titulo="${(p.titulo||'').replace(/"/g,'&quot;').substring(0,80)}">
         <div class="proceso-swipe-action" id="swipe-action-${p.codigo_proceso}">
-          <span class="proceso-swipe-action-icon">🏆</span>
-          <span class="proceso-swipe-action-label">Quiero ganar este proceso</span>
+          <span class="proceso-swipe-action-label">Quiero ganar</span>
         </div>
         <div class="proceso-card" data-tipo="${(p.objeto_proceso||'').includes('Obra')?'Obras':(p.objeto_proceso||'').includes('Bien')?'Bienes':(p.objeto_proceso||'').includes('Servicio')?'Servicios':''}" data-codigo="${p.codigo_proceso}">
           <div class="proceso-card-top">
@@ -2758,14 +2788,19 @@ document.addEventListener('touchend', e=>{
 })();
 
 function quieroGanarProceso(codigo) {
-  verDetalle(codigo);
-  setTimeout(() => {
-    const btnSeguir = document.getElementById(`btn-seguir-${codigo}`);
-    if (btnSeguir && btnSeguir.classList.contains('no-siguiendo')) {
-      toggleSeguimiento(codigo);
-    }
-    mostrarToast('✅ Proceso agregado a Mis Procesos');
-  }, 600);
+  const wrap = document.querySelector(`.proceso-swipe-wrap[data-codigo="${codigo}"]`);
+  const titulo = wrap?.dataset.titulo || codigo;
+  const WS_NUMBER = '18098154457';
+  const msg = encodeURIComponent(`Hola, estoy interesado en participar en el proceso ${codigo} — ${titulo}. ¿Pueden ayudarme?`);
+  window.open(`https://wa.me/${WS_NUMBER}?text=${msg}`, '_blank');
+}
+
+function toggleTimelineFechas(codigo) {
+  const wrap = document.getElementById(`tl-wrap-${codigo}`);
+  const btn  = document.getElementById(`toggle-fechas-${codigo}`);
+  if (!wrap || !btn) return;
+  const abierto = wrap.classList.toggle('abierto');
+  btn.classList.toggle('abierto', abierto);
 }
 
 // ── PULL TO REFRESH ──
@@ -3031,15 +3066,7 @@ function renderSegCard(item) {
     : '';
   const codigo = p.codigo_proceso || item.proceso_codigo;
 
-  // Solo mostrar la fecha más relevante: presentación de ofertas (o la primera disponible)
-  const fechaPrincipal = fechas.find(f => f.label === 'Presentación de ofertas') || fechas[0];
-  let fechaStr = '';
-  if (fechaPrincipal) {
-    const d = fechaPrincipal.valor;
-    fechaStr = d.toLocaleDateString('es-DO', { day:'2-digit', month:'short' });
-  }
-
-  // Badge de días compacto sin emoji
+  // Badge de días compacto
   let diasHtml = '';
   if (dias.cls === 'cerrado') {
     diasHtml = `<span class="seg-dias-badge cerrado">Cerrado</span>`;
@@ -3064,12 +3091,37 @@ function renderSegCard(item) {
         <span class="inst">${p.unidad_compra || '—'}</span>
         ${monto ? `<span class="monto">${monto}</span>` : ''}
       </div>
-      ${fechaPrincipal ? `
-      <div class="seg-fecha-simple">
-        <span class="seg-fecha-simple-label">Cierre</span>
-        <span class="seg-fecha-simple-val ${fechaPrincipal.estado || ''}">${fechaStr}</span>
+      ${fechas.length > 0 ? `
+      <button class="seg-toggle-fechas" id="toggle-fechas-${codigo}" onclick="toggleTimelineFechas('${codigo}')">
+        <span>Cronograma</span><span class="seg-toggle-chevron">▼</span>
+      </button>
+      <div class="seg-timeline-wrap" id="tl-wrap-${codigo}">
+        <div class="seg-timeline">
+          ${fechas.map(f => {
+            const fechaStr = f.valor.toLocaleDateString('es-DO', { day:'2-digit', month:'short', year:'numeric' });
+            const horaStr  = f.valor.toLocaleTimeString('es-DO', { hour:'2-digit', minute:'2-digit' });
+            let diasTxt = '';
+            if (f.estado === 'vencida')      diasTxt = 'Vencida';
+            else if (f.estado === 'hoy')     diasTxt = `HOY · ${horaStr}`;
+            else if (f.estado === 'critico') diasTxt = `${f.dias} día${f.dias !== 1 ? 's' : ''}`;
+            else if (f.estado === 'proximo') diasTxt = `${f.dias} días`;
+            else                              diasTxt = `${f.dias} días`;
+            return `
+            <div class="seg-tl-row">
+              <div class="seg-tl-dot ${f.estado}"></div>
+              <div class="seg-tl-info">
+                <div class="seg-tl-label">${f.label}</div>
+                ${f.sublabel ? `<div class="seg-tl-sub">${f.sublabel}</div>` : ''}
+              </div>
+              <div class="seg-tl-right">
+                <div class="seg-tl-fecha ${f.estado}">${fechaStr}</div>
+                <div class="seg-tl-dias ${f.estado}">${diasTxt}</div>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
       </div>` : ''}
-      <div class="seg-card-actions">
+      <div class="seg-card-actions" style="margin-top:10px">
         <button class="seg-btn seg-btn-ver" onclick="verDetalle('${codigo}')">Ver detalle</button>
         <button class="seg-btn seg-btn-estado" onclick="abrirModalEstado('${codigo}','${estado}')">Estado</button>
         <button class="seg-btn seg-btn-quitar" onclick="quitarSeguimiento('${codigo}')">✕</button>
