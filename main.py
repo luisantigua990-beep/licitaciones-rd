@@ -340,7 +340,26 @@ def detalle_proceso(codigo_proceso: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/procesos/{codigo_proceso}/analizar")
+@app.get("/api/plazos-bulk")
+def plazos_bulk(codigos: str):
+    """
+    Devuelve plazos_clave del análisis IA para múltiples procesos en una sola llamada.
+    codigos: string separado por comas, ej: INAPA-001,MOPC-002
+    """
+    try:
+        lista = [c.strip() for c in codigos.split(',') if c.strip()]
+        if not lista:
+            return {}
+        res = supabase_admin.table("analisis_pliego") \
+            .select("proceso_id, plazos_clave") \
+            .in_("proceso_id", lista) \
+            .execute()
+        return {r["proceso_id"]: r["plazos_clave"] for r in (res.data or []) if r.get("plazos_clave")}
+    except Exception as e:
+        return {}
+
+
+
 async def solicitar_analisis_proceso(codigo_proceso: str, background_tasks: BackgroundTasks):
     """
     Solicita análisis IA de un proceso desde el frontend.
