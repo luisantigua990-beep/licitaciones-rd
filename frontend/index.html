@@ -486,6 +486,16 @@ body {
 }
 .dash-search-input:focus { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-glow); }
 .dash-search-input::placeholder { color: var(--muted); }
+.dash-search-clear {
+  position: absolute; right: 64px; top: 50%; transform: translateY(-55%);
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--muted); color: var(--bg); border: none;
+  font-size: 11px; font-weight: 800; cursor: pointer;
+  display: none; align-items: center; justify-content: center;
+  line-height: 1; padding: 0; flex-shrink: 0;
+  transition: background .15s;
+}
+.dash-search-clear:active { background: var(--text); }
 .dash-filter-btn {
   width: 44px; height: 44px;
   border-radius: var(--r-md);
@@ -581,10 +591,10 @@ body {
   border-radius: var(--r-lg);
   padding: 16px 16px 14px 20px;
   cursor: pointer;
-  transition: border-color .18s, transform .15s, box-shadow .18s;
+  transition: border-color .18s, box-shadow .18s;
   position: relative;
   overflow: hidden;
-  margin-bottom: 10px;
+  margin-bottom: 0;
   box-shadow: var(--shadow-card);
 }
 /* Barra lateral de color por tipo */
@@ -629,6 +639,43 @@ body {
 .proceso-badge.tipo-servicios { background: var(--green-dim); color: var(--green); }
 .proceso-badge.tipo-default  { background: var(--surface2); color: var(--muted); }
 .proceso-fecha { font-size: 11px; color: var(--muted); white-space: nowrap; font-weight: 500; }
+
+/* ── SWIPE ACTION — tipo WhatsApp ── */
+.proceso-swipe-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  margin-bottom: 10px;
+}
+.proceso-swipe-action {
+  position: absolute;
+  right: 0; top: 0; bottom: 0;
+  width: 90px;
+  background: linear-gradient(135deg, var(--green-dark), var(--green));
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 4px; border-radius: var(--r-lg);
+  opacity: 0; transition: opacity .15s;
+  pointer-events: none;
+  z-index: 0;
+}
+.proceso-swipe-action.visible { opacity: 1; pointer-events: auto; }
+.proceso-swipe-action-icon { font-size: 22px; }
+.proceso-swipe-action-label { font-size: 10px; font-weight: 800; color: #fff; letter-spacing: .04em; text-align: center; line-height: 1.2; padding: 0 6px; }
+.proceso-card {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px 16px 14px 20px;
+  cursor: pointer;
+  transition: border-color .18s, box-shadow .18s, transform .0s;
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 0;
+  box-shadow: var(--shadow-card);
+  will-change: transform;
+  z-index: 1;
+}
 
 /* ── LOADING / EMPTY / PAGINATION ── */
 .loading { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 48px 20px; color: var(--muted); font-size: 14px; }
@@ -1307,7 +1354,8 @@ html { background: #0D1B2A; }
     <!-- Barra de búsqueda principal -->
     <div class="dash-search-wrap">
       <svg class="dash-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input class="dash-search-input" type="text" id="busqueda" placeholder="Título, código proceso o UNSPSC (ej: 7210)..." oninput="debounceSearch()" autocomplete="off">
+      <input class="dash-search-input" type="text" id="busqueda" placeholder="Título, código proceso o UNSPSC (ej: 7210)..." oninput="debounceSearch();toggleClearBtn()" autocomplete="off">
+      <button class="dash-search-clear" id="btn-clear-busqueda" onclick="limpiarBusqueda()" aria-label="Limpiar búsqueda">✕</button>
       <button class="dash-filter-btn" id="btn-filtros-avanzados" onclick="toggleFiltrosAvanzados()" aria-label="Filtros">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
         <span class="filtros-badge" id="filtros-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:14px;height:14px;background:var(--green);color:#000;border-radius:7px;font-size:9px;font-weight:800;align-items:center;justify-content:center;padding:0 3px">0</span>
@@ -2164,19 +2212,25 @@ function renderProcesos(procesos, data, page) {
           : 'proceso-badge tipo-default';
     const cierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO',{day:'2-digit',month:'short'}) : '—';
     return `
-      <div class="proceso-card" data-tipo="${(p.objeto_proceso||'').includes('Obra')?'Obras':(p.objeto_proceso||'').includes('Bien')?'Bienes':(p.objeto_proceso||'').includes('Servicio')?'Servicios':''}" onclick="verDetalle('${p.codigo_proceso}')">
-        <div class="proceso-card-top">
-          <div class="proceso-titulo">${p.titulo || 'Sin título'}</div>
-          <div class="proceso-monto">${formatMonto(p.monto_estimado)}</div>
+      <div class="proceso-swipe-wrap" data-codigo="${p.codigo_proceso}">
+        <div class="proceso-swipe-action" id="swipe-action-${p.codigo_proceso}">
+          <span class="proceso-swipe-action-icon">🏆</span>
+          <span class="proceso-swipe-action-label">Quiero ganar este proceso</span>
         </div>
-        <div class="proceso-card-bottom">
-          <span class="proceso-entidad">${p.unidad_compra || '—'}</span>
-          <span class="proceso-fecha">${cierre}</span>
-        </div>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
-          ${tipo ? `<span class="${badgeTipo}">${tipo}</span>` : ''}
-          ${p.modalidad ? `<span class="proceso-badge tipo-default">${p.modalidad}</span>` : ''}
-          ${p.dirigido_mipymes ? '<span class="proceso-badge" style="background:var(--amber-dim);color:var(--amber)">MIPYMES</span>' : ''}
+        <div class="proceso-card" data-tipo="${(p.objeto_proceso||'').includes('Obra')?'Obras':(p.objeto_proceso||'').includes('Bien')?'Bienes':(p.objeto_proceso||'').includes('Servicio')?'Servicios':''}" data-codigo="${p.codigo_proceso}">
+          <div class="proceso-card-top">
+            <div class="proceso-titulo">${p.titulo || 'Sin título'}</div>
+            <div class="proceso-monto">${formatMonto(p.monto_estimado)}</div>
+          </div>
+          <div class="proceso-card-bottom">
+            <span class="proceso-entidad">${p.unidad_compra || '—'}</span>
+            <span class="proceso-fecha">${cierre}</span>
+          </div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
+            ${tipo ? `<span class="${badgeTipo}">${tipo}</span>` : ''}
+            ${p.modalidad ? `<span class="proceso-badge tipo-default">${p.modalidad}</span>` : ''}
+            ${p.dirigido_mipymes ? '<span class="proceso-badge" style="background:var(--amber-dim);color:var(--amber)">MIPYMES</span>' : ''}
+          </div>
         </div>
       </div>`;
   }).join('');
@@ -2193,6 +2247,21 @@ function renderProcesos(procesos, data, page) {
 function debounceSearch() {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => cargarProcesos(1), 400);
+}
+
+function toggleClearBtn() {
+  const input = document.getElementById('busqueda');
+  const btn = document.getElementById('btn-clear-busqueda');
+  if (!btn) return;
+  btn.style.display = input.value.length > 0 ? 'flex' : 'none';
+}
+
+function limpiarBusqueda() {
+  const input = document.getElementById('busqueda');
+  if (input) { input.value = ''; input.focus(); }
+  toggleClearBtn();
+  clearTimeout(searchTimer);
+  cargarProcesos(1);
 }
 
 function limpiarFiltros() {
@@ -2594,6 +2663,110 @@ document.addEventListener('touchend', e=>{
   const detalleVisible = document.getElementById('tab-detalle').style.display !== 'none';
   if (detalleVisible && dx > 80 && dy < 60) mostrarDashboard();
 }, {passive:true});
+
+// ── SWIPE EN CARDS — tipo WhatsApp ──
+(function initCardSwipe() {
+  let swipeCard = null, swipeStartX = 0, swipeStartY = 0;
+  let swipeMoved = false, swipeOpen = null;
+  const THRESHOLD = 60;
+
+  function getWrap(el) { return el.closest('.proceso-swipe-wrap'); }
+  function getCard(wrap) { return wrap?.querySelector('.proceso-card'); }
+  function getAction(wrap) { return wrap?.querySelector('.proceso-swipe-action'); }
+  function resetCard(wrap, animate) {
+    const card = getCard(wrap);
+    const action = getAction(wrap);
+    if (!card) return;
+    card.style.transition = animate ? 'transform .25s cubic-bezier(.4,0,.2,1)' : 'none';
+    card.style.transform = 'translateX(0)';
+    if (action) action.classList.remove('visible');
+    wrap.dataset.swiped = '';
+  }
+  function openCard(wrap) {
+    const card = getCard(wrap);
+    const action = getAction(wrap);
+    if (!card) return;
+    card.style.transition = 'transform .25s cubic-bezier(.4,0,.2,1)';
+    card.style.transform = 'translateX(-90px)';
+    if (action) action.classList.add('visible');
+    wrap.dataset.swiped = '1';
+    swipeOpen = wrap;
+  }
+
+  document.addEventListener('touchstart', e => {
+    const wrap = getWrap(e.target);
+    if (!wrap) { if (swipeOpen) { resetCard(swipeOpen, true); swipeOpen = null; } return; }
+    // Si se toca el botón de acción abierto
+    if (e.target.closest('.proceso-swipe-action')) return;
+    // Cerrar cualquier otro abierto
+    if (swipeOpen && swipeOpen !== wrap) { resetCard(swipeOpen, true); swipeOpen = null; }
+    swipeCard = wrap;
+    swipeStartX = e.touches[0].clientX;
+    swipeStartY = e.touches[0].clientY;
+    swipeMoved = false;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!swipeCard) return;
+    const dx = e.touches[0].clientX - swipeStartX;
+    const dy = Math.abs(e.touches[0].clientY - swipeStartY);
+    if (!swipeMoved && dy > 10) { swipeCard = null; return; }
+    if (Math.abs(dx) > 6) swipeMoved = true;
+    if (!swipeMoved) return;
+    const card = getCard(swipeCard);
+    const action = getAction(swipeCard);
+    if (!card) return;
+    const already = swipeCard.dataset.swiped === '1';
+    const offset = already ? -90 + dx : dx;
+    const clamped = Math.max(-90, Math.min(0, offset));
+    card.style.transition = 'none';
+    card.style.transform = `translateX(${clamped}px)`;
+    if (action) action.classList.toggle('visible', clamped < -20);
+  }, { passive: true });
+
+  document.addEventListener('touchend', e => {
+    if (!swipeCard) return;
+    const dx = e.changedTouches[0].clientX - swipeStartX;
+    const wrap = swipeCard;
+    swipeCard = null;
+    if (!swipeMoved) {
+      // Fue un tap — si está abierto cerramos, si no, abrimos detalle
+      if (wrap.dataset.swiped === '1') { resetCard(wrap, true); swipeOpen = null; }
+      else {
+        const codigo = wrap.dataset.codigo;
+        if (codigo) verDetalle(codigo);
+      }
+      return;
+    }
+    const already = wrap.dataset.swiped === '1';
+    const totalDx = already ? -90 + dx : dx;
+    if (totalDx < -THRESHOLD) { openCard(wrap); }
+    else { resetCard(wrap, true); swipeOpen = null; }
+  }, { passive: true });
+
+  // Click en botón de acción
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('.proceso-swipe-action');
+    if (!btn) return;
+    const wrap = btn.closest('.proceso-swipe-wrap');
+    const codigo = wrap?.dataset.codigo;
+    if (!codigo) return;
+    resetCard(wrap, true);
+    swipeOpen = null;
+    quieroGanarProceso(codigo);
+  });
+})();
+
+function quieroGanarProceso(codigo) {
+  verDetalle(codigo);
+  setTimeout(() => {
+    const btnSeguir = document.getElementById(`btn-seguir-${codigo}`);
+    if (btnSeguir && btnSeguir.classList.contains('no-siguiendo')) {
+      toggleSeguimiento(codigo);
+    }
+    mostrarToast('✅ Proceso agregado a Mis Procesos');
+  }, 600);
+}
 
 // ── PULL TO REFRESH ──
 (function initPullToRefresh() {
@@ -3145,17 +3318,11 @@ function renderChecklistHTML(analisis, codigo) {
   const enSeguimiento = estaEnSeguimiento(codigo);
 
   if (!checklist || (!checklist.legal?.length && !checklist.tecnica?.length && !checklist.financiera?.length)) {
-    const msgTexto = analisis ? 'El análisis no incluye checklist de documentos.' : 'Sin análisis IA para este proceso.';
-    const btnHtml = !analisis ? `
-      <button class="btn-analizar-pliego" id="btn-analizar-${codigo}" onclick="solicitarAnalisisIA('${codigo}')">
-        <span class="btn-spinner"></span>
-        <span class="btn-texto"></span>
-      </button>` : '';
+    const msgTexto = analisis ? 'El análisis no incluye checklist de documentos.' : 'Sin análisis IA para este proceso. El análisis se solicita automáticamente al seguir el proceso.';
     return `<div class="checklist-card">
       <div class="checklist-header"><div class="checklist-titulo">📋 Checklist de documentos</div></div>
       <div class="checklist-sin-analisis">
         ${msgTexto}
-        ${btnHtml}
       </div>
     </div>`;
   }
