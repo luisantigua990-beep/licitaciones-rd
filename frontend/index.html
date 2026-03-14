@@ -464,8 +464,17 @@ body {
   background: var(--surface); border: 1.5px solid var(--border);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; color: var(--text2); flex-shrink: 0; transition: all .2s;
+  position: relative;
 }
 .dash-notif-btn:active { background: var(--surface2); }
+.dash-notif-btn.activa { border-color: var(--green-border); color: var(--green); background: var(--green-dim); }
+.dash-notif-dot {
+  position: absolute; top: 6px; right: 6px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green); display: none;
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.dash-notif-btn.activa .dash-notif-dot { display: block; }
 
 /* ── SEARCH BAR ── */
 .dash-search-wrap {
@@ -1434,8 +1443,9 @@ html { background: #0D1B2A; }
         <div class="dash-greeting" id="dash-greeting">Hola</div>
         <div class="dash-subtitle" id="dash-subtitle">Tus licitaciones activas</div>
       </div>
-      <button class="dash-notif-btn" onclick="switchTab2('perfil')" aria-label="Notificaciones">
+      <button class="dash-notif-btn" id="dash-notif-btn" onclick="togglePushDesdeIcono()" aria-label="Notificaciones">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span class="dash-notif-dot"></span>
       </button>
     </div>
 
@@ -1551,23 +1561,22 @@ html { background: #0D1B2A; }
       <div id="perfil-nombre-status" style="font-size:12px;color:var(--green);min-height:18px;margin-bottom:12px"></div>
       <button class="btn-outline" onclick="logout()">Cerrar sesión</button>
       <button class="btn-outline" style="margin-top:8px;border-color:var(--green-border);color:var(--green)" onclick="mostrarOnboarding()">Ver tutorial</button>
-      <button onclick="window.open('https://wa.me/18098154457?text=Hola,%20necesito%20ayuda%20con%20LicitacionLab','_blank')" style="width:100%;margin-top:8px;padding:13px;border-radius:var(--r-md);background:#25D366;border:none;color:#fff;font-family:var(--font-body);font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.122 1.527 5.858L0 24l6.335-1.507A11.955 11.955 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 0 1-5.006-1.371l-.36-.213-3.71.883.936-3.618-.234-.372A9.818 9.818 0 1 1 12 21.818z"/></svg>
-        Contactar soporte
-      </button>
     </div>
 
     <div class="perfil-card">
-      <h2>Notificaciones Push</h2>
+      <h2>Notificaciones</h2>
       <div class="toggle-row">
         <div class="toggle-info">
           <div class="toggle-label">Activar alertas en este dispositivo</div>
-          <div class="toggle-desc">Recibe notificaciones cuando haya nuevas licitaciones</div>
+          <div class="toggle-desc">Recibe notificaciones cuando haya nuevas licitaciones y fechas próximas</div>
         </div>
         <div class="toggle" id="toggle-push" onclick="togglePush()"></div>
       </div>
       <div id="push-status" class="push-status-tag" style="display:none">
         Notificaciones activas en este dispositivo
+      </div>
+      <div style="margin-top:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r-sm);font-size:12px;color:var(--muted);line-height:1.5;">
+        Para recibir notificaciones de fechas y análisis debes <strong style="color:var(--text2)">activar las alertas en este dispositivo</strong> usando el botón de arriba.
       </div>
     </div>
 
@@ -1598,6 +1607,15 @@ html { background: #0D1B2A; }
       </div>
       <div class="familias-tags" id="familias-seleccionadas"></div>
       <div class="intereses-status" id="intereses-status"></div>
+    </div>
+
+    <!-- Contactar soporte — al final del perfil -->
+    <div class="perfil-card" style="padding:16px 20px">
+      <button onclick="window.open('https://wa.me/18098154457?text=Hola,%20necesito%20ayuda%20con%20LicitacionLab','_blank')" style="width:100%;padding:14px;border-radius:var(--r-md);background:#25D366;border:none;color:#fff;font-family:var(--font-body);font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.122 1.527 5.858L0 24l6.335-1.507A11.955 11.955 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 0 1-5.006-1.371l-.36-.213-3.71.883.936-3.618-.234-.372A9.818 9.818 0 1 1 12 21.818z"/></svg>
+        Contactar soporte
+      </button>
+      <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:8px">Respondemos en máximo 15 minutos</div>
     </div>
 
   </div>
@@ -2698,19 +2716,38 @@ async function checkPushStatus() {
   const sub    = await reg.pushManager.getSubscription();
   const toggle = document.getElementById('toggle-push');
   const status = document.getElementById('push-status');
+  const icono  = document.getElementById('dash-notif-btn');
   if (sub) {
-    toggle.classList.add('on');
+    if (toggle) toggle.classList.add('on');
     pushSubscription = sub;
-    status.style.display = 'flex';
+    if (status) status.style.display = 'flex';
+    if (icono)  icono.classList.add('activa');
   } else {
-    toggle.classList.remove('on');
-    status.style.display = 'none';
+    if (toggle) toggle.classList.remove('on');
+    if (status) status.style.display = 'none';
+    if (icono)  icono.classList.remove('activa');
+  }
+}
+
+async function togglePushDesdeIcono() {
+  await togglePush();
+  // Sincronizar el estado visual del icono tras el toggle
+  const sub   = pushSubscription;
+  const icono = document.getElementById('dash-notif-btn');
+  if (!icono) return;
+  if (sub) {
+    icono.classList.add('activa');
+    mostrarToast('Notificaciones activadas');
+  } else {
+    icono.classList.remove('activa');
+    mostrarToast('Notificaciones desactivadas');
   }
 }
 
 async function togglePush() {
   const toggle = document.getElementById('toggle-push');
   const status = document.getElementById('push-status');
+  const icono  = document.getElementById('dash-notif-btn');
   if (toggle.classList.contains('on')) {
     if (pushSubscription) {
       await pushSubscription.unsubscribe();
@@ -2722,6 +2759,7 @@ async function togglePush() {
     }
     toggle.classList.remove('on');
     status.style.display = 'none';
+    if (icono) icono.classList.remove('activa');
   } else {
     try {
       const keyRes    = await fetch(`${API}/api/vapid-public-key`);
@@ -2739,6 +2777,7 @@ async function togglePush() {
       });
       toggle.classList.add('on');
       status.style.display = 'flex';
+      if (icono) icono.classList.add('activa');
     } catch(e) {
       console.error('Push error:', e);
     }
@@ -4196,7 +4235,7 @@ function initBanner() {
 
 // ── ONBOARDING ───────────────────────────────────────────
 let onbPaso = 0;
-const ONB_TOTAL = 5;
+const ONB_TOTAL = 6;
 
 function mostrarOnboarding() {
   onbPaso = 0;
@@ -4260,6 +4299,7 @@ function initOnboarding() {
       <div class="onb-prog-dot" id="onbdot-2"></div>
       <div class="onb-prog-dot" id="onbdot-3"></div>
       <div class="onb-prog-dot" id="onbdot-4"></div>
+      <div class="onb-prog-dot" id="onbdot-5"></div>
     </div>
 
     <!-- Paso 1: Qué es LicitacionLab -->
@@ -4304,10 +4344,21 @@ function initOnboarding() {
         <strong>· Evaluación de competitividad</strong> y recomendación<br>
         <strong>· Requisitos de experiencia</strong> y financieros
       </div>
+      <div class="onb-tip"><b>📧 Correo:</b> El análisis completo te llegará al correo registrado. Si no aparece en tu bandeja, revisa la carpeta de <strong>correos no deseados o spam</strong>.</div>
     </div>
 
-    <!-- Paso 5: Listo -->
+    <!-- Paso 5: Notificaciones -->
     <div class="onb-slide" id="onb-slide-4">
+      <div class="onb-icon-wrap">
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      </div>
+      <div class="onb-titulo">Activa las notificaciones</div>
+      <div class="onb-desc">Toca la <strong>campanita</strong> en la pantalla principal para activar las alertas en tu dispositivo.<br><br>Cuando esté activa verás la campanita en <strong>verde con un punto</strong> — eso significa que estás suscrito.<br><br>Recibirás alertas automáticas <strong>7, 3, 1 y 0 días antes</strong> de cada fecha clave del proceso.</div>
+      <div class="onb-tip"><b>Tip:</b> También puedes activarlas desde Mi Perfil → Notificaciones. Configura tus intereses para recibir solo lo que te importa.</div>
+    </div>
+
+    <!-- Paso 6: Listo -->
+    <div class="onb-slide" id="onb-slide-5">
       <div class="onb-icon-wrap" style="background:var(--green-dim)">
         <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
       </div>
