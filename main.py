@@ -103,6 +103,19 @@ def scraper_loop():
         time.sleep(INTERVALO_MINUTOS * 60)
 
 
+def nurturing_loop():
+    """Ejecuta la secuencia de nurturing de emails una vez al día."""
+    # Esperar 2 min al inicio para que todo arranque
+    time.sleep(120)
+    while True:
+        try:
+            ejecutar_nurturing()
+        except Exception as e:
+            print(f"❌ Error en nurturing: {e}")
+        # Correr una vez al día
+        time.sleep(24 * 3600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Inicia el monitor API y el scraper en tiempo real al arrancar."""
@@ -115,6 +128,11 @@ async def lifespan(app: FastAPI):
     hilo_scraper = threading.Thread(target=scraper_loop, daemon=True)
     hilo_scraper.start()
     print("✅ Scraper portal en tiempo real iniciado (cada 3 minutos)")
+
+    # Nurturing de emails (una vez al día)
+    hilo_nurturing = threading.Thread(target=nurturing_loop, daemon=True)
+    hilo_nurturing.start()
+    print("✅ Nurturing de emails iniciado (cada 24 horas)")
 
     yield
     print("🛑 Servidor detenido")
@@ -358,6 +376,438 @@ def plazos_bulk(codigos: str):
     except Exception as e:
         return {}
 
+
+# ══════════════════════════════════════════════════════════════
+# NURTURING DE EMAILS — secuencia de 4 emails post-registro
+# ══════════════════════════════════════════════════════════════
+
+def _resend_send(subject: str, html: str, to_email: str) -> bool:
+    """Envía un email via Resend. Retorna True si fue exitoso."""
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+    FROM_EMAIL     = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
+    if not RESEND_API_KEY:
+        return False
+    try:
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={"from": FROM_EMAIL, "to": [to_email], "subject": subject, "html": html},
+            timeout=15,
+        )
+        return resp.status_code in (200, 201)
+    except Exception as e:
+        print(f"⚠️ Resend error: {e}")
+        return False
+
+
+def _html_wrap(contenido: str, nombre: str) -> str:
+    """Envuelve el contenido en el template base del email."""
+    APP_URL   = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    WS_NUMBER = os.getenv("WHATSAPP_NUMBER", "18098154457")
+    import urllib.parse
+    ws_url = f"https://wa.me/{WS_NUMBER}?text={urllib.parse.quote('Hola, tengo una pregunta sobre LicitacionLab.')}"
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:'Helvetica Neue',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);max-width:100%;">
+  <tr><td style="background:linear-gradient(135deg,#0D1B2A,#172F46);padding:24px 28px;">
+    <h1 style="margin:0;color:#2ECC71;font-size:18px;font-weight:800;">LicitacionLab</h1>
+    <p style="margin:4px 0 0;color:#8FAEC9;font-size:11px;">Inteligencia en Compras Públicas · República Dominicana</p>
+  </td></tr>
+  <tr><td style="padding:28px;">
+    <p style="margin:0 0 6px;font-size:15px;color:#1e293b;">Hola <strong>{nombre}</strong>,</p>
+    {contenido}
+  </td></tr>
+  <tr><td style="background:#f8fafc;padding:16px 28px;border-top:1px solid #e5e7eb;">
+    <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;line-height:1.7;">
+      LicitacionLab · Monitoreo de licitaciones públicas · República Dominicana<br>
+      <a href="{APP_URL}" style="color:#2ECC71;text-decoration:none;">Abrir plataforma</a> &nbsp;·&nbsp;
+      <a href="{ws_url}" style="color:#9ca3af;">Contáctanos por WhatsApp</a>
+    </p>
+  </td></tr>
+</table></td></tr></table>
+</body></html>"""
+
+
+def _html_proceso_row(p: dict) -> str:
+    """Genera una fila HTML para un proceso en el email."""
+    APP_URL  = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    titulo   = (p.get("titulo") or "Sin título")[:80]
+    entidad  = p.get("unidad_compra") or "—"
+    monto    = p.get("monto_estimado")
+    monto_str = f"RD$ {float(monto):,.0f}" if monto else "No especificado"
+    cierre   = ""
+    if p.get("fecha_fin_recepcion_ofertas"):
+        try:
+            cierre = datetime.fromisoformat(str(p["fecha_fin_recepcion_ofertas"]).replace("Z","")).strftime("%d/%m/%Y")
+        except Exception:
+            cierre = str(p["fecha_fin_recepcion_ofertas"])[:10]
+    url = f"{APP_URL}?proceso={p.get('codigo_proceso','')}"
+    return f"""
+<tr><td style="padding:12px 0;border-bottom:1px solid #f1f5f9;">
+  <p style="margin:0 0 4px;font-size:13px;font-weight:bold;color:#1e293b;line-height:1.4;">{titulo}</p>
+  <p style="margin:0 0 6px;font-size:12px;color:#64748b;">{entidad}</p>
+  <table cellpadding="0" cellspacing="0"><tr>
+    <td style="padding-right:16px;"><span style="font-size:10px;color:#94a3b8;text-transform:uppercase;display:block;">Monto estimado</span>
+    <strong style="font-size:12px;color:#2ECC71;">{monto_str}</strong></td>
+    <td><span style="font-size:10px;color:#94a3b8;text-transform:uppercase;display:block;">Cierre de ofertas</span>
+    <strong style="font-size:12px;color:#dc2626;">{cierre}</strong></td>
+  </tr></table>
+  <a href="{url}" style="display:inline-block;margin-top:8px;padding:6px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px;font-weight:700;color:#1d4ed8;text-decoration:none;">Ver proceso →</a>
+</td></tr>"""
+
+
+def _obtener_procesos_para_usuario(user_id: str) -> list:
+    """
+    Obtiene 3 procesos activos para mostrar en el Email 2.
+    Si el usuario tiene intereses configurados, filtra por ellos.
+    Si no, devuelve los 3 de mayor monto activos.
+    """
+    try:
+        # Ver si tiene intereses en user_subscriptions
+        subs = supabase.table("user_subscriptions") \
+            .select("intereses_rubros") \
+            .eq("user_id", user_id) \
+            .eq("active", True) \
+            .limit(1).execute()
+
+        rubros = []
+        if subs.data:
+            rubros = subs.data[0].get("intereses_rubros") or []
+
+        query = supabase.table("procesos") \
+            .select("codigo_proceso,titulo,unidad_compra,monto_estimado,objeto_proceso,fecha_fin_recepcion_ofertas") \
+            .eq("estado_proceso", "Activo") \
+            .order("monto_estimado", desc=True) \
+            .limit(3)
+
+        if rubros:
+            # Filtrar por rubro (objeto_proceso contiene el tipo)
+            rubro = rubros[0]  # usar el primero
+            query = supabase.table("procesos") \
+                .select("codigo_proceso,titulo,unidad_compra,monto_estimado,objeto_proceso,fecha_fin_recepcion_ofertas") \
+                .eq("estado_proceso", "Activo") \
+                .ilike("objeto_proceso", f"%{rubro}%") \
+                .order("monto_estimado", desc=True) \
+                .limit(3)
+
+        res = query.execute()
+        return res.data or []
+    except Exception as e:
+        print(f"⚠️ Error obteniendo procesos para nurturing: {e}")
+        return []
+
+
+def _email2_html(nombre: str, procesos: list, tiene_perfil: bool) -> str:
+    APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    filas   = "".join(_html_proceso_row(p) for p in procesos[:3])
+    perfil_nota = "" if tiene_perfil else f"""
+<div style="margin-top:16px;padding:12px 14px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;">
+  <p style="margin:0;font-size:12px;color:#92400e;">
+    <strong>Tip:</strong> Estas son las licitaciones de mayor monto activas ahora mismo.
+    <a href="{APP_URL}" style="color:#1d4ed8;">Configura tus intereses en Mi Perfil</a>
+    para recibir alertas filtradas exactamente para tu empresa.
+  </p>
+</div>"""
+    contenido = f"""
+<p style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6;">
+  Han pasado dos días desde que te registraste. Mientras tanto, el sistema
+  ha estado monitoreando el portal DGCP por ti. Aquí están las oportunidades
+  activas más relevantes ahora mismo:
+</p>
+<table width="100%" cellpadding="0" cellspacing="0">{filas}</table>
+{perfil_nota}
+<p style="margin:20px 0 0;font-size:13px;color:#475569;line-height:1.6;">
+  En la plataforma hay más procesos filtrados en tiempo real. No esperes
+  a que se acerque la fecha — los mejores oferentes empiezan a prepararse
+  con semanas de anticipación.
+</p>
+<p style="margin:16px 0 0;" align="center">
+  <a href="{APP_URL}" style="display:inline-block;background:#2ECC71;color:#0D1B2A;text-decoration:none;padding:13px 28px;border-radius:8px;font-size:14px;font-weight:800;">
+    Ver todas las oportunidades activas →
+  </a>
+</p>
+<p style="margin:20px 0 0;font-size:13px;color:#94a3b8;">
+  — El equipo de LicitacionLab
+</p>"""
+    return _html_wrap(contenido, nombre)
+
+
+def _email3_html(nombre: str) -> str:
+    APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    contenido = f"""
+<p style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6;">
+  El mayor problema con las licitaciones en República Dominicana no es
+  encontrarlas — es entenderlas a tiempo.
+</p>
+<p style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6;">
+  Un pliego puede tener 200 páginas de requisitos técnicos, condiciones
+  contractuales y especificaciones. Leerlo bien toma días. Y cuando hay
+  varios procesos activos al mismo tiempo, es imposible hacerlo todo.
+</p>
+<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:18px 20px;margin:16px 0;">
+  <p style="margin:0 0 10px;font-size:13px;font-weight:800;color:#166534;">Cuando sigues un proceso en LicitacionLab, el sistema analiza el pliego automáticamente y te entrega:</p>
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr><td style="padding:5px 0;font-size:13px;color:#1e293b;">✅ <strong>Checklist de documentos</strong> requeridos, separados por Legal, Técnica y Financiera</td></tr>
+    <tr><td style="padding:5px 0;font-size:13px;color:#1e293b;">🚨 <strong>Alertas de irregularidades</strong> — detecta si el proceso presenta indicios de estar dirigido o amarrado según la Ley 47-25</td></tr>
+    <tr><td style="padding:5px 0;font-size:13px;color:#1e293b;">📊 <strong>Evaluación de competitividad</strong> — qué tan viable es el proceso para tu empresa</td></tr>
+    <tr><td style="padding:5px 0;font-size:13px;color:#1e293b;">📅 <strong>Cronograma completo</strong> de fechas clave: consultas, apertura, adjudicación</td></tr>
+    <tr><td style="padding:5px 0;font-size:13px;color:#1e293b;">💼 <strong>Requisitos de experiencia y financieros</strong> mínimos que exige el pliego</td></tr>
+  </table>
+</div>
+<p style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6;">
+  Lo que antes tomaba 2 días de tu equipo, ahora toma 30 segundos.
+  Tú decides si vale la pena profundizar — con información, no con suposiciones.
+</p>
+<p style="margin:0 0 6px;font-size:13px;color:#475569;">
+  El análisis completo te llega también a este correo. Si no lo ves en tu bandeja,
+  revisa la carpeta de <strong>correos no deseados</strong>.
+</p>
+<p style="margin:16px 0 0;" align="center">
+  <a href="{APP_URL}" style="display:inline-block;background:#2ECC71;color:#0D1B2A;text-decoration:none;padding:13px 28px;border-radius:8px;font-size:14px;font-weight:800;">
+    Seguir un proceso y ver el análisis →
+  </a>
+</p>
+<p style="margin:20px 0 0;font-size:13px;color:#94a3b8;">
+  — El equipo de LicitacionLab<br>
+  <span style="font-size:12px;">¿Ya lo probaste? Cuéntanos qué te pareció — respondemos en 15 minutos.</span>
+</p>"""
+    return _html_wrap(contenido, nombre)
+
+
+def _email4_html(nombre: str) -> str:
+    APP_URL   = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    WS_NUMBER = os.getenv("WHATSAPP_NUMBER", "18098154457")
+    import urllib.parse
+    ws_url = f"https://wa.me/{WS_NUMBER}?text={urllib.parse.quote(f'Hola, soy {nombre} y quiero compartir mi experiencia con LicitacionLab.')}"
+    contenido = f"""
+<p style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6;">
+  LicitacionLab está en beta y tu opinión vale más que cualquier análisis de mercado.
+</p>
+<p style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6;">
+  Llevas 10 días en la plataforma. Queremos saber directamente de ti:
+</p>
+<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:18px 20px;margin:16px 0;">
+  <p style="margin:0 0 10px;font-size:13px;color:#1e293b;line-height:1.6;">
+    · ¿Encontraste licitaciones relevantes para tu empresa?<br>
+    · ¿El análisis del pliego te resultó útil?<br>
+    · ¿Qué le agregarías o cambiarías?<br>
+    · ¿Hay algo que no funciona como esperabas?
+  </p>
+</div>
+<p style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6;">
+  No hace falta que sea largo. Con una línea nos ayudas a construir
+  una mejor herramienta para todo el sector.
+</p>
+<p style="margin:16px 0 0;" align="center">
+  <a href="{ws_url}" style="display:inline-block;background:#25d366;color:white;text-decoration:none;padding:13px 28px;border-radius:8px;font-size:14px;font-weight:800;">
+    💬 Enviar feedback por WhatsApp
+  </a>
+</p>
+<p style="margin:12px 0 0;font-size:12px;color:#94a3b8;text-align:center;">
+  O simplemente responde este email directamente.
+</p>
+<p style="margin:20px 0 0;font-size:13px;color:#94a3b8;">
+  — El equipo de LicitacionLab<br>
+  <span style="font-size:12px;">Gracias por ser parte de la beta.</span>
+</p>"""
+    return _html_wrap(contenido, nombre)
+
+
+def ejecutar_nurturing():
+    """
+    Corre una vez al día. Para cada usuario en user_nurturing,
+    determina qué email debe recibir según los días transcurridos
+    desde su registro y si ya recibió el anterior.
+    """
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+    if not RESEND_API_KEY:
+        print("⚠️ Nurturing: sin RESEND_API_KEY, saltando.")
+        return
+
+    # Secuencia: { numero_email: dias_desde_registro }
+    SECUENCIA = {2: 2, 3: 5, 4: 10}
+
+    try:
+        usuarios = supabase_admin.table("user_nurturing") \
+            .select("*") \
+            .eq("activo", True) \
+            .execute().data or []
+
+        hoy = datetime.utcnow()
+        enviados = 0
+
+        for u in usuarios:
+            try:
+                fecha_reg = datetime.fromisoformat(str(u["fecha_registro"]).replace("Z", ""))
+                dias = (hoy - fecha_reg).days
+                ultimo = u.get("ultimo_email", 0)
+                email  = u["email"]
+                nombre = u.get("nombre") or "Usuario"
+                uid    = u["user_id"]
+
+                # Determinar si toca algún email
+                proximo = None
+                for num_email, dia_objetivo in sorted(SECUENCIA.items()):
+                    if num_email > ultimo and dias >= dia_objetivo:
+                        proximo = num_email
+                        break
+
+                if not proximo:
+                    continue
+
+                # Generar y enviar el email correspondiente
+                if proximo == 2:
+                    procesos     = _obtener_procesos_para_usuario(uid)
+                    tiene_perfil = bool(procesos and
+                        supabase.table("user_subscriptions")
+                            .select("intereses_rubros").eq("user_id", uid)
+                            .eq("active", True).limit(1).execute().data)
+                    subject = "3 oportunidades activas que quizás no viste todavía"
+                    html    = _email2_html(nombre, procesos, tiene_perfil)
+
+                elif proximo == 3:
+                    subject = "El pliego tiene 200 páginas. Nosotros lo leemos en 30 segundos."
+                    html    = _email3_html(nombre)
+
+                elif proximo == 4:
+                    subject = f"{nombre}, 10 días en LicitacionLab — ¿qué te ha parecido?"
+                    html    = _email4_html(nombre)
+
+                else:
+                    continue
+
+                ok = _resend_send(subject, html, email)
+                if ok:
+                    supabase_admin.table("user_nurturing").update({
+                        "ultimo_email": proximo,
+                        "fecha_ultimo": hoy.isoformat()
+                    }).eq("user_id", uid).execute()
+                    enviados += 1
+                    print(f"📧 Nurturing Email {proximo} → {email}")
+                else:
+                    print(f"⚠️ Nurturing fallo Email {proximo} → {email}")
+
+            except Exception as e:
+                print(f"⚠️ Nurturing error usuario {u.get('user_id')}: {e}")
+
+        print(f"✅ Nurturing completado: {enviados} emails enviados de {len(usuarios)} usuarios")
+
+    except Exception as e:
+        print(f"❌ Error en ejecutar_nurturing: {e}")
+
+
+@app.post("/api/bienvenida")
+async def enviar_bienvenida(request: Request):
+    """Envía correo de bienvenida al nuevo usuario tras el registro."""
+    RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+    FROM_EMAIL     = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
+    APP_URL        = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    WS_NUMBER      = os.getenv("WHATSAPP_NUMBER", "18098154457")
+    import urllib.parse
+    ws_url = f"https://wa.me/{WS_NUMBER}?text={urllib.parse.quote('Hola, acabo de registrarme en LicitacionLab y tengo una pregunta.')}"
+
+    if not RESEND_API_KEY:
+        return {"ok": False, "detail": "RESEND_API_KEY no configurada"}
+
+    try:
+        body = await request.json()
+        email  = body.get("email", "")
+        nombre = body.get("nombre", "Usuario")
+        if not email:
+            return {"ok": False, "detail": "email requerido"}
+
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:'Helvetica Neue',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:24px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.1);max-width:100%;">
+
+  <tr><td style="background:linear-gradient(135deg,#0D1B2A,#172F46);padding:28px;">
+    <h1 style="margin:0;color:#2ECC71;font-size:20px;font-weight:800;">LicitacionLab</h1>
+    <p style="margin:4px 0 0;color:#8FAEC9;font-size:12px;">Inteligencia en Compras Públicas · República Dominicana</p>
+  </td></tr>
+
+  <tr><td style="padding:28px 28px 12px;">
+    <p style="margin:0;font-size:16px;color:#1e293b;">Hola <strong>{nombre}</strong>, bienvenido 👋</p>
+    <p style="margin:10px 0 0;font-size:14px;color:#475569;line-height:1.6;">
+      Tu cuenta en LicitacionLab ya está lista. Aquí te explico rápidamente cómo sacarle el máximo provecho:
+    </p>
+  </td></tr>
+
+  <tr><td style="padding:12px 28px;">
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr><td style="padding:10px 14px;background:#f8fafc;border-radius:8px;border-left:4px solid #2ECC71;margin-bottom:8px;">
+        <p style="margin:0;font-size:13px;font-weight:bold;color:#1e293b;">1. Busca licitaciones</p>
+        <p style="margin:4px 0 0;font-size:12px;color:#64748b;">Usa la barra de búsqueda por título, código o categoría UNSPSC. Filtra por Obras, Bienes o Servicios.</p>
+      </td></tr>
+    </table>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;">
+      <tr><td style="padding:10px 14px;background:#f8fafc;border-radius:8px;border-left:4px solid #2ECC71;">
+        <p style="margin:0;font-size:13px;font-weight:bold;color:#1e293b;">2. Sigue los procesos que te interesan</p>
+        <p style="margin:4px 0 0;font-size:12px;color:#64748b;">Presiona "Seguir proceso" para agregar a Mis Procesos. Recibirás alertas automáticas antes de cada fecha clave.</p>
+      </td></tr>
+    </table>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:8px;">
+      <tr><td style="padding:10px 14px;background:#f8fafc;border-radius:8px;border-left:4px solid #2ECC71;">
+        <p style="margin:0;font-size:13px;font-weight:bold;color:#1e293b;">3. Analiza el pliego automáticamente</p>
+        <p style="margin:4px 0 0;font-size:12px;color:#64748b;">Al seguir un proceso, recibirás en este correo el análisis completo: checklist de documentos, alertas de irregularidades, requisitos y más. Si no lo ves, revisa tu carpeta de <strong>correos no deseados</strong>.</p>
+      </td></tr>
+    </table>
+  </td></tr>
+
+  <tr><td style="padding:16px 28px 24px;" align="center">
+    <a href="{APP_URL}" style="display:inline-block;background:#2ECC71;color:#0D1B2A;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:800;letter-spacing:0.3px;margin-bottom:12px;">
+      Abrir LicitacionLab
+    </a>
+    <br>
+    <a href="{ws_url}" style="display:inline-block;background:#25d366;color:white;text-decoration:none;padding:11px 24px;border-radius:8px;font-size:13px;font-weight:700;margin-top:8px;">
+      💬 ¿Dudas? Escríbenos por WhatsApp — respondemos en 15 min
+    </a>
+  </td></tr>
+
+  <tr><td style="background:#f8fafc;padding:14px 28px;border-top:1px solid #e5e7eb;">
+    <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;line-height:1.6;">
+      LicitacionLab · Monitoreo de licitaciones públicas · República Dominicana<br>
+      Recibiste este correo porque te registraste en LicitacionLab.
+    </p>
+  </td></tr>
+
+</table></td></tr></table>
+</body></html>"""
+
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={"from": FROM_EMAIL, "to": [email], "subject": "Bienvenido a LicitacionLab", "html": html},
+            timeout=15,
+        )
+        if resp.status_code in (200, 201):
+            print(f"📧 Bienvenida enviada a {email}")
+            # Registrar en user_nurturing para la secuencia
+            user_id = body.get("user_id", "")
+            if user_id:
+                try:
+                    supabase_admin.table("user_nurturing").upsert({
+                        "user_id":        user_id,
+                        "email":          email,
+                        "nombre":         nombre,
+                        "ultimo_email":   1,
+                        "fecha_registro": datetime.utcnow().isoformat(),
+                        "activo":         True,
+                    }, on_conflict="user_id").execute()
+                except Exception as e:
+                    print(f"⚠️ No se pudo registrar en nurturing: {e}")
+            return {"ok": True}
+        else:
+            print(f"⚠️ Error bienvenida {email}: {resp.status_code}")
+            return {"ok": False}
+    except Exception as e:
+        print(f"⚠️ Error bienvenida: {e}")
+        return {"ok": False}
 
 
 async def solicitar_analisis_proceso(codigo_proceso: str, background_tasks: BackgroundTasks):
