@@ -1551,6 +1551,10 @@ html { background: #0D1B2A; }
       <div id="perfil-nombre-status" style="font-size:12px;color:var(--green);min-height:18px;margin-bottom:12px"></div>
       <button class="btn-outline" onclick="logout()">Cerrar sesión</button>
       <button class="btn-outline" style="margin-top:8px;border-color:var(--green-border);color:var(--green)" onclick="mostrarOnboarding()">Ver tutorial</button>
+      <button onclick="window.open('https://wa.me/18098154457?text=Hola,%20necesito%20ayuda%20con%20LicitacionLab','_blank')" style="width:100%;margin-top:8px;padding:13px;border-radius:var(--r-md);background:#25D366;border:none;color:#fff;font-family:var(--font-body);font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.122 1.527 5.858L0 24l6.335-1.507A11.955 11.955 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 0 1-5.006-1.371l-.36-.213-3.71.883.936-3.618-.234-.372A9.818 9.818 0 1 1 12 21.818z"/></svg>
+        Contactar soporte
+      </button>
     </div>
 
     <div class="perfil-card">
@@ -4214,6 +4218,10 @@ function onbSiguiente() {
   }
 }
 
+function onbAnterior() {
+  if (onbPaso > 0) { onbPaso--; renderOnbPaso(); }
+}
+
 function renderOnbPaso() {
   for (let i = 0; i < ONB_TOTAL; i++) {
     const s = document.getElementById(`onb-slide-${i}`);
@@ -4228,8 +4236,12 @@ function renderOnbPaso() {
   }
   const btn  = document.getElementById('onb-btn-next');
   const skip = document.getElementById('onb-btn-skip');
+  const back = document.getElementById('onb-btn-back');
   if (btn)  btn.textContent = onbPaso === ONB_TOTAL - 1 ? '¡Empezar!' : 'Siguiente →';
+  // Saltar: visible solo si no es el último paso
   if (skip) skip.style.visibility = onbPaso === ONB_TOTAL - 1 ? 'hidden' : 'visible';
+  // Atrás: visible solo desde el paso 2 en adelante
+  if (back) back.style.display = onbPaso > 0 ? 'block' : 'none';
 }
 
 function initOnboarding() {
@@ -4288,7 +4300,7 @@ function initOnboarding() {
       <div class="onb-titulo">Análisis automático del pliego</div>
       <div class="onb-desc">Al seguir un proceso, LicitacionLab analiza el pliego automáticamente y te entrega:<br><br>
         <strong>· Checklist de documentos</strong> requeridos por categoría<br>
-        <strong>· Alertas de irregularidades</strong> según la Ley 47-25<br>
+        <strong>· Alertas de irregularidades</strong> — detecta si el proceso presenta indicios de estar dirigido o amarrado según la Ley 47-25<br>
         <strong>· Evaluación de competitividad</strong> y recomendación<br>
         <strong>· Requisitos de experiencia</strong> y financieros
       </div>
@@ -4300,12 +4312,19 @@ function initOnboarding() {
         <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
       </div>
       <div class="onb-titulo">¡Ya estás listo!</div>
-      <div class="onb-desc">Configura tus <strong>intereses de notificación</strong> en Mi Perfil para recibir solo las licitaciones que te importan.<br><br>¿Tienes preguntas? Contáctanos por <strong>WhatsApp</strong> — respondemos en menos de 24 horas.</div>
-      <div class="onb-tip"><b>Beta:</b> Puedes volver a ver este tutorial en cualquier momento desde Mi Perfil → Ver tutorial.</div>
+      <div class="onb-desc">Configura tus <strong>intereses de notificación</strong> en Mi Perfil para recibir solo las licitaciones que te importan.<br><br>¿Tienes preguntas? Contáctanos — respondemos en <strong>máximo 15 minutos</strong>.</div>
+      <div style="margin-top:16px">
+        <button onclick="window.open('https://wa.me/18098154457?text=Hola,%20tengo%20una%20pregunta%20sobre%20LicitacionLab','_blank')" style="width:100%;padding:14px;border-radius:var(--r-md);background:#25D366;border:none;color:#fff;font-family:var(--font-body);font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.122 1.527 5.858L0 24l6.335-1.507A11.955 11.955 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 0 1-5.006-1.371l-.36-.213-3.71.883.936-3.618-.234-.372A9.818 9.818 0 1 1 12 21.818z"/></svg>
+          Contactar por WhatsApp
+        </button>
+      </div>
+      <div class="onb-tip" style="margin-top:12px"><b>Tip:</b> Puedes volver a ver este tutorial desde Mi Perfil → Ver tutorial.</div>
     </div>
 
     <div class="onb-actions">
       <button class="onb-btn-skip" id="onb-btn-skip" onclick="cerrarOnboarding()">Saltar</button>
+      <button class="onb-btn-back" id="onb-btn-back" onclick="onbAnterior()" style="display:none;padding:15px 16px;border-radius:var(--r-md);background:none;border:1.5px solid var(--border2);color:var(--muted);font-family:var(--font-body);font-size:13px;font-weight:700;cursor:pointer;">← Atrás</button>
       <button class="onb-btn-next" id="onb-btn-next" onclick="onbSiguiente()">Siguiente →</button>
     </div>
   </div>
