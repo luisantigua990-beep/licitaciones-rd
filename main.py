@@ -1545,6 +1545,18 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         "solicitud de compras",
         "certificacion",            # certificaciones varias
         "certificación",
+        "acto de aprobacion",       # acta administrativa, no es el pliego
+        "acto de aprobación",
+        "acta de aprobacion",
+        "acta de aprobación",
+        "solicitud de compra",
+        "compromiso etico",         # formulario ético, no pliego
+        "compromiso ético",
+        "diligencia debida",        # formulario de debida diligencia
+        "conflicto de interes",
+        "conflicto de interés",
+        "formulario de entrega",
+        "entrega de muestras",
     ]
 
     # Grupos de prioridad — se evalúan en orden, el primer grupo con match gana
@@ -1687,11 +1699,22 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
             "bases de la contratacion",
             "bases de la contratación",
             "bases de contratacion",
-            "especificaciones / fichas técnicas / pliego de condiciones",
-            "especificaciones / fichas tecnicas / pliego de condiciones",
             "pliego de condiciones",
             "condiciones especiales de contratacion",
             "condiciones especiales de contratación",
+            # NOTA: "especificaciones / fichas técnicas / pliego de condiciones" se excluye
+            # porque ese mismo texto aparece en "Acto de Aprobación Especificaciones..."
+            # que es un documento administrativo, no el pliego real.
+        ]
+
+        # Tipos que deben excluirse aunque contengan palabras de pliego
+        TIPOS_ACTO_EXCLUIR = [
+            "acto de aprobacion",
+            "acto de aprobación",
+            "acta de aprobacion",
+            "acta de aprobación",
+            "solicitud compra",
+            "solicitud de compra",
         ]
 
         # FASE 1: parsear tabla TR (nombre + tipo)
@@ -1720,8 +1743,11 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
                 tipos_map[file_id] = ""
 
         def tipo_es_pliego(file_id):
-            """True si el tipo del documento confirma que es el pliego principal."""
+            """True si el tipo confirma pliego principal, excluyendo actos administrativos."""
             tipo = tipos_map.get(file_id, "")
+            # Primero excluir actos administrativos aunque contengan palabras de pliego
+            if any(t in tipo for t in TIPOS_ACTO_EXCLUIR):
+                return False
             return any(t in tipo for t in TIPOS_PLIEGO)
 
         # Buscar por nombre del archivo según grupos de prioridad
@@ -2458,7 +2484,7 @@ def ejecutar_analisis_gemini(proceso_id: str):
                 for sub in subs:
                     enviar_notificacion(
                         subscription_info={"endpoint": sub["endpoint"], "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}},
-                        titulo="✅ Análisis listo — Revisa tu correo",
+                        titulo="Análisis listo — Revisa tu correo",
                         cuerpo=f"El análisis de {proceso_id} está completo. Te enviamos los detalles por correo.",
                         url=f"{APP_URL}?proceso={proceso_id}"
                     )
