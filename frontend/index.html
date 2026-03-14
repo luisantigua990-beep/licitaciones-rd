@@ -2687,14 +2687,24 @@ async function verDetalle(codigo) {
         </div>`).join('')
       : '<div style="padding:20px;color:var(--muted);font-size:13px">Sin artículos registrados</div>'}
     </div>
-    ${(data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') ? `
-    <div class="analisis-procesando">
-      <div class="analisis-procesando-spinner"></div>
-      <div class="analisis-procesando-texto">Estamos procesando el análisis del pliego, puede tomar unos minutos. Te llegará un correo cuando esté listo.</div>
-    </div>` : (data.analisis?.estado === 'error' || data.analisis?.estado === 'pendiente_analisis') ? `
-    <div class="analisis-procesando" style="background:rgba(231,76,60,0.08);border-color:rgba(231,76,60,0.2)">
-      <div class="analisis-procesando-texto" style="color:var(--red)">Hubo un problema al analizar este proceso. Contacta soporte por WhatsApp.</div>
-    </div>` : ''}
+    ${(() => {
+      const estado = data.analisis?.estado;
+      const ck = data.analisis?.checklist_categorizado;
+      const tieneChecklist = ck && (ck.legal?.length || ck.tecnica?.length || ck.financiera?.length);
+      // Solo mostrar spinner si está procesando/pendiente Y no hay checklist todavía
+      if ((estado === 'procesando' || estado === 'pendiente') && !tieneChecklist) {
+        return `<div class="analisis-procesando">
+          <div class="analisis-procesando-spinner"></div>
+          <div class="analisis-procesando-texto">Estamos procesando el análisis del pliego, puede tomar unos minutos. Te llegará un correo cuando esté listo.</div>
+        </div>`;
+      }
+      if (estado === 'error' || estado === 'pendiente_analisis') {
+        return `<div class="analisis-procesando" style="background:rgba(231,76,60,0.08);border-color:rgba(231,76,60,0.2)">
+          <div class="analisis-procesando-texto" style="color:var(--red)">Hubo un problema al analizar este proceso. Contacta soporte por WhatsApp.</div>
+        </div>`;
+      }
+      return '';
+    })()}
     ${renderChecklistHTML(data.analisis, p.codigo_proceso)}`;
   // Actualizar botón seguir DESPUÉS de que el DOM esté listo
   setTimeout(async () => {
@@ -2709,13 +2719,11 @@ async function verDetalle(codigo) {
     await cargarEstadoChecklist(p.codigo_proceso);
   }, 10);
 
-  // Polling automático si el análisis está procesando
-  if (data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') {
-    iniciarPollingAnalisis(p.codigo_proceso);
-  }
-
-  // Polling automático si el análisis está procesando
-  if (data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') {
+  // Polling automático solo si está procesando Y no hay checklist aún
+  const _estadoActual = data.analisis?.estado;
+  const _ckActual = data.analisis?.checklist_categorizado;
+  const _tieneChecklist = _ckActual && (_ckActual.legal?.length || _ckActual.tecnica?.length || _ckActual.financiera?.length);
+  if ((_estadoActual === 'procesando' || _estadoActual === 'pendiente') && !_tieneChecklist) {
     iniciarPollingAnalisis(p.codigo_proceso);
   }
 }
