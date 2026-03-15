@@ -131,21 +131,25 @@ body {
 /* ── SCREENS ── */
 .screen { position: fixed; inset: 0; z-index: 1; background: var(--bg); display: none; flex-direction: column; }
 .screen.active { display: flex; }
-/* Auth screen necesita scroll propio */
-#screen-auth.active { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* Auth screen: position absolute para que iOS pueda subir el teclado correctamente */
+#screen-auth {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 2 !important;
+  overflow-y: scroll !important;
+  -webkit-overflow-scrolling: touch;
+}
+#screen-auth.active { display: flex; }
 #tabs-wrapper { flex: 1; position: relative; overflow: clip; min-height: 0; }
 
 /* ── AUTH SCREEN ── */
 #screen-auth {
-  /* iOS fix: position relative + min-height para que el teclado no tape los inputs */
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100dvh;
-  min-height: 100vh; /* fallback navegadores sin dvh */
+  min-height: 100%;
   padding: max(24px, env(safe-area-inset-top)) 20px max(80px, env(safe-area-inset-bottom));
-  overflow-y: auto;
+  overflow-y: scroll;
   -webkit-overflow-scrolling: touch;
   background:
     radial-gradient(ellipse 90% 55% at 50% -10%, rgba(46,204,113,0.22) 0%, transparent 60%),
@@ -3087,21 +3091,65 @@ document.addEventListener('click', e=>{
 });
 
 // ── INIT ──
-const savedToken = localStorage.getItem('sb_token');
-const savedUser  = localStorage.getItem('sb_user');
-if (savedToken && savedUser) {
-  currentUser = JSON.parse(savedUser);
-  // Si por alguna razón no tiene id, decodificar del JWT
-  if (!currentUser?.id && savedToken) {
+async function iniciarApp() {
+  const savedToken   = localStorage.getItem('sb_token');
+  const savedUser    = localStorage.getItem('sb_user');
+  const refreshToken = localStorage.getItem('sb_refresh_token');
+
+  if (!savedToken || !savedUser) return; // no hay sesión guardada
+
+  // Verificar si el token JWT está vencido
+  let tokenVencido = false;
+  try {
+    const payload = JSON.parse(atob(savedToken.split('.')[1]));
+    tokenVencido = payload.exp && (payload.exp * 1000) < Date.now();
+  } catch(e) { tokenVencido = true; }
+
+  if (tokenVencido && refreshToken) {
+    // Token vencido — intentar refresh antes de mostrar la app
     try {
-      const payload = JSON.parse(atob(savedToken.split('.')[1]));
-      currentUser = { ...currentUser, id: payload.sub };
-    } catch(e) {}
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+        body: JSON.stringify({ refresh_token: refreshToken })
+      });
+      const data = await res.json();
+      if (data.access_token) {
+        localStorage.setItem('sb_token', data.access_token);
+        if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
+        if (data.user) localStorage.setItem('sb_user', JSON.stringify(data.user));
+        currentUser = data.user;
+        console.log('✅ Token refrescado al arrancar');
+      } else {
+        // Refresh falló — limpiar sesión
+        localStorage.removeItem('sb_token');
+        localStorage.removeItem('sb_refresh_token');
+        localStorage.removeItem('sb_user');
+        return;
+      }
+    } catch(e) {
+      console.warn('⚠️ No se pudo refrescar el token:', e);
+      // Sin conexión — intentar con el token viejo de todas formas
+    }
   }
+
+  // Restaurar usuario
+  if (!currentUser) {
+    currentUser = JSON.parse(savedUser);
+    if (!currentUser?.id && savedToken) {
+      try {
+        const payload = JSON.parse(atob(savedToken.split('.')[1]));
+        currentUser = { ...currentUser, id: payload.sub };
+      } catch(e) {}
+    }
+  }
+
   console.log('✅ Sesión restaurada, user:', currentUser?.id);
   showApp();
   cargarSeguimiento();
 }
+
+iniciarApp();
 
 // ── ABRIR PROCESO DESDE NOTIFICACIÓN ──
 // _abrirProcesoDeNotificacion() se llama al terminar cargarProcesos().
