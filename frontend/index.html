@@ -137,12 +137,14 @@ body {
 
 /* ── AUTH SCREEN ── */
 #screen-auth {
+  /* iOS fix: position relative + min-height para que el teclado no tape los inputs */
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100%;
-  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
-  position: relative;
+  min-height: 100dvh;
+  min-height: 100vh; /* fallback navegadores sin dvh */
+  padding: max(24px, env(safe-area-inset-top)) 20px max(80px, env(safe-area-inset-bottom));
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   background:
