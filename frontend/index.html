@@ -118,6 +118,8 @@
   -webkit-tap-highlight-color: transparent;
 }
 html, body { height: 100%; overflow: hidden; }
+/* iOS fix: cuando el auth está activo, body necesita poder hacer scroll para que el teclado suba */
+body.auth-visible { overflow: auto !important; }
 body {
   font-family: var(--font-body);
   background: var(--bg);
@@ -1302,7 +1304,7 @@ html { background: #0D1B2A; }
   })();
 </script>
 </head>
-<body>
+<body class="auth-visible">
 
 <div id="screen-auth" class="screen active">
 
@@ -2124,11 +2126,13 @@ function logout() {
   currentUser = null;
   document.getElementById('screen-app').classList.remove('active');
   document.getElementById('screen-auth').classList.add('active');
+  document.body.classList.add('auth-visible'); // iOS: permite scroll para el teclado
 }
 
 function showApp() {
   document.getElementById('screen-auth').classList.remove('active');
   document.getElementById('screen-app').classList.add('active');
+  document.body.classList.remove('auth-visible'); // iOS: restaurar overflow hidden
 
   // Extraer nombre real del usuario desde user_metadata
   const nombre = currentUser?.user_metadata?.nombre
@@ -3227,6 +3231,7 @@ async function sbRest(path, method = 'GET', body = null, extraHeaders = {}) {
       currentUser = null;
       document.getElementById('screen-app')?.classList.remove('active');
       document.getElementById('screen-auth')?.classList.add('active');
+      document.body.classList.add('auth-visible');
     }
   }
 
