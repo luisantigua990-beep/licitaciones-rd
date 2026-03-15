@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0D1B2A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -118,7 +118,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 html, body { height: 100%; overflow: hidden; }
-/* iOS teclado fix: solo los inputs del auth hacen scroll al recibir foco */
 body {
   font-family: var(--font-body);
   background: var(--bg);
@@ -132,15 +131,8 @@ body {
 /* ── SCREENS ── */
 .screen { position: fixed; inset: 0; z-index: 1; background: var(--bg); display: none; flex-direction: column; }
 .screen.active { display: flex; }
-/* Auth screen: position absolute para que iOS pueda subir el teclado correctamente */
-#screen-auth {
-  position: absolute !important;
-  inset: 0 !important;
-  z-index: 2 !important;
-  overflow-y: scroll !important;
-  -webkit-overflow-scrolling: touch;
-}
-#screen-auth.active { display: flex; }
+/* Auth screen necesita scroll propio */
+#screen-auth.active { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 #tabs-wrapper { flex: 1; position: relative; overflow: clip; min-height: 0; }
 
 /* ── AUTH SCREEN ── */
@@ -149,8 +141,9 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100%;
-  padding: max(24px, env(safe-area-inset-top)) 20px max(80px, env(safe-area-inset-bottom));
-  overflow-y: scroll;
+  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  position: relative;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   background:
     radial-gradient(ellipse 90% 55% at 50% -10%, rgba(46,204,113,0.22) 0%, transparent 60%),
@@ -814,7 +807,7 @@ body {
 
 /* ── CHECKLIST ── */
 .checklist-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r-lg); overflow: hidden; margin-bottom: 12px; box-shadow: var(--shadow-card); }
-.checklist-header { padding: 14px 16px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.checklist-header { padding: 14px 16px 12px; border-bottom: 1px solid var(--border); }
 .checklist-titulo { font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
 .checklist-progreso { display: flex; align-items: center; gap: 10px; }
 .checklist-progreso-bar { flex: 1; height: 5px; background: var(--border2); border-radius: 3px; overflow: hidden; }
@@ -2699,30 +2692,14 @@ async function verDetalle(codigo) {
         </div>`).join('')
       : '<div style="padding:20px;color:var(--muted);font-size:13px">Sin artículos registrados</div>'}
     </div>
-    ${(() => {
-      const estado = data.analisis?.estado;
-      // Si hay cualquier dato de análisis, no mostrar el spinner
-      const tieneAlgunDato = data.analisis && (
-        data.analisis.checklist_categorizado ||
-        data.analisis.checklist_legal ||
-        data.analisis.checklist_documentos ||
-        data.analisis.resumen_ejecutivo ||
-        data.analisis.alertas_fraude
-      );
-      if (tieneAlgunDato) return ''; // análisis existe, no mostrar spinner
-      if (estado === 'procesando' || estado === 'pendiente') {
-        return `<div class="analisis-procesando">
-          <div class="analisis-procesando-spinner"></div>
-          <div class="analisis-procesando-texto">Estamos procesando el análisis del pliego, puede tomar unos minutos. Te llegará un correo cuando esté listo.</div>
-        </div>`;
-      }
-      if (estado === 'error' || estado === 'pendiente_analisis') {
-        return `<div class="analisis-procesando" style="background:rgba(231,76,60,0.08);border-color:rgba(231,76,60,0.2)">
-          <div class="analisis-procesando-texto" style="color:var(--red)">Hubo un problema al analizar este proceso. Contacta soporte por WhatsApp.</div>
-        </div>`;
-      }
-      return '';
-    })()}
+    ${(data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') ? `
+    <div class="analisis-procesando">
+      <div class="analisis-procesando-spinner"></div>
+      <div class="analisis-procesando-texto">Estamos procesando el análisis del pliego, puede tomar unos minutos. Te llegará un correo cuando esté listo.</div>
+    </div>` : (data.analisis?.estado === 'error' || data.analisis?.estado === 'pendiente_analisis') ? `
+    <div class="analisis-procesando" style="background:rgba(231,76,60,0.08);border-color:rgba(231,76,60,0.2)">
+      <div class="analisis-procesando-texto" style="color:var(--red)">Hubo un problema al analizar este proceso. Contacta soporte por WhatsApp.</div>
+    </div>` : ''}
     ${renderChecklistHTML(data.analisis, p.codigo_proceso)}`;
   // Actualizar botón seguir DESPUÉS de que el DOM esté listo
   setTimeout(async () => {
@@ -2737,14 +2714,13 @@ async function verDetalle(codigo) {
     await cargarEstadoChecklist(p.codigo_proceso);
   }, 10);
 
-  // Polling automático solo si está procesando/pendiente y sin ningún dato de análisis
-  const _estadoActual = data.analisis?.estado;
-  const _tieneAlgunDato = data.analisis && (
-    data.analisis.checklist_categorizado || data.analisis.checklist_legal ||
-    data.analisis.checklist_documentos   || data.analisis.resumen_ejecutivo ||
-    data.analisis.alertas_fraude
-  );
-  if ((_estadoActual === 'procesando' || _estadoActual === 'pendiente') && !_tieneAlgunDato) {
+  // Polling automático si el análisis está procesando
+  if (data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') {
+    iniciarPollingAnalisis(p.codigo_proceso);
+  }
+
+  // Polling automático si el análisis está procesando
+  if (data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') {
     iniciarPollingAnalisis(p.codigo_proceso);
   }
 }
@@ -3091,33 +3067,21 @@ document.addEventListener('click', e=>{
   }
 });
 
-// ── iOS PWA: scroll al input cuando recibe foco para que el teclado no lo tape ──
-document.addEventListener('focusin', function(e) {
-  if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') return;
-  const authVisible = document.getElementById('screen-auth')?.classList.contains('active');
-  if (!authVisible) return;
-  setTimeout(() => {
-    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, 350); // esperar a que el teclado termine de subir
-});
-
 // ── INIT ──
-async function iniciarApp() {
+(async function iniciarApp() {
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
   const refreshToken = localStorage.getItem('sb_refresh_token');
+  if (!savedToken || !savedUser) return;
 
-  if (!savedToken || !savedUser) return; // no hay sesión guardada
-
-  // Verificar si el token JWT está vencido
+  // Verificar si el token está vencido
   let tokenVencido = false;
   try {
     const payload = JSON.parse(atob(savedToken.split('.')[1]));
     tokenVencido = payload.exp && (payload.exp * 1000) < Date.now();
-  } catch(e) { tokenVencido = true; }
+  } catch(e) {}
 
   if (tokenVencido && refreshToken) {
-    // Token vencido — intentar refresh antes de mostrar la app
     try {
       const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
         method: 'POST',
@@ -3130,21 +3094,15 @@ async function iniciarApp() {
         if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
         if (data.user) localStorage.setItem('sb_user', JSON.stringify(data.user));
         currentUser = data.user;
-        console.log('✅ Token refrescado al arrancar');
       } else {
-        // Refresh falló — limpiar sesión
         localStorage.removeItem('sb_token');
         localStorage.removeItem('sb_refresh_token');
         localStorage.removeItem('sb_user');
         return;
       }
-    } catch(e) {
-      console.warn('⚠️ No se pudo refrescar el token:', e);
-      // Sin conexión — intentar con el token viejo de todas formas
-    }
+    } catch(e) { /* sin conexión — continuar con token viejo */ }
   }
 
-  // Restaurar usuario
   if (!currentUser) {
     currentUser = JSON.parse(savedUser);
     if (!currentUser?.id && savedToken) {
@@ -3154,13 +3112,10 @@ async function iniciarApp() {
       } catch(e) {}
     }
   }
-
   console.log('✅ Sesión restaurada, user:', currentUser?.id);
   showApp();
   cargarSeguimiento();
-}
-
-iniciarApp();
+})();
 
 // ── ABRIR PROCESO DESDE NOTIFICACIÓN ──
 // _abrirProcesoDeNotificacion() se llama al terminar cargarProcesos().
@@ -3698,19 +3653,7 @@ function limpiarBadge() {
 let checklistEstado = {};
 
 function renderChecklistHTML(analisis, codigo) {
-  // Buscar checklist en todos los campos posibles — el nombre del campo varió entre versiones
-  let checklist = analisis?.checklist_categorizado
-    || analisis?.checklist_documentos
-    || (analisis?.checklist_legal ? { legal: analisis.checklist_legal } : null);
-
-  // Si viene con una subclave extra anidada, desempaquetar
-  if (checklist && !checklist.legal && !checklist.tecnica && !checklist.financiera) {
-    const subkeys = Object.keys(checklist);
-    if (subkeys.length === 1 && typeof checklist[subkeys[0]] === 'object') {
-      checklist = checklist[subkeys[0]];
-    }
-  }
-
+  const checklist = analisis?.checklist_categorizado;
   const enSeguimiento = estaEnSeguimiento(codigo);
 
   if (!checklist || (!checklist.legal?.length && !checklist.tecnica?.length && !checklist.financiera?.length)) {
@@ -3772,19 +3715,13 @@ function renderChecklistHTML(analisis, codigo) {
 
   return `<div class="checklist-card" id="checklist-${codigo}">
     <div class="checklist-header">
-      <div style="flex:1">
-        <div class="checklist-titulo">📋 Checklist de documentos</div>
-        <div class="checklist-progreso">
-          <div class="checklist-progreso-bar">
-            <div class="checklist-progreso-fill" id="cl-fill-${codigo}" style="width:${pct}%"></div>
-          </div>
-          <div class="checklist-progreso-texto" id="cl-texto-${codigo}">${totalCheck}/${totalItems} listos</div>
+      <div class="checklist-titulo">📋 Checklist de documentos</div>
+      <div class="checklist-progreso">
+        <div class="checklist-progreso-bar">
+          <div class="checklist-progreso-fill" id="cl-fill-${codigo}" style="width:${pct}%"></div>
         </div>
+        <div class="checklist-progreso-texto" id="cl-texto-${codigo}">${totalCheck}/${totalItems} listos</div>
       </div>
-      <button class="btn-pdf-arts" onclick="descargarChecklistPDF('${codigo}')" style="margin-top:2px;flex-shrink:0">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        PDF
-      </button>
     </div>
     ${seccionesHTML}
   </div>`;
@@ -4513,119 +4450,6 @@ async function descargarArticulosPDF(codigo) {
     mostrarToast('PDF descargado');
   } catch(e) {
     console.error('Error PDF:', e);
-    mostrarToast('Error generando PDF');
-  }
-}
-
-// ── DESCARGA PDF CHECKLIST ────────────────────────────────
-async function descargarChecklistPDF(codigo) {
-  try {
-    mostrarToast('Generando PDF...');
-    const res  = await fetch(`${API}/api/procesos/${codigo}`);
-    const data = await res.json();
-    const p    = data.proceso;
-    const analisis = data.analisis;
-
-    // Obtener checklist de cualquier campo disponible
-    let checklist = analisis?.checklist_categorizado
-      || analisis?.checklist_documentos
-      || (analisis?.checklist_legal ? { legal: analisis.checklist_legal } : null);
-
-    if (!checklist) { mostrarToast('Sin checklist para descargar'); return; }
-
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-    // ── Encabezado ──
-    doc.setFillColor(23, 47, 70);
-    doc.rect(0, 0, 210, 28, 'F');
-    doc.setTextColor(46, 204, 113);
-    doc.setFontSize(13); doc.setFont('helvetica', 'bold');
-    doc.text('LicitacionLab', 14, 11);
-    doc.setTextColor(143, 174, 201);
-    doc.setFontSize(8); doc.setFont('helvetica', 'normal');
-    doc.text('Checklist de Documentos Requeridos', 14, 17);
-
-    // ── Info del proceso ──
-    doc.setTextColor(240, 248, 255);
-    doc.setFontSize(9); doc.setFont('helvetica', 'bold');
-    const titulo = (p.titulo || codigo).substring(0, 90);
-    doc.text(doc.splitTextToSize(titulo, 182), 14, 24);
-
-    let y = 34;
-    doc.setTextColor(60, 60, 60);
-    doc.setFontSize(8); doc.setFont('helvetica', 'normal');
-    doc.text(`Código: ${p.codigo_proceso}`, 14, y);
-    doc.text(`Institución: ${p.unidad_compra || '—'}`, 90, y);
-    y += 8;
-
-    // ── Secciones del checklist ──
-    const secciones = [
-      { key: 'legal',      label: 'LEGAL',      color: [30, 64, 175] },
-      { key: 'tecnica',    label: 'TÉCNICA',     color: [8, 145, 178] },
-      { key: 'financiera', label: 'FINANCIERA',  color: [15, 118, 110] },
-    ];
-
-    for (const sec of secciones) {
-      const items = checklist[sec.key] || [];
-      if (!items.length) continue;
-
-      // Header sección
-      doc.setFillColor(...sec.color);
-      doc.rect(14, y, 182, 7, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(8); doc.setFont('helvetica', 'bold');
-      doc.text(sec.label, 17, y + 4.8);
-      y += 9;
-
-      // Items
-      for (const item of items) {
-        if (y > 270) { doc.addPage(); y = 20; }
-        const subsanable = item.es_subsanable;
-        const badge = subsanable === false ? '✗ No subsanable' : '✓ Subsanable';
-        const badgeColor = subsanable === false ? [220, 38, 38] : [22, 163, 74];
-
-        doc.setFillColor(249, 250, 251);
-        doc.rect(14, y, 182, 10, 'F');
-        doc.setDrawColor(229, 231, 235);
-        doc.rect(14, y, 182, 10, 'S');
-
-        // Checkbox
-        doc.setDrawColor(150, 150, 150);
-        doc.rect(17, y + 2.5, 5, 5, 'S');
-        const marcado = checklistEstado[`${codigo}-${sec.key}_${items.indexOf(item)}`];
-        if (marcado) {
-          doc.setTextColor(46, 204, 113);
-          doc.setFontSize(8);
-          doc.text('✓', 18, y + 6.5);
-        }
-
-        // Nombre documento
-        doc.setTextColor(30, 30, 30);
-        doc.setFontSize(8); doc.setFont('helvetica', 'normal');
-        const nombreDoc = doc.splitTextToSize(item.documento || '', 130);
-        doc.text(nombreDoc, 25, y + 4.5);
-
-        // Badge subsanable
-        doc.setTextColor(...badgeColor);
-        doc.setFontSize(7); doc.setFont('helvetica', 'bold');
-        doc.text(badge, 165, y + 4.5);
-
-        y += nombreDoc.length > 1 ? 14 : 11;
-      }
-      y += 3;
-    }
-
-    // ── Pie ──
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-    doc.setTextColor(150, 150, 150);
-    doc.text(`Generado por LicitacionLab · ${new Date().toLocaleDateString('es-DO')}`, 14, 290);
-    doc.text('licitacionlab.com', 196, 290, { align: 'right' });
-
-    doc.save(`${codigo}_checklist.pdf`);
-    mostrarToast('PDF descargado');
-  } catch(e) {
-    console.error('Error PDF checklist:', e);
     mostrarToast('Error generando PDF');
   }
 }
