@@ -1143,6 +1143,22 @@ async def suscribirse(payload: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/notificaciones/actualizar-userid")
+async def actualizar_userid_suscripcion(payload: dict):
+    """Corrige el user_id de una suscripción existente identificada por endpoint."""
+    try:
+        endpoint = payload.get("endpoint")
+        user_id  = payload.get("user_id")
+        if not endpoint or not user_id or user_id == "user":
+            return {"ok": False, "detail": "Datos inválidos"}
+        supabase.table("user_subscriptions") \
+            .update({"user_id": user_id}) \
+            .eq("endpoint", endpoint).execute()
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "detail": str(e)}
+
+
 @app.post("/api/notificaciones/desuscribirse")
 async def desuscribirse(payload: dict):
     endpoint = payload.get("endpoint")
