@@ -1,10 +1,16 @@
-const CACHE_NAME = 'licitacionlab-v2';
+const CACHE_NAME = 'licitacionlab-v3';
 const CACHE_URLS = [
   '/',
   '/frontend/index.html',
   '/frontend/manifest.json',
-  '/static/icon-192.png',
   '/static/icon-72.png',
+  '/static/icon-96.png',
+  '/static/icon-128.png',
+  '/static/icon-144.png',
+  '/static/icon-152.png',
+  '/static/icon-192.png',
+  '/static/icon-384.png',
+  '/static/icon-512.png',
 ];
 
 // ── INSTALL: cachear recursos estáticos ──
