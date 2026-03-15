@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#0D1B2A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -118,8 +118,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 html, body { height: 100%; overflow: hidden; }
-/* iOS fix: cuando el auth está activo, body necesita poder hacer scroll para que el teclado suba */
-body.auth-visible { overflow: auto !important; }
+/* iOS teclado fix: solo los inputs del auth hacen scroll al recibir foco */
 body {
   font-family: var(--font-body);
   background: var(--bg);
@@ -1304,7 +1303,7 @@ html { background: #0D1B2A; }
   })();
 </script>
 </head>
-<body class="auth-visible">
+<body>
 
 <div id="screen-auth" class="screen active">
 
@@ -2126,13 +2125,11 @@ function logout() {
   currentUser = null;
   document.getElementById('screen-app').classList.remove('active');
   document.getElementById('screen-auth').classList.add('active');
-  document.body.classList.add('auth-visible'); // iOS: permite scroll para el teclado
 }
 
 function showApp() {
   document.getElementById('screen-auth').classList.remove('active');
   document.getElementById('screen-app').classList.add('active');
-  document.body.classList.remove('auth-visible'); // iOS: restaurar overflow hidden
 
   // Extraer nombre real del usuario desde user_metadata
   const nombre = currentUser?.user_metadata?.nombre
@@ -3094,6 +3091,16 @@ document.addEventListener('click', e=>{
   }
 });
 
+// ── iOS PWA: scroll al input cuando recibe foco para que el teclado no lo tape ──
+document.addEventListener('focusin', function(e) {
+  if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') return;
+  const authVisible = document.getElementById('screen-auth')?.classList.contains('active');
+  if (!authVisible) return;
+  setTimeout(() => {
+    e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 350); // esperar a que el teclado termine de subir
+});
+
 // ── INIT ──
 async function iniciarApp() {
   const savedToken   = localStorage.getItem('sb_token');
@@ -3231,7 +3238,6 @@ async function sbRest(path, method = 'GET', body = null, extraHeaders = {}) {
       currentUser = null;
       document.getElementById('screen-app')?.classList.remove('active');
       document.getElementById('screen-auth')?.classList.add('active');
-      document.body.classList.add('auth-visible');
     }
   }
 
