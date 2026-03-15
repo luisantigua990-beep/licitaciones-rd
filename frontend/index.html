@@ -2829,6 +2829,13 @@ async function checkPushStatus() {
     pushSubscription = sub;
     if (status) status.style.display = 'flex';
     if (icono)  icono.classList.add('activa');
+    // Corregir user_id si quedó guardado como 'user' en vez del UUID real
+    if (currentUser?.id) {
+      fetch(`${API}/api/notificaciones/actualizar-userid`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ endpoint: sub.endpoint, user_id: currentUser.id })
+      }).catch(() => {});
+    }
   } else {
     if (toggle) toggle.classList.remove('on');
     if (status) status.style.display = 'none';
@@ -2878,9 +2885,11 @@ async function togglePush() {
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(publicKey)
       });
+      const userId = currentUser?.id;
+      if (!userId) { console.error('Push: no hay user_id'); return; }
       await fetch(`${API}/api/notificaciones/suscribirse`, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({user_id: currentUser?.id||'user', subscription: pushSubscription.toJSON(), rubros:[]})
+        body: JSON.stringify({user_id: userId, subscription: pushSubscription.toJSON(), rubros:[]})
       });
       toggle.classList.add('on');
       status.style.display = 'flex';
