@@ -31,6 +31,23 @@ from google import genai
 from monitor import ejecutar_monitor
 from notifications import enviar_notificacion
 
+def enviar_push_y_limpiar(sub: dict, titulo: str, cuerpo: str, url: str = "/") -> bool:
+    """Envía notificación y desactiva la suscripción si devuelve 410 (expirada)."""
+    resultado = enviar_notificacion(
+        subscription_info={"endpoint": sub["endpoint"], "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}},
+        titulo=titulo, cuerpo=cuerpo, url=url
+    )
+    if resultado == "410":
+        try:
+            supabase.table("user_subscriptions") \
+                .update({"active": False}) \
+                .eq("endpoint", sub["endpoint"]).execute()
+            print(f"🧹 Suscripción 410 desactivada: {sub['endpoint'][:50]}...")
+        except Exception as e:
+            print(f"⚠️ No se pudo desactivar suscripción 410: {e}")
+        return False
+    return resultado is True
+
 # --- AGREGADOS PARA INTEGRACIÓN CON N8N ---
 from pydantic import BaseModel
 from typing import List
@@ -91,12 +108,26 @@ def scraper_loop():
     Detecta procesos nuevos inmediatamente, sin esperar el ciclo de 8h de la API.
     """
     INTERVALO_MINUTOS = 3
-    # Esperar 30 segundos al inicio para que el monitor API arranque primero
+    TIMEOUT_SCRAPER   = 120  # máximo 2 minutos por ejecución
     time.sleep(30)
     while True:
         try:
             from scraper_portal import ejecutar_scraper_portal
-            ejecutar_scraper_portal()
+            import threading
+            resultado = [None]
+            error     = [None]
+            def _run():
+                try:
+                    resultado[0] = ejecutar_scraper_portal()
+                except Exception as e:
+                    error[0] = e
+            hilo = threading.Thread(target=_run, daemon=True)
+            hilo.start()
+            hilo.join(timeout=TIMEOUT_SCRAPER)
+            if hilo.is_alive():
+                print(f"⚠️ Scraper portal timeout ({TIMEOUT_SCRAPER}s) — saltando ciclo")
+            elif error[0]:
+                print(f"❌ Error en scraper portal: {error[0]}")
         except Exception as e:
             print(f"❌ Error en scraper portal: {e}")
 
@@ -105,14 +136,14 @@ def scraper_loop():
 
 def nurturing_loop():
     """Ejecuta la secuencia de nurturing de emails una vez al día."""
-    # Esperar 2 min al inicio para que todo arranque
     time.sleep(120)
     while True:
         try:
+            inicio = time.time()
             ejecutar_nurturing()
+            print(f"✅ Nurturing completado en {time.time()-inicio:.1f}s")
         except Exception as e:
             print(f"❌ Error en nurturing: {e}")
-        # Correr una vez al día
         time.sleep(24 * 3600)
 
 
@@ -157,6 +188,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/health")
+def health_check():
+    """Health check para Railway — verifica que los hilos críticos estén vivos."""
+    hilos_vivos = {t.name: t.is_alive() for t in threading.enumerate()}
+    return {
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat(),
+        "threads": len(threading.enumerate()),
+    }
 
 
 @app.get("/api/sync-status")
@@ -393,22 +435,34 @@ def plazos_bulk(codigos: str):
 # ══════════════════════════════════════════════════════════════
 
 def _resend_send(subject: str, html: str, to_email: str) -> bool:
-    """Envía un email via Resend. Retorna True si fue exitoso."""
+    """Envía un email via Resend con retry ante rate limit. Retorna True si fue exitoso."""
     RESEND_API_KEY = os.getenv("RESEND_API_KEY")
     FROM_EMAIL     = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
     if not RESEND_API_KEY:
         return False
-    try:
-        resp = requests.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-            json={"from": FROM_EMAIL, "to": [to_email], "subject": subject, "html": html},
-            timeout=15,
-        )
-        return resp.status_code in (200, 201)
-    except Exception as e:
-        print(f"⚠️ Resend error: {e}")
-        return False
+    for intento in range(3):
+        try:
+            resp = requests.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+                json={"from": FROM_EMAIL, "to": [to_email], "subject": subject, "html": html},
+                timeout=20,
+            )
+            if resp.status_code in (200, 201):
+                return True
+            if resp.status_code == 429:
+                # Rate limit — esperar y reintentar
+                espera = (intento + 1) * 5
+                print(f"⚠️ Resend rate limit — esperando {espera}s (intento {intento+1}/3)")
+                time.sleep(espera)
+                continue
+            print(f"⚠️ Resend error {resp.status_code}: {resp.text[:100]}")
+            return False
+        except Exception as e:
+            print(f"⚠️ Resend error: {e}")
+            if intento < 2:
+                time.sleep(3)
+    return False
 
 
 def _html_wrap(contenido: str, nombre: str) -> str:
@@ -858,7 +912,7 @@ async def solicitar_analisis_proceso(codigo_proceso: str, background_tasks: Back
         async def _analizar_con_semaforo():
             async with _semaforo_analisis:
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, ejecutar_analisis_gemini, codigo_proceso)
+                await asyncio.wait_for(loop.run_in_executor(None, ejecutar_analisis_gemini, codigo_proceso), timeout=600)
 
         background_tasks.add_task(_analizar_con_semaforo)
         return {"status": "encolado", "proceso_id": codigo_proceso, "mensaje": "Análisis IA iniciado"}
@@ -1194,8 +1248,8 @@ async def enviar_prueba(payload: dict):
             "endpoint": sub["endpoint"],
             "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}
         }
-        ok = enviar_notificacion(
-            subscription_info,
+        ok = enviar_push_y_limpiar(
+            sub,
             titulo="🔔 LicitacionLab Test",
             cuerpo="Notificaciones funcionando correctamente.",
             url="/"
@@ -1291,8 +1345,8 @@ async def notificar_seguimiento():
             APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
 
             for sub in subs:
-                ok = enviar_notificacion(
-                    subscription_info={"endpoint": sub["endpoint"], "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}},
+                ok = enviar_push_y_limpiar(
+                    sub,
                     titulo=urgencia,
                     cuerpo=f"{titulo} · {entidad}",
                     url=f"{APP_URL}?proceso={codigo}"
@@ -1946,7 +2000,10 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
             raise Exception(f"El pliego seleccionado es un ZIP y no se encontró un PDF alternativo en el inventario.")
 
     print(f"📄 PDF: {len(resp_pdf.content):,} bytes. Extrayendo texto...")
+
     pdf_bytes = resp_pdf.content
+    del resp_pdf  # liberar la respuesta HTTP de inmediato para ahorrar RAM
+
     pdf_file = io.BytesIO(pdf_bytes)
     lector_pdf = PdfReader(pdf_file)
 
@@ -1956,6 +2013,7 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
         if texto:
             texto_completo += texto + "\n"
 
+    del pdf_file, lector_pdf  # liberar objetos PDF de la memoria
     print(f"📝 {len(texto_completo):,} caracteres extraídos del PDF")
 
     # Si el PDF está escaneado (imágenes), usar los bytes crudos para que
@@ -2521,8 +2579,8 @@ def ejecutar_analisis_gemini(proceso_id: str):
                 subs = supabase.table("user_subscriptions") \
                     .select("endpoint,auth,p256dh").eq("user_id", uid).eq("active", True).execute().data or []
                 for sub in subs:
-                    enviar_notificacion(
-                        subscription_info={"endpoint": sub["endpoint"], "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}},
+                    enviar_push_y_limpiar(
+                        sub,
                         titulo="Análisis listo — Revisa tu correo",
                         cuerpo=f"El análisis de {proceso_id} está completo. Te enviamos los detalles por correo.",
                         url=f"{APP_URL}?proceso={proceso_id}"
@@ -2697,7 +2755,7 @@ async def forzar_analisis(background_tasks: BackgroundTasks, codigo: str):
         async def _forzar_con_semaforo():
             async with _semaforo_analisis:
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, ejecutar_analisis_gemini, codigo)
+                await asyncio.wait_for(loop.run_in_executor(None, ejecutar_analisis_gemini, codigo), timeout=600)
 
         background_tasks.add_task(_forzar_con_semaforo)
         return {"status": "iniciado", "codigo": codigo, "mensaje": "Análisis re-iniciado. Revisa logs de Railway."}
@@ -3073,7 +3131,7 @@ async def webhook_analisis_pliego(request: Request, background_tasks: Background
                 # Ejecutar en threadpool para no bloquear el event loop
                 # (ejecutar_analisis_gemini es síncrona y hace I/O pesado)
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, ejecutar_analisis_gemini, proceso_id)
+                await asyncio.wait_for(loop.run_in_executor(None, ejecutar_analisis_gemini, proceso_id), timeout=600)
 
         background_tasks.add_task(_analizar_con_semaforo)
         return {"status": "success", "message": f"IA encolada para {proceso_id}"}
