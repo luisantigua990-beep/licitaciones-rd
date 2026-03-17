@@ -902,7 +902,7 @@ def notificar_proceso_inmediato(proceso, articulos):
                 partes_cuerpo.append(f"Cierre: {dias_cierre}d")
             notif_cuerpo = " · ".join(partes_cuerpo)
 
-            ok = enviar_notificacion(
+            resultado = enviar_notificacion(
                 subscription_info={
                     "endpoint": sub["endpoint"],
                     "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]},
@@ -911,6 +911,16 @@ def notificar_proceso_inmediato(proceso, articulos):
                 cuerpo=notif_cuerpo,
                 url=url_notif,
             )
+            if resultado == "410":
+                try:
+                    supabase.table("user_subscriptions") \
+                        .update({"active": False}) \
+                        .eq("endpoint", sub["endpoint"]).execute()
+                    print(f"🧹 Suscripción 410 desactivada en scraper")
+                except Exception: pass
+                ok = False
+            else:
+                ok = resultado is True
             if ok:
                 enviadas += 1
 
