@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from fastapi import FastAPI, Query, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 from supabase import create_client
@@ -75,6 +76,16 @@ cliente_gemini = None
 # Semáforo: máximo 5 análisis de pliego simultáneos.
 # Evita que 50 usuarios pidan análisis al mismo tiempo y saturen RAM + Gemini.
 _semaforo_analisis = asyncio.Semaphore(5)
+
+# ── CACHÉ EN MEMORIA — endpoint /api/procesos ──────────────────
+# Reduce queries a Supabase cuando múltiples usuarios navegan simultáneamente.
+# TTL de 3 minutos — coincide con el ciclo del scraper.
+import hashlib as _hashlib
+from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
+_cache_procesos: dict = {}          # {cache_key: {"data": ..., "ts": timestamp}}
+_CACHE_TTL = 180                    # segundos
+# Threadpool con límite de 3 hilos para análisis Gemini — protege la RAM
+_executor_gemini = _ThreadPoolExecutor(max_workers=3, thread_name_prefix="gemini")
 
 if GEMINI_API_KEY:
     cliente_gemini = genai.Client(api_key=GEMINI_API_KEY)
@@ -188,6 +199,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Comprimir respuestas > 1KB — reduce tráfico de red 60-80% en listas de procesos
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 @app.get("/health")
@@ -251,6 +264,17 @@ def listar_procesos(
 ):
     """Lista procesos con filtros."""
     try:
+        # ── Caché: generar clave única por combinación de parámetros ──
+        cache_key = _hashlib.md5(
+            f"{page}{limit}{objeto}{modalidad}{unidad_compra}{monto_min}{monto_max}{busqueda}{solo_activos}{institucion}{familia_unspsc}".encode()
+        ).hexdigest()
+        ahora = time.time()
+        if cache_key in _cache_procesos:
+            entrada = _cache_procesos[cache_key]
+            if ahora - entrada["ts"] < _CACHE_TTL:
+                return entrada["data"]
+            else:
+                del _cache_procesos[cache_key]
         # Si hay filtro UNSPSC, primero obtener los códigos de proceso que coinciden
         codigos_unspsc = None
         if familia_unspsc:
@@ -344,13 +368,18 @@ def listar_procesos(
 
         result = query.execute()
 
-        return {
+        respuesta = {
             "procesos": result.data,
             "total": result.count,
             "page": page,
             "limit": limit,
             "pages": (result.count + limit - 1) // limit if result.count else 0
         }
+        # Guardar en caché — limpiar entradas viejas si hay más de 100
+        if len(_cache_procesos) > 100:
+            _cache_procesos.clear()
+        _cache_procesos[cache_key] = {"data": respuesta, "ts": time.time()}
+        return respuesta
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -912,7 +941,7 @@ async def solicitar_analisis_proceso(codigo_proceso: str, background_tasks: Back
         async def _analizar_con_semaforo():
             async with _semaforo_analisis:
                 loop = asyncio.get_event_loop()
-                await asyncio.wait_for(loop.run_in_executor(None, ejecutar_analisis_gemini, codigo_proceso), timeout=600)
+                await asyncio.wait_for(loop.run_in_executor(_executor_gemini, ejecutar_analisis_gemini, codigo_proceso), timeout=600)
 
         background_tasks.add_task(_analizar_con_semaforo)
         return {"status": "encolado", "proceso_id": codigo_proceso, "mensaje": "Análisis IA iniciado"}
@@ -2755,7 +2784,7 @@ async def forzar_analisis(background_tasks: BackgroundTasks, codigo: str):
         async def _forzar_con_semaforo():
             async with _semaforo_analisis:
                 loop = asyncio.get_event_loop()
-                await asyncio.wait_for(loop.run_in_executor(None, ejecutar_analisis_gemini, codigo), timeout=600)
+                await asyncio.wait_for(loop.run_in_executor(_executor_gemini, ejecutar_analisis_gemini, codigo), timeout=600)
 
         background_tasks.add_task(_forzar_con_semaforo)
         return {"status": "iniciado", "codigo": codigo, "mensaje": "Análisis re-iniciado. Revisa logs de Railway."}
@@ -3131,7 +3160,7 @@ async def webhook_analisis_pliego(request: Request, background_tasks: Background
                 # Ejecutar en threadpool para no bloquear el event loop
                 # (ejecutar_analisis_gemini es síncrona y hace I/O pesado)
                 loop = asyncio.get_event_loop()
-                await asyncio.wait_for(loop.run_in_executor(None, ejecutar_analisis_gemini, proceso_id), timeout=600)
+                await asyncio.wait_for(loop.run_in_executor(_executor_gemini, ejecutar_analisis_gemini, proceso_id), timeout=600)
 
         background_tasks.add_task(_analizar_con_semaforo)
         return {"status": "success", "message": f"IA encolada para {proceso_id}"}
