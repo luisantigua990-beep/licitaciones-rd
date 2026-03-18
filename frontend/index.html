@@ -3077,54 +3077,81 @@ document.addEventListener('click', e=>{
 });
 
 // ── INIT ──
+async function _tryRefreshToken() {
+  const refreshToken = localStorage.getItem('sb_refresh_token');
+  if (!refreshToken) return false;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    const data = await res.json();
+    if (data.access_token) {
+      localStorage.setItem('sb_token', data.access_token);
+      if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
+      if (data.user) localStorage.setItem('sb_user', JSON.stringify(data.user));
+      currentUser = data.user || currentUser;
+      return true;
+    }
+  } catch(e) { console.warn('Refresh falló (sin conexión?):', e); }
+  return false;
+}
+
 (async function iniciarApp() {
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
-  const refreshToken = localStorage.getItem('sb_refresh_token');
-  if (!savedToken || !savedUser) return;
+  // Acepta si hay al menos el usuario guardado (token puede estar vencido)
+  if (!savedUser) return;
 
-  // Verificar si el token está vencido
-  let tokenVencido = false;
+  // Restaurar currentUser desde localStorage primero (siempre)
   try {
-    const payload = JSON.parse(atob(savedToken.split('.')[1]));
-    tokenVencido = payload.exp && (payload.exp * 1000) < Date.now();
-  } catch(e) {}
-
-  if (tokenVencido && refreshToken) {
-    try {
-      const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
-        body: JSON.stringify({ refresh_token: refreshToken })
-      });
-      const data = await res.json();
-      if (data.access_token) {
-        localStorage.setItem('sb_token', data.access_token);
-        if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
-        if (data.user) localStorage.setItem('sb_user', JSON.stringify(data.user));
-        currentUser = data.user;
-      } else {
-        localStorage.removeItem('sb_token');
-        localStorage.removeItem('sb_refresh_token');
-        localStorage.removeItem('sb_user');
-        return;
-      }
-    } catch(e) { /* sin conexión — continuar con token viejo */ }
-  }
-
-  if (!currentUser) {
     currentUser = JSON.parse(savedUser);
     if (!currentUser?.id && savedToken) {
-      try {
-        const payload = JSON.parse(atob(savedToken.split('.')[1]));
-        currentUser = { ...currentUser, id: payload.sub };
-      } catch(e) {}
+      const payload = JSON.parse(atob(savedToken.split('.')[1]));
+      currentUser = { ...currentUser, id: payload.sub };
+    }
+  } catch(e) {}
+  if (!currentUser?.id) return; // Sin id no hay sesión válida
+
+  // Verificar si el token está vencido e intentar refrescarlo
+  let tokenVencido = true;
+  try {
+    if (savedToken) {
+      const payload = JSON.parse(atob(savedToken.split('.')[1]));
+      tokenVencido = payload.exp && (payload.exp * 1000) < Date.now();
+    }
+  } catch(e) {}
+
+  if (tokenVencido) {
+    const ok = await _tryRefreshToken();
+    if (!ok) {
+      console.warn('⚠️ Token vencido y refresh falló — sesión degradada, re-auth al hacer requests');
     }
   }
+
   console.log('✅ Sesión restaurada, user:', currentUser?.id);
   showApp();
   cargarSeguimiento();
 })();
+
+// ── VISIBILITYCHANGE: refrescar token cuando Chrome Android reactiva el tab ──
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible') return;
+  if (!currentUser?.id) return;
+  const savedToken = localStorage.getItem('sb_token');
+  let vencido = true;
+  try {
+    if (savedToken) {
+      const payload = JSON.parse(atob(savedToken.split('.')[1]));
+      vencido = payload.exp && (payload.exp * 1000) < Date.now();
+    }
+  } catch(e) {}
+  if (vencido) {
+    console.log('🔄 Tab visible de nuevo — refrescando token...');
+    await _tryRefreshToken();
+  }
+});
 
 // ── ABRIR PROCESO DESDE NOTIFICACIÓN ──
 // _abrirProcesoDeNotificacion() se llama al terminar cargarProcesos().
@@ -3195,13 +3222,10 @@ async function sbRest(path, method = 'GET', body = null, extraHeaders = {}) {
         console.error('❌ Error refrescando token:', e);
       }
     } else {
-      console.warn('⚠️ Sin refresh_token guardado — cerrando sesión');
-      localStorage.removeItem('sb_token');
-      localStorage.removeItem('sb_refresh_token');
-      localStorage.removeItem('sb_user');
-      currentUser = null;
-      document.getElementById('screen-app')?.classList.remove('active');
-      document.getElementById('screen-auth')?.classList.add('active');
+      console.warn('⚠️ Sin refresh_token — el request falló con 401 pero mantenemos sesión');
+      // NO borramos currentUser ni redirigimos: el usuario sigue logueado visualmente.
+      // Si el token está verdaderamente muerto, _tryRefreshToken() o visibilitychange lo resolverá.
+      // Solo forzamos logout si el propio usuario lo pide.
     }
   }
 
