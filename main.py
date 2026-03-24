@@ -31,6 +31,7 @@ from google import genai
 
 from monitor import ejecutar_monitor
 from notifications import enviar_notificacion
+from router_agentes import agentes_router
 
 def enviar_push_y_limpiar(sub: dict, titulo: str, cuerpo: str, url: str = "/") -> bool:
     """Envía notificación y desactiva la suscripción si devuelve 410 (expirada)."""
@@ -201,6 +202,9 @@ app.add_middleware(
 )
 # Comprimir respuestas > 1KB — reduce tráfico de red 60-80% en listas de procesos
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# ── Agentes de growth marketing ──────────────────────────
+app.include_router(agentes_router)
 
 
 @app.get("/health")
