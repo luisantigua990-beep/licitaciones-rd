@@ -9,3 +9,4 @@ beautifulsoup4
 google-genai
 PyPDF2
 python-docx
+playwright==1.44.0
