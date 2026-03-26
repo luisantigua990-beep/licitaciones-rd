@@ -4497,13 +4497,13 @@ async function descargarArticulosPDF(codigo) {
   }
 }
 
-// ── PDF ANÁLISIS COMPLETO ────────────────────────────────
+// ── PDF ANALISIS COMPLETO ─────────────────────────────────
 function descargarAnalisisPDF(codigo) {
   const analisis = window._detalleAnalisis;
   const proceso  = window._detalleProceso;
 
   if (!analisis || analisis.estado !== 'completado') {
-    mostrarToast('El análisis aún no está disponible');
+    mostrarToast('El analisis aun no esta disponible');
     return;
   }
 
@@ -4511,419 +4511,515 @@ function descargarAnalisisPDF(codigo) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
 
-    const PAGE_W  = 210;
-    const MARGIN  = 14;
-    const CONTENT = PAGE_W - MARGIN * 2;
-    const LINE_H  = 5.5;
-    let y = 0;
+    const PW     = 210;
+    const PH     = 297;
+    const ML     = 14;
+    const MR     = 14;
+    const CW     = PW - ML - MR;
+    const LH     = 5.2;
+    let y        = 0;
 
-    // ── Colores ──
-    const C_DARK   = [13,  27, 42];
-    const C_GREEN  = [46, 204, 113];
-    const C_BLUE   = [37,  99, 235];
-    const C_MUTED  = [100, 116, 139];
-    const C_RED    = [220,  38, 38];
-    const C_AMBER  = [217, 119, 6];
-    const C_WHITE  = [255, 255, 255];
-    const C_LIGHT  = [248, 250, 252];
-    const C_BORDER = [226, 232, 240];
+    // Paleta
+    const NAVY   = [13,  27, 42];
+    const GREEN  = [46, 204, 113];
+    const GREEN2 = [26, 145, 80];
+    const BLUE   = [30,  99, 210];
+    const SLATE  = [71, 85, 105];
+    const MUTED  = [148, 163, 184];
+    const RED    = [220,  38, 38];
+    const AMBER  = [202, 138,  4];
+    const WHITE  = [255, 255, 255];
+    const LIGHT  = [241, 245, 249];
+    const BORDER = [203, 213, 225];
+    const TEAL   = [13, 148, 136];
+    const INDIGO = [67,  56, 202];
 
-    function newPage() {
-      doc.addPage();
-      y = MARGIN;
-    }
-
-    function checkY(needed = 12) {
-      if (y + needed > 282) newPage();
-    }
-
-    function setFont(style, size, color) {
+    // ── helpers ──
+    const rf = (x, fy, w, h, fc, sc, sw) => {
+      if (fc) { doc.setFillColor(...fc);   doc.rect(x, fy, w, h, 'F'); }
+      if (sc) { doc.setDrawColor(...sc);   doc.setLineWidth(sw||0.25); doc.rect(x, fy, w, h, 'S'); }
+    };
+    const line = (x1, fy1, x2, fy2, color, w) => {
+      doc.setDrawColor(...(color||BORDER));
+      doc.setLineWidth(w||0.25);
+      doc.line(x1, fy1, x2, fy2);
+    };
+    const sf = (style, size, color) => {
       doc.setFont('helvetica', style);
       doc.setFontSize(size);
       if (color) doc.setTextColor(...color);
+    };
+    const txt = (text, x, fy, opts) => doc.text(String(text||''), x, fy, opts||{});
+    const wrap = (text, maxW) => doc.splitTextToSize(String(text||''), maxW);
+
+    function checkY(need) {
+      if (y + (need||14) > PH - 12) {
+        // Footer en pagina actual
+        drawFooter();
+        doc.addPage();
+        y = 16;
+      }
     }
 
-    function drawRect(x, fy, w, h, fillColor, strokeColor) {
-      if (fillColor) { doc.setFillColor(...fillColor); doc.rect(x, fy, w, h, 'F'); }
-      if (strokeColor) { doc.setDrawColor(...strokeColor); doc.rect(x, fy, w, h, 'S'); }
+    function drawFooter() {
+      const pg = doc.internal.getCurrentPageInfo().pageNumber;
+      const total = doc.internal.getNumberOfPages();
+      rf(0, PH - 9, PW, 9, NAVY);
+      sf('normal', 7, MUTED);
+      txt('LicitacionLab  ·  licitacionlab.com', ML, PH - 4);
+      txt(codigo, PW/2, PH - 4, {align:'center'});
+      txt('Pag. ' + pg + ' / ' + total, PW - MR, PH - 4, {align:'right'});
     }
 
-    function sectionTitle(title, iconChar) {
-      checkY(14);
-      drawRect(MARGIN, y, CONTENT, 8, C_DARK);
-      setFont('bold', 9, C_GREEN);
-      doc.text((iconChar ? iconChar + '  ' : '') + title.toUpperCase(), MARGIN + 3, y + 5.5);
-      y += 10;
+    // ══════════════════════════════════════
+    // CABECERA — franja oscura + acento verde
+    // ══════════════════════════════════════
+    rf(0, 0, PW, 38, NAVY);
+    rf(0, 0, 5, 38, GREEN);  // franja lateral
+
+    sf('bold', 18, GREEN);
+    txt('LicitacionLab', ML + 6, 14);
+
+    sf('normal', 8.5, [143, 174, 201]);
+    txt('Analisis de Proceso  ·  Republica Dominicana', ML + 6, 21);
+
+    const hoy = new Date().toLocaleDateString('es-DO',{day:'2-digit',month:'long',year:'numeric'});
+    sf('normal', 7.5, MUTED);
+    txt(hoy, PW - MR, 14, {align:'right'});
+
+    // Badge tipo proceso
+    const tipo = analisis.tipo_proceso || proceso?.objeto_proceso || '';
+    if (tipo) {
+      sf('bold', 7, WHITE);
+      const tw = doc.getTextWidth(tipo) + 8;
+      rf(PW - MR - tw, 18, tw, 5.5, GREEN2);
+      txt(tipo.toUpperCase(), PW - MR - tw + 4, 22, {});
     }
 
-    function pill(text, x, fy, bgColor, textColor) {
-      setFont('bold', 7.5, textColor);
-      const tw = doc.getTextWidth(text);
-      const pw = tw + 6;
-      drawRect(x, fy - 4, pw, 5.5, bgColor);
-      doc.text(text, x + 3, fy);
-      return pw;
-    }
+    y = 44;
 
-    function wrapText(text, maxW) {
-      return doc.splitTextToSize(String(text || ''), maxW);
-    }
-
-    // ══════════════════════════════════════════
-    // ENCABEZADO
-    // ══════════════════════════════════════════
-    drawRect(0, 0, PAGE_W, 32, C_DARK);
-    // Franja verde lateral
-    drawRect(0, 0, 4, 32, C_GREEN);
-
-    setFont('bold', 14, C_GREEN);
-    doc.text('LicitacionLab', MARGIN + 2, 13);
-    setFont('normal', 8, [143, 174, 201]);
-    doc.text('Análisis de Proceso · República Dominicana', MARGIN + 2, 19);
-
-    // Fecha
-    const hoy = new Date().toLocaleDateString('es-DO', { day:'2-digit', month:'2-digit', year:'numeric' });
-    setFont('normal', 7.5, [143, 174, 201]);
-    doc.text(hoy, PAGE_W - MARGIN, 13, { align: 'right' });
-
-    y = 36;
-
-    // ══════════════════════════════════════════
-    // TÍTULO DEL PROCESO
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
+    // BLOQUE IDENTIFICACION PROCESO
+    // ══════════════════════════════════════
     const titulo   = proceso?.titulo || codigo;
     const entidad  = proceso?.unidad_compra || '';
     const monto    = proceso?.monto_estimado;
-    const cierre   = proceso?.fecha_fin_recepcion_ofertas;
-    const montoStr = monto ? `RD$ ${Number(monto).toLocaleString('es-DO', {minimumFractionDigits:2})}` : 'No especificado';
+    const fcierre  = proceso?.fecha_fin_recepcion_ofertas;
+
+    const montoStr = monto
+      ? 'RD$ ' + Number(monto).toLocaleString('es-DO',{minimumFractionDigits:2})
+      : 'No especificado';
 
     let cierreStr = '';
-    if (cierre) {
-      try { cierreStr = new Date(cierre).toLocaleDateString('es-DO'); } catch(e) {}
+    if (fcierre) {
+      try { cierreStr = new Date(fcierre).toLocaleDateString('es-DO'); } catch(e){}
     }
 
-    drawRect(MARGIN, y, CONTENT, 1.5, C_GREEN);
+    // Linea acento verde
+    rf(ML, y, CW, 1.2, GREEN);
     y += 4;
 
-    const tituloLines = wrapText(titulo, CONTENT);
-    setFont('bold', 11, C_DARK);
-    tituloLines.forEach(l => { doc.text(l, MARGIN, y); y += LINE_H + 1; });
-
+    const titLines = wrap(titulo, CW);
+    sf('bold', 11.5, NAVY);
+    titLines.forEach(l => { txt(l, ML, y); y += LH + 1.2; });
     y += 1;
-    setFont('normal', 8.5, C_MUTED);
-    if (entidad) { doc.text(entidad, MARGIN, y); y += LINE_H; }
 
-    // Código · Monto · Cierre en una línea
-    setFont('bold', 8, C_BLUE);
-    doc.text(codigo, MARGIN, y);
-    setFont('normal', 8, C_MUTED);
-    const codW = doc.getTextWidth(codigo) + 8;
+    if (entidad) {
+      sf('normal', 8.5, SLATE);
+      txt(entidad, ML, y);
+      y += LH + 1;
+    }
+
+    // Fila: codigo | monto | cierre
+    rf(ML, y, CW, 7.5, LIGHT);
+    rf(ML, y, CW, 7.5, null, BORDER, 0.2);
+    sf('bold', 7.5, BLUE);
+    txt(codigo, ML + 3, y + 5);
     if (montoStr !== 'No especificado') {
-      doc.text(montoStr, MARGIN + codW, y);
+      sf('normal', 7.5, SLATE);
+      const cx = ML + doc.getTextWidth(codigo) + 10;
+      txt(montoStr, cx, y + 5);
     }
     if (cierreStr) {
-      const montoW = doc.getTextWidth(montoStr) + 8;
-      doc.text('Cierre: ' + cierreStr, MARGIN + codW + (montoStr !== 'No especificado' ? montoW : 0), y);
+      sf('normal', 7.5, SLATE);
+      txt('Cierre de ofertas:  ' + cierreStr, PW - MR - 3, y + 5, {align:'right'});
     }
-    y += 8;
+    y += 11;
 
-    // ══════════════════════════════════════════
-    // EVALUACIÓN DE COMPETITIVIDAD
-    // ══════════════════════════════════════════
-    const evComp  = analisis.evaluacion_competitividad || {};
-    const dif     = evComp.nivel_dificultad || '';
-    const rec     = evComp.recomendacion || '';
-    const razon   = evComp.razon || '';
+    // ══════════════════════════════════════
+    // HELPER: titulo de seccion
+    // ══════════════════════════════════════
+    function seccion(label, accentColor) {
+      checkY(16);
+      y += 3;
+      const c = accentColor || NAVY;
+      rf(ML, y, CW, 8, c);
+      rf(ML, y, 3.5, 8, GREEN);  // acento verde
+      sf('bold', 8.5, WHITE);
+      txt(label.toUpperCase(), ML + 7, y + 5.5);
+      y += 11;
+    }
 
-    if (dif || rec) {
-      sectionTitle('Evaluación de Competitividad', '📊');
-      checkY(24);
-      drawRect(MARGIN, y, CONTENT, 1, C_BORDER);
-      y += 4;
+    // ══════════════════════════════════════
+    // EVALUACION DE COMPETITIVIDAD
+    // ══════════════════════════════════════
+    const evComp    = analisis.evaluacion_competitividad || {};
+    const dif       = evComp.nivel_dificultad || '';
+    const rec       = evComp.recomendacion    || '';
+    const razon     = evComp.razon            || '';
+    const difColor  = dif==='Alta' ? RED : dif==='Media' ? AMBER : [22, 163, 74];
 
-      // Fila: Dificultad + Recomendación
-      const difColor = dif === 'Alta' ? C_RED : dif === 'Media' ? C_AMBER : [22, 163, 74];
-      if (dif) {
-        setFont('bold', 8, C_MUTED);
-        doc.text('Dificultad:', MARGIN, y);
-        pill(dif, MARGIN + 25, y, difColor, C_WHITE);
-      }
+    if (dif || rec || razon) {
+      seccion('Evaluacion de Competitividad', NAVY);
+
+      // Fila Dificultad / Recomendacion
+      rf(ML, y, CW, 9, LIGHT);
+      rf(ML, y, CW, 9, null, BORDER, 0.2);
+
+      sf('normal', 7.5, SLATE);
+      txt('Nivel de dificultad', ML + 3, y + 3.5);
+      sf('bold', 7.5, difColor);
+      txt(dif || '—', ML + 3, y + 7.5);
+
       if (rec) {
-        setFont('bold', 8, C_MUTED);
-        doc.text('Recomendación:', MARGIN + 80, y);
-        setFont('normal', 8, C_DARK);
-        doc.text(rec, MARGIN + 115, y);
+        const halfX = ML + CW / 2 + 2;
+        line(halfX - 4, y + 1, halfX - 4, y + 8, BORDER, 0.2);
+        sf('normal', 7.5, SLATE);
+        txt('Recomendacion', halfX, y + 3.5);
+        sf('bold', 7.5, BLUE);
+        const recLines = wrap(rec, CW/2 - 6);
+        recLines.forEach((l,i) => txt(l, halfX, y + 7.5 + i*(LH-0.5)));
+        y += Math.max(0, (recLines.length - 1) * (LH - 0.5));
       }
-      y += 8;
+      y += 12;
 
       if (razon) {
-        const razonLines = wrapText(razon, CONTENT);
-        setFont('normal', 8.5, C_DARK);
-        razonLines.forEach(l => { checkY(6); doc.text(l, MARGIN, y); y += LINE_H; });
+        const razonLines = wrap(razon, CW);
+        razonLines.forEach(l => { checkY(6); sf('normal', 8.2, SLATE); txt(l, ML, y); y += LH + 0.3; });
         y += 2;
       }
     }
 
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     // RESUMEN EJECUTIVO
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     const resumen = analisis.resumen_ejecutivo || '';
     if (resumen) {
-      sectionTitle('Resumen Ejecutivo', '📝');
-      const resLines = wrapText(resumen, CONTENT);
-      setFont('normal', 8.5, C_DARK);
-      resLines.forEach(l => { checkY(6); doc.text(l, MARGIN, y); y += LINE_H; });
-      y += 3;
+      seccion('Resumen Ejecutivo', NAVY);
+      const rLines = wrap(resumen, CW);
+      rLines.forEach(l => { checkY(6); sf('normal', 8.5, [30, 41, 59]); txt(l, ML, y); y += LH + 0.3; });
+      y += 2;
     }
 
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     // PLAZOS CLAVE
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     const plazos = analisis.plazos_clave || {};
-    const plazosLabels = {
-      visita_sitio: '🏗️  Visita al sitio',
-      consultas: '❓  Cierre de consultas',
-      presentacion_ofertas: '📝  Presentación de ofertas',
-      apertura_ofertas: '📂  Apertura de sobres',
-      vigencia_oferta_dias: '⏱️  Vigencia de oferta (días)',
-    };
-    const plazosData = Object.entries(plazosLabels)
-      .filter(([k]) => plazos[k] && plazos[k] !== 'N/A')
-      .map(([k, label]) => [label, plazos[k]]);
+    const PLAZOS_CFG = [
+      { k:'visita_sitio',          label:'Visita al sitio'           },
+      { k:'consultas',             label:'Cierre de consultas'       },
+      { k:'presentacion_ofertas',  label:'Presentacion de ofertas'   },
+      { k:'apertura_ofertas',      label:'Apertura de sobres'        },
+      { k:'vigencia_oferta_dias',  label:'Vigencia de oferta (dias)' },
+    ];
+    const plazosData = PLAZOS_CFG.filter(p => plazos[p.k] && plazos[p.k] !== 'N/A');
 
     if (plazosData.length) {
-      sectionTitle('Plazos Clave', '📅');
-      plazosData.forEach(([label, val]) => {
-        checkY(7);
-        drawRect(MARGIN, y - 4, CONTENT, 6, C_LIGHT);
-        setFont('normal', 8, C_MUTED);
-        doc.text(label, MARGIN + 2, y);
-        setFont('bold', 8, C_DARK);
-        doc.text(String(val), MARGIN + 90, y);
-        y += 7;
+      seccion('Plazos Clave', NAVY);
+      const colW = CW / 2 - 2;
+
+      plazosData.forEach((p, idx) => {
+        const col = idx % 2;
+        const fx  = ML + col * (colW + 4);
+        if (col === 0) { checkY(9); }
+
+        rf(fx, y, colW, 8, col===0 ? WHITE : LIGHT);
+        rf(fx, y, colW, 8, null, BORDER, 0.2);
+
+        // Punto de color izquierdo
+        rf(fx + 1.5, y + 2.5, 3, 3, BLUE);
+
+        sf('normal', 7, MUTED);
+        txt(p.label, fx + 7, y + 3.8);
+        sf('bold', 8, NAVY);
+        txt(String(plazos[p.k]), fx + 7, y + 7.2);
+
+        if (col === 1 || idx === plazosData.length - 1) {
+          y += 10;
+        }
       });
       y += 2;
     }
 
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     // ALERTAS DE IRREGULARIDAD
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     const alertas = Array.isArray(analisis.alertas_fraude) ? analisis.alertas_fraude : [];
     if (alertas.length) {
-      sectionTitle('Alertas de Posible Irregularidad', '🚨');
-      alertas.forEach((a, idx) => {
-        const riesgo   = a.riesgo || '';
-        const hallazgo = a.hallazgo || '';
+      seccion('Alertas de Posible Irregularidad', [127, 29, 29]);
+
+      alertas.forEach((a) => {
+        const riesgo   = a.riesgo    || '';
+        const hallazgo = a.hallazgo  || '';
         const cat      = a.categoria || '';
         const art      = a.articulo_ley || '';
-        const rColor   = riesgo.toLowerCase().includes('alto') ? C_RED
-                       : riesgo.toLowerCase().includes('medio') ? C_AMBER : C_MUTED;
 
-        const hallazgoLines = wrapText(hallazgo, CONTENT - 30);
-        const rowH = Math.max(10, hallazgoLines.length * LINE_H + 8);
+        const rColor = riesgo.toLowerCase().includes('alto')  ? RED
+                     : riesgo.toLowerCase().includes('medio') ? AMBER : SLATE;
+
+        const hLines  = wrap(hallazgo, CW - 36);
+        const aLines  = art ? wrap(art, CW - 36) : [];
+        const rowH    = 8 + hLines.length * (LH + 0.2) + (aLines.length ? aLines.length * (LH - 0.5) + 2 : 0) + 4;
+
         checkY(rowH);
 
-        const bg = idx % 2 === 0 ? C_LIGHT : C_WHITE;
-        drawRect(MARGIN, y - 4.5, CONTENT, rowH, bg);
-        // Borde izquierdo de color según riesgo
-        drawRect(MARGIN, y - 4.5, 3, rowH, rColor);
+        rf(ML, y, CW, rowH, LIGHT);
+        rf(ML, y, CW, rowH, null, BORDER, 0.2);
+        rf(ML, y, 4, rowH, rColor); // barra lateral de severidad
 
-        // Pill de riesgo
-        pill(riesgo, MARGIN + 5, y, rColor, C_WHITE);
-        setFont('italic', 7.5, C_MUTED);
-        doc.text(cat, MARGIN + 5, y + 5);
+        // Etiqueta riesgo
+        rf(ML + 6, y + 2.5, 20, 5, rColor);
+        sf('bold', 7, WHITE);
+        txt(riesgo.toUpperCase(), ML + 7, y + 6.2);
 
-        setFont('normal', 8, C_DARK);
-        hallazgoLines.forEach((l, li) => doc.text(l, MARGIN + 30, y + li * LINE_H));
+        // Categoria debajo de la etiqueta
+        sf('italic', 6.5, SLATE);
+        const catLines = wrap(cat, 26);
+        catLines.forEach((cl, ci) => txt(cl, ML + 6, y + 10 + ci * 4));
+
+        // Texto hallazgo
+        sf('normal', 8, [30, 41, 59]);
+        const textX = ML + 36;
+        hLines.forEach((l, li) => txt(l, textX, y + 7 + li * (LH + 0.2)));
+
+        // Referencia de ley
         if (art) {
-          setFont('italic', 7, C_MUTED);
-          doc.text(art, MARGIN + 30, y + hallazgoLines.length * LINE_H);
-          y += hallazgoLines.length * LINE_H + rowH * 0.2;
+          const artY = y + 7 + hLines.length * (LH + 0.2) + 2;
+          sf('italic', 7, MUTED);
+          aLines.forEach((l, li) => txt(l, textX, artY + li * (LH - 0.5)));
         }
-        y += rowH - (hallazgoLines.length - 1) * LINE_H + 1;
+
+        y += rowH + 3;
       });
-      y += 2;
     }
 
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     // CHECKLIST DE DOCUMENTOS
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     const checklist = analisis.checklist_categorizado || {};
-    const catConfig = [
-      { key: 'legal',      label: 'Legal',      color: [30, 64, 175] },
-      { key: 'tecnica',    label: 'Técnica',     color: [8, 145, 178] },
-      { key: 'financiera', label: 'Financiera',  color: [15, 118, 110] },
+    const CATS = [
+      { key:'legal',      label:'Legal',      color: INDIGO },
+      { key:'tecnica',    label:'Tecnica',     color: TEAL   },
+      { key:'financiera', label:'Financiera',  color: GREEN2 },
     ];
+    const hasChecklist = CATS.some(c => checklist[c.key]?.length);
 
-    const hasChecklist = catConfig.some(c => checklist[c.key]?.length);
     if (hasChecklist) {
-      sectionTitle('Checklist de Documentos', '📋');
-      catConfig.forEach(cat => {
+      seccion('Checklist de Documentos', NAVY);
+
+      CATS.forEach(cat => {
         const items = checklist[cat.key] || [];
         if (!items.length) return;
 
-        checkY(10);
-        drawRect(MARGIN, y - 4, CONTENT, 7, cat.color);
-        setFont('bold', 8.5, C_WHITE);
-        doc.text(cat.label.toUpperCase(), MARGIN + 3, y);
-        y += 8;
+        checkY(12);
+        // Subcabecera de categoria
+        rf(ML, y, CW, 7, cat.color);
+        sf('bold', 8, WHITE);
+        txt(cat.label.toUpperCase(), ML + 4, y + 5);
+        y += 9;
 
         items.forEach((item, idx) => {
           const docName  = item.documento || '';
-          const subsanable = item.es_subsanable;
+          const sub      = item.es_subsanable;
           const nota     = item.nota || '';
-          const docLines = wrapText(docName, CONTENT - 36);
-          const rowH = Math.max(8, docLines.length * LINE_H + 5);
+
+          const dLines   = wrap(docName, CW - 40);
+          const nLines   = nota ? wrap(nota, CW - 40) : [];
+          const rowH     = Math.max(8, dLines.length * (LH + 0.1) + (nLines.length ? nLines.length * (LH - 0.5) + 1.5 : 0) + 4);
+
           checkY(rowH);
 
-          const bg = subsanable === false ? [254, 242, 242] : (idx % 2 === 0 ? C_LIGHT : C_WHITE);
-          drawRect(MARGIN, y - 4, CONTENT, rowH, bg);
+          const bg = sub === false ? [255, 245, 245] : (idx%2===0 ? WHITE : LIGHT);
+          rf(ML, y, CW, rowH, bg);
+          rf(ML, y, CW, rowH, null, BORDER, 0.1);
 
           // Checkbox visual
-          drawRect(MARGIN + 2, y - 3, 4, 4, C_WHITE, C_BORDER);
+          rf(ML + 3, y + (rowH/2) - 2, 3.5, 3.5, WHITE, BORDER, 0.3);
 
-          setFont('normal', 8, C_DARK);
-          docLines.forEach((l, li) => doc.text(l, MARGIN + 9, y + li * LINE_H));
+          sf('normal', 8, [30, 41, 59]);
+          dLines.forEach((l, li) => txt(l, ML + 9, y + 5 + li * (LH + 0.1)));
 
           if (nota) {
-            setFont('italic', 7, C_MUTED);
-            doc.text(nota, MARGIN + 9, y + docLines.length * LINE_H);
+            sf('italic', 6.5, MUTED);
+            const noteY = y + 5 + dLines.length * (LH + 0.1) + 1;
+            nLines.forEach((l, li) => txt(l, ML + 9, noteY + li * (LH - 0.5)));
           }
 
           // Badge subsanable
-          const badgeText = subsanable === false ? 'NO subsanable' : subsanable === true ? 'Subsanable' : '';
-          const badgeColor = subsanable === false ? C_RED : [22, 163, 74];
-          if (badgeText) {
-            setFont('bold', 6.5, badgeColor);
-            const bw = doc.getTextWidth(badgeText) + 4;
-            doc.text(badgeText, MARGIN + CONTENT - bw, y);
+          if (sub === false) {
+            const badge = 'No subsanable';
+            sf('bold', 6.5, RED);
+            const bw = doc.getTextWidth(badge) + 5;
+            rf(ML + CW - bw - 1, y + (rowH/2) - 3, bw, 5, [254, 226, 226]);
+            txt(badge, ML + CW - bw + 1.5, y + (rowH/2) + 0.8);
+          } else if (sub === true) {
+            const badge = 'Subsanable';
+            sf('bold', 6.5, [22, 163, 74]);
+            const bw = doc.getTextWidth(badge) + 5;
+            rf(ML + CW - bw - 1, y + (rowH/2) - 3, bw, 5, [220, 252, 231]);
+            txt(badge, ML + CW - bw + 1.5, y + (rowH/2) + 0.8);
           }
 
           y += rowH;
         });
-        y += 3;
+        y += 4;
       });
     }
 
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     // REQUISITOS DE EXPERIENCIA
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     const reqExp = analisis.requisitos_experiencia || {};
-    const expLabels = {
-      obras_similares: 'Obras similares',
-      montos_facturados: 'Montos facturados',
-      anos_experiencia_empresa: 'Años de experiencia',
-      otros: 'Otros requisitos',
-    };
-    const expData = Object.entries(expLabels).filter(([k]) => reqExp[k]);
+    const EXP_CFG = [
+      { k:'obras_similares',          label:'Obras similares'          },
+      { k:'montos_facturados',        label:'Montos facturados'        },
+      { k:'anos_experiencia_empresa', label:'Anos de experiencia'      },
+      { k:'otros',                    label:'Otros requisitos'         },
+    ];
+    const expData = EXP_CFG.filter(e => reqExp[e.k]);
+
     if (expData.length) {
-      sectionTitle('Requisitos de Experiencia', '🏗️');
-      expData.forEach(([k, label]) => {
-        const lines = wrapText(reqExp[k], CONTENT - 45);
-        const rowH = Math.max(7, lines.length * LINE_H + 4);
+      seccion('Requisitos de Experiencia', NAVY);
+      expData.forEach((e, idx) => {
+        const vLines = wrap(reqExp[e.k], CW - 48);
+        const rowH   = Math.max(8, vLines.length * (LH + 0.2) + 4);
         checkY(rowH);
-        setFont('bold', 8, C_MUTED);
-        doc.text(label + ':', MARGIN, y);
-        setFont('normal', 8, C_DARK);
-        lines.forEach((l, li) => doc.text(l, MARGIN + 45, y + li * LINE_H));
+        const bg = idx%2===0 ? LIGHT : WHITE;
+        rf(ML, y, CW, rowH, bg);
+        rf(ML, y, CW, rowH, null, BORDER, 0.1);
+        sf('bold', 7.5, SLATE);
+        txt(e.label + ':', ML + 3, y + 5.5);
+        sf('normal', 8, [30, 41, 59]);
+        vLines.forEach((l, li) => txt(l, ML + 48, y + 5.5 + li * (LH + 0.2)));
         y += rowH;
       });
       y += 2;
     }
 
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     // REQUISITOS FINANCIEROS
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
     const reqFin = analisis.requisitos_financieros || {};
-    const finLabels = {
-      indice_liquidez: 'Índice de liquidez',
-      indice_endeudamiento: 'Índice de endeudamiento',
-      patrimonio_minimo: 'Patrimonio mínimo',
-      otros: 'Otros',
-    };
-    const finData = Object.entries(finLabels).filter(([k]) => reqFin[k]);
+    const FIN_CFG = [
+      { k:'indice_liquidez',       label:'Indice de liquidez'       },
+      { k:'indice_endeudamiento',  label:'Indice de endeudamiento'  },
+      { k:'patrimonio_minimo',     label:'Patrimonio minimo'        },
+      { k:'otros',                 label:'Otros'                    },
+    ];
+    const finData = FIN_CFG.filter(f => reqFin[f.k]);
+
     if (finData.length) {
-      sectionTitle('Requisitos Financieros', '💰');
-      finData.forEach(([k, label]) => {
-        const lines = wrapText(reqFin[k], CONTENT - 50);
-        const rowH = Math.max(7, lines.length * LINE_H + 4);
+      seccion('Requisitos Financieros', NAVY);
+      finData.forEach((f, idx) => {
+        const vLines = wrap(reqFin[f.k], CW - 52);
+        const rowH   = Math.max(8, vLines.length * (LH + 0.2) + 4);
         checkY(rowH);
-        setFont('bold', 8, C_MUTED);
-        doc.text(label + ':', MARGIN, y);
-        setFont('normal', 8, C_DARK);
-        lines.forEach((l, li) => doc.text(l, MARGIN + 50, y + li * LINE_H));
+        const bg = idx%2===0 ? LIGHT : WHITE;
+        rf(ML, y, CW, rowH, bg);
+        rf(ML, y, CW, rowH, null, BORDER, 0.1);
+        sf('bold', 7.5, SLATE);
+        txt(f.label + ':', ML + 3, y + 5.5);
+        sf('normal', 8, [30, 41, 59]);
+        vLines.forEach((l, li) => txt(l, ML + 52, y + 5.5 + li * (LH + 0.2)));
         y += rowH;
       });
       y += 2;
     }
 
-    // ══════════════════════════════════════════
-    // GARANTÍAS EXIGIDAS
-    // ══════════════════════════════════════════
+    // ══════════════════════════════════════
+    // GARANTIAS EXIGIDAS
+    // ══════════════════════════════════════
     const garantias = Array.isArray(analisis.garantias_exigidas) ? analisis.garantias_exigidas : [];
     if (garantias.length) {
-      sectionTitle('Garantías Exigidas', '🔒');
-      garantias.forEach((g, idx) => {
-        const tipo = g.tipo || '';
-        const mto  = g.monto_o_porcentaje || '';
-        const sub  = g.es_subsanable;
-        checkY(8);
-        const bg = idx % 2 === 0 ? C_LIGHT : C_WHITE;
-        drawRect(MARGIN, y - 4, CONTENT, 7, bg);
-        setFont('bold', 8, C_DARK);
-        doc.text(tipo, MARGIN + 2, y);
-        setFont('normal', 8, C_MUTED);
-        doc.text(mto, MARGIN + 95, y);
-        if (sub === false) {
-          setFont('bold', 7, C_RED);
-          doc.text('⚠ No subsanable', PAGE_W - MARGIN - 2, y, { align: 'right' });
-        }
-        y += 8;
-      });
-      y += 2;
-    }
+      seccion('Garantias Exigidas', NAVY);
 
-    // ══════════════════════════════════════════
-    // RESTRICCIONES DE PARTICIPACIÓN
-    // ══════════════════════════════════════════
-    const restricciones = Array.isArray(analisis.restricciones_participacion) ? analisis.restricciones_participacion : [];
-    if (restricciones.length) {
-      sectionTitle('Restricciones de Participación', '⛔');
-      restricciones.forEach((r, idx) => {
-        const tipo = r.tipo || '';
-        const desc = r.descripcion || '';
-        const descLines = wrapText(desc, CONTENT - 55);
-        const rowH = Math.max(8, descLines.length * LINE_H + 5);
+      // Cabecera tabla
+      rf(ML, y, CW, 7, [51, 65, 85]);
+      sf('bold', 7.5, WHITE);
+      txt('Tipo de garantia', ML + 3, y + 5);
+      txt('Monto / Porcentaje', ML + CW*0.5, y + 5);
+      txt('Subsanabilidad', ML + CW*0.82, y + 5);
+      y += 8;
+
+      garantias.forEach((g, idx) => {
+        const rowH = 8;
         checkY(rowH);
-        const bg = idx % 2 === 0 ? C_LIGHT : C_WHITE;
-        drawRect(MARGIN, y - 4, CONTENT, rowH, bg);
-        setFont('bold', 7.5, [124, 58, 237]);
-        doc.text(tipo, MARGIN + 2, y);
-        setFont('normal', 8, C_DARK);
-        descLines.forEach((l, li) => doc.text(l, MARGIN + 55, y + li * LINE_H));
+        const bg = idx%2===0 ? LIGHT : WHITE;
+        rf(ML, y, CW, rowH, bg);
+        rf(ML, y, CW, rowH, null, BORDER, 0.1);
+        sf('normal', 8, [30, 41, 59]);
+        const tLines = wrap(g.tipo||'', CW*0.45);
+        txt(tLines[0]||'', ML + 3, y + 5.5);
+        txt(String(g.monto_o_porcentaje||''), ML + CW*0.5, y + 5.5);
+        if (g.es_subsanable === false) {
+          sf('bold', 7, RED);
+          txt('No subsanable', ML + CW*0.82, y + 5.5);
+        } else {
+          sf('normal', 7, [22, 163, 74]);
+          txt('Subsanable', ML + CW*0.82, y + 5.5);
+        }
         y += rowH;
       });
       y += 2;
     }
 
-    // ══════════════════════════════════════════
-    // PIE DE PÁGINA EN TODAS LAS PÁGINAS
-    // ══════════════════════════════════════════
-    const totalPages = doc.internal.getNumberOfPages();
-    for (let pg = 1; pg <= totalPages; pg++) {
-      doc.setPage(pg);
-      drawRect(0, 289, PAGE_W, 8, C_DARK);
-      setFont('normal', 7, [143, 174, 201]);
-      doc.text('LicitacionLab · licitacionlab.com', MARGIN, 294);
-      doc.text(`Pág. ${pg} / ${totalPages}`, PAGE_W - MARGIN, 294, { align: 'right' });
-      doc.text(`Análisis: ${codigo}`, PAGE_W / 2, 294, { align: 'center' });
+    // ══════════════════════════════════════
+    // RESTRICCIONES DE PARTICIPACION
+    // ══════════════════════════════════════
+    const restricciones = Array.isArray(analisis.restricciones_participacion) ? analisis.restricciones_participacion : [];
+    if (restricciones.length) {
+      seccion('Restricciones de Participacion', NAVY);
+
+      restricciones.forEach((r, idx) => {
+        const tipo    = r.tipo || '';
+        const desc    = r.descripcion || '';
+        const dLines  = wrap(desc, CW - 52);
+        const rowH    = Math.max(9, dLines.length * (LH + 0.2) + 5);
+        checkY(rowH);
+        const bg = idx%2===0 ? LIGHT : WHITE;
+        rf(ML, y, CW, rowH, bg);
+        rf(ML, y, CW, rowH, null, BORDER, 0.1);
+        // Punto color
+        rf(ML + 2.5, y + rowH/2 - 1.5, 3, 3, INDIGO);
+        sf('bold', 7.5, INDIGO);
+        const tLines = wrap(tipo, 44);
+        tLines.forEach((l, li) => txt(l, ML + 8, y + 5.5 + li * (LH - 0.3)));
+        sf('normal', 8, [30, 41, 59]);
+        dLines.forEach((l, li) => txt(l, ML + 52, y + 5.5 + li * (LH + 0.2)));
+        y += rowH;
+      });
+      y += 2;
     }
 
-    doc.save(`Analisis_${codigo}.pdf`);
+    // ══════════════════════════════════════
+    // FOOTER EN TODAS LAS PAGINAS
+    // ══════════════════════════════════════
+    const totalPag = doc.internal.getNumberOfPages();
+    for (let pg = 1; pg <= totalPag; pg++) {
+      doc.setPage(pg);
+      rf(0, PH - 9, PW, 9, NAVY);
+      sf('normal', 7, MUTED);
+      txt('LicitacionLab  ·  licitacionlab.com', ML, PH - 4);
+      txt(codigo, PW/2, PH - 4, {align:'center'});
+      sf('normal', 7, MUTED);
+      txt('Pag. ' + pg + ' / ' + totalPag, PW - MR, PH - 4, {align:'right'});
+    }
+
+    doc.save('Analisis_' + codigo + '.pdf');
     mostrarToast('PDF descargado');
 
   } catch(e) {
-    console.error('Error generando PDF análisis:', e);
+    console.error('Error PDF analisis:', e);
     mostrarToast('Error generando PDF');
   }
 }
