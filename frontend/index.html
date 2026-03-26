@@ -2649,7 +2649,6 @@ async function verDetalle(codigo) {
   const fPub    = p.fecha_publicacion ? new Date(p.fecha_publicacion).toLocaleDateString('es-DO') : '—';
   const fCierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO') : '—';
 
-  // Guardar globalmente para el PDF del análisis
   window._detalleAnalisis = data.analisis;
   window._detalleProceso  = p;
 
@@ -3754,14 +3753,12 @@ function renderChecklistHTML(analisis, codigo) {
     <div class="checklist-header">
       <div class="checklist-titulo">📋 Checklist de documentos</div>
       <div style="display:flex;align-items:center;gap:8px;">
-        <button class="btn-pdf-arts" onclick="descargarAnalisisPDF('${codigo}')" title="Descargar análisis completo en PDF">
+        <button class="btn-pdf-arts" onclick="descargarAnalisisPDF('${codigo}')" title="Descargar analisis en PDF">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           PDF
         </button>
         <div class="checklist-progreso">
-          <div class="checklist-progreso-bar">
-            <div class="checklist-progreso-fill" id="cl-fill-${codigo}" style="width:${pct}%"></div>
-          </div>
+          <div class="checklist-progreso-bar"><div class="checklist-progreso-fill" id="cl-fill-${codigo}" style="width:${pct}%"></div></div>
           <div class="checklist-progreso-texto" id="cl-texto-${codigo}">${totalCheck}/${totalItems} listos</div>
         </div>
       </div>
@@ -4501,525 +4498,571 @@ async function descargarArticulosPDF(codigo) {
 function descargarAnalisisPDF(codigo) {
   const analisis = window._detalleAnalisis;
   const proceso  = window._detalleProceso;
-
   if (!analisis || analisis.estado !== 'completado') {
     mostrarToast('El analisis aun no esta disponible');
     return;
   }
-
   try {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
 
-    const PW     = 210;
-    const PH     = 297;
-    const ML     = 14;
-    const MR     = 14;
-    const CW     = PW - ML - MR;
-    const LH     = 5.2;
-    let y        = 0;
+    // ─── CONSTANTES ───────────────────────────────────────
+    const PW   = 595.28;
+    const PH   = 841.89;
+    const ML   = 36;
+    const MR   = 36;
+    const CW   = PW - ML - MR;
+    const LH   = 13;   // line height normal
+    let   y    = 0;
 
-    // Paleta
-    const NAVY   = [13,  27, 42];
-    const GREEN  = [46, 204, 113];
-    const GREEN2 = [26, 145, 80];
-    const BLUE   = [30,  99, 210];
-    const SLATE  = [71, 85, 105];
-    const MUTED  = [148, 163, 184];
-    const RED    = [220,  38, 38];
-    const AMBER  = [202, 138,  4];
-    const WHITE  = [255, 255, 255];
-    const LIGHT  = [241, 245, 249];
-    const BORDER = [203, 213, 225];
-    const TEAL   = [13, 148, 136];
-    const INDIGO = [67,  56, 202];
+    // ─── PALETA ───────────────────────────────────────────
+    const NAVY    = [13,  27,  42];
+    const GREEN   = [46, 204, 113];
+    const GREEN_D = [26, 145,  80];
+    const BLUE    = [30,  99, 210];
+    const SLATE   = [71,  85, 105];
+    const MUTED   = [148,163, 184];
+    const RED     = [185,  28,  28];
+    const RED_LT  = [254, 226, 226];
+    const AMBER   = [180, 105,   0];
+    const AMB_LT  = [254, 243, 199];
+    const WHITE   = [255, 255, 255];
+    const LIGHT   = [248, 250, 252];
+    const BORDER  = [203, 213, 225];
+    const TEAL    = [13,  148, 136];
+    const INDIGO  = [67,   56, 202];
+    const TXT     = [15,  23,  42];
 
-    // ── helpers ──
-    const rf = (x, fy, w, h, fc, sc, sw) => {
-      if (fc) { doc.setFillColor(...fc);   doc.rect(x, fy, w, h, 'F'); }
-      if (sc) { doc.setDrawColor(...sc);   doc.setLineWidth(sw||0.25); doc.rect(x, fy, w, h, 'S'); }
+    // ─── HELPERS ──────────────────────────────────────────
+    const rf = (x,fy,w,h,fc,sc,sw=0.5) => {
+      if (fc){ doc.setFillColor(...fc);  doc.rect(x,fy,w,h,'F'); }
+      if (sc){ doc.setDrawColor(...sc);  doc.setLineWidth(sw); doc.rect(x,fy,w,h,'S'); }
     };
-    const line = (x1, fy1, x2, fy2, color, w) => {
-      doc.setDrawColor(...(color||BORDER));
-      doc.setLineWidth(w||0.25);
-      doc.line(x1, fy1, x2, fy2);
+    const ln = (x1,y1,x2,y2,c=BORDER,w=0.5) => {
+      doc.setDrawColor(...c); doc.setLineWidth(w); doc.line(x1,y1,x2,y2);
     };
-    const sf = (style, size, color) => {
-      doc.setFont('helvetica', style);
+    const sf = (style,size,color) => {
+      doc.setFont('helvetica',style);
       doc.setFontSize(size);
-      if (color) doc.setTextColor(...color);
+      if(color) doc.setTextColor(...color);
     };
-    const txt = (text, x, fy, opts) => doc.text(String(text||''), x, fy, opts||{});
-    const wrap = (text, maxW) => doc.splitTextToSize(String(text||''), maxW);
+    const tx = (text,x,fy,opts) => doc.text(String(text||''),x,fy,opts||{});
+    const sp = (text,maxW) => doc.splitTextToSize(String(text||''),maxW);
 
-    function checkY(need) {
-      if (y + (need||14) > PH - 12) {
-        // Footer en pagina actual
-        drawFooter();
+    // Calcula altura real de un bloque de texto
+    const textH = (lines, lh=LH) => (Array.isArray(lines)?lines.length:1) * lh;
+
+    // Verificar espacio, agregar pagina si hace falta
+    function needY(needed) {
+      if (y + needed > PH - 36) {
+        footerPage();
         doc.addPage();
-        y = 16;
+        y = 36;
       }
     }
 
-    function drawFooter() {
+    function footerPage() {
       const pg = doc.internal.getCurrentPageInfo().pageNumber;
       const total = doc.internal.getNumberOfPages();
-      rf(0, PH - 9, PW, 9, NAVY);
-      sf('normal', 7, MUTED);
-      txt('LicitacionLab  ·  licitacionlab.com', ML, PH - 4);
-      txt(codigo, PW/2, PH - 4, {align:'center'});
-      txt('Pag. ' + pg + ' / ' + total, PW - MR, PH - 4, {align:'right'});
+      rf(0, PH-22, PW, 22, NAVY);
+      sf('normal',7,MUTED);
+      tx('LicitacionLab  ·  licitacionlab.com', ML, PH-8);
+      tx(codigo, PW/2, PH-8, {align:'center'});
+      tx('Pag. '+pg+' / '+total, PW-MR, PH-8, {align:'right'});
     }
 
-    // ══════════════════════════════════════
-    // CABECERA — franja oscura + acento verde
-    // ══════════════════════════════════════
-    rf(0, 0, PW, 38, NAVY);
-    rf(0, 0, 5, 38, GREEN);  // franja lateral
+    // Cabecera de seccion
+    function section(label, accentColor=NAVY) {
+      needY(30);
+      y += 8;
+      rf(ML, y, CW, 20, accentColor);
+      rf(ML, y, 5,  20, GREEN);
+      sf('bold',9,WHITE);
+      tx(label.toUpperCase(), ML+14, y+13.5);
+      y += 26;
+    }
 
-    sf('bold', 18, GREEN);
-    txt('LicitacionLab', ML + 6, 14);
+    // Fila de tabla (2 columnas fijas: label | valor)
+    // labelW: ancho de la columna izquierda en pt
+    function tableRow(label, value, labelW=120, idx=0) {
+      const vLines = sp(String(value||''), CW - labelW - 10);
+      const rowH   = Math.max(20, textH(vLines, LH) + 10);
+      needY(rowH);
+      rf(ML, y, CW, rowH, idx%2===0 ? LIGHT : WHITE);
+      rf(ML, y, CW, rowH, null, BORDER, 0.3);
+      // Label
+      sf('bold',7.5,SLATE);
+      tx(label, ML+6, y+13);
+      // Valor
+      sf('normal',8,TXT);
+      vLines.forEach((l,i) => tx(l, ML+labelW, y+13+i*LH));
+      y += rowH;
+    }
 
-    sf('normal', 8.5, [143, 174, 201]);
-    txt('Analisis de Proceso  ·  Republica Dominicana', ML + 6, 21);
+    // ─── CABECERA ─────────────────────────────────────────
+    rf(0, 0, PW, 80, NAVY);
+    rf(0, 0, 8,  80, GREEN);
+
+    sf('bold',22,GREEN);
+    tx('LicitacionLab', ML+14, 32);
+
+    sf('normal',9,[143,174,201]);
+    tx('Analisis de Proceso  ·  Republica Dominicana', ML+14, 48);
 
     const hoy = new Date().toLocaleDateString('es-DO',{day:'2-digit',month:'long',year:'numeric'});
-    sf('normal', 7.5, MUTED);
-    txt(hoy, PW - MR, 14, {align:'right'});
+    sf('normal',8,MUTED);
+    tx(hoy, PW-MR, 32, {align:'right'});
 
-    // Badge tipo proceso
-    const tipo = analisis.tipo_proceso || proceso?.objeto_proceso || '';
-    if (tipo) {
-      sf('bold', 7, WHITE);
-      const tw = doc.getTextWidth(tipo) + 8;
-      rf(PW - MR - tw, 18, tw, 5.5, GREEN2);
-      txt(tipo.toUpperCase(), PW - MR - tw + 4, 22, {});
+    const tipoProceso = analisis.tipo_proceso || proceso?.objeto_proceso || '';
+    if(tipoProceso){
+      sf('bold',7.5,NAVY);
+      const bw = doc.getTextWidth(tipoProceso)+16;
+      rf(PW-MR-bw, 40, bw, 16, GREEN);
+      tx(tipoProceso.toUpperCase(), PW-MR-bw+8, 51.5);
     }
+    y = 92;
 
-    y = 44;
-
-    // ══════════════════════════════════════
-    // BLOQUE IDENTIFICACION PROCESO
-    // ══════════════════════════════════════
+    // ─── IDENTIFICACION PROCESO ───────────────────────────
     const titulo   = proceso?.titulo || codigo;
     const entidad  = proceso?.unidad_compra || '';
     const monto    = proceso?.monto_estimado;
     const fcierre  = proceso?.fecha_fin_recepcion_ofertas;
+    const montoStr = monto ? 'RD$ '+Number(monto).toLocaleString('es-DO',{minimumFractionDigits:2}) : null;
+    let cierreStr  = null;
+    if(fcierre){ try{ cierreStr = new Date(fcierre).toLocaleDateString('es-DO'); }catch(e){} }
 
-    const montoStr = monto
-      ? 'RD$ ' + Number(monto).toLocaleString('es-DO',{minimumFractionDigits:2})
-      : 'No especificado';
+    rf(ML, y, CW, 3, GREEN);
+    y += 8;
 
-    let cierreStr = '';
-    if (fcierre) {
-      try { cierreStr = new Date(fcierre).toLocaleDateString('es-DO'); } catch(e){}
+    const titLines = sp(titulo, CW);
+    sf('bold',12,NAVY);
+    titLines.forEach(l=>{ tx(l, ML, y); y += 15; });
+    y += 2;
+
+    if(entidad){
+      sf('normal',9,SLATE);
+      tx(entidad, ML, y);
+      y += 14;
     }
 
-    // Linea acento verde
-    rf(ML, y, CW, 1.2, GREEN);
-    y += 4;
-
-    const titLines = wrap(titulo, CW);
-    sf('bold', 11.5, NAVY);
-    titLines.forEach(l => { txt(l, ML, y); y += LH + 1.2; });
-    y += 1;
-
-    if (entidad) {
-      sf('normal', 8.5, SLATE);
-      txt(entidad, ML, y);
-      y += LH + 1;
+    // Barra de datos: codigo | monto | cierre
+    rf(ML, y, CW, 24, [241,245,249]);
+    rf(ML, y, CW, 24, null, BORDER, 0.4);
+    sf('bold',8,BLUE);
+    tx(codigo, ML+8, y+15);
+    const codW = doc.getTextWidth(codigo)+20;
+    if(montoStr){
+      ln(ML+codW, y+4, ML+codW, y+20, BORDER, 0.5);
+      sf('normal',8,SLATE);
+      tx(montoStr, ML+codW+8, y+15);
     }
-
-    // Fila: codigo | monto | cierre
-    rf(ML, y, CW, 7.5, LIGHT);
-    rf(ML, y, CW, 7.5, null, BORDER, 0.2);
-    sf('bold', 7.5, BLUE);
-    txt(codigo, ML + 3, y + 5);
-    if (montoStr !== 'No especificado') {
-      sf('normal', 7.5, SLATE);
-      const cx = ML + doc.getTextWidth(codigo) + 10;
-      txt(montoStr, cx, y + 5);
+    if(cierreStr){
+      sf('normal',8,SLATE);
+      tx('Cierre de recepcion de ofertas:  '+cierreStr, PW-MR-8, y+15, {align:'right'});
     }
-    if (cierreStr) {
-      sf('normal', 7.5, SLATE);
-      txt('Cierre de ofertas:  ' + cierreStr, PW - MR - 3, y + 5, {align:'right'});
-    }
-    y += 11;
+    y += 32;
 
-    // ══════════════════════════════════════
-    // HELPER: titulo de seccion
-    // ══════════════════════════════════════
-    function seccion(label, accentColor) {
-      checkY(16);
-      y += 3;
-      const c = accentColor || NAVY;
-      rf(ML, y, CW, 8, c);
-      rf(ML, y, 3.5, 8, GREEN);  // acento verde
-      sf('bold', 8.5, WHITE);
-      txt(label.toUpperCase(), ML + 7, y + 5.5);
-      y += 11;
-    }
+    // ─── EVALUACION DE COMPETITIVIDAD ─────────────────────
+    const ev     = analisis.evaluacion_competitividad || {};
+    const dif    = ev.nivel_dificultad || '';
+    const rec    = ev.recomendacion    || '';
+    const razon  = ev.razon            || '';
+    const difClr = dif==='Alta' ? RED : dif==='Media' ? AMBER : GREEN_D;
 
-    // ══════════════════════════════════════
-    // EVALUACION DE COMPETITIVIDAD
-    // ══════════════════════════════════════
-    const evComp    = analisis.evaluacion_competitividad || {};
-    const dif       = evComp.nivel_dificultad || '';
-    const rec       = evComp.recomendacion    || '';
-    const razon     = evComp.razon            || '';
-    const difColor  = dif==='Alta' ? RED : dif==='Media' ? AMBER : [22, 163, 74];
+    if(dif||rec||razon){
+      section('Evaluacion de Competitividad');
 
-    if (dif || rec || razon) {
-      seccion('Evaluacion de Competitividad', NAVY);
+      // Card con dos columnas
+      const razonLines = sp(razon, CW - 16);
+      const cardH = 52 + textH(razonLines, LH) + 12;
+      needY(cardH);
 
-      // Fila Dificultad / Recomendacion
-      rf(ML, y, CW, 9, LIGHT);
-      rf(ML, y, CW, 9, null, BORDER, 0.2);
+      rf(ML, y, CW, cardH, WHITE);
+      rf(ML, y, CW, cardH, null, BORDER, 0.5);
+      rf(ML, y, 5, cardH, difClr);
 
-      sf('normal', 7.5, SLATE);
-      txt('Nivel de dificultad', ML + 3, y + 3.5);
-      sf('bold', 7.5, difColor);
-      txt(dif || '—', ML + 3, y + 7.5);
+      // Col izquierda: dificultad
+      sf('normal',7.5,MUTED);    tx('NIVEL DE DIFICULTAD', ML+14, y+16);
+      sf('bold',11,difClr);      tx(dif||'—', ML+14, y+32);
 
-      if (rec) {
-        const halfX = ML + CW / 2 + 2;
-        line(halfX - 4, y + 1, halfX - 4, y + 8, BORDER, 0.2);
-        sf('normal', 7.5, SLATE);
-        txt('Recomendacion', halfX, y + 3.5);
-        sf('bold', 7.5, BLUE);
-        const recLines = wrap(rec, CW/2 - 6);
-        recLines.forEach((l,i) => txt(l, halfX, y + 7.5 + i*(LH-0.5)));
-        y += Math.max(0, (recLines.length - 1) * (LH - 0.5));
+      // Col derecha: recomendacion
+      const midX = ML + CW*0.42;
+      ln(midX, y+8, midX, y+cardH-8, BORDER, 0.5);
+      sf('normal',7.5,MUTED);    tx('RECOMENDACION', midX+12, y+16);
+      sf('bold',8.5,TXT);
+      const recLines = sp(rec||'—', CW*0.55);
+      recLines.forEach((l,i) => tx(l, midX+12, y+30+i*LH));
+
+      // Razon debajo
+      if(razon){
+        const ry = y + 44;
+        ln(ML+8, ry, ML+CW-8, ry, BORDER, 0.3);
+        sf('normal',8,SLATE);
+        razonLines.forEach((l,i) => tx(l, ML+14, ry+14+i*LH));
       }
-      y += 12;
-
-      if (razon) {
-        const razonLines = wrap(razon, CW);
-        razonLines.forEach(l => { checkY(6); sf('normal', 8.2, SLATE); txt(l, ML, y); y += LH + 0.3; });
-        y += 2;
-      }
+      y += cardH + 6;
     }
 
-    // ══════════════════════════════════════
-    // RESUMEN EJECUTIVO
-    // ══════════════════════════════════════
-    const resumen = analisis.resumen_ejecutivo || '';
-    if (resumen) {
-      seccion('Resumen Ejecutivo', NAVY);
-      const rLines = wrap(resumen, CW);
-      rLines.forEach(l => { checkY(6); sf('normal', 8.5, [30, 41, 59]); txt(l, ML, y); y += LH + 0.3; });
-      y += 2;
+    // ─── RESUMEN EJECUTIVO ────────────────────────────────
+    if(analisis.resumen_ejecutivo){
+      section('Resumen Ejecutivo');
+      const lines = sp(analisis.resumen_ejecutivo, CW-16);
+      const blockH = textH(lines)+20;
+      needY(blockH);
+      rf(ML, y, CW, blockH, [248,250,252]);
+      rf(ML, y, 4, blockH, BLUE);
+      sf('normal',8.5,TXT);
+      lines.forEach((l,i) => tx(l, ML+14, y+14+i*LH));
+      y += blockH + 6;
     }
 
-    // ══════════════════════════════════════
-    // PLAZOS CLAVE
-    // ══════════════════════════════════════
+    // ─── PLAZOS CLAVE ─────────────────────────────────────
     const plazos = analisis.plazos_clave || {};
-    const PLAZOS_CFG = [
-      { k:'visita_sitio',          label:'Visita al sitio'           },
-      { k:'consultas',             label:'Cierre de consultas'       },
-      { k:'presentacion_ofertas',  label:'Presentacion de ofertas'   },
-      { k:'apertura_ofertas',      label:'Apertura de sobres'        },
-      { k:'vigencia_oferta_dias',  label:'Vigencia de oferta (dias)' },
+    const PLAZOS = [
+      {k:'visita_sitio',         lb:'Visita al sitio'},
+      {k:'consultas',            lb:'Cierre de consultas'},
+      {k:'presentacion_ofertas', lb:'Presentacion de ofertas'},
+      {k:'apertura_ofertas',     lb:'Apertura de sobres'},
+      {k:'vigencia_oferta_dias', lb:'Vigencia de oferta (dias)'},
     ];
-    const plazosData = PLAZOS_CFG.filter(p => plazos[p.k] && plazos[p.k] !== 'N/A');
+    const plData = PLAZOS.filter(p=>plazos[p.k]&&plazos[p.k]!=='N/A');
 
-    if (plazosData.length) {
-      seccion('Plazos Clave', NAVY);
-      const colW = CW / 2 - 2;
+    if(plData.length){
+      section('Plazos Clave');
+      const colW = (CW - 8) / 2;
+      let colIdx = 0;
 
-      plazosData.forEach((p, idx) => {
-        const col = idx % 2;
-        const fx  = ML + col * (colW + 4);
-        if (col === 0) { checkY(9); }
+      plData.forEach(p => {
+        if(colIdx===0) needY(32);
+        const fx = ML + colIdx*(colW+8);
 
-        rf(fx, y, colW, 8, col===0 ? WHITE : LIGHT);
-        rf(fx, y, colW, 8, null, BORDER, 0.2);
+        rf(fx, y, colW, 30, colIdx===0 ? WHITE : LIGHT);
+        rf(fx, y, colW, 30, null, BORDER, 0.4);
+        rf(fx, y, 4, 30, BLUE);
 
-        // Punto de color izquierdo
-        rf(fx + 1.5, y + 2.5, 3, 3, BLUE);
+        sf('normal',7,MUTED);     tx(p.lb, fx+10, y+12);
+        sf('bold',9,TXT);         tx(String(plazos[p.k]), fx+10, y+23);
 
-        sf('normal', 7, MUTED);
-        txt(p.label, fx + 7, y + 3.8);
-        sf('bold', 8, NAVY);
-        txt(String(plazos[p.k]), fx + 7, y + 7.2);
-
-        if (col === 1 || idx === plazosData.length - 1) {
-          y += 10;
-        }
+        colIdx++;
+        if(colIdx===2){ colIdx=0; y+=34; }
       });
-      y += 2;
+      if(colIdx!==0) y += 34;
+      y += 4;
     }
 
-    // ══════════════════════════════════════
-    // ALERTAS DE IRREGULARIDAD
-    // ══════════════════════════════════════
-    const alertas = Array.isArray(analisis.alertas_fraude) ? analisis.alertas_fraude : [];
-    if (alertas.length) {
-      seccion('Alertas de Posible Irregularidad', [127, 29, 29]);
+    // ─── ALERTAS DE IRREGULARIDAD ─────────────────────────
+    const alertas = Array.isArray(analisis.alertas_fraude)?analisis.alertas_fraude:[];
+    if(alertas.length){
+      section('Alertas de Posible Irregularidad', [127,29,29]);
 
-      alertas.forEach((a) => {
-        const riesgo   = a.riesgo    || '';
-        const hallazgo = a.hallazgo  || '';
-        const cat      = a.categoria || '';
-        const art      = a.articulo_ley || '';
+      alertas.forEach(a => {
+        const riesgo  = a.riesgo   || '';
+        const hallaz  = a.hallazgo || '';
+        const cat     = a.categoria|| '';
+        const art     = a.articulo_ley||'';
+        const rClr    = riesgo.toLowerCase().includes('alto') ? RED
+                      : riesgo.toLowerCase().includes('medio')? AMBER : SLATE;
+        const rLt     = riesgo.toLowerCase().includes('alto') ? RED_LT
+                      : riesgo.toLowerCase().includes('medio')? AMB_LT : LIGHT;
 
-        const rColor = riesgo.toLowerCase().includes('alto')  ? RED
-                     : riesgo.toLowerCase().includes('medio') ? AMBER : SLATE;
+        // Texto del hallazgo va en columna derecha — ancho fijo
+        const textColW = CW - 100;
+        const hLines  = sp(hallaz, textColW - 12);
+        const aLines  = art ? sp(art, textColW - 12) : [];
+        const rowH    = Math.max(56,
+          16 + textH(hLines) + (aLines.length ? textH(aLines,LH-2)+6 : 0) + 16
+        );
 
-        const hLines  = wrap(hallazgo, CW - 36);
-        const aLines  = art ? wrap(art, CW - 36) : [];
-        const rowH    = 8 + hLines.length * (LH + 0.2) + (aLines.length ? aLines.length * (LH - 0.5) + 2 : 0) + 4;
-
-        checkY(rowH);
+        needY(rowH);
 
         rf(ML, y, CW, rowH, LIGHT);
-        rf(ML, y, CW, rowH, null, BORDER, 0.2);
-        rf(ML, y, 4, rowH, rColor); // barra lateral de severidad
+        rf(ML, y, CW, rowH, null, BORDER, 0.4);
+        rf(ML, y, 5,  rowH, rClr);           // barra lateral
 
-        // Etiqueta riesgo
-        rf(ML + 6, y + 2.5, 20, 5, rColor);
-        sf('bold', 7, WHITE);
-        txt(riesgo.toUpperCase(), ML + 7, y + 6.2);
+        // Columna izquierda (badge + categoria)
+        const badgeW = 60;
+        rf(ML+12, y+10, badgeW, 18, rClr);
+        sf('bold',7.5,WHITE);
+        tx(riesgo.toUpperCase(), ML+12+badgeW/2, y+22, {align:'center'});
 
-        // Categoria debajo de la etiqueta
-        sf('italic', 6.5, SLATE);
-        const catLines = wrap(cat, 26);
-        catLines.forEach((cl, ci) => txt(cl, ML + 6, y + 10 + ci * 4));
+        sf('italic',7,SLATE);
+        const catLines = sp(cat, 76);
+        catLines.forEach((l,i) => tx(l, ML+12, y+34+i*11));
 
-        // Texto hallazgo
-        sf('normal', 8, [30, 41, 59]);
-        const textX = ML + 36;
-        hLines.forEach((l, li) => txt(l, textX, y + 7 + li * (LH + 0.2)));
+        // Columna derecha (hallazgo + referencia ley)
+        const tx0 = ML + 102;
+        sf('normal',8.5,TXT);
+        hLines.forEach((l,i) => tx(l, tx0, y+16+i*LH));
 
-        // Referencia de ley
-        if (art) {
-          const artY = y + 7 + hLines.length * (LH + 0.2) + 2;
-          sf('italic', 7, MUTED);
-          aLines.forEach((l, li) => txt(l, textX, artY + li * (LH - 0.5)));
+        if(aLines.length){
+          const artY = y + 16 + hLines.length*LH + 5;
+          ln(tx0, artY-3, tx0+textColW-16, artY-3, BORDER, 0.3);
+          sf('italic',7,MUTED);
+          aLines.forEach((l,i) => tx(l, tx0, artY+i*(LH-2)));
         }
 
-        y += rowH + 3;
+        y += rowH + 6;
       });
     }
 
-    // ══════════════════════════════════════
-    // CHECKLIST DE DOCUMENTOS
-    // ══════════════════════════════════════
-    const checklist = analisis.checklist_categorizado || {};
+    // ─── CHECKLIST DE DOCUMENTOS ──────────────────────────
+    const ck = analisis.checklist_categorizado || {};
     const CATS = [
-      { key:'legal',      label:'Legal',      color: INDIGO },
-      { key:'tecnica',    label:'Tecnica',     color: TEAL   },
-      { key:'financiera', label:'Financiera',  color: GREEN2 },
+      {key:'legal',      lb:'Legal',      clr:INDIGO, lt:[238,242,255]},
+      {key:'tecnica',    lb:'Tecnica',    clr:TEAL,   lt:[240,253,250]},
+      {key:'financiera', lb:'Financiera', clr:GREEN_D, lt:[240,253,244]},
     ];
-    const hasChecklist = CATS.some(c => checklist[c.key]?.length);
-
-    if (hasChecklist) {
-      seccion('Checklist de Documentos', NAVY);
+    if(CATS.some(c=>ck[c.key]?.length)){
+      section('Checklist de Documentos');
 
       CATS.forEach(cat => {
-        const items = checklist[cat.key] || [];
-        if (!items.length) return;
+        const items = ck[cat.key]||[];
+        if(!items.length) return;
 
-        checkY(12);
-        // Subcabecera de categoria
-        rf(ML, y, CW, 7, cat.color);
-        sf('bold', 8, WHITE);
-        txt(cat.label.toUpperCase(), ML + 4, y + 5);
-        y += 9;
+        needY(24);
+        rf(ML, y, CW, 22, cat.clr);
+        sf('bold',8.5,WHITE);
+        tx(cat.lb.toUpperCase(), ML+10, y+14.5);
+        y += 24;
 
-        items.forEach((item, idx) => {
-          const docName  = item.documento || '';
-          const sub      = item.es_subsanable;
-          const nota     = item.nota || '';
+        items.forEach((item,idx) => {
+          const doc_      = item.documento||'';
+          const sub       = item.es_subsanable;
+          const nota      = item.nota||'';
 
-          const dLines   = wrap(docName, CW - 40);
-          const nLines   = nota ? wrap(nota, CW - 40) : [];
-          const rowH     = Math.max(8, dLines.length * (LH + 0.1) + (nLines.length ? nLines.length * (LH - 0.5) + 1.5 : 0) + 4);
+          // Ancho disponible para texto: reservar 80pt a la derecha para badge
+          const textW   = CW - 26 - 82;
+          const dLines  = sp(doc_,  textW);
+          const nLines  = nota ? sp(nota, textW) : [];
+          const rowH    = Math.max(22, textH(dLines)+( nLines.length ? textH(nLines,11)+4 : 0 )+12);
 
-          checkY(rowH);
+          needY(rowH);
 
-          const bg = sub === false ? [255, 245, 245] : (idx%2===0 ? WHITE : LIGHT);
-          rf(ML, y, CW, rowH, bg);
-          rf(ML, y, CW, rowH, null, BORDER, 0.1);
+          // Fondo alternado
+          rf(ML, y, CW, rowH, idx%2===0 ? WHITE : LIGHT);
+          rf(ML, y, CW, rowH, null, BORDER, 0.25);
 
           // Checkbox visual
-          rf(ML + 3, y + (rowH/2) - 2, 3.5, 3.5, WHITE, BORDER, 0.3);
+          rf(ML+8, y+rowH/2-5, 9, 9, WHITE, BORDER, 0.7);
 
-          sf('normal', 8, [30, 41, 59]);
-          dLines.forEach((l, li) => txt(l, ML + 9, y + 5 + li * (LH + 0.1)));
-
-          if (nota) {
-            sf('italic', 6.5, MUTED);
-            const noteY = y + 5 + dLines.length * (LH + 0.1) + 1;
-            nLines.forEach((l, li) => txt(l, ML + 9, noteY + li * (LH - 0.5)));
+          // Texto documento
+          sf('normal',8.5,TXT);
+          dLines.forEach((l,i) => tx(l, ML+24, y+13+i*LH));
+          if(nLines.length){
+            sf('italic',6.5,MUTED);
+            nLines.forEach((l,i)=>tx(l, ML+24, y+13+dLines.length*LH+i*11));
           }
 
-          // Badge subsanable
-          if (sub === false) {
-            const badge = 'No subsanable';
-            sf('bold', 6.5, RED);
-            const bw = doc.getTextWidth(badge) + 5;
-            rf(ML + CW - bw - 1, y + (rowH/2) - 3, bw, 5, [254, 226, 226]);
-            txt(badge, ML + CW - bw + 1.5, y + (rowH/2) + 0.8);
-          } else if (sub === true) {
-            const badge = 'Subsanable';
-            sf('bold', 6.5, [22, 163, 74]);
-            const bw = doc.getTextWidth(badge) + 5;
-            rf(ML + CW - bw - 1, y + (rowH/2) - 3, bw, 5, [220, 252, 231]);
-            txt(badge, ML + CW - bw + 1.5, y + (rowH/2) + 0.8);
+          // Badge subsanabilidad — alineado a la derecha, verticalmente centrado
+          if(sub===false){
+            const badge  = 'No subsanable';
+            const bw     = doc.getTextWidth(badge)+10;
+            const bx     = ML+CW-bw-4;
+            const by     = y+rowH/2-7;
+            rf(bx, by, bw, 14, RED_LT);
+            rf(bx, by, bw, 14, null, [220,38,38], 0.4);
+            sf('bold',6.5,RED);
+            tx(badge, bx+5, by+10);
+          } else if(sub===true){
+            const badge  = 'Subsanable';
+            const bw     = doc.getTextWidth(badge)+10;
+            const bx     = ML+CW-bw-4;
+            const by     = y+rowH/2-7;
+            rf(bx, by, bw, 14, [220,252,231]);
+            rf(bx, by, bw, 14, null, [34,197,94], 0.4);
+            sf('bold',6.5,[22,163,74]);
+            tx(badge, bx+5, by+10);
           }
 
           y += rowH;
         });
-        y += 4;
+        y += 8;
       });
     }
 
-    // ══════════════════════════════════════
-    // REQUISITOS DE EXPERIENCIA
-    // ══════════════════════════════════════
-    const reqExp = analisis.requisitos_experiencia || {};
-    const EXP_CFG = [
-      { k:'obras_similares',          label:'Obras similares'          },
-      { k:'montos_facturados',        label:'Montos facturados'        },
-      { k:'anos_experiencia_empresa', label:'Anos de experiencia'      },
-      { k:'otros',                    label:'Otros requisitos'         },
+    // ─── REQUISITOS DE EXPERIENCIA ────────────────────────
+    const rExp = analisis.requisitos_experiencia||{};
+    const EXP  = [
+      {k:'obras_similares',          lb:'Obras similares'},
+      {k:'montos_facturados',        lb:'Montos facturados'},
+      {k:'anos_experiencia_empresa', lb:'Anos de experiencia'},
+      {k:'otros',                    lb:'Otros requisitos'},
     ];
-    const expData = EXP_CFG.filter(e => reqExp[e.k]);
-
-    if (expData.length) {
-      seccion('Requisitos de Experiencia', NAVY);
-      expData.forEach((e, idx) => {
-        const vLines = wrap(reqExp[e.k], CW - 48);
-        const rowH   = Math.max(8, vLines.length * (LH + 0.2) + 4);
-        checkY(rowH);
-        const bg = idx%2===0 ? LIGHT : WHITE;
-        rf(ML, y, CW, rowH, bg);
-        rf(ML, y, CW, rowH, null, BORDER, 0.1);
-        sf('bold', 7.5, SLATE);
-        txt(e.label + ':', ML + 3, y + 5.5);
-        sf('normal', 8, [30, 41, 59]);
-        vLines.forEach((l, li) => txt(l, ML + 48, y + 5.5 + li * (LH + 0.2)));
-        y += rowH;
-      });
-      y += 2;
+    if(EXP.some(e=>rExp[e.k])){
+      section('Requisitos de Experiencia');
+      EXP.filter(e=>rExp[e.k]).forEach((e,i) => tableRow(e.lb, rExp[e.k], 130, i));
+      y += 6;
     }
 
-    // ══════════════════════════════════════
-    // REQUISITOS FINANCIEROS
-    // ══════════════════════════════════════
-    const reqFin = analisis.requisitos_financieros || {};
-    const FIN_CFG = [
-      { k:'indice_liquidez',       label:'Indice de liquidez'       },
-      { k:'indice_endeudamiento',  label:'Indice de endeudamiento'  },
-      { k:'patrimonio_minimo',     label:'Patrimonio minimo'        },
-      { k:'otros',                 label:'Otros'                    },
+    // ─── REQUISITOS FINANCIEROS ───────────────────────────
+    const rFin = analisis.requisitos_financieros||{};
+    const FIN  = [
+      {k:'indice_liquidez',      lb:'Indice de liquidez'},
+      {k:'indice_endeudamiento', lb:'Indice de endeudamiento'},
+      {k:'patrimonio_minimo',    lb:'Patrimonio minimo'},
+      {k:'otros',                lb:'Otros'},
     ];
-    const finData = FIN_CFG.filter(f => reqFin[f.k]);
-
-    if (finData.length) {
-      seccion('Requisitos Financieros', NAVY);
-      finData.forEach((f, idx) => {
-        const vLines = wrap(reqFin[f.k], CW - 52);
-        const rowH   = Math.max(8, vLines.length * (LH + 0.2) + 4);
-        checkY(rowH);
-        const bg = idx%2===0 ? LIGHT : WHITE;
-        rf(ML, y, CW, rowH, bg);
-        rf(ML, y, CW, rowH, null, BORDER, 0.1);
-        sf('bold', 7.5, SLATE);
-        txt(f.label + ':', ML + 3, y + 5.5);
-        sf('normal', 8, [30, 41, 59]);
-        vLines.forEach((l, li) => txt(l, ML + 52, y + 5.5 + li * (LH + 0.2)));
-        y += rowH;
-      });
-      y += 2;
+    if(FIN.some(f=>rFin[f.k])){
+      section('Requisitos Financieros');
+      FIN.filter(f=>rFin[f.k]).forEach((f,i) => tableRow(f.lb, rFin[f.k], 140, i));
+      y += 6;
     }
 
-    // ══════════════════════════════════════
-    // GARANTIAS EXIGIDAS
-    // ══════════════════════════════════════
-    const garantias = Array.isArray(analisis.garantias_exigidas) ? analisis.garantias_exigidas : [];
-    if (garantias.length) {
-      seccion('Garantias Exigidas', NAVY);
+    // ─── PERSONAL Y EQUIPOS ───────────────────────────────
+    const pye = analisis.personal_y_equipos||{};
+    const personal = Array.isArray(pye.personal_clave)?pye.personal_clave:[];
+    const equipos  = Array.isArray(pye.equipos_minimos)?pye.equipos_minimos:[];
 
-      // Cabecera tabla
-      rf(ML, y, CW, 7, [51, 65, 85]);
-      sf('bold', 7.5, WHITE);
-      txt('Tipo de garantia', ML + 3, y + 5);
-      txt('Monto / Porcentaje', ML + CW*0.5, y + 5);
-      txt('Subsanabilidad', ML + CW*0.82, y + 5);
-      y += 8;
+    if(personal.length||equipos.length){
+      section('Personal y Equipos Requeridos');
 
-      garantias.forEach((g, idx) => {
-        const rowH = 8;
-        checkY(rowH);
-        const bg = idx%2===0 ? LIGHT : WHITE;
-        rf(ML, y, CW, rowH, bg);
-        rf(ML, y, CW, rowH, null, BORDER, 0.1);
-        sf('normal', 8, [30, 41, 59]);
-        const tLines = wrap(g.tipo||'', CW*0.45);
-        txt(tLines[0]||'', ML + 3, y + 5.5);
-        txt(String(g.monto_o_porcentaje||''), ML + CW*0.5, y + 5.5);
-        if (g.es_subsanable === false) {
-          sf('bold', 7, RED);
-          txt('No subsanable', ML + CW*0.82, y + 5.5);
+      if(personal.length){
+        // Subcabecera
+        needY(18);
+        rf(ML, y, CW, 18, [241,245,249]);
+        rf(ML, y, CW, 18, null, BORDER, 0.4);
+        sf('bold',7.5,SLATE);
+        tx('PERSONAL CLAVE', ML+8, y+12);
+        y += 20;
+
+        // Cabecera columnas
+        rf(ML, y, CW, 18, [226,232,240]);
+        sf('bold',7,SLATE);
+        tx('Posicion',           ML+8,    y+12);
+        tx('Titulo/Perfil',      ML+130,  y+12);
+        tx('Experiencia',        ML+270,  y+12);
+        tx('Subsanabilidad',     ML+370,  y+12);
+        y += 18;
+
+        personal.forEach((p,idx)=>{
+          const pos  = p.posicion||'';
+          const tit  = p.titulo||'';
+          const exp  = p.anos_experiencia ? p.anos_experiencia+' anos' : '—';
+          const sub  = p.es_subsanable;
+
+          const posL = sp(pos, 118);
+          const titL = sp(tit, 132);
+          const rowH = Math.max(22, Math.max(textH(posL),textH(titL))+10);
+
+          needY(rowH);
+          rf(ML, y, CW, rowH, idx%2===0?WHITE:LIGHT);
+          rf(ML, y, CW, rowH, null, BORDER, 0.25);
+
+          sf('normal',8,TXT);
+          posL.forEach((l,i)=>tx(l, ML+8,  y+13+i*LH));
+          titL.forEach((l,i)=>tx(l, ML+130,y+13+i*LH));
+          tx(exp, ML+270, y+13);
+
+          if(sub===false){
+            sf('bold',6.5,RED);  tx('No subsanable', ML+370, y+13);
+          } else {
+            sf('normal',7,MUTED); tx('Subsanable', ML+370, y+13);
+          }
+          y += rowH;
+        });
+        y += 8;
+      }
+
+      if(equipos.length){
+        needY(18);
+        rf(ML, y, CW, 18, [241,245,249]);
+        rf(ML, y, CW, 18, null, BORDER, 0.4);
+        sf('bold',7.5,SLATE);
+        tx('EQUIPOS MINIMOS', ML+8, y+12);
+        y += 20;
+
+        equipos.forEach((eq,idx)=>{
+          const eqLines = sp(String(eq||''), CW-24);
+          const rowH    = Math.max(20, textH(eqLines)+10);
+          needY(rowH);
+          rf(ML, y, CW, rowH, idx%2===0?WHITE:LIGHT);
+          rf(ML, y, CW, rowH, null, BORDER, 0.25);
+          rf(ML+8, y+rowH/2-3, 6, 6, TEAL);
+          sf('normal',8,TXT);
+          eqLines.forEach((l,i)=>tx(l, ML+22, y+13+i*LH));
+          y += rowH;
+        });
+        y += 8;
+      }
+    }
+
+    // ─── GARANTIAS EXIGIDAS ───────────────────────────────
+    const garantias = Array.isArray(analisis.garantias_exigidas)?analisis.garantias_exigidas:[];
+    if(garantias.length){
+      section('Garantias Exigidas');
+
+      // Cabecera
+      needY(20);
+      rf(ML, y, CW, 20, [51,65,85]);
+      sf('bold',7.5,WHITE);
+      tx('Tipo de garantia',    ML+8,      y+13);
+      tx('Monto / Porcentaje',  ML+CW*0.52,y+13);
+      tx('Subsanabilidad',      ML+CW*0.79,y+13);
+      y += 20;
+
+      garantias.forEach((g,idx)=>{
+        const tipoL = sp(g.tipo||'', CW*0.48);
+        const rowH  = Math.max(22, textH(tipoL)+10);
+        needY(rowH);
+        rf(ML, y, CW, rowH, idx%2===0?LIGHT:WHITE);
+        rf(ML, y, CW, rowH, null, BORDER, 0.3);
+        sf('normal',8,TXT);
+        tipoL.forEach((l,i)=>tx(l, ML+8, y+13+i*LH));
+        tx(String(g.monto_o_porcentaje||''), ML+CW*0.52, y+13);
+        if(g.es_subsanable===false){
+          sf('bold',7.5,RED);   tx('No subsanable', ML+CW*0.79, y+13);
         } else {
-          sf('normal', 7, [22, 163, 74]);
-          txt('Subsanable', ML + CW*0.82, y + 5.5);
+          sf('normal',7.5,[22,163,74]); tx('Subsanable', ML+CW*0.79, y+13);
         }
         y += rowH;
       });
-      y += 2;
+      y += 6;
     }
 
-    // ══════════════════════════════════════
-    // RESTRICCIONES DE PARTICIPACION
-    // ══════════════════════════════════════
-    const restricciones = Array.isArray(analisis.restricciones_participacion) ? analisis.restricciones_participacion : [];
-    if (restricciones.length) {
-      seccion('Restricciones de Participacion', NAVY);
+    // ─── RESTRICCIONES DE PARTICIPACION ──────────────────
+    const restricc = Array.isArray(analisis.restricciones_participacion)?analisis.restricciones_participacion:[];
+    if(restricc.length){
+      section('Restricciones de Participacion');
 
-      restricciones.forEach((r, idx) => {
-        const tipo    = r.tipo || '';
-        const desc    = r.descripcion || '';
-        const dLines  = wrap(desc, CW - 52);
-        const rowH    = Math.max(9, dLines.length * (LH + 0.2) + 5);
-        checkY(rowH);
-        const bg = idx%2===0 ? LIGHT : WHITE;
-        rf(ML, y, CW, rowH, bg);
-        rf(ML, y, CW, rowH, null, BORDER, 0.1);
-        // Punto color
-        rf(ML + 2.5, y + rowH/2 - 1.5, 3, 3, INDIGO);
-        sf('bold', 7.5, INDIGO);
-        const tLines = wrap(tipo, 44);
-        tLines.forEach((l, li) => txt(l, ML + 8, y + 5.5 + li * (LH - 0.3)));
-        sf('normal', 8, [30, 41, 59]);
-        dLines.forEach((l, li) => txt(l, ML + 52, y + 5.5 + li * (LH + 0.2)));
+      restricc.forEach((r,idx)=>{
+        const tipo   = r.tipo       ||'';
+        const desc   = r.descripcion||'';
+        const tLines = sp(tipo, 120);
+        const dLines = sp(desc, CW-142);
+        const rowH   = Math.max(24, Math.max(textH(tLines),textH(dLines))+12);
+
+        needY(rowH);
+        rf(ML, y, CW, rowH, idx%2===0?LIGHT:WHITE);
+        rf(ML, y, CW, rowH, null, BORDER, 0.3);
+        rf(ML, y, 4,  rowH, INDIGO);
+
+        sf('bold',7.5,INDIGO);
+        tLines.forEach((l,i)=>tx(l, ML+10, y+13+i*LH));
+
+        sf('normal',8,TXT);
+        dLines.forEach((l,i)=>tx(l, ML+140, y+13+i*LH));
+
         y += rowH;
       });
-      y += 2;
+      y += 6;
     }
 
-    // ══════════════════════════════════════
-    // FOOTER EN TODAS LAS PAGINAS
-    // ══════════════════════════════════════
+    // ─── FOOTER EN TODAS LAS PAGINAS ─────────────────────
     const totalPag = doc.internal.getNumberOfPages();
-    for (let pg = 1; pg <= totalPag; pg++) {
+    for(let pg=1; pg<=totalPag; pg++){
       doc.setPage(pg);
-      rf(0, PH - 9, PW, 9, NAVY);
-      sf('normal', 7, MUTED);
-      txt('LicitacionLab  ·  licitacionlab.com', ML, PH - 4);
-      txt(codigo, PW/2, PH - 4, {align:'center'});
-      sf('normal', 7, MUTED);
-      txt('Pag. ' + pg + ' / ' + totalPag, PW - MR, PH - 4, {align:'right'});
+      rf(0, PH-22, PW, 22, NAVY);
+      sf('normal',7,MUTED);
+      tx('LicitacionLab  ·  licitacionlab.com', ML, PH-8);
+      tx(codigo, PW/2, PH-8, {align:'center'});
+      tx('Pag. '+pg+' / '+totalPag, PW-MR, PH-8, {align:'right'});
     }
 
-    doc.save('Analisis_' + codigo + '.pdf');
+    doc.save('Analisis_'+codigo+'.pdf');
     mostrarToast('PDF descargado');
 
-  } catch(e) {
-    console.error('Error PDF analisis:', e);
+  } catch(e){
+    console.error('Error PDF:', e);
     mostrarToast('Error generando PDF');
   }
 }
