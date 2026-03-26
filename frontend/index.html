@@ -2649,6 +2649,10 @@ async function verDetalle(codigo) {
   const fPub    = p.fecha_publicacion ? new Date(p.fecha_publicacion).toLocaleDateString('es-DO') : '—';
   const fCierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO') : '—';
 
+  // Guardar globalmente para el PDF del análisis
+  window._detalleAnalisis = data.analisis;
+  window._detalleProceso  = p;
+
   document.getElementById('detalle-container').innerHTML = `
     <div class="detalle-card">
       <div class="detalle-header-bar">
@@ -3749,11 +3753,17 @@ function renderChecklistHTML(analisis, codigo) {
   return `<div class="checklist-card" id="checklist-${codigo}">
     <div class="checklist-header">
       <div class="checklist-titulo">📋 Checklist de documentos</div>
-      <div class="checklist-progreso">
-        <div class="checklist-progreso-bar">
-          <div class="checklist-progreso-fill" id="cl-fill-${codigo}" style="width:${pct}%"></div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="btn-pdf-arts" onclick="descargarAnalisisPDF('${codigo}')" title="Descargar análisis completo en PDF">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          PDF
+        </button>
+        <div class="checklist-progreso">
+          <div class="checklist-progreso-bar">
+            <div class="checklist-progreso-fill" id="cl-fill-${codigo}" style="width:${pct}%"></div>
+          </div>
+          <div class="checklist-progreso-texto" id="cl-texto-${codigo}">${totalCheck}/${totalItems} listos</div>
         </div>
-        <div class="checklist-progreso-texto" id="cl-texto-${codigo}">${totalCheck}/${totalItems} listos</div>
       </div>
     </div>
     ${seccionesHTML}
@@ -4483,6 +4493,437 @@ async function descargarArticulosPDF(codigo) {
     mostrarToast('PDF descargado');
   } catch(e) {
     console.error('Error PDF:', e);
+    mostrarToast('Error generando PDF');
+  }
+}
+
+// ── PDF ANÁLISIS COMPLETO ────────────────────────────────
+function descargarAnalisisPDF(codigo) {
+  const analisis = window._detalleAnalisis;
+  const proceso  = window._detalleProceso;
+
+  if (!analisis || analisis.estado !== 'completado') {
+    mostrarToast('El análisis aún no está disponible');
+    return;
+  }
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+
+    const PAGE_W  = 210;
+    const MARGIN  = 14;
+    const CONTENT = PAGE_W - MARGIN * 2;
+    const LINE_H  = 5.5;
+    let y = 0;
+
+    // ── Colores ──
+    const C_DARK   = [13,  27, 42];
+    const C_GREEN  = [46, 204, 113];
+    const C_BLUE   = [37,  99, 235];
+    const C_MUTED  = [100, 116, 139];
+    const C_RED    = [220,  38, 38];
+    const C_AMBER  = [217, 119, 6];
+    const C_WHITE  = [255, 255, 255];
+    const C_LIGHT  = [248, 250, 252];
+    const C_BORDER = [226, 232, 240];
+
+    function newPage() {
+      doc.addPage();
+      y = MARGIN;
+    }
+
+    function checkY(needed = 12) {
+      if (y + needed > 282) newPage();
+    }
+
+    function setFont(style, size, color) {
+      doc.setFont('helvetica', style);
+      doc.setFontSize(size);
+      if (color) doc.setTextColor(...color);
+    }
+
+    function drawRect(x, fy, w, h, fillColor, strokeColor) {
+      if (fillColor) { doc.setFillColor(...fillColor); doc.rect(x, fy, w, h, 'F'); }
+      if (strokeColor) { doc.setDrawColor(...strokeColor); doc.rect(x, fy, w, h, 'S'); }
+    }
+
+    function sectionTitle(title, iconChar) {
+      checkY(14);
+      drawRect(MARGIN, y, CONTENT, 8, C_DARK);
+      setFont('bold', 9, C_GREEN);
+      doc.text((iconChar ? iconChar + '  ' : '') + title.toUpperCase(), MARGIN + 3, y + 5.5);
+      y += 10;
+    }
+
+    function pill(text, x, fy, bgColor, textColor) {
+      setFont('bold', 7.5, textColor);
+      const tw = doc.getTextWidth(text);
+      const pw = tw + 6;
+      drawRect(x, fy - 4, pw, 5.5, bgColor);
+      doc.text(text, x + 3, fy);
+      return pw;
+    }
+
+    function wrapText(text, maxW) {
+      return doc.splitTextToSize(String(text || ''), maxW);
+    }
+
+    // ══════════════════════════════════════════
+    // ENCABEZADO
+    // ══════════════════════════════════════════
+    drawRect(0, 0, PAGE_W, 32, C_DARK);
+    // Franja verde lateral
+    drawRect(0, 0, 4, 32, C_GREEN);
+
+    setFont('bold', 14, C_GREEN);
+    doc.text('LicitacionLab', MARGIN + 2, 13);
+    setFont('normal', 8, [143, 174, 201]);
+    doc.text('Análisis de Proceso · República Dominicana', MARGIN + 2, 19);
+
+    // Fecha
+    const hoy = new Date().toLocaleDateString('es-DO', { day:'2-digit', month:'2-digit', year:'numeric' });
+    setFont('normal', 7.5, [143, 174, 201]);
+    doc.text(hoy, PAGE_W - MARGIN, 13, { align: 'right' });
+
+    y = 36;
+
+    // ══════════════════════════════════════════
+    // TÍTULO DEL PROCESO
+    // ══════════════════════════════════════════
+    const titulo   = proceso?.titulo || codigo;
+    const entidad  = proceso?.unidad_compra || '';
+    const monto    = proceso?.monto_estimado;
+    const cierre   = proceso?.fecha_fin_recepcion_ofertas;
+    const montoStr = monto ? `RD$ ${Number(monto).toLocaleString('es-DO', {minimumFractionDigits:2})}` : 'No especificado';
+
+    let cierreStr = '';
+    if (cierre) {
+      try { cierreStr = new Date(cierre).toLocaleDateString('es-DO'); } catch(e) {}
+    }
+
+    drawRect(MARGIN, y, CONTENT, 1.5, C_GREEN);
+    y += 4;
+
+    const tituloLines = wrapText(titulo, CONTENT);
+    setFont('bold', 11, C_DARK);
+    tituloLines.forEach(l => { doc.text(l, MARGIN, y); y += LINE_H + 1; });
+
+    y += 1;
+    setFont('normal', 8.5, C_MUTED);
+    if (entidad) { doc.text(entidad, MARGIN, y); y += LINE_H; }
+
+    // Código · Monto · Cierre en una línea
+    setFont('bold', 8, C_BLUE);
+    doc.text(codigo, MARGIN, y);
+    setFont('normal', 8, C_MUTED);
+    const codW = doc.getTextWidth(codigo) + 8;
+    if (montoStr !== 'No especificado') {
+      doc.text(montoStr, MARGIN + codW, y);
+    }
+    if (cierreStr) {
+      const montoW = doc.getTextWidth(montoStr) + 8;
+      doc.text('Cierre: ' + cierreStr, MARGIN + codW + (montoStr !== 'No especificado' ? montoW : 0), y);
+    }
+    y += 8;
+
+    // ══════════════════════════════════════════
+    // EVALUACIÓN DE COMPETITIVIDAD
+    // ══════════════════════════════════════════
+    const evComp  = analisis.evaluacion_competitividad || {};
+    const dif     = evComp.nivel_dificultad || '';
+    const rec     = evComp.recomendacion || '';
+    const razon   = evComp.razon || '';
+
+    if (dif || rec) {
+      sectionTitle('Evaluación de Competitividad', '📊');
+      checkY(24);
+      drawRect(MARGIN, y, CONTENT, 1, C_BORDER);
+      y += 4;
+
+      // Fila: Dificultad + Recomendación
+      const difColor = dif === 'Alta' ? C_RED : dif === 'Media' ? C_AMBER : [22, 163, 74];
+      if (dif) {
+        setFont('bold', 8, C_MUTED);
+        doc.text('Dificultad:', MARGIN, y);
+        pill(dif, MARGIN + 25, y, difColor, C_WHITE);
+      }
+      if (rec) {
+        setFont('bold', 8, C_MUTED);
+        doc.text('Recomendación:', MARGIN + 80, y);
+        setFont('normal', 8, C_DARK);
+        doc.text(rec, MARGIN + 115, y);
+      }
+      y += 8;
+
+      if (razon) {
+        const razonLines = wrapText(razon, CONTENT);
+        setFont('normal', 8.5, C_DARK);
+        razonLines.forEach(l => { checkY(6); doc.text(l, MARGIN, y); y += LINE_H; });
+        y += 2;
+      }
+    }
+
+    // ══════════════════════════════════════════
+    // RESUMEN EJECUTIVO
+    // ══════════════════════════════════════════
+    const resumen = analisis.resumen_ejecutivo || '';
+    if (resumen) {
+      sectionTitle('Resumen Ejecutivo', '📝');
+      const resLines = wrapText(resumen, CONTENT);
+      setFont('normal', 8.5, C_DARK);
+      resLines.forEach(l => { checkY(6); doc.text(l, MARGIN, y); y += LINE_H; });
+      y += 3;
+    }
+
+    // ══════════════════════════════════════════
+    // PLAZOS CLAVE
+    // ══════════════════════════════════════════
+    const plazos = analisis.plazos_clave || {};
+    const plazosLabels = {
+      visita_sitio: '🏗️  Visita al sitio',
+      consultas: '❓  Cierre de consultas',
+      presentacion_ofertas: '📝  Presentación de ofertas',
+      apertura_ofertas: '📂  Apertura de sobres',
+      vigencia_oferta_dias: '⏱️  Vigencia de oferta (días)',
+    };
+    const plazosData = Object.entries(plazosLabels)
+      .filter(([k]) => plazos[k] && plazos[k] !== 'N/A')
+      .map(([k, label]) => [label, plazos[k]]);
+
+    if (plazosData.length) {
+      sectionTitle('Plazos Clave', '📅');
+      plazosData.forEach(([label, val]) => {
+        checkY(7);
+        drawRect(MARGIN, y - 4, CONTENT, 6, C_LIGHT);
+        setFont('normal', 8, C_MUTED);
+        doc.text(label, MARGIN + 2, y);
+        setFont('bold', 8, C_DARK);
+        doc.text(String(val), MARGIN + 90, y);
+        y += 7;
+      });
+      y += 2;
+    }
+
+    // ══════════════════════════════════════════
+    // ALERTAS DE IRREGULARIDAD
+    // ══════════════════════════════════════════
+    const alertas = Array.isArray(analisis.alertas_fraude) ? analisis.alertas_fraude : [];
+    if (alertas.length) {
+      sectionTitle('Alertas de Posible Irregularidad', '🚨');
+      alertas.forEach((a, idx) => {
+        const riesgo   = a.riesgo || '';
+        const hallazgo = a.hallazgo || '';
+        const cat      = a.categoria || '';
+        const art      = a.articulo_ley || '';
+        const rColor   = riesgo.toLowerCase().includes('alto') ? C_RED
+                       : riesgo.toLowerCase().includes('medio') ? C_AMBER : C_MUTED;
+
+        const hallazgoLines = wrapText(hallazgo, CONTENT - 30);
+        const rowH = Math.max(10, hallazgoLines.length * LINE_H + 8);
+        checkY(rowH);
+
+        const bg = idx % 2 === 0 ? C_LIGHT : C_WHITE;
+        drawRect(MARGIN, y - 4.5, CONTENT, rowH, bg);
+        // Borde izquierdo de color según riesgo
+        drawRect(MARGIN, y - 4.5, 3, rowH, rColor);
+
+        // Pill de riesgo
+        pill(riesgo, MARGIN + 5, y, rColor, C_WHITE);
+        setFont('italic', 7.5, C_MUTED);
+        doc.text(cat, MARGIN + 5, y + 5);
+
+        setFont('normal', 8, C_DARK);
+        hallazgoLines.forEach((l, li) => doc.text(l, MARGIN + 30, y + li * LINE_H));
+        if (art) {
+          setFont('italic', 7, C_MUTED);
+          doc.text(art, MARGIN + 30, y + hallazgoLines.length * LINE_H);
+          y += hallazgoLines.length * LINE_H + rowH * 0.2;
+        }
+        y += rowH - (hallazgoLines.length - 1) * LINE_H + 1;
+      });
+      y += 2;
+    }
+
+    // ══════════════════════════════════════════
+    // CHECKLIST DE DOCUMENTOS
+    // ══════════════════════════════════════════
+    const checklist = analisis.checklist_categorizado || {};
+    const catConfig = [
+      { key: 'legal',      label: 'Legal',      color: [30, 64, 175] },
+      { key: 'tecnica',    label: 'Técnica',     color: [8, 145, 178] },
+      { key: 'financiera', label: 'Financiera',  color: [15, 118, 110] },
+    ];
+
+    const hasChecklist = catConfig.some(c => checklist[c.key]?.length);
+    if (hasChecklist) {
+      sectionTitle('Checklist de Documentos', '📋');
+      catConfig.forEach(cat => {
+        const items = checklist[cat.key] || [];
+        if (!items.length) return;
+
+        checkY(10);
+        drawRect(MARGIN, y - 4, CONTENT, 7, cat.color);
+        setFont('bold', 8.5, C_WHITE);
+        doc.text(cat.label.toUpperCase(), MARGIN + 3, y);
+        y += 8;
+
+        items.forEach((item, idx) => {
+          const docName  = item.documento || '';
+          const subsanable = item.es_subsanable;
+          const nota     = item.nota || '';
+          const docLines = wrapText(docName, CONTENT - 36);
+          const rowH = Math.max(8, docLines.length * LINE_H + 5);
+          checkY(rowH);
+
+          const bg = subsanable === false ? [254, 242, 242] : (idx % 2 === 0 ? C_LIGHT : C_WHITE);
+          drawRect(MARGIN, y - 4, CONTENT, rowH, bg);
+
+          // Checkbox visual
+          drawRect(MARGIN + 2, y - 3, 4, 4, C_WHITE, C_BORDER);
+
+          setFont('normal', 8, C_DARK);
+          docLines.forEach((l, li) => doc.text(l, MARGIN + 9, y + li * LINE_H));
+
+          if (nota) {
+            setFont('italic', 7, C_MUTED);
+            doc.text(nota, MARGIN + 9, y + docLines.length * LINE_H);
+          }
+
+          // Badge subsanable
+          const badgeText = subsanable === false ? 'NO subsanable' : subsanable === true ? 'Subsanable' : '';
+          const badgeColor = subsanable === false ? C_RED : [22, 163, 74];
+          if (badgeText) {
+            setFont('bold', 6.5, badgeColor);
+            const bw = doc.getTextWidth(badgeText) + 4;
+            doc.text(badgeText, MARGIN + CONTENT - bw, y);
+          }
+
+          y += rowH;
+        });
+        y += 3;
+      });
+    }
+
+    // ══════════════════════════════════════════
+    // REQUISITOS DE EXPERIENCIA
+    // ══════════════════════════════════════════
+    const reqExp = analisis.requisitos_experiencia || {};
+    const expLabels = {
+      obras_similares: 'Obras similares',
+      montos_facturados: 'Montos facturados',
+      anos_experiencia_empresa: 'Años de experiencia',
+      otros: 'Otros requisitos',
+    };
+    const expData = Object.entries(expLabels).filter(([k]) => reqExp[k]);
+    if (expData.length) {
+      sectionTitle('Requisitos de Experiencia', '🏗️');
+      expData.forEach(([k, label]) => {
+        const lines = wrapText(reqExp[k], CONTENT - 45);
+        const rowH = Math.max(7, lines.length * LINE_H + 4);
+        checkY(rowH);
+        setFont('bold', 8, C_MUTED);
+        doc.text(label + ':', MARGIN, y);
+        setFont('normal', 8, C_DARK);
+        lines.forEach((l, li) => doc.text(l, MARGIN + 45, y + li * LINE_H));
+        y += rowH;
+      });
+      y += 2;
+    }
+
+    // ══════════════════════════════════════════
+    // REQUISITOS FINANCIEROS
+    // ══════════════════════════════════════════
+    const reqFin = analisis.requisitos_financieros || {};
+    const finLabels = {
+      indice_liquidez: 'Índice de liquidez',
+      indice_endeudamiento: 'Índice de endeudamiento',
+      patrimonio_minimo: 'Patrimonio mínimo',
+      otros: 'Otros',
+    };
+    const finData = Object.entries(finLabels).filter(([k]) => reqFin[k]);
+    if (finData.length) {
+      sectionTitle('Requisitos Financieros', '💰');
+      finData.forEach(([k, label]) => {
+        const lines = wrapText(reqFin[k], CONTENT - 50);
+        const rowH = Math.max(7, lines.length * LINE_H + 4);
+        checkY(rowH);
+        setFont('bold', 8, C_MUTED);
+        doc.text(label + ':', MARGIN, y);
+        setFont('normal', 8, C_DARK);
+        lines.forEach((l, li) => doc.text(l, MARGIN + 50, y + li * LINE_H));
+        y += rowH;
+      });
+      y += 2;
+    }
+
+    // ══════════════════════════════════════════
+    // GARANTÍAS EXIGIDAS
+    // ══════════════════════════════════════════
+    const garantias = Array.isArray(analisis.garantias_exigidas) ? analisis.garantias_exigidas : [];
+    if (garantias.length) {
+      sectionTitle('Garantías Exigidas', '🔒');
+      garantias.forEach((g, idx) => {
+        const tipo = g.tipo || '';
+        const mto  = g.monto_o_porcentaje || '';
+        const sub  = g.es_subsanable;
+        checkY(8);
+        const bg = idx % 2 === 0 ? C_LIGHT : C_WHITE;
+        drawRect(MARGIN, y - 4, CONTENT, 7, bg);
+        setFont('bold', 8, C_DARK);
+        doc.text(tipo, MARGIN + 2, y);
+        setFont('normal', 8, C_MUTED);
+        doc.text(mto, MARGIN + 95, y);
+        if (sub === false) {
+          setFont('bold', 7, C_RED);
+          doc.text('⚠ No subsanable', PAGE_W - MARGIN - 2, y, { align: 'right' });
+        }
+        y += 8;
+      });
+      y += 2;
+    }
+
+    // ══════════════════════════════════════════
+    // RESTRICCIONES DE PARTICIPACIÓN
+    // ══════════════════════════════════════════
+    const restricciones = Array.isArray(analisis.restricciones_participacion) ? analisis.restricciones_participacion : [];
+    if (restricciones.length) {
+      sectionTitle('Restricciones de Participación', '⛔');
+      restricciones.forEach((r, idx) => {
+        const tipo = r.tipo || '';
+        const desc = r.descripcion || '';
+        const descLines = wrapText(desc, CONTENT - 55);
+        const rowH = Math.max(8, descLines.length * LINE_H + 5);
+        checkY(rowH);
+        const bg = idx % 2 === 0 ? C_LIGHT : C_WHITE;
+        drawRect(MARGIN, y - 4, CONTENT, rowH, bg);
+        setFont('bold', 7.5, [124, 58, 237]);
+        doc.text(tipo, MARGIN + 2, y);
+        setFont('normal', 8, C_DARK);
+        descLines.forEach((l, li) => doc.text(l, MARGIN + 55, y + li * LINE_H));
+        y += rowH;
+      });
+      y += 2;
+    }
+
+    // ══════════════════════════════════════════
+    // PIE DE PÁGINA EN TODAS LAS PÁGINAS
+    // ══════════════════════════════════════════
+    const totalPages = doc.internal.getNumberOfPages();
+    for (let pg = 1; pg <= totalPages; pg++) {
+      doc.setPage(pg);
+      drawRect(0, 289, PAGE_W, 8, C_DARK);
+      setFont('normal', 7, [143, 174, 201]);
+      doc.text('LicitacionLab · licitacionlab.com', MARGIN, 294);
+      doc.text(`Pág. ${pg} / ${totalPages}`, PAGE_W - MARGIN, 294, { align: 'right' });
+      doc.text(`Análisis: ${codigo}`, PAGE_W / 2, 294, { align: 'center' });
+    }
+
+    doc.save(`Analisis_${codigo}.pdf`);
+    mostrarToast('PDF descargado');
+
+  } catch(e) {
+    console.error('Error generando PDF análisis:', e);
     mostrarToast('Error generando PDF');
   }
 }
