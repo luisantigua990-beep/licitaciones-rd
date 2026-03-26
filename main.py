@@ -410,7 +410,7 @@ def detalle_proceso(codigo_proceso: str):
         analisis_data = None
         try:
             analisis = supabase_admin.table("analisis_pliego") \
-                .select("estado, checklist_categorizado, checklist_legal, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion") \
+                .select("estado, checklist_categorizado, checklist_legal, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, tipo_proceso") \
                 .eq("proceso_id", codigo_proceso) \
                 .order("estado", desc=False) \
                 .execute()
