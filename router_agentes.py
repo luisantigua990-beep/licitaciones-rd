@@ -208,15 +208,41 @@ async def get_cola_prospectos(
 # AGENTE 4 — SOCIAL
 # ════════════════════════════════════════════════════════
 
-COLORES = {
-    "primario":  (30, 64, 175),
-    "acento":    (59, 130, 246),
-    "fondo":     (15, 23, 42),
-    "texto":     (248, 250, 252),
-    "subtexto":  (148, 163, 184),
-    "verde":     (34, 197, 94),
-    "amarillo":  (234, 179, 8),
-}
+# Paleta de colores LicitacionLab
+VERDE_OSCURO  = (26, 92, 42)
+VERDE_CLARO   = (76, 175, 80)
+VERDE_MEDIO   = (45, 138, 62)
+VERDE_TEXTO   = (190, 225, 195)
+VERDE_ACENTO  = (200, 235, 205)
+BLANCO        = (255, 255, 255)
+FONDO_DER     = (244, 247, 244)
+GRIS_LABEL    = (120, 140, 120)
+SEP_COLOR     = (220, 235, 220)
+
+F_BOLD  = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+F_REG   = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+F_LIGHT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-ExtraLight.ttf"
+
+def _font(path, size):
+    try: return ImageFont.truetype(path, size)
+    except: return ImageFont.load_default()
+
+def _draw_wrapped(draw, text, x, y, max_w, fnt, fill, lh=None):
+    words = text.split()
+    lines, cur = [], ""
+    for w in words:
+        test = (cur + " " + w).strip()
+        bbox = draw.textbbox((0,0), test, font=fnt)
+        if bbox[2] - bbox[0] <= max_w: cur = test
+        else:
+            if cur: lines.append(cur)
+            cur = w
+    if cur: lines.append(cur)
+    lh = lh or (draw.textbbox((0,0), "A", font=fnt)[3] + 8)
+    for line in lines:
+        draw.text((x, y), line, font=fnt, fill=fill)
+        y += lh
+    return y
 
 
 class SocialRequest(BaseModel):
@@ -297,83 +323,111 @@ Responde SOLO en JSON:
 
 
 def generar_imagen_post(tipo: str, datos_caption: dict) -> str:
+    """Genera imagen 1080x1080 con diseño profesional split diagonal LicitacionLab."""
     W, H = 1080, 1080
-    img = Image.new("RGB", (W, H), COLORES["fondo"])
-    draw = ImageDraw.Draw(img)
 
-    for i in range(0, H // 2, 4):
-        color = (
-            COLORES["primario"][0],
-            COLORES["primario"][1],
-            min(255, COLORES["primario"][2] + i // 4)
-        )
-        draw.rectangle([0, i, W, i + 4], fill=color)
-
-    draw.rectangle([0, 0, W, 8], fill=COLORES["acento"])
-    draw.rectangle([0, H - 8, W, H], fill=COLORES["acento"])
-
-    try:
-        font_logo     = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
-        font_titulo   = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 64)
-        font_subtitulo= ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 36)
-        font_small    = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
-    except:
-        font_logo      = ImageFont.load_default()
-        font_titulo    = font_logo
-        font_subtitulo = font_logo
-        font_small     = font_logo
-
-    draw.text((60, 40), "LICITACIONLAB", font=font_logo, fill=COLORES["acento"])
-    draw.rectangle([60, 100, W - 60, 104], fill=COLORES["acento"])
-
-    titulo = datos_caption.get("titulo", "LICITACIONES RD").upper()
-    lineas_titulo = titulo.split("\\n") if "\\n" in titulo else [titulo]
-
-    y_titulo = 180
-    for linea in lineas_titulo:
-        font_use = font_titulo
-        while True:
-            bbox = draw.textbbox((0, 0), linea, font=font_use)
-            tw = bbox[2] - bbox[0]
-            if tw < W - 120 or font_use.size <= 30:
-                break
-            try:
-                font_use = ImageFont.truetype(
-                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                    font_use.size - 4
-                )
-            except:
-                break
-
-        bbox = draw.textbbox((0, 0), linea, font=font_use)
-        tw = bbox[2] - bbox[0]
-        draw.text(((W - tw) // 2, y_titulo), linea, font=font_use, fill=COLORES["texto"])
-        y_titulo += bbox[3] - bbox[1] + 20
-
-    draw.rectangle([W // 2 - 80, y_titulo + 20, W // 2 + 80, y_titulo + 26], fill=COLORES["verde"])
-
-    subtitulos = {
-        "licitaciones_activas": "OPORTUNIDAD ACTIVA · DGCP",
-        "analisis_semanal": f"SEMANA {datetime.now().strftime('%d/%m/%Y')} · REPÚBLICA DOMINICANA",
-        "educativo": "TIP PARA LICITADORES · RD"
+    # Mapear datos_caption al formato de imagen
+    titulo_raw = datos_caption.get("titulo", "LICITACIONES RD")
+    tipo_labels = {
+        "licitaciones_activas": ("OPORTUNIDAD ACTIVA · DGCP", "LICITACIÓN", "TIPO DE PROCESO", "Licitación pública"),
+        "analisis_semanal":     ("ANÁLISIS SEMANAL · DGCP",  "ANÁLISIS",  "PERÍODO",         datetime.now().strftime("%d/%m/%Y")),
+        "educativo":            ("TIPS PARA LICITADORES · RD","EDUCATIVO", "CATEGORÍA",       "Capacitación"),
     }
-    subtitulo = subtitulos.get(tipo, "LICITACIONES · REPÚBLICA DOMINICANA")
-    bbox = draw.textbbox((0, 0), subtitulo, font=font_subtitulo)
-    tw = bbox[2] - bbox[0]
-    draw.text(((W - tw) // 2, y_titulo + 50), subtitulo, font=font_subtitulo, fill=COLORES["subtexto"])
+    subtitulo_inst, codigo, campo3_label, campo3_valor = tipo_labels.get(
+        tipo, ("LICITACIONES · RD", "INFO", "TIPO", "General"))
 
-    cta = "licitacionlab.com"
-    bbox = draw.textbbox((0, 0), cta, font=font_subtitulo)
-    tw = bbox[2] - bbox[0]
-    draw.text(((W - tw) // 2, H - 100), cta, font=font_subtitulo, fill=COLORES["acento"])
+    monto_map = {
+        "licitaciones_activas": ("85,000,000.00", "Infraestructura"),
+        "analisis_semanal":     (f"{random.randint(300,900)},000,000.00", "Múltiples sectores"),
+        "educativo":            ("—",             "Educación"),
+    }
+    monto, sector = monto_map.get(tipo, ("—", "General"))
 
+    img = Image.new("RGB", (W, H), FONDO_DER)
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # Panel izquierdo diagonal
+    draw.polygon([(0,0),(500,0),(600,H),(0,H)], fill=VERDE_OSCURO)
+    # Franja diagonal verde claro
+    draw.polygon([(500,0),(540,0),(640,H),(600,H)], fill=VERDE_CLARO)
+
+    # — Institución
+    _draw_wrapped(draw, subtitulo_inst, 40, 40, 440,
+                  _font(F_LIGHT, 24), VERDE_TEXTO, lh=34)
+    draw.rectangle([40, 115, 480, 117], fill=(255,255,255,100))
+
+    # Logo
+    draw.text((40, 128), "LICITACIONES LAB", font=_font(F_BOLD, 26), fill=VERDE_CLARO)
+    draw.text((40, 162), "La hacemos por ti", font=_font(F_LIGHT, 18), fill=VERDE_TEXTO)
+
+    # Código
+    cod_size = 28 if len(codigo) <= 20 else 24 if len(codigo) <= 26 else 20
+    draw.text((40, 210), codigo, font=_font(F_REG, cod_size), fill=VERDE_CLARO)
+
+    # Título principal
+    titulo = titulo_raw.upper()
+    y_tit = _draw_wrapped(draw, titulo, 40, 265, 440,
+                           _font(F_BOLD, 38), BLANCO, lh=52)
+
+    # Doble acento
+    draw.rectangle([40, y_tit+12, 90, y_tit+22], fill=VERDE_CLARO)
+    draw.rectangle([95, y_tit+12, 120, y_tit+22], fill=(255,255,255,160))
+
+    # Fecha / presentación
     fecha = datetime.now().strftime("%d/%m/%Y")
-    draw.text((W - 200, H - 100), fecha, font=font_small, fill=COLORES["subtexto"])
+    draw.text((40, 800), "PRESENTACIÓN DE OFERTAS", font=_font(F_LIGHT, 20), fill=VERDE_CLARO)
+    draw.text((40, 830), fecha, font=_font(F_BOLD, 58), fill=BLANCO)
+    draw.text((40, 900), "09:00 AM", font=_font(F_BOLD, 32), fill=VERDE_ACENTO)
 
-    buffer = io.BytesIO()
-    img.save(buffer, format="PNG", optimize=True)
-    buffer.seek(0)
-    return base64.b64encode(buffer.read()).decode("utf-8")
+    # — Panel derecho
+    draw.rectangle([668, 40, 673, H-40], fill=VERDE_CLARO)
+    draw.text((695, 60),  "MONTO ESTIMADO",  font=_font(F_LIGHT, 22), fill=GRIS_LABEL)
+    draw.text((695, 95),  "RD$",             font=_font(F_REG, 40),   fill=VERDE_MEDIO)
+    draw.text((695, 140), monto,             font=_font(F_BOLD, 42),  fill=VERDE_OSCURO)
+    draw.text((695, 196), "Pesos Dominicanos",font=_font(F_LIGHT, 20),fill=GRIS_LABEL)
+    draw.rectangle([695, 242, 1040, 244], fill=SEP_COLOR)
+
+    bloques = [
+        ("TIPO DE CONTENIDO", tipo.replace("_"," ").title()),
+        ("SECTOR",            sector),
+        (campo3_label,        campo3_valor),
+    ]
+    y_bloque = 265
+    for label, valor in bloques:
+        draw.text((695, y_bloque), label, font=_font(F_LIGHT, 20), fill=GRIS_LABEL)
+        y_bloque = _draw_wrapped(draw, valor, 695, y_bloque+28, 360,
+                                  _font(F_REG, 26), VERDE_OSCURO, lh=34)
+        y_bloque += 16
+        draw.rectangle([695, y_bloque, 1040, y_bloque+1], fill=SEP_COLOR)
+        y_bloque += 20
+
+    # Círculos decorativos
+    cx, cy = 1060, 60
+    for r, alpha in [(90,12),(65,18),(40,25)]:
+        overlay = Image.new("RGBA", (W, H), (0,0,0,0))
+        ov = ImageDraw.Draw(overlay)
+        ov.ellipse([cx-r, cy-r, cx+r, cy+r], outline=(*VERDE_CLARO, alpha), width=2)
+        img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+        draw = ImageDraw.Draw(img, "RGBA")
+
+    # Watermark
+    siglas_map = {"licitaciones_activas":"LIC","analisis_semanal":"EST","educativo":"EDU"}
+    siglas = siglas_map.get(tipo, "LL")
+    ov2 = Image.new("RGBA", (W, H), (0,0,0,0))
+    ov2d = ImageDraw.Draw(ov2)
+    ov2d.text((660, 750), siglas, font=_font(F_BOLD, 200), fill=(*VERDE_CLARO, 18))
+    img = Image.alpha_composite(img.convert("RGBA"), ov2).convert("RGB")
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # Contacto
+    draw.rectangle([660, H-80, W, H-78], fill=VERDE_CLARO)
+    draw.text((700, H-68), "@licitacioneslab",  font=_font(F_REG,  22), fill=VERDE_MEDIO)
+    draw.text((700, H-42), "Tel: 809-772-5928", font=_font(F_BOLD, 26), fill=VERDE_OSCURO)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("utf-8")
 
 
 def obtener_contexto(tipo: str) -> dict:
