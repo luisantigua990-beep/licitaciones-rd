@@ -219,9 +219,18 @@ FONDO_DER     = (244, 247, 244)
 GRIS_LABEL    = (120, 140, 120)
 SEP_COLOR     = (220, 235, 220)
 
-F_BOLD  = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-F_REG   = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-F_LIGHT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-ExtraLight.ttf"
+# Poppins desde repo — fallback a DejaVu si no existe
+import os as _os
+_BASE = _os.path.dirname(_os.path.abspath(__file__))
+F_BOLD  = _os.path.join(_BASE, "fonts", "Poppins-Bold.ttf")
+F_REG   = _os.path.join(_BASE, "fonts", "Poppins-Regular.ttf")
+F_LIGHT = _os.path.join(_BASE, "fonts", "Poppins-Light.ttf")
+F_MED   = _os.path.join(_BASE, "fonts", "Poppins-Medium.ttf")
+if not _os.path.exists(F_BOLD):
+    F_BOLD  = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    F_REG   = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    F_LIGHT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-ExtraLight.ttf"
+    F_MED   = F_REG
 
 def _font(path, size):
     try: return ImageFont.truetype(path, size)
