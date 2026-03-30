@@ -272,19 +272,20 @@ def generar_caption(tipo: str, datos_contexto: dict) -> dict:
 
 Genera un post de Instagram sobre esta licitación activa:
 - Entidad: {datos_contexto.get('entidad', 'DGCP')}
+- Código: {datos_contexto.get('codigo', '')}
 - Descripción: {datos_contexto.get('descripcion', 'Obras de infraestructura')}
-- Monto referencial: {datos_contexto.get('monto', 'No especificado')}
+- Sector: {datos_contexto.get('sector', 'Infraestructura')}
 - Fecha límite: {datos_contexto.get('fecha_limite', 'Próximamente')}
 
 El caption debe:
-1. Empezar con un emoji relevante y frase de gancho (ej: "⚠️ OPORTUNIDAD ACTIVA:")
-2. Describir la licitación en 2-3 líneas claras
+1. Empezar con un emoji relevante y frase de gancho (ej: "🚨 OPORTUNIDAD ACTIVA:")
+2. Describir la licitación en 2-3 líneas sin mencionar el monto (ya va en la imagen)
 3. Mencionar que LicitacionLab la detectó automáticamente
 4. CTA: "Regístrate gratis en licitacionlab.com"
-5. Máximo 150 palabras
+5. Máximo 130 palabras
 
 Responde SOLO en JSON con este formato exacto:
-{{"titulo": "texto del título para la imagen", "caption": "texto completo del post", "hashtags": "#licitacion #construccion #dgcp #republicadominicana #licitacionlab"}}""",
+{{"titulo": "texto del título para la imagen (máx 5 palabras)", "caption": "texto completo del post SIN monto", "hashtags": "#licitacion #construccion #dgcp #republicadominicana #licitacionlab"}}""",
 
         "analisis_semanal": f"""Eres el social media manager de LicitacionLab, plataforma SaaS de licitaciones en República Dominicana.
 
@@ -335,22 +336,37 @@ def generar_imagen_post(tipo: str, datos_caption: dict) -> str:
     """Genera imagen 1080x1080 con diseño profesional split diagonal LicitacionLab."""
     W, H = 1080, 1080
 
-    # Mapear datos_caption al formato de imagen
-    titulo_raw = datos_caption.get("titulo", "LICITACIONES RD")
-    tipo_labels = {
-        "licitaciones_activas": ("OPORTUNIDAD ACTIVA · DGCP", "LICITACIÓN", "TIPO DE PROCESO", "Licitación pública"),
-        "analisis_semanal":     ("ANÁLISIS SEMANAL · DGCP",  "ANÁLISIS",  "PERÍODO",         datetime.now().strftime("%d/%m/%Y")),
-        "educativo":            ("TIPS PARA LICITADORES · RD","EDUCATIVO", "CATEGORÍA",       "Capacitación"),
-    }
-    subtitulo_inst, codigo, campo3_label, campo3_valor = tipo_labels.get(
-        tipo, ("LICITACIONES · RD", "INFO", "TIPO", "General"))
+    # Usar datos reales del contexto si están disponibles
+    ctx = datos_caption.get("_imagen_datos", {})
+    titulo_raw = ctx.get("titulo") or datos_caption.get("titulo", "LICITACIONES RD")
 
-    monto_map = {
-        "licitaciones_activas": ("85,000,000.00", "Infraestructura"),
-        "analisis_semanal":     (f"{random.randint(300,900)},000,000.00", "Múltiples sectores"),
-        "educativo":            ("—",             "Educación"),
-    }
-    monto, sector = monto_map.get(tipo, ("—", "General"))
+    if tipo == "licitaciones_activas" and ctx:
+        subtitulo_inst = ctx.get("entidad", "DGCP")
+        codigo         = ctx.get("codigo", "DGCP-2026")
+        monto_raw      = ctx.get("monto_raw", "")
+        # Formatear monto con separadores de miles
+        try:
+            m = float(monto_raw)
+            monto = f"{m:,.2f}"
+        except:
+            monto = ctx.get("monto", "—").replace("RD$ ", "")
+        sector         = ctx.get("sector", "Infraestructura")
+        campo3_label   = ctx.get("campo3_label", "PROVINCIA")
+        campo3_valor   = ctx.get("campo3_valor", "Nacional")
+    elif tipo == "analisis_semanal" and ctx:
+        subtitulo_inst = "RESUMEN SEMANAL · DGCP"
+        codigo         = f"SEMANA {datetime.now().strftime('%d/%m/%Y')}"
+        monto          = ctx.get("monto_total", "—").replace("RD$ ", "")
+        sector         = ctx.get("sector_top", "Infraestructura")
+        campo3_label   = "PERÍODO"
+        campo3_valor   = datetime.now().strftime("%d/%m/%Y")
+    else:  # educativo
+        subtitulo_inst = "TIPS PARA LICITADORES · RD"
+        codigo         = "EDUCATIVO"
+        monto          = "—"
+        sector         = "Capacitación"
+        campo3_label   = "CATEGORÍA"
+        campo3_valor   = "Licitaciones Públicas"
 
     img = Image.new("RGB", (W, H), FONDO_DER)
     draw = ImageDraw.Draw(img, "RGBA")
