@@ -35,6 +35,8 @@ SUPABASE_URL      = os.environ["SUPABASE_URL"]
 SUPABASE_KEY      = os.environ["SUPABASE_KEY"]
 CLAUDE_KEY        = os.environ["ANTHROPIC_API_KEY"]
 AGENT_SECRET      = os.environ.get("AGENT_SECRET", "licitacionlab-growth-2026")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8752190119:AAGi4vjOyjdtQQDDJGNbvVLO-pW7Wv01348")
+TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "817596333")
 
 supabase          = create_client(SUPABASE_URL, SUPABASE_KEY)
 agentes_router    = APIRouter(prefix="/api/agentes", tags=["agentes"])
@@ -937,6 +939,45 @@ def obtener_contexto(tipo: str) -> dict:
         return {"tema": random.choice(temas_fallback), "categoria": "general", "_codigo_proceso": None}
 
 
+
+async def enviar_carrusel_telegram(imagenes_b64: list, post_id: int):
+    """
+    Envía las imágenes del carrusel (índices 1 en adelante) directamente
+    a Telegram desde Railway. La portada (índice 0) ya la envía n8n.
+    """
+    if len(imagenes_b64) <= 1:
+        return  # Solo portada, nada extra que enviar
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    total = len(imagenes_b64)
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for i, img_b64 in enumerate(imagenes_b64[1:], start=2):
+            try:
+                img_bytes = base64.b64decode(img_b64)
+                caption_img = f"Imagen {i} de {total} — Post #{post_id}"
+
+                resp = await client.post(
+                    url,
+                    data={
+                        "chat_id": TELEGRAM_CHAT_ID,
+                        "caption": caption_img,
+                    },
+                    files={
+                        "photo": (f"slide_{i}.png", img_bytes, "image/png")
+                    }
+                )
+                if resp.status_code != 200:
+                    print(f"[Telegram] Error slide {i}: {resp.text}")
+                else:
+                    print(f"[Telegram] Slide {i}/{total} enviado OK")
+
+                # Pausa entre imágenes para no saturar Telegram
+                await asyncio.sleep(0.5)
+
+            except Exception as e:
+                print(f"[Telegram] Error enviando slide {i}: {e}")
+
 @social_router.post("/generar", response_model=SocialResponse)
 async def generar_posts_sociales(
     req: SocialRequest,
@@ -1008,12 +1049,18 @@ async def generar_posts_sociales(
                 "titulo":          datos_caption.get("titulo_portada") or datos_caption.get("titulo", ""),
                 "caption":         datos_caption.get("caption"),
                 "hashtags":        datos_caption.get("hashtags"),
-                "imagen_b64":      imagenes_carrusel[0],      # portada (compatibilidad)
-                "imagenes_b64":    imagenes_carrusel,          # TODAS las imágenes del carrusel
+                "imagen_b64":      imagenes_carrusel[0],      # portada (compatibilidad con n8n)
+                "imagenes_b64":    imagenes_carrusel,          # TODAS para referencia
                 "es_carrusel":     True,
                 "total_imagenes":  len(imagenes_carrusel),
                 "estado":          "pendiente_aprobacion"
             })
+
+            # Enviar imágenes restantes (2...N) directamente a Telegram desde Railway
+            # La portada (imagen 0) la envía n8n con los botones de aprobación
+            asyncio.create_task(
+                enviar_carrusel_telegram(imagenes_carrusel, post_id)
+            )
             continue  # saltar el bloque normal
 
         # ── LICITACIONES / ANÁLISIS: imagen única ───────────────────────
