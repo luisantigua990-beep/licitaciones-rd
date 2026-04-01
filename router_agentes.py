@@ -398,11 +398,31 @@ def generar_imagen_post(tipo: str, datos_caption: dict) -> str:
     draw.rectangle([40, y_tit+12, 90, y_tit+22], fill=VERDE_CLARO)
     draw.rectangle([95, y_tit+12, 120, y_tit+22], fill=(255,255,255,160))
 
-    # Fecha / presentación
-    fecha = datetime.now().strftime("%d/%m/%Y")
+    # Fecha / presentación — usar fecha real del proceso
+    fecha_raw = ctx.get("fecha_limite", "")
+    hora_str = "10:00 AM"
+    if fecha_raw:
+        try:
+            # fecha_raw puede venir como "20/05/2026" o con hora "20/05/2026 10:30"
+            if " " in fecha_raw:
+                partes = fecha_raw.split(" ")
+                fecha_display = partes[0]
+                hora_raw = partes[1] if len(partes) > 1 else ""
+                if hora_raw:
+                    h, m = hora_raw.split(":")[:2]
+                    hora_int = int(h)
+                    ampm = "AM" if hora_int < 12 else "PM"
+                    hora_int_12 = hora_int if hora_int <= 12 else hora_int - 12
+                    hora_str = f"{hora_int_12:02d}:{m} {ampm}"
+            else:
+                fecha_display = fecha_raw
+        except Exception:
+            fecha_display = fecha_raw
+    else:
+        fecha_display = datetime.now().strftime("%d/%m/%Y")
     draw.text((40, 800), "PRESENTACIÓN DE OFERTAS", font=_font(F_LIGHT, 20), fill=VERDE_CLARO)
-    draw.text((40, 830), fecha, font=_font(F_BOLD, 58), fill=BLANCO)
-    draw.text((40, 900), "09:00 AM", font=_font(F_BOLD, 32), fill=VERDE_ACENTO)
+    draw.text((40, 830), fecha_display, font=_font(F_BOLD, 58), fill=BLANCO)
+    draw.text((40, 900), hora_str, font=_font(F_BOLD, 32), fill=VERDE_ACENTO)
 
     # — Panel derecho
     draw.rectangle([668, 40, 673, H-40], fill=VERDE_CLARO)
@@ -503,6 +523,19 @@ def obtener_contexto(tipo: str) -> dict:
 
                 monto_raw = proceso.get("monto_estimado", 0)
 
+                # Extraer también la hora de presentación
+                hora_presentacion = ""
+                if proceso.get("fecha_fin_recepcion_ofertas"):
+                    try:
+                        dt_raw = str(proceso["fecha_fin_recepcion_ofertas"]).replace("Z", "")
+                        dt_obj = datetime.fromisoformat(dt_raw)
+                        hora_presentacion = dt_obj.strftime("%H:%M")
+                        fecha_con_hora = f"{fecha_limite} {hora_presentacion}"
+                    except Exception:
+                        fecha_con_hora = fecha_limite
+                else:
+                    fecha_con_hora = fecha_limite
+
                 return {
                     "codigo":          proceso.get("codigo_proceso", ""),
                     "entidad":         proceso.get("unidad_compra", "Entidad pública"),
@@ -510,7 +543,7 @@ def obtener_contexto(tipo: str) -> dict:
                     "sector":          proceso.get("objeto_proceso") or "Infraestructura",
                     "monto":           f"RD$ {float(monto_raw):,.0f}" if monto_raw else "—",
                     "monto_raw":       str(monto_raw),
-                    "fecha_limite":    fecha_limite,
+                    "fecha_limite":    fecha_con_hora,
                     "provincia":       proceso.get("provincia") or "Nacional",
                     "_codigo_proceso": proceso.get("codigo_proceso"),
                 }
@@ -604,8 +637,10 @@ async def generar_posts_sociales(
         datos_caption = generar_caption(tipo_actual, contexto)
 
         # Inyectar contexto real para que la imagen muestre los datos del proceso
+        # Para licitaciones, usar descripcion real del proceso como titulo de imagen
+        titulo_imagen = contexto.get("descripcion", "") if tipo_actual == "licitaciones_activas" and contexto.get("descripcion") else datos_caption.get("titulo", "")
         datos_caption["_imagen_datos"] = {
-            "titulo":       datos_caption.get("titulo", ""),
+            "titulo":       titulo_imagen,
             "entidad":      contexto.get("entidad", ""),
             "codigo":       contexto.get("codigo", ""),
             "monto":        contexto.get("monto", "—"),
