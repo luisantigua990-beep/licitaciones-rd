@@ -310,24 +310,35 @@ Responde SOLO en JSON:
 
         "educativo": f"""Eres el social media manager de LicitacionLab, experto en licitaciones públicas de República Dominicana.
 
-Genera un post educativo sobre el tema: {datos_contexto.get('tema', 'Cómo participar en licitaciones públicas en RD')}
-Categoría del tema: {datos_contexto.get('categoria', 'general')}
+Genera contenido educativo para un carrusel de Instagram sobre:
+TEMA: {datos_contexto.get('tema', 'Cómo participar en licitaciones públicas en RD')}
+CATEGORÍA: {datos_contexto.get('categoria', 'general')}
 
-El caption debe:
-1. Empezar con "SABIAS QUE..." o "TIP LICITADOR:" sin emojis
-2. Explicar el concepto de forma simple y práctica para empresas dominicanas (3-4 puntos concretos)
-3. Mencionar cómo LicitacionLab ayuda con esto
-4. CTA: "Registrate gratis en https://app.licitacionlab.com/"
-5. Sin emojis en todo el caption
-6. Máximo 130 palabras
+Decide cuántos puntos (entre 3 y 5) son necesarios para explicar bien el tema.
+Cada punto va en una imagen separada del carrusel.
 
-Responde SOLO en JSON (sin backticks ni texto extra):
-{{"titulo": "texto corto para imagen (máx 4 palabras)", "caption": "texto completo sin emojis", "hashtags": "#tiplicitador #licitaciones #construccion #dgcp #licitacionlab #republicadominicana"}}"""
+Reglas:
+- Lenguaje simple y directo para empresas dominicanas
+- Sin emojis en ningún campo
+- Cada punto debe ser autónomo y legible solo
+
+Responde SOLO en JSON válido (sin backticks ni texto extra):
+{{
+  "titulo_portada": "Título impactante para la portada (máx 5 palabras, mayúsculas)",
+  "subtitulo_portada": "Subtítulo de apoyo (máx 10 palabras)",
+  "puntos": [
+    {{"numero": 1, "titulo": "Título del punto (máx 5 palabras)", "texto": "Explicación clara en 2-3 oraciones concretas para el contexto dominicano"}},
+    {{"numero": 2, "titulo": "...", "texto": "..."}},
+    {{"numero": 3, "titulo": "...", "texto": "..."}}
+  ],
+  "caption": "Caption corto para Instagram: empieza con TIP LICITADOR: o SABIAS QUE, resume el tema, menciona LicitacionLab, sin emojis, máx 80 palabras",
+  "hashtags": "#tiplicitador #licitaciones #dgcp #republicadominicana #licitacionlab #construccion"
+}}"""
     }
 
     mensaje = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=600,
+        max_tokens=1200,
         messages=[{"role": "user", "content": prompts.get(tipo, prompts["educativo"])}]
     )
 
@@ -335,6 +346,231 @@ Responde SOLO en JSON (sin backticks ni texto extra):
     texto = texto.replace("```json", "").replace("```", "").strip()
     return json.loads(texto)
 
+
+
+# ════════════════════════════════════════════════════════
+# CARRUSEL EDUCATIVO — generación de múltiples imágenes
+# ════════════════════════════════════════════════════════
+
+def _generar_imagen_portada_edu(titulo: str, subtitulo: str, categoria: str) -> str:
+    """Imagen 1: portada del carrusel educativo. Fondo sólido verde + franja inferior."""
+    W, H = 1080, 1080
+    img = Image.new("RGB", (W, H), VERDE_OSCURO)
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # Franja inferior 22%
+    draw.rectangle([(0, int(H * 0.78)), (W, H)], fill=VERDE_MEDIO)
+    # Línea acento
+    draw.rectangle([(0, int(H * 0.78)), (W, int(H * 0.78) + 5)], fill=VERDE_CLARO)
+
+    # Etiqueta categoría
+    cat_text = categoria.upper()
+    draw.rectangle([(60, 55), (60 + len(cat_text) * 18 + 20, 102)], fill=VERDE_CLARO)
+    draw.text((70, 60), cat_text, font=_font(F_BOLD, 28), fill=VERDE_OSCURO)
+
+    # Título principal centrado
+    y = 170
+    for linea in _wrap_lines(titulo.upper(), draw, _font(F_BOLD, 72), W - 120):
+        bbox = draw.textbbox((0, 0), linea, font=_font(F_BOLD, 72))
+        x = (W - (bbox[2] - bbox[0])) // 2
+        draw.text((x, y), linea, font=_font(F_BOLD, 72), fill=BLANCO)
+        y += 88
+
+    # Subtítulo centrado
+    y += 20
+    for linea in _wrap_lines(subtitulo, draw, _font(F_MED, 36), W - 160):
+        bbox = draw.textbbox((0, 0), linea, font=_font(F_MED, 36))
+        x = (W - (bbox[2] - bbox[0])) // 2
+        draw.text((x, y), linea, font=_font(F_MED, 36), fill=VERDE_TEXTO)
+        y += 50
+
+    # Indicador DESLIZA con flecha
+    desliza = "DESLIZA  ▶"
+    bbox = draw.textbbox((0, 0), desliza, font=_font(F_BOLD, 30))
+    x_d = (W - (bbox[2] - bbox[0])) // 2
+    draw.text((x_d, int(H * 0.80) + 18), desliza, font=_font(F_BOLD, 30), fill=BLANCO)
+
+    # Logo LicitacionLab
+    logo = "LicitacionLab"
+    bbox = draw.textbbox((0, 0), logo, font=_font(F_BOLD, 32))
+    x_l = (W - (bbox[2] - bbox[0])) // 2
+    draw.text((x_l, int(H * 0.80) + 62), logo, font=_font(F_BOLD, 32), fill=VERDE_CLARO)
+
+    # Watermark EDU
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ovd = ImageDraw.Draw(ov)
+    ovd.text((550, 600), "EDU", font=_font(F_BOLD, 260), fill=(*VERDE_CLARO, 15))
+    img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def _wrap_lines(text: str, draw, fnt, max_w: int) -> list:
+    """Divide texto en líneas respetando max_w píxeles."""
+    words = text.split()
+    lines, cur = [], ""
+    for w in words:
+        test = (cur + " " + w).strip()
+        bbox = draw.textbbox((0, 0), test, font=fnt)
+        if bbox[2] - bbox[0] <= max_w:
+            cur = test
+        else:
+            if cur:
+                lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines or [text]
+
+
+def _generar_imagen_punto_edu(numero: int, titulo_punto: str, texto_punto: str, total_puntos: int) -> str:
+    """Imagen de punto clave: número grande a la izquierda, título y texto a la derecha."""
+    W, H = 1080, 1080
+    img = Image.new("RGB", (W, H), FONDO_DER)
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # Panel izquierdo con número
+    draw.polygon([(0, 0), (420, 0), (360, H), (0, H)], fill=VERDE_OSCURO)
+    # Franja diagonal acento
+    draw.polygon([(420, 0), (460, 0), (400, H), (360, H)], fill=VERDE_CLARO)
+
+    # Número grande centrado en el panel izquierdo
+    num_str = str(numero)
+    fnt_num = _font(F_BOLD, 280)
+    bbox_n = draw.textbbox((0, 0), num_str, font=fnt_num)
+    x_num = (380 - (bbox_n[2] - bbox_n[0])) // 2
+    y_num = (H - (bbox_n[3] - bbox_n[1])) // 2 - 40
+    draw.text((x_num, y_num), num_str, font=fnt_num, fill=(*VERDE_CLARO, 220))
+
+    # Indicador de progreso (puntos) en panel izquierdo abajo
+    dot_y = H - 80
+    dot_spacing = 24
+    total_dot_w = total_puntos * dot_spacing
+    dot_x_start = (380 - total_dot_w) // 2
+    for i in range(total_puntos):
+        color = BLANCO if i + 1 == numero else (*VERDE_TEXTO, 120)
+        cx = dot_x_start + i * dot_spacing + 8
+        draw.ellipse([cx - 7, dot_y - 7, cx + 7, dot_y + 7], fill=color)
+
+    # Panel derecho: título del punto
+    x_right = 490
+    draw.text((x_right, 100), f"PUNTO {numero}", font=_font(F_LIGHT, 26), fill=GRIS_LABEL)
+
+    y_tit = 148
+    fnt_tit = _font(F_BOLD, 52)
+    for linea in _wrap_lines(titulo_punto.upper(), draw, fnt_tit, W - x_right - 60):
+        draw.text((x_right, y_tit), linea, font=fnt_tit, fill=VERDE_OSCURO)
+        y_tit += 64
+
+    # Línea separadora
+    draw.rectangle([x_right, y_tit + 10, W - 60, y_tit + 13], fill=VERDE_CLARO)
+
+    # Texto explicativo
+    y_txt = y_tit + 40
+    fnt_txt = _font(F_REG, 34)
+    for linea in _wrap_lines(texto_punto, draw, fnt_txt, W - x_right - 60):
+        draw.text((x_right, y_txt), linea, font=fnt_txt, fill=VERDE_OSCURO)
+        y_txt += 48
+
+    # Footer con desliza (excepto último punto, ese no dice desliza)
+    draw.rectangle([x_right, H - 90, W - 40, H - 88], fill=VERDE_CLARO)
+    draw.text((x_right, H - 80), "LicitacionLab · app.licitacionlab.com",
+              font=_font(F_REG, 22), fill=GRIS_LABEL)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def _generar_imagen_cta_edu() -> str:
+    """Última imagen del carrusel: CTA con call to action claro."""
+    W, H = 1080, 1080
+    img = Image.new("RGB", (W, H), VERDE_OSCURO)
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # Fondo decorativo
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ovd = ImageDraw.Draw(ov)
+    for r, a in [(480, 8), (380, 12), (280, 18), (180, 25)]:
+        ovd.ellipse([W//2 - r, H//2 - r, W//2 + r, H//2 + r],
+                    outline=(*VERDE_CLARO, a), width=3)
+    img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+    draw = ImageDraw.Draw(img)
+
+    # Franja superior
+    draw.rectangle([(0, 0), (W, 12)], fill=VERDE_CLARO)
+
+    # Texto CTA centrado
+    lines_cta = [
+        ("EMPIEZA A GANAR", _font(F_BOLD, 68), BLANCO, 260),
+        ("LICITACIONES HOY", _font(F_BOLD, 68), VERDE_CLARO, 350),
+        ("", None, None, 0),
+        ("Monitorea todas las licitaciones del DGCP", _font(F_REG, 34), VERDE_TEXTO, 480),
+        ("en tiempo real con inteligencia artificial.", _font(F_REG, 34), VERDE_TEXTO, 528),
+    ]
+    for texto, fnt, color, y in lines_cta:
+        if not texto:
+            continue
+        bbox = draw.textbbox((0, 0), texto, font=fnt)
+        x = (W - (bbox[2] - bbox[0])) // 2
+        draw.text((x, y), texto, font=fnt, fill=color)
+
+    # Caja URL
+    draw.rectangle([(140, 640), (940, 730)], fill=VERDE_CLARO)
+    url = "app.licitacionlab.com"
+    bbox = draw.textbbox((0, 0), url, font=_font(F_BOLD, 46))
+    x_url = (W - (bbox[2] - bbox[0])) // 2
+    draw.text((x_url, 655), url, font=_font(F_BOLD, 46), fill=VERDE_OSCURO)
+
+    # Registrate gratis
+    reg = "REGISTRATE GRATIS"
+    bbox = draw.textbbox((0, 0), reg, font=_font(F_BOLD, 38))
+    x_reg = (W - (bbox[2] - bbox[0])) // 2
+    draw.text((x_reg, 768), reg, font=_font(F_BOLD, 38), fill=BLANCO)
+
+    # Logo
+    logo = "LicitacionLab"
+    bbox = draw.textbbox((0, 0), logo, font=_font(F_BOLD, 32))
+    x_l = (W - (bbox[2] - bbox[0])) // 2
+    draw.text((x_l, H - 80), logo, font=_font(F_BOLD, 32), fill=VERDE_CLARO)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def generar_carrusel_educativo(datos_caption: dict) -> list:
+    """
+    Genera lista de imágenes b64 para el carrusel educativo.
+    Retorna: [portada_b64, punto1_b64, punto2_b64, ..., cta_b64]
+    """
+    ctx = datos_caption.get("_imagen_datos", {})
+    categoria = ctx.get("categoria", "general")
+    titulo_portada = datos_caption.get("titulo_portada") or datos_caption.get("titulo", "APRENDE A LICITAR")
+    subtitulo_portada = datos_caption.get("subtitulo_portada", "")
+    puntos = datos_caption.get("puntos", [])
+
+    imagenes = []
+
+    # Imagen 1: portada
+    imagenes.append(_generar_imagen_portada_edu(titulo_portada, subtitulo_portada, categoria))
+
+    # Imágenes por punto
+    total = len(puntos)
+    for p in puntos:
+        imagenes.append(_generar_imagen_punto_edu(
+            numero=p.get("numero", 1),
+            titulo_punto=p.get("titulo", ""),
+            texto_punto=p.get("texto", ""),
+            total_puntos=total
+        ))
+
+    # Última imagen: CTA
+    imagenes.append(_generar_imagen_cta_edu())
+
+    return imagenes
 
 def generar_imagen_post(tipo: str, datos_caption: dict) -> str:
     """Genera imagen 1080x1080 con diseño profesional split diagonal LicitacionLab."""
@@ -729,8 +965,7 @@ async def generar_posts_sociales(
         datos_caption = generar_caption(tipo_actual, contexto)
 
         # Inyectar contexto real para que la imagen muestre los datos del proceso
-        # Para licitaciones, usar descripcion real del proceso como titulo de imagen
-        titulo_imagen = contexto.get("descripcion", "") if tipo_actual == "licitaciones_activas" and contexto.get("descripcion") else datos_caption.get("titulo", "")
+        titulo_imagen = contexto.get("descripcion", "") if tipo_actual == "licitaciones_activas" and contexto.get("descripcion") else datos_caption.get("titulo_portada") or datos_caption.get("titulo", "")
         datos_caption["_imagen_datos"] = {
             "titulo":       titulo_imagen,
             "entidad":      contexto.get("entidad", ""),
@@ -746,8 +981,42 @@ async def generar_posts_sociales(
             "total":        contexto.get("total", ""),
             "sector_top":   contexto.get("sector_top", ""),
             "monto_total":  contexto.get("monto_total", ""),
+            "categoria":    contexto.get("categoria", "general"),
         }
 
+        # ── EDUCATIVO: carrusel de imágenes ─────────────────────────────
+        if tipo_actual == "educativo":
+            imagenes_carrusel = generar_carrusel_educativo(datos_caption)
+            # Guardar solo la portada en social_log (imagen_b64 = portada)
+            post_data = {
+                "tipo_contenido":  tipo_actual,
+                "caption":         datos_caption.get("caption"),
+                "hashtags":        datos_caption.get("hashtags"),
+                "titulo_imagen":   datos_caption.get("titulo_portada") or datos_caption.get("titulo", ""),
+                "imagen_b64":      imagenes_carrusel[0],   # portada
+                "estado":          "pendiente_aprobacion",
+                "plataforma":      "instagram",
+                "codigo_proceso":  contexto.get("_codigo_proceso"),
+                "created_at":      datetime.utcnow().isoformat()
+            }
+            result = supabase.table("social_log").insert(post_data).execute()
+            post_id = result.data[0]["id"] if result.data else None
+
+            posts_generados.append({
+                "id":              post_id,
+                "tipo":            tipo_actual,
+                "titulo":          datos_caption.get("titulo_portada") or datos_caption.get("titulo", ""),
+                "caption":         datos_caption.get("caption"),
+                "hashtags":        datos_caption.get("hashtags"),
+                "imagen_b64":      imagenes_carrusel[0],      # portada (compatibilidad)
+                "imagenes_b64":    imagenes_carrusel,          # TODAS las imágenes del carrusel
+                "es_carrusel":     True,
+                "total_imagenes":  len(imagenes_carrusel),
+                "estado":          "pendiente_aprobacion"
+            })
+            continue  # saltar el bloque normal
+
+        # ── LICITACIONES / ANÁLISIS: imagen única ───────────────────────
         imagen_b64 = generar_imagen_post(tipo_actual, datos_caption)
 
         post_data = {
@@ -758,7 +1027,7 @@ async def generar_posts_sociales(
             "imagen_b64":      imagen_b64,
             "estado":          "pendiente_aprobacion",
             "plataforma":      "instagram",
-            "codigo_proceso":  contexto.get("_codigo_proceso"),  # evita repetir procesos
+            "codigo_proceso":  contexto.get("_codigo_proceso"),
             "created_at":      datetime.utcnow().isoformat()
         }
 
@@ -766,13 +1035,14 @@ async def generar_posts_sociales(
         post_id = result.data[0]["id"] if result.data else None
 
         posts_generados.append({
-            "id":         post_id,
-            "tipo":       tipo_actual,
-            "titulo":     datos_caption.get("titulo"),
-            "caption":    datos_caption.get("caption"),
-            "hashtags":   datos_caption.get("hashtags"),
-            "imagen_b64": imagen_b64,
-            "estado":     "pendiente_aprobacion"
+            "id":           post_id,
+            "tipo":         tipo_actual,
+            "titulo":       datos_caption.get("titulo"),
+            "caption":      datos_caption.get("caption"),
+            "hashtags":     datos_caption.get("hashtags"),
+            "imagen_b64":   imagen_b64,
+            "es_carrusel":  False,
+            "estado":       "pendiente_aprobacion"
         })
 
     return SocialResponse(posts_generados=len(posts_generados), posts=posts_generados)
