@@ -435,8 +435,31 @@ def generar_imagen_post(tipo: str, datos_caption: dict) -> str:
     draw.text((695, 196), "Pesos Dominicanos",font=_font(F_LIGHT, 20),fill=GRIS_LABEL)
     draw.rectangle([695, 242, 1040, 244], fill=SEP_COLOR)
 
-    # Tipo de proceso: usar modalidad real si está disponible
-    tipo_proceso_label = ctx.get("modalidad", "") or tipo.replace("_"," ").title()
+    # Tipo de proceso: usar modalidad real, o inferirla del código del proceso
+    tipo_proceso_label = ctx.get("modalidad", "")
+    if not tipo_proceso_label:
+        codigo_proc = ctx.get("codigo", "")
+        # Inferir modalidad desde el código del proceso (ej: SENASA-CCC-LPN-2026-0001)
+        if "-LPN-" in codigo_proc:
+            tipo_proceso_label = "Licitación Pública Nacional"
+        elif "-LPC-" in codigo_proc:
+            tipo_proceso_label = "Licitación Pública Comparativa"
+        elif "-CP-" in codigo_proc or "-CMP-" in codigo_proc:
+            tipo_proceso_label = "Comparación de Precios"
+        elif "-CD-" in codigo_proc:
+            tipo_proceso_label = "Compra Directa"
+        elif "-CM-" in codigo_proc:
+            tipo_proceso_label = "Contratación Menor"
+        elif "-SI-" in codigo_proc:
+            tipo_proceso_label = "Sorteo de Obras"
+        elif "-SO-" in codigo_proc:
+            tipo_proceso_label = "Sorteo de Obras"
+        elif "-PEPU-" in codigo_proc or "-PEPB-" in codigo_proc or "-PEEX-" in codigo_proc or "-PEOR-" in codigo_proc:
+            tipo_proceso_label = "Procedimiento Especial"
+        elif "-LPI-" in codigo_proc:
+            tipo_proceso_label = "Licitación Pública Internacional"
+        else:
+            tipo_proceso_label = "Proceso Público"
     bloques = [
         ("TIPO DE PROCESO", tipo_proceso_label),
         ("SECTOR",          sector),
