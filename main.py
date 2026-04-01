@@ -33,15 +33,7 @@ from monitor import ejecutar_monitor
 from notifications import enviar_notificacion
 from router_agentes import agentes_router, social_router
 
-# ── PDF Análisis — reportlab ──────────────────────────────
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.colors import HexColor, white, black
-from reportlab.lib.units import inch
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-)
-from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+# reportlab se importa dentro de _generar_pdf_analisis_bytes (lazy import)
 
 def enviar_push_y_limpiar(sub: dict, titulo: str, cuerpo: str, url: str = "/") -> bool:
     """Envía notificación y desactiva la suscripción si devuelve 410 (expirada)."""
@@ -3370,6 +3362,9 @@ _PDF_TEAL        = HexColor("#00695C")
 
 
 def _pdf_styles():
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.colors import HexColor, white, black
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
     base = getSampleStyleSheet()
     return {
         "tit_header": ParagraphStyle("tit_header", fontSize=20, textColor=white,
@@ -3482,6 +3477,16 @@ def _pdf_fmt_fecha(f):
 
 
 def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
+    # Imports lazy — reportlab solo se carga al generar un PDF
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.colors import HexColor, white, black
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+    )
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+
     buf    = io.BytesIO()
     styles = _pdf_styles()
     doc    = SimpleDocTemplate(buf, pagesize=letter,
