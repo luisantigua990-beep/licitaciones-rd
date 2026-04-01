@@ -310,18 +310,19 @@ Responde SOLO en JSON:
 
         "educativo": f"""Eres el social media manager de LicitacionLab, experto en licitaciones públicas de República Dominicana.
 
-Genera un post educativo sobre el tema: {datos_contexto.get('tema', 'Cómo calcular el margen mínimo en una oferta económica')}
+Genera un post educativo sobre el tema: {datos_contexto.get('tema', 'Cómo participar en licitaciones públicas en RD')}
+Categoría del tema: {datos_contexto.get('categoria', 'general')}
 
 El caption debe:
 1. Empezar con "SABIAS QUE..." o "TIP LICITADOR:" sin emojis
-2. Explicar el concepto de forma simple y práctica (3-4 puntos)
+2. Explicar el concepto de forma simple y práctica para empresas dominicanas (3-4 puntos concretos)
 3. Mencionar cómo LicitacionLab ayuda con esto
 4. CTA: "Registrate gratis en https://app.licitacionlab.com/"
 5. Sin emojis en todo el caption
 6. Máximo 130 palabras
 
-Responde SOLO en JSON:
-{{"titulo": "texto corto para imagen (máx 4 palabras)", "caption": "texto", "hashtags": "#tiplicitador #licitaciones #construccion #dgcp #licitacionlab #republicadominicana"}}"""
+Responde SOLO en JSON (sin backticks ni texto extra):
+{{"titulo": "texto corto para imagen (máx 4 palabras)", "caption": "texto completo sin emojis", "hashtags": "#tiplicitador #licitaciones #construccion #dgcp #licitacionlab #republicadominicana"}}"""
     }
 
     mensaje = client.messages.create(
@@ -364,12 +365,13 @@ def generar_imagen_post(tipo: str, datos_caption: dict) -> str:
         campo3_label   = "PERÍODO"
         campo3_valor   = datetime.now().strftime("%d/%m/%Y")
     else:  # educativo
-        subtitulo_inst = "TIPS PARA LICITADORES · RD"
-        codigo         = "EDUCATIVO"
+        categoria_edu  = (ctx.get("categoria") or "general").upper()
+        subtitulo_inst = "EDUCACIÓN · LICITACIONES RD"
+        codigo         = f"CATEGORÍA: {categoria_edu}"
         monto          = "—"
         sector         = "Capacitación"
         campo3_label   = "CATEGORÍA"
-        campo3_valor   = "Licitaciones Públicas"
+        campo3_valor   = (ctx.get("categoria") or "general").capitalize()
 
     img = Image.new("RGB", (W, H), FONDO_DER)
     draw = ImageDraw.Draw(img, "RGBA")
@@ -659,15 +661,44 @@ def obtener_contexto(tipo: str) -> dict:
         }
 
     else:
-        temas = [
+        # ── EDUCATIVO: obtener tema real desde Supabase ──────────────────
+        try:
+            from datetime import timedelta as _td
+            hace_7_dias = (datetime.utcnow() - _td(days=7)).isoformat()
+
+            # Buscar temas no usados en los últimos 7 días (primero los nunca usados)
+            res = supabase.table("temas_educativos") \
+                .select("id, tema, categoria") \
+                .eq("activo", True) \
+                .or_(f"usado_en.is.null,usado_en.lt.{hace_7_dias}") \
+                .order("usado_en", desc=False, nullsfirst=True) \
+                .limit(10) \
+                .execute()
+
+            if res.data:
+                tema_row = random.choice(res.data)
+                # Marcar como usado ahora mismo
+                supabase.table("temas_educativos") \
+                    .update({"usado_en": datetime.utcnow().isoformat()}) \
+                    .eq("id", tema_row["id"]) \
+                    .execute()
+                return {
+                    "tema":      tema_row["tema"],
+                    "categoria": tema_row.get("categoria", "general"),
+                    "_codigo_proceso": None,
+                }
+        except Exception as e:
+            print(f"[Social] Error obteniendo tema educativo de Supabase: {e}")
+
+        # Fallback local si falla Supabase
+        temas_fallback = [
             "Qué es el RNCE y por qué necesitas estar registrado",
-            "Cómo calcular el margen mínimo en una oferta económica",
             "Los 5 documentos que nunca pueden faltar en tu oferta",
-            "Diferencia entre LPN, LPC y Comparación de Precios",
+            "Diferencia entre LPN, CP y Compra Directa",
             "Cómo leer un pliego de condiciones en 30 minutos",
             "Qué es la Ley 47-25 y cómo te afecta como contratista",
         ]
-        return {"tema": random.choice(temas), "_codigo_proceso": None}
+        return {"tema": random.choice(temas_fallback), "categoria": "general", "_codigo_proceso": None}
 
 
 @social_router.post("/generar", response_model=SocialResponse)
