@@ -780,6 +780,22 @@ body {
 /* ── ARTÍCULOS ── */
 .articulos-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r-lg); overflow: hidden; margin-bottom: 12px; box-shadow: var(--shadow-card); }
 .articulos-header { padding: 12px 16px; font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+/* Botón descargar PDF análisis */
+.btn-pdf-analisis {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--green); color: #0D1B2A;
+  border: none; border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: all .2s; text-decoration: none;
+  margin-top: 10px; width: 100%;
+  justify-content: center;
+}
+.btn-pdf-analisis:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: var(--shadow-green); }
+.btn-pdf-analisis:active { transform: none; }
+.btn-pdf-analisis.cargando { opacity: .7; pointer-events: none; }
+.btn-pdf-analisis .btn-pdf-spinner { width:14px; height:14px; border:2px solid rgba(13,27,42,.3); border-top-color:#0D1B2A; border-radius:50%; animation:spin .6s linear infinite; display:none; }
+.btn-pdf-analisis.cargando .btn-pdf-spinner { display:block; }
+
 .btn-pdf-arts {
   display: flex; align-items: center; gap: 5px;
   padding: 5px 10px; border-radius: var(--r-sm);
@@ -2699,6 +2715,13 @@ async function verDetalle(codigo) {
     </div>` : (data.analisis?.estado === 'error' || data.analisis?.estado === 'pendiente_analisis') ? `
     <div class="analisis-procesando" style="background:rgba(231,76,60,0.08);border-color:rgba(231,76,60,0.2)">
       <div class="analisis-procesando-texto" style="color:var(--red)">Hubo un problema al analizar este proceso. Contacta soporte por WhatsApp.</div>
+    </div>` : data.analisis?.estado === 'completado' ? `
+    <div style="padding:0 0 4px 0">
+      <button class="btn-pdf-analisis" id="btn-pdf-analisis-${p.codigo_proceso}" onclick="descargarAnalisisPDF('${p.codigo_proceso}')">
+        <div class="btn-pdf-spinner"></div>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Descargar análisis PDF
+      </button>
     </div>` : ''}
     ${renderChecklistHTML(data.analisis, p.codigo_proceso)}`;
   // Actualizar botón seguir DESPUÉS de que el DOM esté listo
@@ -4484,6 +4507,40 @@ async function descargarArticulosPDF(codigo) {
   } catch(e) {
     console.error('Error PDF:', e);
     mostrarToast('Error generando PDF');
+  }
+}
+
+// ── DESCARGAR PDF DEL ANÁLISIS IA ────────────────────────
+async function descargarAnalisisPDF(codigo) {
+  const btn = document.getElementById(`btn-pdf-analisis-${codigo}`);
+  if (btn) btn.classList.add('cargando');
+  mostrarToast('Generando PDF del análisis...');
+
+  try {
+    const res = await fetch(`${API}/analisis/${encodeURIComponent(codigo)}/pdf`);
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Error ${res.status}`);
+    }
+
+    // Descargar el blob como archivo
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `Analisis_${codigo.replace(/\//g, '-')}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    mostrarToast('PDF descargado');
+  } catch(e) {
+    console.error('Error descargando análisis PDF:', e);
+    mostrarToast('Error: ' + (e.message || 'No se pudo generar el PDF'));
+  } finally {
+    if (btn) btn.classList.remove('cargando');
   }
 }
 
