@@ -533,17 +533,18 @@ def obtener_contexto(tipo: str) -> dict:
 
     elif tipo == "analisis_semanal":
         try:
+            from datetime import timedelta as _timedelta
             result = supabase.table("procesos") \
                 .select("id", count="exact") \
                 .eq("estado_proceso", "Proceso publicado") \
-                .gte("detectado_en", (datetime.utcnow().replace(hour=0,minute=0,second=0)).isoformat()) \
+                .gte("detectado_en", (datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)).isoformat()) \
                 .execute()
             total_hoy = result.count or 0
 
             result_sem = supabase.table("procesos") \
                 .select("monto_estimado", count="exact") \
                 .eq("estado_proceso", "Proceso publicado") \
-                .gte("detectado_en", (datetime.utcnow() - __import__("datetime").timedelta(days=7)).isoformat()) \
+                .gte("detectado_en", (datetime.utcnow() - _timedelta(days=7)).isoformat()) \
                 .not_.is_("monto_estimado", "null") \
                 .execute()
             total_sem = result_sem.count or random.randint(20, 40)
@@ -601,6 +602,24 @@ async def generar_posts_sociales(
         tipo_actual = tipos_disponibles[i % len(tipos_disponibles)] if cantidad > 1 else tipo
         contexto = obtener_contexto(tipo_actual)
         datos_caption = generar_caption(tipo_actual, contexto)
+
+        # Inyectar contexto real para que la imagen muestre los datos del proceso
+        datos_caption["_imagen_datos"] = {
+            "titulo":       datos_caption.get("titulo", ""),
+            "entidad":      contexto.get("entidad", ""),
+            "codigo":       contexto.get("codigo", ""),
+            "monto":        contexto.get("monto", "—"),
+            "monto_raw":    contexto.get("monto_raw", "0"),
+            "sector":       contexto.get("sector", "Infraestructura"),
+            "campo3_label": "PROVINCIA",
+            "campo3_valor": contexto.get("provincia", "Nacional"),
+            "fecha_limite": contexto.get("fecha_limite", ""),
+            "semana":       contexto.get("semana", ""),
+            "total":        contexto.get("total", ""),
+            "sector_top":   contexto.get("sector_top", ""),
+            "monto_total":  contexto.get("monto_total", ""),
+        }
+
         imagen_b64 = generar_imagen_post(tipo_actual, datos_caption)
 
         post_data = {
