@@ -435,10 +435,12 @@ def generar_imagen_post(tipo: str, datos_caption: dict) -> str:
     draw.text((695, 196), "Pesos Dominicanos",font=_font(F_LIGHT, 20),fill=GRIS_LABEL)
     draw.rectangle([695, 242, 1040, 244], fill=SEP_COLOR)
 
+    # Tipo de proceso: usar modalidad real si está disponible
+    tipo_proceso_label = ctx.get("modalidad", "") or tipo.replace("_"," ").title()
     bloques = [
-        ("TIPO DE CONTENIDO", tipo.replace("_"," ").title()),
-        ("SECTOR",            sector),
-        (campo3_label,        campo3_valor),
+        ("TIPO DE PROCESO", tipo_proceso_label),
+        ("SECTOR",          sector),
+        (campo3_label,      campo3_valor),
     ]
     y_bloque = 265
     for label, valor in bloques:
@@ -496,7 +498,7 @@ def obtener_contexto(tipo: str) -> dict:
 
             # Buscar proceso real nuevo de los últimos 3 días con monto alto
             query = supabase.table("procesos") \
-                .select("codigo_proceso, titulo, unidad_compra, monto_estimado, objeto_proceso, provincia, fecha_fin_recepcion_ofertas") \
+                .select("codigo_proceso, titulo, unidad_compra, monto_estimado, objeto_proceso, provincia, fecha_fin_recepcion_ofertas, modalidad") \
                 .eq("estado_proceso", "Proceso publicado") \
                 .gte("detectado_en", (datetime.utcnow() - timedelta(days=3)).isoformat()) \
                 .gt("fecha_fin_recepcion_ofertas", datetime.utcnow().isoformat()) \
@@ -547,6 +549,7 @@ def obtener_contexto(tipo: str) -> dict:
                     "monto":           f"RD$ {float(monto_raw):,.0f}" if monto_raw else "—",
                     "monto_raw":       str(monto_raw),
                     "fecha_limite":    fecha_con_hora,
+                    "modalidad":       proceso.get("modalidad") or "",
                     "provincia":       proceso.get("provincia") or "Nacional",
                     "_codigo_proceso": proceso.get("codigo_proceso"),
                 }
@@ -649,6 +652,7 @@ async def generar_posts_sociales(
             "monto":        contexto.get("monto", "—"),
             "monto_raw":    contexto.get("monto_raw", "0"),
             "sector":       contexto.get("sector", "Infraestructura"),
+            "modalidad":    contexto.get("modalidad", ""),
             "campo3_label": "PROVINCIA",
             "campo3_valor": contexto.get("provincia", "Nacional"),
             "fecha_limite": contexto.get("fecha_limite", ""),
