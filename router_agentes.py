@@ -940,47 +940,48 @@ def obtener_contexto(tipo: str) -> dict:
 
 
 
-def enviar_carrusel_telegram(imagenes_b64: list, post_id: int):
+async def enviar_carrusel_telegram(imagenes_b64: list, post_id: int):
     """
-    Envía las imágenes del carrusel (índices 1 en adelante) directamente
-    a Telegram desde Railway usando requests síncrono.
-    La portada (índice 0) ya la envía n8n con los botones de aprobación.
+    Envía las imágenes del carrusel (índices 1 en adelante) a Telegram.
+    La portada (índice 0) ya la envía n8n. Se llama desde el endpoint
+    /enviar-carrusel para garantizar ejecución completa.
     """
-    import requests as _requests
-    import time
-
     if len(imagenes_b64) <= 1:
-        return  # Solo portada, nada extra que enviar
+        return 0
 
     url   = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
     total = len(imagenes_b64)
+    enviadas = 0
 
-    for i, img_b64 in enumerate(imagenes_b64[1:], start=2):
-        try:
-            img_bytes   = base64.b64decode(img_b64)
-            caption_img = f"Imagen {i} de {total} — Post #{post_id}"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for i, img_b64 in enumerate(imagenes_b64[1:], start=2):
+            try:
+                img_bytes   = base64.b64decode(img_b64)
+                caption_img = f"Imagen {i} de {total} — Post #{post_id}"
 
-            resp = _requests.post(
-                url,
-                data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption_img},
-                files={"photo": (f"slide_{i}.png", img_bytes, "image/png")},
-                timeout=30
-            )
-            if resp.status_code != 200:
-                print(f"[Telegram] Error slide {i}: {resp.text}")
-            else:
-                print(f"[Telegram] Slide {i}/{total} enviado OK")
+                resp = await client.post(
+                    url,
+                    data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption_img},
+                    files={"photo": (f"slide_{i}.png", img_bytes, "image/png")}
+                )
+                if resp.status_code != 200:
+                    print(f"[Telegram] Error slide {i}: {resp.text}")
+                else:
+                    print(f"[Telegram] Slide {i}/{total} enviado OK")
+                    enviadas += 1
 
-            time.sleep(0.5)  # pausa entre imágenes
+                await asyncio.sleep(0.5)
 
-        except Exception as e:
-            print(f"[Telegram] Error enviando slide {i}: {e}")
+            except Exception as e:
+                print(f"[Telegram] Error enviando slide {i}: {e}")
+
+    return enviadas
+
 
 
 @social_router.post("/generar", response_model=SocialResponse)
 async def generar_posts_sociales(
     req: SocialRequest,
-    background_tasks: BackgroundTasks,
     x_agent_secret: Optional[str] = Header(None)
 ):
     if x_agent_secret != AGENT_SECRET:
@@ -1035,6 +1036,7 @@ async def generar_posts_sociales(
                 "hashtags":        datos_caption.get("hashtags"),
                 "titulo_imagen":   datos_caption.get("titulo_portada") or datos_caption.get("titulo", ""),
                 "imagen_b64":      imagenes_carrusel[0],   # portada
+                "imagenes_extra":  json.dumps([i for i in imagenes_carrusel[1:]]),  # slides 2..N
                 "estado":          "pendiente_aprobacion",
                 "plataforma":      "instagram",
                 "codigo_proceso":  contexto.get("_codigo_proceso"),
@@ -1056,11 +1058,8 @@ async def generar_posts_sociales(
                 "estado":          "pendiente_aprobacion"
             })
 
-            # Enviar imágenes restantes (2...N) directamente a Telegram desde Railway
-            # La portada (imagen 0) la envía n8n con los botones de aprobación
-            background_tasks.add_task(
-                enviar_carrusel_telegram, imagenes_carrusel, post_id
-            )
+            # Las imágenes restantes se envían vía POST /agente-social/carrusel/{post_id}
+            # que n8n llama justo después de recibir esta respuesta
             continue  # saltar el bloque normal
 
         # ── LICITACIONES / ANÁLISIS: imagen única ───────────────────────
@@ -1094,6 +1093,39 @@ async def generar_posts_sociales(
 
     return SocialResponse(posts_generados=len(posts_generados), posts=posts_generados)
 
+
+
+@social_router.post("/carrusel/{post_id}")
+async def enviar_carrusel_endpoint(
+    post_id: int,
+    x_agent_secret: Optional[str] = Header(None)
+):
+    """
+    Envía las imágenes restantes del carrusel a Telegram.
+    N8n llama este endpoint justo después de que el nodo Telegram envía la portada.
+    """
+    if x_agent_secret != AGENT_SECRET:
+        raise HTTPException(status_code=401, detail="No autorizado")
+
+    result = supabase.table("social_log").select("imagenes_extra, tipo_contenido").eq("id", post_id).single().execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Post no encontrado")
+
+    post = result.data
+    if post.get("tipo_contenido") != "educativo":
+        return {"success": True, "enviadas": 0, "mensaje": "No es carrusel"}
+
+    imagenes_extra_raw = post.get("imagenes_extra")
+    if not imagenes_extra_raw:
+        return {"success": True, "enviadas": 0, "mensaje": "Sin imágenes extra"}
+
+    imagenes_extra = json.loads(imagenes_extra_raw) if isinstance(imagenes_extra_raw, str) else imagenes_extra_raw
+
+    # Reconstruir lista completa con portada dummy en índice 0 para que la función salte índice 0
+    imagenes_completas = [""] + imagenes_extra
+    enviadas = await enviar_carrusel_telegram(imagenes_completas, post_id)
+
+    return {"success": True, "enviadas": enviadas, "total_slides": len(imagenes_extra)}
 
 @social_router.post("/publicar/{post_id}")
 async def publicar_post(
