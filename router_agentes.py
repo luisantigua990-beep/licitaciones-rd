@@ -519,7 +519,22 @@ def obtener_contexto(tipo: str) -> dict:
                 if r.get("codigo_proceso")
             ]
 
-            # Buscar proceso real nuevo de los últimos 3 días con monto alto
+            # Contar posts de licitaciones activas generados hoy para calcular turno 3/1
+            conteo_hoy = supabase.table("social_log") \
+                .select("id", count="exact") \
+                .eq("tipo_contenido", "licitaciones_activas") \
+                .gte("created_at", datetime.utcnow().date().isoformat()) \
+                .execute()
+            total_hoy = conteo_hoy.count or 0
+
+            # Lógica 3/1: cada 4to post (índice 3, 7, 11...) busca sector diferente
+            es_turno_diverso = (total_hoy % 4 == 3)
+
+            # Sectores de construcción e infraestructura
+            sectores_construccion = ["Obras", "Infraestructura", "Construcción",
+                                     "Edificaciones", "Saneamiento", "Vialidad"]
+
+            # Buscar todos los procesos candidatos (limit 40 para tener opciones)
             query = supabase.table("procesos") \
                 .select("codigo_proceso, titulo, unidad_compra, monto_estimado, objeto_proceso, provincia, fecha_fin_recepcion_ofertas, modalidad") \
                 .eq("estado_proceso", "Proceso publicado") \
@@ -527,14 +542,31 @@ def obtener_contexto(tipo: str) -> dict:
                 .gt("fecha_fin_recepcion_ofertas", datetime.utcnow().isoformat()) \
                 .not_.is_("monto_estimado", "null") \
                 .order("monto_estimado", desc=True) \
-                .limit(20) \
+                .limit(40) \
                 .execute()
 
-            # Filtrar los que ya se usaron hoy
-            candidatos = [
+            todos = [
                 p for p in (query.data or [])
                 if p.get("codigo_proceso") not in codigos_usados
             ]
+
+            if es_turno_diverso:
+                # Turno diverso (cada 4to): preferir sector NO construcción
+                candidatos = [
+                    p for p in todos
+                    if not any(s.lower() in (p.get("objeto_proceso") or "").lower()
+                               for s in sectores_construccion)
+                ]
+                if not candidatos:
+                    candidatos = todos  # fallback si no hay otro sector
+            else:
+                # Turnos normales (3 de cada 4): preferir construcción/infraestructura
+                candidatos_construccion = [
+                    p for p in todos
+                    if any(s.lower() in (p.get("objeto_proceso") or "").lower()
+                           for s in sectores_construccion)
+                ]
+                candidatos = candidatos_construccion if candidatos_construccion else todos
 
             if candidatos:
                 proceso = candidatos[0]
