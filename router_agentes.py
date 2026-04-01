@@ -278,14 +278,15 @@ Genera un post de Instagram sobre esta licitación activa:
 - Fecha límite: {datos_contexto.get('fecha_limite', 'Próximamente')}
 
 El caption debe:
-1. Empezar con un emoji relevante y frase de gancho (ej: "🚨 OPORTUNIDAD ACTIVA:")
-2. Describir la licitación en 2-3 líneas sin mencionar el monto (ya va en la imagen)
+1. Comenzar con "OPORTUNIDAD ACTIVA:" sin emojis
+2. Describir la licitación usando la descripción exacta proporcionada, en 2-3 líneas sin mencionar el monto (ya va en la imagen)
 3. Mencionar que LicitacionLab la detectó automáticamente
-4. CTA: "Regístrate gratis en licitacionlab.com"
-5. Máximo 130 palabras
+4. CTA: "Regístrate gratis en https://app.licitacionlab.com/"
+5. Sin emojis en todo el caption
+6. Máximo 130 palabras
 
 Responde SOLO en JSON con este formato exacto:
-{{"titulo": "texto del título para la imagen (máx 5 palabras)", "caption": "texto completo del post SIN monto", "hashtags": "#licitacion #construccion #dgcp #republicadominicana #licitacionlab"}}""",
+{{"titulo": "texto del título para la imagen (máx 5 palabras)", "caption": "texto completo del post SIN emojis y SIN monto", "hashtags": "#licitacion #construccion #dgcp #republicadominicana #licitacionlab"}}""",
 
         "analisis_semanal": f"""Eres el social media manager de LicitacionLab, plataforma SaaS de licitaciones en República Dominicana.
 
@@ -297,11 +298,12 @@ Genera un post de análisis semanal del mercado de licitaciones con estos datos:
 - Tendencia: {datos_contexto.get('tendencia', 'al alza vs semana anterior')}
 
 El caption debe:
-1. Empezar con "📊 RESUMEN SEMANAL DE LICITACIONES RD"
-2. Presentar los números clave de forma visual (usa emojis como bullets)
+1. Empezar con "RESUMEN SEMANAL DE LICITACIONES RD" sin emojis
+2. Presentar los números clave de forma clara sin emojis
 3. Una insight/conclusión de negocio en 1 línea
-4. CTA hacia licitacionlab.com
-5. Máximo 120 palabras
+4. CTA: "Accede en https://app.licitacionlab.com/"
+5. Sin emojis en todo el caption
+6. Máximo 120 palabras
 
 Responde SOLO en JSON:
 {{"titulo": "RESUMEN SEMANAL\\nLICITACIONES RD", "caption": "texto", "hashtags": "#licitaciones #construccionrd #dgcp #republicadominicana #licitacionlab"}}""",
@@ -311,11 +313,12 @@ Responde SOLO en JSON:
 Genera un post educativo sobre el tema: {datos_contexto.get('tema', 'Cómo calcular el margen mínimo en una oferta económica')}
 
 El caption debe:
-1. Empezar con "💡 SABÍAS QUE..." o "📚 TIP LICITADOR:"
+1. Empezar con "SABIAS QUE..." o "TIP LICITADOR:" sin emojis
 2. Explicar el concepto de forma simple y práctica (3-4 puntos)
 3. Mencionar cómo LicitacionLab ayuda con esto
-4. CTA: "Síguenos para más tips"
-5. Máximo 130 palabras
+4. CTA: "Registrate gratis en https://app.licitacionlab.com/"
+5. Sin emojis en todo el caption
+6. Máximo 130 palabras
 
 Responde SOLO en JSON:
 {{"titulo": "texto corto para imagen (máx 4 palabras)", "caption": "texto", "hashtags": "#tiplicitador #licitaciones #construccion #dgcp #licitacionlab #republicadominicana"}}"""
