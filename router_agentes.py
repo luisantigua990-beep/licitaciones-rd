@@ -458,43 +458,109 @@ def generar_imagen_post(tipo: str, datos_caption: dict) -> str:
 def obtener_contexto(tipo: str) -> dict:
     if tipo == "licitaciones_activas":
         try:
-            result = supabase.table("prospectos") \
-                .select("empresa, sector") \
-                .order("created_at", desc=True) \
-                .limit(1) \
+            from datetime import timedelta
+
+            # Procesos ya usados hoy en social_log (evitar repetir)
+            ya_usados = supabase.table("social_log") \
+                .select("codigo_proceso") \
+                .gte("created_at", datetime.utcnow().date().isoformat()) \
+                .not_.is_("codigo_proceso", "null") \
                 .execute()
-            if result.data:
-                empresa = result.data[0]
+            codigos_usados = [
+                r["codigo_proceso"] for r in (ya_usados.data or [])
+                if r.get("codigo_proceso")
+            ]
+
+            # Buscar proceso real nuevo de los últimos 3 días con monto alto
+            query = supabase.table("procesos") \
+                .select("codigo_proceso, titulo, unidad_compra, monto_estimado, objeto_proceso, provincia, fecha_fin_recepcion_ofertas") \
+                .eq("estado_proceso", "Proceso publicado") \
+                .gte("detectado_en", (datetime.utcnow() - timedelta(days=3)).isoformat()) \
+                .gt("fecha_fin_recepcion_ofertas", datetime.utcnow().isoformat()) \
+                .not_.is_("monto_estimado", "null") \
+                .order("monto_estimado", desc=True) \
+                .limit(20) \
+                .execute()
+
+            # Filtrar los que ya se usaron hoy
+            candidatos = [
+                p for p in (query.data or [])
+                if p.get("codigo_proceso") not in codigos_usados
+            ]
+
+            if candidatos:
+                proceso = candidatos[0]
+
+                # Fecha de presentación de ofertas formateada
+                fecha_limite = ""
+                if proceso.get("fecha_fin_recepcion_ofertas"):
+                    try:
+                        fecha_limite = datetime.fromisoformat(
+                            str(proceso["fecha_fin_recepcion_ofertas"]).replace("Z", "")
+                        ).strftime("%d/%m/%Y")
+                    except Exception:
+                        fecha_limite = str(proceso["fecha_fin_recepcion_ofertas"])[:10]
+
+                monto_raw = proceso.get("monto_estimado", 0)
+
                 return {
-                    "entidad": empresa.get("empresa", "Entidad pública"),
-                    "descripcion": "Obras de infraestructura vial y mantenimiento",
-                    "monto": "RD$ 45,000,000",
-                    "fecha_limite": datetime.now().strftime("%d/%m/%Y")
+                    "codigo":          proceso.get("codigo_proceso", ""),
+                    "entidad":         proceso.get("unidad_compra", "Entidad pública"),
+                    "descripcion":     (proceso.get("titulo") or "")[:120],
+                    "sector":          proceso.get("objeto_proceso") or "Infraestructura",
+                    "monto":           f"RD$ {float(monto_raw):,.0f}" if monto_raw else "—",
+                    "monto_raw":       str(monto_raw),
+                    "fecha_limite":    fecha_limite,
+                    "provincia":       proceso.get("provincia") or "Nacional",
+                    "_codigo_proceso": proceso.get("codigo_proceso"),
                 }
-        except:
-            pass
+
+        except Exception as e:
+            print(f"[Social] Error obteniendo contexto licitacion: {e}")
+
+        # Fallback solo si no hay procesos recientes disponibles
         return {
-            "entidad": "MOPC",
-            "descripcion": "Construcción y rehabilitación de carreteras",
-            "monto": "RD$ 85,000,000",
-            "fecha_limite": datetime.now().strftime("%d/%m/%Y")
+            "codigo":          "SIN-PROCESO-HOY",
+            "entidad":         "DGCP",
+            "descripcion":     "Monitorea las licitaciones activas en tiempo real",
+            "sector":          "Infraestructura",
+            "monto":           "—",
+            "monto_raw":       "0",
+            "fecha_limite":    datetime.now().strftime("%d/%m/%Y"),
+            "provincia":       "Nacional",
+            "_codigo_proceso": None,
         }
 
     elif tipo == "analisis_semanal":
         try:
-            result = supabase.table("prospectos") \
-                .select("score", count="exact") \
-                .gte("score", 60) \
+            result = supabase.table("procesos") \
+                .select("id", count="exact") \
+                .eq("estado_proceso", "Proceso publicado") \
+                .gte("detectado_en", (datetime.utcnow().replace(hour=0,minute=0,second=0)).isoformat()) \
                 .execute()
-            total = result.count or random.randint(20, 40)
-        except:
-            total = random.randint(20, 40)
+            total_hoy = result.count or 0
+
+            result_sem = supabase.table("procesos") \
+                .select("monto_estimado", count="exact") \
+                .eq("estado_proceso", "Proceso publicado") \
+                .gte("detectado_en", (datetime.utcnow() - __import__("datetime").timedelta(days=7)).isoformat()) \
+                .not_.is_("monto_estimado", "null") \
+                .execute()
+            total_sem = result_sem.count or random.randint(20, 40)
+            montos = [float(r["monto_estimado"]) for r in (result_sem.data or []) if r.get("monto_estimado")]
+            monto_total = f"{int(sum(montos)/1_000_000)}M" if montos else f"{random.randint(300, 900)}M"
+        except Exception as e:
+            print(f"[Social] Error analisis_semanal: {e}")
+            total_sem = random.randint(20, 40)
+            monto_total = f"{random.randint(300, 900)}M"
+
         return {
-            "semana": datetime.now().strftime("%d/%m/%Y"),
-            "total": total,
-            "sector_top": "Infraestructura y obras civiles",
-            "monto_total": f"{random.randint(300, 900)}M",
-            "tendencia": "+12% vs semana anterior"
+            "semana":      datetime.now().strftime("%d/%m/%Y"),
+            "total":       total_sem,
+            "sector_top":  "Infraestructura y obras civiles",
+            "monto_total": monto_total,
+            "tendencia":   "+12% vs semana anterior",
+            "_codigo_proceso": None,
         }
 
     else:
@@ -506,7 +572,7 @@ def obtener_contexto(tipo: str) -> dict:
             "Cómo leer un pliego de condiciones en 30 minutos",
             "Qué es la Ley 47-25 y cómo te afecta como contratista",
         ]
-        return {"tema": random.choice(temas)}
+        return {"tema": random.choice(temas), "_codigo_proceso": None}
 
 
 @social_router.post("/generar", response_model=SocialResponse)
@@ -538,14 +604,15 @@ async def generar_posts_sociales(
         imagen_b64 = generar_imagen_post(tipo_actual, datos_caption)
 
         post_data = {
-            "tipo_contenido": tipo_actual,
-            "caption":        datos_caption.get("caption"),
-            "hashtags":       datos_caption.get("hashtags"),
-            "titulo_imagen":  datos_caption.get("titulo"),
-            "imagen_b64":     imagen_b64,
-            "estado":         "pendiente_aprobacion",
-            "plataforma":     "instagram",
-            "created_at":     datetime.utcnow().isoformat()
+            "tipo_contenido":  tipo_actual,
+            "caption":         datos_caption.get("caption"),
+            "hashtags":        datos_caption.get("hashtags"),
+            "titulo_imagen":   datos_caption.get("titulo"),
+            "imagen_b64":      imagen_b64,
+            "estado":          "pendiente_aprobacion",
+            "plataforma":      "instagram",
+            "codigo_proceso":  contexto.get("_codigo_proceso"),  # evita repetir procesos
+            "created_at":      datetime.utcnow().isoformat()
         }
 
         result = supabase.table("social_log").insert(post_data).execute()
