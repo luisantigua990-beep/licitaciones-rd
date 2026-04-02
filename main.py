@@ -3347,10 +3347,11 @@ async def comparar_documentos(datos: ComparacionSchema):
 
 
 def _pdf_styles():
+    from reportlab.lib.colors import HexColor, white, black
     from reportlab.lib.units import inch
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.colors import HexColor, white, black
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+    from reportlab.platypus import Paragraph, Table, TableStyle
     base = getSampleStyleSheet()
     return {
         "tit_header": ParagraphStyle("tit_header", fontSize=20, textColor=white,
@@ -3379,8 +3380,10 @@ def _pdf_styles():
 
 
 def _pdf_seccion_bar(texto, story, styles, color=None):
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
     from reportlab.lib.colors import HexColor, white, black
+    from reportlab.lib.units import inch
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph, Table, TableStyle
     color = color or HexColor("#2E7D32")
     t = Table([[Paragraph(texto, styles["seccion"])]], colWidths=[6.5 * inch])
     t.setStyle(TableStyle([
@@ -3395,8 +3398,10 @@ def _pdf_seccion_bar(texto, story, styles, color=None):
 
 
 def _pdf_tarjeta(rows, story, styles, fondo=None):
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
     from reportlab.lib.colors import HexColor, white, black
+    from reportlab.lib.units import inch
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph, Table, TableStyle
     fondo = fondo or HexColor("#ECEFF1")
     data = [[Paragraph(lbl, styles["label"]), Paragraph(str(val or "—"), styles["valor"])]
             for lbl, val in rows]
@@ -3416,8 +3421,10 @@ def _pdf_tarjeta(rows, story, styles, fondo=None):
 
 
 def _pdf_lista(items, story, styles, tipo="normal"):
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
     from reportlab.lib.colors import HexColor, white, black
+    from reportlab.lib.units import inch
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph, Table, TableStyle
     iconos = {
         "alerta": ("🔴 ", styles["item_alerta"]),
         "warn":   ("⚠️ ", styles["item_warn"]),
@@ -3474,10 +3481,10 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.colors import HexColor, white, black
     from reportlab.lib.units import inch
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
     from reportlab.platypus import (
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
     )
-    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 
     buf    = io.BytesIO()
     styles = _pdf_styles()
