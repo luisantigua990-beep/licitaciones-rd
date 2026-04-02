@@ -3343,22 +3343,7 @@ async def comparar_documentos(datos: ComparacionSchema):
 # PDF — ANÁLISIS DE PLIEGO (Gemini)
 # ══════════════════════════════════════════════════
 
-# Paleta LicitacionLab para PDF
-_PDF_VERDE       = HexColor("#1A5C2A")
-_PDF_VERDE_MED   = HexColor("#2E7D32")
-_PDF_VERDE_CLR   = HexColor("#4CAF50")
-_PDF_VERDE_FONDO = HexColor("#E8F5E9")
-_PDF_ROJO        = HexColor("#C62828")
-_PDF_ROJO_FONDO  = HexColor("#FFEBEE")
-_PDF_AMARILLO    = HexColor("#F57F17")
-_PDF_AZUL        = HexColor("#1565C0")
-_PDF_AZUL_FONDO  = HexColor("#E3F2FD")
-_PDF_GRIS        = HexColor("#546E7A")
-_PDF_GRIS_CLR    = HexColor("#ECEFF1")
-_PDF_GRIS_MED    = HexColor("#90A4AE")
-_PDF_NEGRO       = HexColor("#212121")
-_PDF_MORADO      = HexColor("#6A1B9A")
-_PDF_TEAL        = HexColor("#00695C")
+# Paleta PDF — definida como strings, convertida dentro de las funciones
 
 
 def _pdf_styles():
@@ -3373,27 +3358,28 @@ def _pdf_styles():
             alignment=TA_CENTER, fontName="Helvetica", leading=14),
         "seccion": ParagraphStyle("seccion", fontSize=11, textColor=white,
             fontName="Helvetica-Bold", leading=16),
-        "body": ParagraphStyle("body", fontSize=9.5, textColor=_PDF_NEGRO,
+        "body": ParagraphStyle("body", fontSize=9.5, textColor=HexColor("#212121"),
             fontName="Helvetica", leading=14, alignment=TA_JUSTIFY, spaceAfter=3),
-        "label": ParagraphStyle("label", fontSize=8, textColor=_PDF_GRIS,
+        "label": ParagraphStyle("label", fontSize=8, textColor=HexColor("#546E7A"),
             fontName="Helvetica-Bold", leading=11),
-        "valor": ParagraphStyle("valor", fontSize=9.5, textColor=_PDF_NEGRO,
+        "valor": ParagraphStyle("valor", fontSize=9.5, textColor=HexColor("#212121"),
             fontName="Helvetica", leading=13),
-        "item_alerta": ParagraphStyle("item_alerta", fontSize=9, textColor=_PDF_ROJO,
+        "item_alerta": ParagraphStyle("item_alerta", fontSize=9, textColor=HexColor("#C62828"),
             fontName="Helvetica-Bold", leading=13, leftIndent=4),
         "item_warn": ParagraphStyle("item_warn", fontSize=9, textColor=HexColor("#E65100"),
             fontName="Helvetica-Bold", leading=13, leftIndent=4),
         "item_ok": ParagraphStyle("item_ok", fontSize=9, textColor=HexColor("#1B5E20"),
             fontName="Helvetica", leading=13, leftIndent=4),
-        "item_normal": ParagraphStyle("item_normal", fontSize=9, textColor=_PDF_NEGRO,
+        "item_normal": ParagraphStyle("item_normal", fontSize=9, textColor=HexColor("#212121"),
             fontName="Helvetica", leading=13, leftIndent=4),
-        "pie": ParagraphStyle("pie", fontSize=7.5, textColor=_PDF_GRIS_MED,
+        "pie": ParagraphStyle("pie", fontSize=7.5, textColor=HexColor("#90A4AE"),
             fontName="Helvetica", alignment=TA_CENTER, leading=10),
     }
 
 
 def _pdf_seccion_bar(texto, story, styles, color=None):
-    color = color or _PDF_VERDE_MED
+    from reportlab.lib.colors import HexColor, white, black
+    color = color or HexColor("#2E7D32")
     t = Table([[Paragraph(texto, styles["seccion"])]], colWidths=[6.5 * inch])
     t.setStyle(TableStyle([
         ("BACKGROUND",    (0,0),(-1,-1), color),
@@ -3407,7 +3393,8 @@ def _pdf_seccion_bar(texto, story, styles, color=None):
 
 
 def _pdf_tarjeta(rows, story, styles, fondo=None):
-    fondo = fondo or _PDF_GRIS_CLR
+    from reportlab.lib.colors import HexColor, white, black
+    fondo = fondo or HexColor("#ECEFF1")
     data = [[Paragraph(lbl, styles["label"]), Paragraph(str(val or "—"), styles["valor"])]
             for lbl, val in rows]
     t = Table(data, colWidths=[1.6*inch, 4.9*inch])
@@ -3418,7 +3405,7 @@ def _pdf_tarjeta(rows, story, styles, fondo=None):
         ("BOTTOMPADDING", (0,0),(-1,-1), 5),
         ("LEFTPADDING",   (0,0),(-1,-1), 10),
         ("RIGHTPADDING",  (0,0),(-1,-1), 10),
-        ("LINEBELOW",     (0,0),(-1,-2), 0.3, _PDF_GRIS_MED),
+        ("LINEBELOW",     (0,0),(-1,-2), 0.3, HexColor("#90A4AE")),
         ("VALIGN",        (0,0),(-1,-1), "TOP"),
     ]))
     story.append(t)
@@ -3426,6 +3413,7 @@ def _pdf_tarjeta(rows, story, styles, fondo=None):
 
 
 def _pdf_lista(items, story, styles, tipo="normal"):
+    from reportlab.lib.colors import HexColor, white, black
     iconos = {
         "alerta": ("🔴 ", styles["item_alerta"]),
         "warn":   ("⚠️ ", styles["item_warn"]),
@@ -3502,7 +3490,7 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
         [Paragraph(f"Generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} · LicitacionLab", styles["sub_header"])],
     ], colWidths=[6.5*inch])
     header_t.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0),(-1,-1), _PDF_VERDE),
+        ("BACKGROUND",    (0,0),(-1,-1), HexColor("#1A5C2A")),
         ("TOPPADDING",    (0,0),(0,0),   16),
         ("BOTTOMPADDING", (0,2),(0,2),   14),
         ("TOPPADDING",    (0,1),(0,2),   3),
@@ -3525,7 +3513,7 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
         ("CIERRE OFERTAS", _pdf_fmt_fecha(proceso.get("fecha_fin_recepcion_ofertas"))),
         ("APERTURA",       _pdf_fmt_fecha(proceso.get("fecha_apertura_ofertas"))),
         ("DURACIÓN",       proceso.get("duracion_contrato")),
-    ], story, styles, fondo=_PDF_VERDE_FONDO)
+    ], story, styles, fondo=HexColor("#E8F5E9"))
 
     # Resumen ejecutivo
     if analisis.get("resumen_ejecutivo"):
@@ -3535,28 +3523,28 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
 
     # Alertas de riesgo
     if analisis.get("alertas_fraude"):
-        _pdf_seccion_bar("🚨  ALERTAS DE RIESGO", story, styles, color=_PDF_ROJO)
+        _pdf_seccion_bar("🚨  ALERTAS DE RIESGO", story, styles, color=HexColor("#C62828"))
         _pdf_lista(analisis["alertas_fraude"], story, styles, tipo="alerta")
 
     # Evaluación de competitividad
     comp = analisis.get("evaluacion_competitividad") or {}
     if comp:
-        _pdf_seccion_bar("📊  EVALUACIÓN DE COMPETITIVIDAD", story, styles, color=_PDF_AZUL)
+        _pdf_seccion_bar("📊  EVALUACIÓN DE COMPETITIVIDAD", story, styles, color=HexColor("#1565C0"))
         rows = []
         if comp.get("nivel"):        rows.append(("NIVEL",         comp["nivel"]))
         if comp.get("explicacion"):  rows.append(("ANÁLISIS",      comp["explicacion"]))
         if comp.get("recomendacion"):rows.append(("RECOMENDACIÓN", comp["recomendacion"]))
         if rows:
-            _pdf_tarjeta(rows, story, styles, fondo=_PDF_AZUL_FONDO)
+            _pdf_tarjeta(rows, story, styles, fondo=HexColor("#E3F2FD"))
 
     # Restricciones
     if analisis.get("restricciones_participacion"):
-        _pdf_seccion_bar("🚫  RESTRICCIONES DE PARTICIPACIÓN", story, styles, color=_PDF_MORADO)
+        _pdf_seccion_bar("🚫  RESTRICCIONES DE PARTICIPACIÓN", story, styles, color=HexColor("#6A1B9A"))
         _pdf_lista(analisis["restricciones_participacion"], story, styles, tipo="warn")
 
     # Plazos clave
     if analisis.get("plazos_clave"):
-        _pdf_seccion_bar("📅  PLAZOS CLAVE", story, styles, color=_PDF_TEAL)
+        _pdf_seccion_bar("📅  PLAZOS CLAVE", story, styles, color=HexColor("#00695C"))
         _pdf_lista(analisis["plazos_clave"], story, styles, tipo="normal")
 
     # Requisitos de experiencia
@@ -3592,10 +3580,10 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
             if not items:
                 continue
             sub_t = Table([[Paragraph(f"  {nombre_sec}", ParagraphStyle(
-                "sub_cl", fontSize=9.5, textColor=_PDF_VERDE, fontName="Helvetica-Bold"
+                "sub_cl", fontSize=9.5, textColor=HexColor("#1A5C2A"), fontName="Helvetica-Bold"
             ))]], colWidths=[6.5*inch])
             sub_t.setStyle(TableStyle([
-                ("BACKGROUND",    (0,0),(-1,-1), _PDF_VERDE_FONDO),
+                ("BACKGROUND",    (0,0),(-1,-1), HexColor("#E8F5E9")),
                 ("TOPPADDING",    (0,0),(-1,-1), 4),
                 ("BOTTOMPADDING", (0,0),(-1,-1), 4),
                 ("LEFTPADDING",   (0,0),(-1,-1), 8),
@@ -3616,15 +3604,15 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
                 ("TOPPADDING",    (0,0),(-1,-1), 4),
                 ("BOTTOMPADDING", (0,0),(-1,-1), 4),
                 ("LEFTPADDING",   (0,0),(-1,-1), 12),
-                ("ROWBACKGROUNDS",(0,0),(-1,-1), [white, _PDF_GRIS_CLR]),
-                ("LINEBELOW",     (0,0),(-1,-2), 0.3, _PDF_GRIS_MED),
+                ("ROWBACKGROUNDS",(0,0),(-1,-1), [white, HexColor("#ECEFF1")]),
+                ("LINEBELOW",     (0,0),(-1,-2), 0.3, HexColor("#90A4AE")),
             ]))
             story.append(cl_t)
             story.append(Spacer(1, 6))
 
     # Pie
     story.append(Spacer(1, 16))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=_PDF_GRIS_MED))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor("#90A4AE")))
     story.append(Spacer(1, 4))
     story.append(Paragraph(
         f"Generado por LicitacionLab · app.licitacionlab.com · "
