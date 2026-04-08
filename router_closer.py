@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import anthropic
 from supabase import create_client
 
@@ -87,13 +87,36 @@ TONO: Experto en licitaciones dominicanas, accesible, confiable. Como un asesor 
 # ═══════════════════════════════════════════════════════════════════════
 
 class ManyCharWebhookPayload(BaseModel):
-    """Payload que llega desde ManyChat vía webhook"""
-    contact_id: str                    # ID del contacto en ManyChat
-    channel: str = "whatsapp"          # whatsapp | instagram
-    name: Optional[str] = None         # Nombre del contacto
-    phone: Optional[str] = None        # Teléfono (WS)
-    message: str                       # Texto del mensaje
+    """
+    Payload que llega desde ManyChat vía webhook.
+    Acepta tanto nombres personalizados como los nativos de ManyChat.
+    """
+    # Nombres personalizados (si se renombran en ManyChat)
+    contact_id: Optional[str] = None
+    message: Optional[str] = None
+    name: Optional[str] = None
+
+    # Nombres nativos de ManyChat
+    id_de_contacto: Optional[str] = Field(None, alias="Id de contacto")
+    nombre_completo: Optional[str] = Field(None, alias="Nombre completo")
+    ultima_entrada: Optional[str] = Field(None, alias="Última entrada de texto")
+
+    # Canal y otros
+    channel: str = "instagram"
+    phone: Optional[str] = None
     timestamp: Optional[str] = None
+
+    class Config:
+        populate_by_name = True
+
+    def get_contact_id(self) -> str:
+        return self.contact_id or self.id_de_contacto or "unknown"
+
+    def get_message(self) -> str:
+        return self.message or self.ultima_entrada or ""
+
+    def get_name(self) -> str:
+        return self.name or self.nombre_completo or "Desconocido"
 
 class MarcarEtapaPayload(BaseModel):
     etapa: str
@@ -340,10 +363,10 @@ async def recibir_mensaje_manychat(
 
     background_tasks.add_task(
         procesar_mensaje_bg,
-        payload.contact_id,
+        payload.get_contact_id(),
         payload.channel,
-        payload.message,
-        payload.name,
+        payload.get_message(),
+        payload.get_name(),
         payload.phone
     )
 
