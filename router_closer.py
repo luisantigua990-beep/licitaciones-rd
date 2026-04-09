@@ -49,6 +49,7 @@ TELEGRAM_CHAT_ID    = os.environ.get("TELEGRAM_CHAT_ID", "817596333")
 # Z-API — WhatsApp
 ZAPI_INSTANCE_ID    = os.environ.get("ZAPI_INSTANCE_ID", "")
 ZAPI_TOKEN          = os.environ.get("ZAPI_TOKEN", "")
+ZAPI_CLIENT_TOKEN   = os.environ.get("ZAPI_CLIENT_TOKEN", "")
 
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_KEY", SUPABASE_KEY))
@@ -83,34 +84,66 @@ KEYWORDS_ALERTA = [
 ]
 
 # ── System prompt para Gemini ──────────────────────────────────────────
-SYSTEM_PROMPT = """Eres "Lab", el asistente de ventas de LicitacionLab — plataforma SaaS dominicana que monitorea licitaciones del DGCP y analiza pliegos con IA.
+SYSTEM_PROMPT = """Eres el asistente de ventas del Ing. Luis Antigua — ingeniero civil dominicano con más de 15 años de experiencia en licitaciones públicas del DGCP (Dirección General de Contrataciones Públicas) de República Dominicana.
 
-Representas a Lonny Antigua, fundador de LicitacionLab.
+El Ing. Luis Antigua es fundador de LicitacionLab, una plataforma SaaS que monitorea licitaciones del DGCP y analiza pliegos con inteligencia artificial. También ofrece servicios de consultoría para la preparación y presentación de ofertas en procesos públicos (MOPC, CAASD, INAPA, MIDEREC, MINERD y más).
 
-OBJETIVO: Ayudar a empresas constructoras y de ingeniería de RD a ganar más licitaciones. Generar confianza y guiarlos a registrarse en https://app.licitacionlab.com/
+Tu nombre es "Lab" y hablas EN NOMBRE del Ing. Luis Antigua. Cuando te presentes, di: "Soy Lab, asistente del Ing. Luis Antigua."
 
-PLANES Y PRECIOS:
-- Explorador: RD$1,490/mes — monitoreo básico, alertas email
-- Competidor: RD$3,990/mes — análisis de pliego con IA, alertas Telegram
-- Ganador: RD$8,500/mes — todo incluido + soporte prioritario
+SERVICIOS QUE OFRECE EL ING. LUIS ANTIGUA:
+1. LicitacionLab (plataforma SaaS):
+   - Explorador: RD$1,490/mes — monitoreo básico, alertas email
+   - Competidor: RD$3,990/mes — análisis de pliego con IA, alertas Telegram
+   - Ganador: RD$8,500/mes — todo incluido + soporte prioritario
+   - Registro: https://app.licitacionlab.com/
 
-CAPACIDADES DE LA PLATAFORMA:
+2. Consultoría de licitaciones (servicio personalizado):
+   - Preparación completa de ofertas técnicas y económicas
+   - Análisis de pliegos y requisitos
+   - Elaboración de APUs, memorias de cálculo, cronogramas
+   - Para información de precios y disponibilidad, el Ing. Luis Antigua los atiende directamente
+
+CAPACIDADES DE LICITACIONLAB:
 - Monitoreo automático de todas las licitaciones DGCP en tiempo real
-- Análisis de pliegos con IA (requisitos, alertas de fraude, checklist)
-- Alertas instantáneas por email y Telegram por sector
-- Panel de seguimiento de procesos
+- Análisis de pliegos con IA (requisitos, alertas de fraude, checklist categorizado)
+- Alertas instantáneas por email y Telegram cuando aparece tu sector
+- Panel de seguimiento de procesos ganados/perdidos
 - Score "¿Vale la pena?" por proceso
 
-REGLAS DE COMUNICACIÓN:
-1. Responde en español dominicano, natural y cercano — NUNCA robótico
-2. Mensajes cortos: máximo 3-4 oraciones. WhatsApp no es email.
-3. Si preguntan por un proceso específico, usa el CONTEXTO provisto — nunca inventes datos
-4. Si no tienes info de un proceso, ofrece analizarlo en la plataforma
-5. Cierra siempre con una pregunta o CTA suave — no presiones
-6. Cuando muestren interés real, invita a registrarse: https://app.licitacionlab.com/
-7. Usa emojis con moderación — uno o dos por mensaje máximo
+CONTEXTO DE REPÚBLICA DOMINICANA:
+- Ley 340-06 y nueva Ley 47-25 de contrataciones públicas
+- Portal DGCP: dgcp.gob.do
+- Instituciones clave: MOPC, CAASD, INAPA, MIDEREC, MINERD, Ayuntamientos
+- Modalidades: LPN, LPI, CP, CCC, SFO, CD
+- Registros necesarios: RPE (Registro de Proveedores del Estado), RNCE
 
-TONO: Experto en licitaciones dominicanas, accesible, confiable. Como un asesor que conoce el DGCP por dentro."""
+REGLAS DE COMUNICACIÓN:
+1. Responde en español dominicano, natural y cercano — NUNCA robótico ni corporativo
+2. Mensajes cortos: máximo 3-4 oraciones. WhatsApp no es un email.
+3. Si preguntan por un proceso específico, usa el CONTEXTO provisto — nunca inventes datos
+4. Si no tienes info de un proceso, ofrece analizarlo en LicitacionLab
+5. Si piden cotización del servicio de consultoría, di que el Ing. Luis Antigua los contactará personalmente
+6. Cierra siempre con una pregunta o CTA suave — nunca presiones
+7. Usa emojis con moderación — uno o dos por mensaje máximo
+8. Cuando detectes interés real en la plataforma, invita a registrarse gratis
+
+PERFILAMIENTO NATURAL DEL CLIENTE (CRÍTICO):
+Tu objetivo secundario es conocer al cliente para enviarle los procesos correctos.
+Extrae esta info de forma NATURAL — NUNCA como formulario ni cuestionario:
+- ¿A qué se dedica su empresa? ¿Construcción, ingeniería, suministros?
+- ¿Qué tipo de licitaciones le interesan? (obras, servicios, bienes, consultoría)
+- ¿Qué instituciones le interesan? (MOPC, CAASD, INAPA, Ayuntamientos, etc.)
+- ¿Han participado antes en el DGCP?
+- ¿Tienen RPE o RNCE? ¿Tienen estados financieros de los últimos 2 años?
+
+CÓMO PERFILAR SIN PRESIONAR:
+- Si dicen "quiero participar", pregunta naturalmente: "¿En qué tipo de procesos? ¿Obras, servicios o bienes?"
+- Si mencionan una institución, confirma: "¿Trabajan principalmente con el MOPC?"
+- Si parece empresa nueva: "¿Ya están inscritos en el RPE?"
+- Si el CONTEXTO ya tiene su perfil, NO repitas preguntas ya respondidas
+- Usa la info del perfil para respuestas más personalizadas y relevantes
+
+TONO: Experto dominicano en contrataciones públicas, accesible, confiable, cercano. Como un colega que conoce el DGCP por dentro."""
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -161,10 +194,11 @@ async def enviar_whatsapp(phone: str, mensaje: str):
     phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "")
 
     url = f"https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}/send-text"
+    headers = {"Client-Token": ZAPI_CLIENT_TOKEN} if ZAPI_CLIENT_TOKEN else {}
 
     async with httpx.AsyncClient(timeout=15) as client:
         try:
-            resp = await client.post(url, json={
+            resp = await client.post(url, headers=headers, json={
                 "phone": phone_clean,
                 "message": mensaje
             })
@@ -336,6 +370,91 @@ def guardar_mensaje(conversacion_id: str, rol: str, contenido: str, generado_por
     except Exception as e:
         print(f"[Closer] Error guardando mensaje: {e}")
 
+def obtener_perfil_prospecto(phone: str) -> Optional[dict]:
+    """Obtiene el perfil del prospecto si existe"""
+    try:
+        result = supabase_admin.table("perfiles_prospectos") \
+            .select("*").eq("contact_phone", phone).limit(1).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"[Closer] Error obteniendo perfil: {e}")
+    return None
+
+
+def actualizar_perfil_prospecto(phone: str, conv_id: str, nombre: str, datos: dict):
+    """Crea o actualiza el perfil del prospecto"""
+    try:
+        existente = obtener_perfil_prospecto(phone)
+        datos["actualizado_en"] = datetime.utcnow().isoformat()
+        if existente:
+            update = {k: v for k, v in datos.items() if v is not None}
+            for campo in ["tipos_proceso", "instituciones_interes", "instituciones_previas"]:
+                if campo in update and existente.get(campo):
+                    update[campo] = list(set(existente[campo] + update[campo]))
+            supabase_admin.table("perfiles_prospectos").update(update).eq("contact_phone", phone).execute()
+        else:
+            datos.update({"contact_phone": phone, "contact_name": nombre, "conversation_id": conv_id})
+            supabase_admin.table("perfiles_prospectos").insert(datos).execute()
+        print(f"[Closer] Perfil actualizado para {phone}")
+    except Exception as e:
+        print(f"[Closer] Error actualizando perfil: {e}")
+
+
+async def extraer_y_actualizar_perfil(mensaje: str, historial: list, phone: str, conv_id: str, nombre: str, perfil_actual: Optional[dict]):
+    """Extrae datos del perfil con Gemini y actualiza Supabase"""
+    if not gemini_client:
+        return
+    perfil_json = json.dumps(perfil_actual or {}, ensure_ascii=False, default=str)
+    historial_texto = "\n".join([f"{'Cliente' if m['rol']=='cliente' else 'Lab'}: {m['contenido']}" for m in historial[-6:]])
+    prompt = f"""Analiza esta conversación y extrae datos del perfil del prospecto dominicano.
+
+HISTORIAL:
+{historial_texto}
+MENSAJE ACTUAL: {mensaje}
+PERFIL YA CONOCIDO: {perfil_json}
+
+Extrae SOLO lo que puedas inferir con certeza. NO inventes nada. Devuelve SOLO JSON válido sin markdown:
+{{"nombre_empresa":null,"tipo_empresa":null,"sector":null,"provincia":null,"anos_experiencia":null,"tiene_estados_financieros":null,"anos_estados_financieros":null,"tiene_rnce":null,"tiene_rpe":null,"tipos_proceso":[],"instituciones_interes":[],"ha_participado_antes":null,"procesos_ganados":null,"notas_agente":null}}"""
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash", contents=prompt,
+            config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.1)
+        )
+        texto = response.text.strip().replace("```json","").replace("```","")
+        datos = {k: v for k, v in json.loads(texto).items() if v is not None and v != []}
+        if datos:
+            actualizar_perfil_prospecto(phone, conv_id, nombre, datos)
+            if datos.get("tipos_proceso") or datos.get("instituciones_interes"):
+                registrar_alerta_cliente(conv_id, phone, nombre, datos.get("tipos_proceso",[]), datos.get("instituciones_interes",[]))
+    except Exception as e:
+        print(f"[Closer] Error extrayendo perfil: {e}")
+
+
+def construir_contexto_perfil(perfil: Optional[dict]) -> str:
+    """Convierte el perfil en texto de contexto para Gemini"""
+    if not perfil:
+        return ""
+    campos = [
+        ("nombre_empresa", "Empresa"), ("tipo_empresa", "Tipo"), ("sector", "Sector"),
+        ("provincia", "Provincia"), ("anos_experiencia", "Experiencia (años)"),
+        ("notas_agente", "Notas"),
+    ]
+    bool_campos = [
+        ("tiene_estados_financieros", "Estados financieros"),
+        ("tiene_rnce", "RNCE"), ("tiene_rpe", "RPE"), ("ha_participado_antes", "Ha participado antes"),
+    ]
+    partes = []
+    for k, label in campos:
+        if perfil.get(k):
+            partes.append(f"{label}: {perfil[k]}")
+    for k, label in bool_campos:
+        if perfil.get(k) is not None:
+            partes.append(f"{label}: {'sí' if perfil[k] else 'no'}")
+    if perfil.get("tipos_proceso"):
+        partes.append(f"Tipos de proceso: {', '.join(perfil['tipos_proceso'])}")
+    if perfil.get("instituciones_interes"):
+        partes.append(f"Instituciones interés: {', '.join(perfil['instituciones_interes'])}")
+    return ("PERFIL DEL CLIENTE:\n" + "\n".join(partes)) if partes else ""
 
 def registrar_alerta_cliente(conv_id: str, phone: str, nombre: str, keywords: list, instituciones: list = None):
     """Registra o actualiza la alerta de procesos para un cliente"""
@@ -687,13 +806,23 @@ Menciona que pueden ver el análisis completo del pliego en LicitacionLab."""
             kw_texto = ", ".join(keywords + instituciones)
             contexto_adicional += f"\nEl cliente acaba de pedir alertas sobre: {kw_texto}. Confírmale que lo tienes anotado y que le avisarás cuando aparezcan procesos de ese tipo."
 
-    # 5. Obtener historial
+    # 5. Obtener perfil del prospecto y agregarlo al contexto
+    perfil = obtener_perfil_prospecto(phone)
+    contexto_perfil = construir_contexto_perfil(perfil)
+    if contexto_perfil:
+        contexto_adicional = contexto_perfil + chr(10) + chr(10) + contexto_adicional
+
+    # 6. Obtener historial
     historial = obtener_historial(conv_id)
 
-    # 6. Generar respuesta con Gemini
+    # 7. Generar respuesta con Gemini
     respuesta = await generar_respuesta_gemini(mensaje, historial, contexto_adicional)
 
-    # 7. Guardar respuesta del agente
+    # 7b. Extraer perfil en background (no bloquea la respuesta)
+    import asyncio
+    asyncio.create_task(extraer_y_actualizar_perfil(mensaje, historial, phone, conv_id, nombre, perfil))
+
+    # 8. Guardar respuesta del agente
     guardar_mensaje(conv_id, "agente", respuesta, generado_por_ia=True)
 
     # 8. Enviar respuesta al cliente vía Evolution API
@@ -990,7 +1119,48 @@ async def marcar_conversacion(
     return {"success": True, "conversacion_id": conversacion_id, "etapa": payload.etapa}
 
 
-@closer_router.post("/alerta/test")
+class RegistrarInteresPayload(BaseModel):
+    keywords: List[str] = []
+    instituciones: List[str] = []
+    notas: Optional[str] = None
+
+
+@closer_router.post("/cliente/{phone}/interes")
+async def registrar_interes_manual(
+    phone: str,
+    payload: RegistrarInteresPayload,
+    x_agent_secret: Optional[str] = Header(None)
+):
+    """
+    Lonny registra manualmente el interés de un cliente desde Telegram o panel.
+    Ejemplo: POST /closer/cliente/18091234567/interes
+    Body: {"keywords": ["alcantarillado", "drenaje"], "instituciones": ["CAASD"]}
+    """
+    if x_agent_secret != AGENT_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Buscar conversación activa del cliente
+    conv = obtener_o_crear_conversacion(phone)
+    conv_id = conv.get("id")
+    nombre = conv.get("nombre_contacto", "Cliente")
+
+    # Registrar alerta
+    registrar_alerta_cliente(conv_id, phone, nombre, payload.keywords, payload.instituciones)
+
+    # Notificar al cliente por WhatsApp que estará pendiente
+    if payload.keywords or payload.instituciones:
+        kw_texto = ", ".join(payload.keywords + payload.instituciones)
+        mensaje = f"Hola, el Ing. Luis Antigua me indicó que te interesa estar al tanto de procesos de {kw_texto}. Te avisaré cuando aparezca algo que aplique para ti 👍"
+        await enviar_whatsapp(phone, mensaje)
+
+    return {
+        "success": True,
+        "phone": phone,
+        "conv_id": conv_id,
+        "keywords": payload.keywords,
+        "instituciones": payload.instituciones,
+        "mensaje": f"Interés registrado para {nombre}"
+    }
 async def test_alerta(x_agent_secret: Optional[str] = Header(None)):
     """Prueba que el módulo de alertas funciona correctamente"""
     if x_agent_secret != AGENT_SECRET:
