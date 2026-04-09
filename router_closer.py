@@ -46,10 +46,9 @@ AGENT_SECRET        = os.environ.get("AGENT_SECRET", "licitacionlab-growth-2026"
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID    = os.environ.get("TELEGRAM_CHAT_ID", "817596333")
 
-# Evolution API — WhatsApp
-EVOLUTION_API_URL   = os.environ.get("EVOLUTION_API_URL", "")       # ej: https://evo.tudominio.com
-EVOLUTION_API_KEY   = os.environ.get("EVOLUTION_API_KEY", "")
-EVOLUTION_INSTANCE  = os.environ.get("EVOLUTION_INSTANCE", "licitacionlab")  # nombre de instancia
+# Z-API — WhatsApp
+ZAPI_INSTANCE_ID    = os.environ.get("ZAPI_INSTANCE_ID", "")
+ZAPI_TOKEN          = os.environ.get("ZAPI_TOKEN", "")
 
 supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_KEY", SUPABASE_KEY))
@@ -151,36 +150,30 @@ async def enviar_telegram(mensaje: str):
 
 async def enviar_whatsapp(phone: str, mensaje: str):
     """
-    Envía mensaje de WhatsApp vía Evolution API.
+    Envía mensaje de WhatsApp vía Z-API.
     phone: número con código de país sin + (ej: 18091234567)
     """
-    if not EVOLUTION_API_URL or not EVOLUTION_API_KEY:
-        print(f"[Evolution] Sin config — mensaje que se enviaría a {phone}: {mensaje[:80]}")
+    if not ZAPI_INSTANCE_ID or not ZAPI_TOKEN:
+        print(f"[Z-API] Sin config — mensaje que se enviaría a {phone}: {mensaje[:80]}")
         return
 
     # Asegurar formato correcto del número
     phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "")
 
-    url = f"{EVOLUTION_API_URL}/message/sendText/{EVOLUTION_INSTANCE}"
-    headers = {
-        "apikey": EVOLUTION_API_KEY,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "number": f"{phone_clean}@s.whatsapp.net",
-        "text": mensaje,
-        "delay": 1500  # simula tiempo de escritura (ms)
-    }
+    url = f"https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}/send-text"
 
     async with httpx.AsyncClient(timeout=15) as client:
         try:
-            resp = await client.post(url, headers=headers, json=payload)
+            resp = await client.post(url, json={
+                "phone": phone_clean,
+                "message": mensaje
+            })
             if resp.status_code not in (200, 201):
-                print(f"[Evolution] Error {resp.status_code}: {resp.text[:200]}")
+                print(f"[Z-API] Error {resp.status_code}: {resp.text[:200]}")
             else:
-                print(f"[Evolution] Mensaje enviado a {phone_clean}")
+                print(f"[Z-API] Mensaje enviado a {phone_clean}")
         except Exception as e:
-            print(f"[Evolution] Error enviando: {e}")
+            print(f"[Z-API] Error enviando: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -598,12 +591,12 @@ Instrucciones:
 # ═══════════════════════════════════════════════════════════════════════
 
 @closer_router.post("/webhook")
-async def recibir_mensaje_evolution(
+async def recibir_mensaje_zapi(
     request: Request,
     background_tasks: BackgroundTasks,
 ):
     """
-    Webhook principal — Evolution API llama este endpoint cuando llega un mensaje de WhatsApp.
+    Webhook principal — Z-API llama este endpoint cuando llega un mensaje de WhatsApp.
     Responde rápido (< 1s) y procesa en background.
     """
     try:
@@ -611,39 +604,34 @@ async def recibir_mensaje_evolution(
     except Exception:
         return {"status": "ok"}
 
-    # Evolution API envía eventos — solo procesar mensajes entrantes
-    event = body.get("event", "")
-    if event not in ("messages.upsert", "message"):
-        return {"status": "ok", "event": event, "skipped": True}
-
-    data = body.get("data", {})
-    key = data.get("key", {})
-    message = data.get("message", {})
-
-    # Solo mensajes que llegan (no los que enviamos nosotros)
-    if key.get("fromMe", False):
+    # Z-API payload structure
+    # Solo procesar mensajes entrantes (fromMe=false)
+    if body.get("fromMe", True):
         return {"status": "ok", "skipped": "outbound"}
 
-    # Extraer datos del mensaje
-    phone = key.get("remoteJid", "").replace("@s.whatsapp.net", "").replace("@g.us", "")
-    if not phone or "@g.us" in key.get("remoteJid", ""):
+    # Ignorar mensajes de grupos
+    phone = body.get("phone", "") or body.get("from", "")
+    if not phone or "-" in phone:  # grupos tienen formato número-timestamp
         return {"status": "ok", "skipped": "group_or_no_phone"}
 
-    # Obtener texto del mensaje (puede ser texto, extended, etc.)
+    # Limpiar número
+    phone = phone.replace("+", "").replace("@s.whatsapp.net", "").replace("@c.us", "")
+
+    # Extraer texto del mensaje
     texto = (
-        message.get("conversation") or
-        message.get("extendedTextMessage", {}).get("text") or
-        message.get("imageMessage", {}).get("caption") or
+        body.get("text", {}).get("message", "") or
+        body.get("message", "") or
+        body.get("body", "") or
         ""
     )
 
     if not texto:
         return {"status": "ok", "skipped": "no_text"}
 
-    # Nombre del contacto (si lo tiene)
-    push_name = data.get("pushName", "") or data.get("notifyName", "")
+    # Nombre del contacto
+    nombre = body.get("senderName", "") or body.get("pushName", "") or ""
 
-    background_tasks.add_task(procesar_mensaje_bg, phone, texto, push_name)
+    background_tasks.add_task(procesar_mensaje_bg, phone, texto, nombre)
     return {"status": "recibido", "processing": True}
 
 
