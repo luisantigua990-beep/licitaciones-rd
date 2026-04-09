@@ -1,122 +1,128 @@
 """
 router_closer.py
 Agente Closer — Vendedor IA para LicitacionLab
-Canales: WhatsApp + Instagram DM vía ManyChat
+Canal principal: WhatsApp vía Evolution API
 
 Endpoints:
-  POST /closer/webhook          — recibe mensajes desde ManyChat (WS + IG)
-  POST /closer/followup/run     — cron diario que dispara followups pendientes
-  GET  /closer/conversaciones   — lista conversaciones activas (panel Telegram)
-  POST /closer/marcar/{id}      — marca conversación como etapa específica
+  POST /closer/webhook              — recibe mensajes desde Evolution API (WhatsApp)
+  POST /closer/followup/run         — cron diario 9am: dispara followups pendientes
+  POST /closer/alertas/run          — cron diario 8am: revisa procesos nuevos por cliente
+  GET  /closer/conversaciones       — lista conversaciones activas (panel Telegram)
+  POST /closer/marcar/{id}          — Lonny marca etapa manualmente
+  POST /closer/alerta/test          — prueba que el módulo de alertas funciona
 
-Flujo:
-  ManyChat recibe msg → webhook → Claude busca en Supabase → responde → guarda historial
-  Si detecta señal de cierre → alerta Telegram a Lonny
+Flujo principal:
+  Cliente escribe WA → Evolution API webhook → Gemini busca contexto →
+  responde → guarda historial → detecta señal cierre → alerta Telegram
+
+Flujo followup:
+  n8n cron 9am → /closer/followup/run → Gemini genera mensaje contextual →
+  Evolution API envía → actualiza estado en Supabase
+
+Flujo alertas:
+  n8n cron 8am → /closer/alertas/run → busca procesos nuevos por keywords →
+  Gemini genera mensaje personalizado → Evolution API envía al cliente
 """
 
 import os
+import re
 import json
 import asyncio
 import httpx
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List
 
-from fastapi import APIRouter, Header, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Header, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel, Field
-import anthropic
 from supabase import create_client
+from google import genai
+from google.genai import types
 
 # ── Config ─────────────────────────────────────────────────────────────
 SUPABASE_URL        = os.environ["SUPABASE_URL"]
 SUPABASE_KEY        = os.environ["SUPABASE_KEY"]
-CLAUDE_KEY          = os.environ["ANTHROPIC_API_KEY"]
+GEMINI_API_KEY      = os.environ.get("GEMINI_API_KEY", "")
 AGENT_SECRET        = os.environ.get("AGENT_SECRET", "licitacionlab-growth-2026")
 TELEGRAM_BOT_TOKEN  = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID    = os.environ.get("TELEGRAM_CHAT_ID", "817596333")
-MANYCHAT_API_KEY    = os.environ.get("MANYCHAT_API_KEY", "")  # se agrega después
 
-supabase     = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Evolution API — WhatsApp
+EVOLUTION_API_URL   = os.environ.get("EVOLUTION_API_URL", "")       # ej: https://evo.tudominio.com
+EVOLUTION_API_KEY   = os.environ.get("EVOLUTION_API_KEY", "")
+EVOLUTION_INSTANCE  = os.environ.get("EVOLUTION_INSTANCE", "licitacionlab")  # nombre de instancia
+
+supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_KEY", SUPABASE_KEY))
-claude       = anthropic.Anthropic(api_key=CLAUDE_KEY)
+
+# Cliente Gemini
+gemini_client = None
+if GEMINI_API_KEY:
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+else:
+    print("⚠️ GEMINI_API_KEY no configurada — el agente no puede generar respuestas")
 
 closer_router = APIRouter(prefix="/closer", tags=["Agente Closer"])
 
 # ── Señales de cierre que disparan alerta a Lonny ──────────────────────
 SENALES_CIERRE = [
-    "cuánto cuesta", "cuanto cuesta", "precio", "plan", "suscripción",
-    "cómo me registro", "como me registro", "quiero registrarme",
-    "cómo funciona", "como funciona", "quiero probarlo",
-    "tienen demo", "puedo ver", "me interesa", "cuándo empiezo",
+    "cuánto cuesta", "cuanto cuesta", "precio", "plan", "suscripción", "subscripcion",
+    "cómo me registro", "como me registro", "quiero registrarme", "quiero contratar",
+    "cómo funciona", "como funciona", "quiero probarlo", "quiero el servicio",
+    "tienen demo", "puedo ver", "me interesa contratar", "cuándo empiezo",
     "cuando empiezo", "cómo pago", "como pago", "tiene versión gratis",
-    "tiene version gratis", "qué incluye", "que incluye",
+    "tiene version gratis", "qué incluye", "que incluye", "quiero una cotización",
+    "quiero una cotizacion", "mándame propuesta", "mandame propuesta",
+    "cuánto cobran", "cuanto cobran", "necesito el servicio",
 ]
 
-# ── Contexto del sistema para Claude ───────────────────────────────────
-SYSTEM_PROMPT = """Eres el asistente de ventas de LicitacionLab, una plataforma SaaS dominicana que monitorea licitaciones del DGCP (Dirección General de Contrataciones Públicas) y analiza pliegos con inteligencia artificial.
+# ── Keywords que indican interés en tipo de proceso ────────────────────
+KEYWORDS_ALERTA = [
+    "avísame", "avisame", "notifícame", "notificame", "me interesa saber",
+    "cuando haya", "cuando salga", "si aparece", "si sale algo de",
+    "estoy buscando procesos", "quiero saber de licitaciones de",
+    "me interesa participar en", "busco licitaciones de",
+]
 
-Tu nombre es "Lab" y representas a Lonny Antigua, fundador de LicitacionLab.
+# ── System prompt para Gemini ──────────────────────────────────────────
+SYSTEM_PROMPT = """Eres "Lab", el asistente de ventas de LicitacionLab — plataforma SaaS dominicana que monitorea licitaciones del DGCP y analiza pliegos con IA.
 
-TU OBJETIVO: Ayudar a empresas constructoras y de ingeniería de República Dominicana a ganar más licitaciones públicas. Responder sus preguntas, generar confianza, y guiarlos a registrarse en https://app.licitacionlab.com/
+Representas a Lonny Antigua, fundador de LicitacionLab.
+
+OBJETIVO: Ayudar a empresas constructoras y de ingeniería de RD a ganar más licitaciones. Generar confianza y guiarlos a registrarse en https://app.licitacionlab.com/
 
 PLANES Y PRECIOS:
-- Explorador: RD$1,490/mes — monitoreo básico, alertas por email
+- Explorador: RD$1,490/mes — monitoreo básico, alertas email
 - Competidor: RD$3,990/mes — análisis de pliego con IA, alertas Telegram
 - Ganador: RD$8,500/mes — todo incluido + soporte prioritario
 
 CAPACIDADES DE LA PLATAFORMA:
-- Monitoreo automático de todas las licitaciones del DGCP en tiempo real
-- Análisis de pliegos de condiciones con IA (detecta requisitos, alertas de fraude, checklist)
-- Alertas instantáneas por email y Telegram cuando aparece una licitación de tu sector
+- Monitoreo automático de todas las licitaciones DGCP en tiempo real
+- Análisis de pliegos con IA (requisitos, alertas de fraude, checklist)
+- Alertas instantáneas por email y Telegram por sector
 - Panel de seguimiento de procesos
-- Análisis "¿Vale la pena?" con score de oportunidad
+- Score "¿Vale la pena?" por proceso
 
 REGLAS DE COMUNICACIÓN:
-1. Responde en español dominicano, natural y cercano — NO robótico ni corporativo
-2. Mensajes cortos: máximo 3-4 oraciones por respuesta
-3. Si alguien pregunta por un proceso específico (ej: MOPC-LPN-2026-0010), di que vas a buscar la información y en tu respuesta incluye los datos clave
-4. Nunca inventes información sobre procesos — solo usa lo que tienes en el contexto
-5. Si no tienes información de un proceso, ofrece analizarlo en la plataforma
-6. Cierra siempre con una pregunta o CTA suave — no presiones
-7. Cuando alguien muestre interés real, invítalos a registrarse gratis: https://app.licitacionlab.com/
+1. Responde en español dominicano, natural y cercano — NUNCA robótico
+2. Mensajes cortos: máximo 3-4 oraciones. WhatsApp no es email.
+3. Si preguntan por un proceso específico, usa el CONTEXTO provisto — nunca inventes datos
+4. Si no tienes info de un proceso, ofrece analizarlo en la plataforma
+5. Cierra siempre con una pregunta o CTA suave — no presiones
+6. Cuando muestren interés real, invita a registrarse: https://app.licitacionlab.com/
+7. Usa emojis con moderación — uno o dos por mensaje máximo
 
 TONO: Experto en licitaciones dominicanas, accesible, confiable. Como un asesor que conoce el DGCP por dentro."""
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# MODELOS
+# MODELOS PYDANTIC
 # ═══════════════════════════════════════════════════════════════════════
 
-class ManyCharWebhookPayload(BaseModel):
-    """
-    Payload que llega desde ManyChat vía webhook.
-    Acepta tanto nombres personalizados como los nativos de ManyChat.
-    """
-    # Nombres personalizados (si se renombran en ManyChat)
-    contact_id: Optional[str] = None
-    message: Optional[str] = None
-    name: Optional[str] = None
-
-    # Nombres nativos de ManyChat
-    id_de_contacto: Optional[str] = Field(None, alias="Id de contacto")
-    nombre_completo: Optional[str] = Field(None, alias="Nombre completo")
-    ultima_entrada: Optional[str] = Field(None, alias="Última entrada de texto")
-
-    # Canal y otros
-    channel: str = "instagram"
-    phone: Optional[str] = None
-    timestamp: Optional[str] = None
-
-    class Config:
-        populate_by_name = True
-
-    def get_contact_id(self) -> str:
-        return self.contact_id or self.id_de_contacto or "unknown"
-
-    def get_message(self) -> str:
-        return self.message or self.ultima_entrada or ""
-
-    def get_name(self) -> str:
-        return self.name or self.nombre_completo or "Desconocido"
+class EvolutionWebhookPayload(BaseModel):
+    """Payload que llega desde Evolution API cuando un cliente escribe"""
+    event: Optional[str] = None
+    instance: Optional[str] = None
+    data: Optional[dict] = None
 
 class MarcarEtapaPayload(BaseModel):
     etapa: str
@@ -124,7 +130,7 @@ class MarcarEtapaPayload(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# HELPERS
+# HELPERS — ENVÍO DE MENSAJES
 # ═══════════════════════════════════════════════════════════════════════
 
 async def enviar_telegram(mensaje: str):
@@ -143,61 +149,73 @@ async def enviar_telegram(mensaje: str):
             print(f"[Telegram] Error: {e}")
 
 
-async def responder_manychat(contact_id: str, canal: str, mensaje: str):
+async def enviar_whatsapp(phone: str, mensaje: str):
     """
-    Envía respuesta al contacto vía ManyChat API.
-    Canal: whatsapp | instagram
+    Envía mensaje de WhatsApp vía Evolution API.
+    phone: número con código de país sin + (ej: 18091234567)
     """
-    if not MANYCHAT_API_KEY:
-        print(f"[ManyChat] Sin API key — mensaje que se enviaría: {mensaje[:80]}")
+    if not EVOLUTION_API_URL or not EVOLUTION_API_KEY:
+        print(f"[Evolution] Sin config — mensaje que se enviaría a {phone}: {mensaje[:80]}")
         return
 
-    # ManyChat usa el mismo endpoint para WS e IG — diferencia por subscriber_id
-    url = "https://api.manychat.com/fb/sending/sendContent"
+    # Asegurar formato correcto del número
+    phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "")
+
+    url = f"{EVOLUTION_API_URL}/message/sendText/{EVOLUTION_INSTANCE}"
     headers = {
-        "Authorization": f"Bearer {MANYCHAT_API_KEY}",
+        "apikey": EVOLUTION_API_KEY,
         "Content-Type": "application/json"
     }
     payload = {
-        "subscriber_id": contact_id,
-        "data": {
-            "version": "v2",
-            "content": {
-                "messages": [{"type": "text", "text": mensaje}]
-            }
-        },
-        "message_tag": "ACCOUNT_UPDATE"
+        "number": f"{phone_clean}@s.whatsapp.net",
+        "text": mensaje,
+        "delay": 1500  # simula tiempo de escritura (ms)
     }
 
     async with httpx.AsyncClient(timeout=15) as client:
         try:
             resp = await client.post(url, headers=headers, json=payload)
-            if resp.status_code != 200:
-                print(f"[ManyChat] Error {resp.status_code}: {resp.text[:200]}")
+            if resp.status_code not in (200, 201):
+                print(f"[Evolution] Error {resp.status_code}: {resp.text[:200]}")
+            else:
+                print(f"[Evolution] Mensaje enviado a {phone_clean}")
         except Exception as e:
-            print(f"[ManyChat] Error enviando: {e}")
+            print(f"[Evolution] Error enviando: {e}")
 
 
-def buscar_analisis_pliego(proceso_codigo: str) -> Optional[dict]:
-    """Busca análisis de pliego en Supabase si existe"""
+# ═══════════════════════════════════════════════════════════════════════
+# HELPERS — SUPABASE
+# ═══════════════════════════════════════════════════════════════════════
+
+def buscar_analisis_pliego(codigo_o_texto: str) -> Optional[dict]:
+    """Busca análisis de pliego en Supabase por código o texto"""
     try:
-        result = supabase.table("analisis_pliego") \
-            .select("resumen_ejecutivo, alertas_fraude, checklist_categorizado, plazos_clave") \
-            .eq("proceso_id", proceso_codigo) \
+        # Buscar por código exacto
+        result = supabase_admin.table("analisis_pliego") \
+            .select("resumen_ejecutivo, alertas_fraude, checklist_categorizado, plazos_clave, proceso_id") \
+            .eq("proceso_id", codigo_o_texto) \
             .limit(1) \
             .execute()
         if result.data:
             return result.data[0]
+
+        # Buscar por texto parcial en proceso_id
+        result2 = supabase_admin.table("analisis_pliego") \
+            .select("resumen_ejecutivo, alertas_fraude, checklist_categorizado, plazos_clave, proceso_id") \
+            .ilike("proceso_id", f"%{codigo_o_texto}%") \
+            .limit(1) \
+            .execute()
+        if result2.data:
+            return result2.data[0]
     except Exception as e:
-        print(f"[Closer] Error buscando pliego {proceso_codigo}: {e}")
+        print(f"[Closer] Error buscando analisis_pliego: {e}")
     return None
 
 
 def buscar_proceso_dgcp(codigo_o_texto: str) -> Optional[dict]:
-    """Busca un proceso en la tabla procesos por código o título"""
+    """Busca proceso en la tabla procesos por código o título"""
     try:
-        # Primero buscar por código exacto
-        result = supabase.table("procesos") \
+        result = supabase_admin.table("procesos") \
             .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso") \
             .ilike("codigo_proceso", f"%{codigo_o_texto}%") \
             .limit(1) \
@@ -205,8 +223,7 @@ def buscar_proceso_dgcp(codigo_o_texto: str) -> Optional[dict]:
         if result.data:
             return result.data[0]
 
-        # Si no, buscar por título
-        result2 = supabase.table("procesos") \
+        result2 = supabase_admin.table("procesos") \
             .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso") \
             .ilike("titulo", f"%{codigo_o_texto}%") \
             .limit(1) \
@@ -218,37 +235,71 @@ def buscar_proceso_dgcp(codigo_o_texto: str) -> Optional[dict]:
     return None
 
 
-def obtener_o_crear_conversacion(contact_id: str, canal: str, nombre: str = None, telefono: str = None) -> dict:
-    """Obtiene conversación existente o crea una nueva"""
+def buscar_procesos_por_keywords(keywords: list, instituciones: list = None, monto_min: float = None) -> list:
+    """Busca procesos activos que coincidan con los intereses del cliente"""
+    try:
+        query = supabase_admin.table("procesos") \
+            .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas") \
+            .eq("estado_proceso", "Proceso publicado")
+
+        if monto_min:
+            query = query.gte("monto_estimado", monto_min)
+
+        # Filtro por institución si aplica
+        if instituciones:
+            for inst in instituciones[:2]:  # máximo 2 filtros
+                query = query.ilike("unidad_compra", f"%{inst}%")
+
+        result = query.order("fecha_fin_recepcion_ofertas", desc=False).limit(5).execute()
+        procesos = result.data or []
+
+        # Filtrar por keywords en Python (más flexible)
+        if keywords and procesos:
+            filtrados = []
+            for p in procesos:
+                titulo = (p.get("titulo") or "").lower()
+                for kw in keywords:
+                    if kw.lower() in titulo:
+                        filtrados.append(p)
+                        break
+            return filtrados if filtrados else procesos[:3]
+
+        return procesos[:3]
+    except Exception as e:
+        print(f"[Closer] Error buscando procesos por keywords: {e}")
+    return []
+
+
+def obtener_o_crear_conversacion(phone: str, nombre: str = None) -> dict:
+    """Obtiene conversación activa o crea una nueva"""
     try:
         result = supabase_admin.table("conversaciones_closer") \
             .select("*") \
-            .eq("canal", canal) \
-            .eq("contacto_id", contact_id) \
-            .neq("etapa", "cerrado_ganado") \
-            .neq("etapa", "cerrado_perdido") \
+            .eq("canal", "whatsapp") \
+            .eq("telefono", phone) \
+            .not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido"]) \
             .order("creado_en", desc=True) \
             .limit(1) \
             .execute()
 
         if result.data:
             conv = result.data[0]
-            # Actualizar último mensaje
             supabase_admin.table("conversaciones_closer") \
                 .update({"ultimo_mensaje_en": datetime.utcnow().isoformat()}) \
                 .eq("id", conv["id"]) \
                 .execute()
             return conv
 
-        # Crear nueva conversación
+        # Nueva conversación
         nueva = {
-            "canal": canal,
-            "contacto_id": contact_id,
+            "canal": "whatsapp",
+            "contacto_id": phone,
+            "telefono": phone,
             "nombre_contacto": nombre or "Desconocido",
-            "telefono": telefono,
             "etapa": "nuevo",
+            "estado": "engaged",
             "ultimo_mensaje_en": datetime.utcnow().isoformat(),
-            "proximo_followup_en": (datetime.utcnow() + timedelta(days=1)).isoformat(),
+            "proximo_followup_en": (datetime.utcnow() + timedelta(days=2)).isoformat(),
             "followups_enviados": 0,
         }
         res = supabase_admin.table("conversaciones_closer").insert(nueva).execute()
@@ -256,11 +307,11 @@ def obtener_o_crear_conversacion(contact_id: str, canal: str, nombre: str = None
 
     except Exception as e:
         print(f"[Closer] Error conversación: {e}")
-        return {"id": None, "etapa": "nuevo", "followups_enviados": 0}
+        return {"id": None, "etapa": "nuevo", "estado": "engaged", "followups_enviados": 0}
 
 
 def obtener_historial(conversacion_id: str, limite: int = 10) -> list:
-    """Obtiene últimos N mensajes de la conversación"""
+    """Obtiene últimos N mensajes de la conversación en orden cronológico"""
     if not conversacion_id:
         return []
     try:
@@ -270,14 +321,13 @@ def obtener_historial(conversacion_id: str, limite: int = 10) -> list:
             .order("enviado_en", desc=True) \
             .limit(limite) \
             .execute()
-        # Invertir para orden cronológico
         return list(reversed(result.data or []))
     except Exception as e:
         print(f"[Closer] Error historial: {e}")
         return []
 
 
-def guardar_mensaje(conversacion_id: str, rol: str, contenido: str, canal: str, generado_por_ia: bool = False):
+def guardar_mensaje(conversacion_id: str, rol: str, contenido: str, generado_por_ia: bool = False):
     """Guarda mensaje en el historial"""
     if not conversacion_id:
         return
@@ -286,7 +336,7 @@ def guardar_mensaje(conversacion_id: str, rol: str, contenido: str, canal: str, 
             "conversacion_id": conversacion_id,
             "rol": rol,
             "contenido": contenido,
-            "canal": canal,
+            "canal": "whatsapp",
             "generado_por_ia": generado_por_ia,
             "enviado_en": datetime.utcnow().isoformat()
         }).execute()
@@ -294,181 +344,410 @@ def guardar_mensaje(conversacion_id: str, rol: str, contenido: str, canal: str, 
         print(f"[Closer] Error guardando mensaje: {e}")
 
 
+def registrar_alerta_cliente(conv_id: str, phone: str, nombre: str, keywords: list, instituciones: list = None):
+    """Registra o actualiza la alerta de procesos para un cliente"""
+    try:
+        # Verificar si ya existe una alerta para este número
+        existing = supabase_admin.table("alertas_cliente") \
+            .select("id, keywords, instituciones") \
+            .eq("contact_phone", phone) \
+            .eq("activa", True) \
+            .limit(1) \
+            .execute()
+
+        if existing.data:
+            # Actualizar keywords existentes (merge)
+            alerta = existing.data[0]
+            kws_actuales = alerta.get("keywords") or []
+            kws_nuevos = list(set(kws_actuales + keywords))
+            insts_actuales = alerta.get("instituciones") or []
+            insts_nuevas = list(set(insts_actuales + (instituciones or [])))
+
+            supabase_admin.table("alertas_cliente") \
+                .update({"keywords": kws_nuevos, "instituciones": insts_nuevas}) \
+                .eq("id", alerta["id"]) \
+                .execute()
+            print(f"[Closer] Alerta actualizada para {phone}: {kws_nuevos}")
+        else:
+            # Crear nueva alerta
+            supabase_admin.table("alertas_cliente").insert({
+                "conversation_id": conv_id,
+                "contact_phone": phone,
+                "contact_name": nombre,
+                "keywords": keywords,
+                "instituciones": instituciones or [],
+                "activa": True,
+                "canal": "whatsapp"
+            }).execute()
+            print(f"[Closer] Alerta creada para {phone}: {keywords}")
+    except Exception as e:
+        print(f"[Closer] Error registrando alerta: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# HELPERS — DETECCIÓN
+# ═══════════════════════════════════════════════════════════════════════
+
 def detectar_proceso_en_mensaje(mensaje: str) -> Optional[str]:
-    """Detecta si el mensaje menciona un código de proceso DGCP"""
-    import re
-    # Patrones: MOPC-LPN-2026-0001, CAASD-CCC-CP-2026-0010, etc.
+    """Detecta código de proceso DGCP en el mensaje"""
     patron = r'[A-Z]{2,10}-[A-Z]{2,5}-[A-Z]{2,5}-\d{4}-\d{4}'
     match = re.search(patron, mensaje.upper())
-    if match:
-        return match.group()
-    return None
+    return match.group() if match else None
 
 
 def detectar_senal_cierre(mensaje: str) -> bool:
-    """Detecta si el mensaje contiene señal de intención de compra"""
+    """Detecta señal de intención de compra"""
     msg_lower = mensaje.lower()
     return any(senal in msg_lower for senal in SENALES_CIERRE)
 
 
-async def generar_respuesta_claude(
+def detectar_interes_alerta(mensaje: str) -> bool:
+    """Detecta si el cliente quiere alertas de procesos"""
+    msg_lower = mensaje.lower()
+    return any(kw in msg_lower for kw in KEYWORDS_ALERTA)
+
+
+def extraer_keywords_interes(mensaje: str) -> list:
+    """
+    Extrae palabras clave de interés del mensaje.
+    Ej: "avísame de licitaciones de construcción del MOPC"
+    → ['construcción', 'MOPC']
+    """
+    # Instituciones conocidas
+    instituciones_conocidas = ["mopc", "caasd", "inapa", "miderec", "minerd",
+                                "salud", "obras", "ayuntamiento", "intrant"]
+    # Tipos de obra comunes
+    tipos_obra = ["construcción", "construccion", "infraestructura", "alcantarillado",
+                  "drenaje", "acueducto", "carretera", "puente", "edificio",
+                  "rehabilitación", "rehabilitacion", "mantenimiento", "saneamiento",
+                  "electricidad", "electricidad", "plomería", "plomeria",
+                  "consultoría", "consultoria", "supervisión", "supervision"]
+
+    msg_lower = mensaje.lower()
+    keywords = []
+
+    for tipo in tipos_obra:
+        if tipo in msg_lower:
+            keywords.append(tipo)
+
+    instituciones = []
+    for inst in instituciones_conocidas:
+        if inst in msg_lower:
+            instituciones.append(inst.upper())
+
+    return keywords, instituciones
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# HELPERS — GEMINI
+# ═══════════════════════════════════════════════════════════════════════
+
+async def generar_respuesta_gemini(
     mensaje_cliente: str,
     historial: list,
     contexto_adicional: str = ""
 ) -> str:
-    """Genera respuesta usando Claude con historial de conversación"""
+    """Genera respuesta conversacional usando Gemini 2.0 Flash"""
+    if not gemini_client:
+        return "Disculpa, tuve un problema técnico. Escríbeme en un momento. 🙏"
 
-    # Construir mensajes del historial
-    messages = []
-    for msg in historial[-8:]:  # Últimos 8 mensajes para contexto
-        rol_claude = "user" if msg["rol"] == "cliente" else "assistant"
-        messages.append({"role": rol_claude, "content": msg["contenido"]})
+    # Construir historial como texto para el prompt
+    historial_texto = ""
+    for msg in historial[-8:]:
+        rol = "Cliente" if msg["rol"] == "cliente" else "Lab (tú)"
+        historial_texto += f"{rol}: {msg['contenido']}\n"
 
-    # Añadir contexto adicional si existe (datos de proceso, etc.)
-    prompt_final = mensaje_cliente
-    if contexto_adicional:
-        prompt_final = f"{contexto_adicional}\n\nMensaje del cliente: {mensaje_cliente}"
+    prompt = f"""{SYSTEM_PROMPT}
 
-    messages.append({"role": "user", "content": prompt_final})
+--- HISTORIAL DE CONVERSACIÓN ---
+{historial_texto if historial_texto else "(conversación nueva)"}
+
+--- CONTEXTO ADICIONAL ---
+{contexto_adicional if contexto_adicional else "(ninguno)"}
+
+--- MENSAJE ACTUAL DEL CLIENTE ---
+{mensaje_cliente}
+
+--- TU RESPUESTA (solo el texto, sin comillas, sin explicaciones) ---"""
 
     try:
-        response = claude.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=300,
-            system=SYSTEM_PROMPT,
-            messages=messages
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                max_output_tokens=300,
+                temperature=0.75,
+            )
         )
-        return response.content[0].text.strip()
+        return response.text.strip()
     except Exception as e:
-        print(f"[Claude] Error generando respuesta: {e}")
-        return "Disculpa, tuve un problema técnico. Escríbeme en un momento y te ayudo. 🙏"
+        print(f"[Gemini] Error generando respuesta: {e}")
+        return "Disculpa, tuve un problema técnico. Escríbeme en un momento. 🙏"
+
+
+async def generar_followup_gemini(
+    historial: list,
+    nombre: str,
+    paso: int,
+    estado: str,
+    proceso_codigo: str = None
+) -> str:
+    """Genera mensaje de followup contextual con Gemini según el paso y estado"""
+    if not gemini_client:
+        return f"Hola {nombre}, ¿pudiste revisar la información que te compartí? 👋"
+
+    contextos_paso = {
+        0: "Es el primer followup (día 2). El cliente no ha respondido o respondió pero no avanzó. Muestra valor con información útil sobre procesos activos o el servicio.",
+        1: "Es el segundo followup (día 5). Crea urgencia suave mencionando fechas próximas de procesos o una ventaja competitiva de LicitacionLab.",
+        2: "Es el tercer followup (día 7). Usa prueba social o un caso de éxito genérico de empresas dominicanas que ganan licitaciones con apoyo.",
+        3: "Es el cuarto y último followup (día 14). Mensaje de despedida amigable, deja la puerta abierta, sin presión.",
+    }
+
+    historial_texto = ""
+    for msg in historial[-6:]:
+        rol = "Cliente" if msg["rol"] == "cliente" else "Lab"
+        historial_texto += f"{rol}: {msg['contenido']}\n"
+
+    proceso_info = ""
+    if proceso_codigo:
+        proceso = buscar_proceso_dgcp(proceso_codigo)
+        if proceso:
+            proceso_info = f"El cliente preguntó por el proceso {proceso_codigo} — {proceso.get('titulo', '')} de {proceso.get('unidad_compra', '')}."
+
+    prompt = f"""{SYSTEM_PROMPT}
+
+Estás enviando un mensaje de seguimiento a {nombre}.
+Contexto del paso: {contextos_paso.get(paso, contextos_paso[3])}
+Estado del cliente: {estado}
+{proceso_info}
+
+Historial reciente:
+{historial_texto if historial_texto else "(sin historial previo)"}
+
+Instrucciones:
+- Escribe UN solo mensaje de WhatsApp, natural, en español dominicano
+- Máximo 3 oraciones
+- No menciones que es un "seguimiento" o "followup"
+- Cierra con una pregunta abierta o CTA suave
+- Solo devuelve el texto del mensaje, sin comillas"""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                max_output_tokens=200,
+                temperature=0.8,
+            )
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"[Gemini] Error generando followup: {e}")
+        return f"Hola {nombre}, ¿cómo vas con los temas de licitaciones? 👋"
+
+
+async def generar_mensaje_alerta_proceso(
+    nombre: str,
+    procesos: list,
+    keywords: list
+) -> str:
+    """Genera mensaje personalizado cuando hay procesos nuevos para el cliente"""
+    if not gemini_client or not procesos:
+        return ""
+
+    procesos_texto = ""
+    for p in procesos[:3]:
+        monto = p.get("monto_estimado", 0)
+        monto_fmt = f"RD${float(monto):,.0f}" if monto else "monto no publicado"
+        fecha = p.get("fecha_fin_recepcion_ofertas", "fecha por confirmar")
+        if fecha and len(str(fecha)) > 10:
+            fecha = str(fecha)[:10]
+        procesos_texto += f"- {p.get('titulo', 'Sin título')} ({p.get('unidad_compra', '')}) — {monto_fmt} — cierra {fecha}\n"
+
+    prompt = f"""{SYSTEM_PROMPT}
+
+Tienes que notificar a {nombre} sobre procesos nuevos que coinciden con sus intereses: {', '.join(keywords)}.
+
+Procesos encontrados:
+{procesos_texto}
+
+Instrucciones:
+- Escribe un mensaje de WhatsApp emocionante pero no exagerado
+- Menciona los procesos de forma concisa (título + monto + fecha cierre)
+- Al final pregunta si quieres que analice alguno de los pliegos
+- Máximo 5 oraciones en total
+- Solo el texto del mensaje, sin comillas"""
+
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                max_output_tokens=300,
+                temperature=0.7,
+            )
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"[Gemini] Error generando alerta proceso: {e}")
+        return ""
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# ENDPOINTS
+# ENDPOINT PRINCIPAL — WEBHOOK EVOLUTION API
 # ═══════════════════════════════════════════════════════════════════════
 
 @closer_router.post("/webhook")
-async def recibir_mensaje_manychat(
-    payload: ManyCharWebhookPayload,
+async def recibir_mensaje_evolution(
+    request: Request,
     background_tasks: BackgroundTasks,
-    x_agent_secret: Optional[str] = Header(None)
 ):
     """
-    Webhook principal — ManyChat llama este endpoint cuando llega un mensaje.
-    Responde rápido (< 2s) y procesa en background.
+    Webhook principal — Evolution API llama este endpoint cuando llega un mensaje de WhatsApp.
+    Responde rápido (< 1s) y procesa en background.
     """
-    if x_agent_secret != AGENT_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "ok"}
 
-    background_tasks.add_task(
-        procesar_mensaje_bg,
-        payload.get_contact_id(),
-        payload.channel,
-        payload.get_message(),
-        payload.get_name(),
-        payload.phone
+    # Evolution API envía eventos — solo procesar mensajes entrantes
+    event = body.get("event", "")
+    if event not in ("messages.upsert", "message"):
+        return {"status": "ok", "event": event, "skipped": True}
+
+    data = body.get("data", {})
+    key = data.get("key", {})
+    message = data.get("message", {})
+
+    # Solo mensajes que llegan (no los que enviamos nosotros)
+    if key.get("fromMe", False):
+        return {"status": "ok", "skipped": "outbound"}
+
+    # Extraer datos del mensaje
+    phone = key.get("remoteJid", "").replace("@s.whatsapp.net", "").replace("@g.us", "")
+    if not phone or "@g.us" in key.get("remoteJid", ""):
+        return {"status": "ok", "skipped": "group_or_no_phone"}
+
+    # Obtener texto del mensaje (puede ser texto, extended, etc.)
+    texto = (
+        message.get("conversation") or
+        message.get("extendedTextMessage", {}).get("text") or
+        message.get("imageMessage", {}).get("caption") or
+        ""
     )
 
+    if not texto:
+        return {"status": "ok", "skipped": "no_text"}
+
+    # Nombre del contacto (si lo tiene)
+    push_name = data.get("pushName", "") or data.get("notifyName", "")
+
+    background_tasks.add_task(procesar_mensaje_bg, phone, texto, push_name)
     return {"status": "recibido", "processing": True}
 
 
-async def procesar_mensaje_bg(
-    contact_id: str,
-    canal: str,
-    mensaje: str,
-    nombre: str = None,
-    telefono: str = None
-):
-    """Procesa el mensaje en background: busca contexto, genera respuesta, responde"""
-    print(f"[Closer] Procesando — canal={canal}, contacto={contact_id}, msg={mensaje[:50]}")
+async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
+    """Procesa el mensaje en background"""
+    print(f"[Closer] Procesando — phone={phone}, msg={mensaje[:60]}")
 
     # 1. Obtener/crear conversación
-    conv = obtener_o_crear_conversacion(contact_id, canal, nombre, telefono)
+    conv = obtener_o_crear_conversacion(phone, nombre)
     conv_id = conv.get("id")
 
     # 2. Guardar mensaje del cliente
-    guardar_mensaje(conv_id, "cliente", mensaje, canal)
+    guardar_mensaje(conv_id, "cliente", mensaje)
 
-    # 3. Detectar si menciona un proceso DGCP
+    # 3. Detectar si menciona código de proceso DGCP
     contexto_adicional = ""
     codigo_proceso = detectar_proceso_en_mensaje(mensaje)
+
     if codigo_proceso:
-        # Primero buscar si ya está analizado
         analisis = buscar_analisis_pliego(codigo_proceso)
         if analisis:
-            resumen = analisis.get("resumen_ejecutivo", "")[:500]
-            contexto_adicional = f"""
-CONTEXTO — El cliente pregunta por el proceso {codigo_proceso}.
-Tenemos este análisis en la plataforma:
+            resumen = str(analisis.get("resumen_ejecutivo", ""))[:600]
+            contexto_adicional = f"""ANÁLISIS DISPONIBLE del proceso {codigo_proceso}:
 {resumen}
-Usa esta información para responder de forma útil y menciona que en LicitacionLab pueden ver el análisis completo.
-"""
+Usa esta info para responder y menciona que en LicitacionLab pueden ver el análisis completo."""
         else:
-            # Buscar datos básicos del proceso
             proceso = buscar_proceso_dgcp(codigo_proceso)
             if proceso:
-                contexto_adicional = f"""
-CONTEXTO — Datos del proceso {codigo_proceso}:
+                monto = proceso.get("monto_estimado", 0)
+                monto_fmt = f"RD${float(monto):,.0f}" if monto else "no publicado"
+                contexto_adicional = f"""DATOS del proceso {codigo_proceso}:
 - Entidad: {proceso.get('unidad_compra', '—')}
 - Título: {proceso.get('titulo', '—')}
-- Monto: RD$ {float(proceso.get('monto_estimado', 0)):,.0f}
+- Monto estimado: {monto_fmt}
 - Estado: {proceso.get('estado_proceso', '—')}
-- Fecha límite: {proceso.get('fecha_fin_recepcion_ofertas', '—')}
-Menciona que pueden ver el análisis completo del pliego en LicitacionLab.
-"""
+- Fecha límite ofertas: {proceso.get('fecha_fin_recepcion_ofertas', '—')}
+Menciona que pueden ver el análisis completo del pliego en LicitacionLab."""
             else:
-                contexto_adicional = f"""
-CONTEXTO — El cliente pregunta por {codigo_proceso}.
-No tenemos este proceso en nuestra base de datos. Ofrece analizarlo en la plataforma.
-"""
-        # Actualizar proceso en la conversación
+                contexto_adicional = f"El cliente pregunta por {codigo_proceso}. No está en nuestra base de datos. Ofrece analizarlo."
+
+        # Guardar código de proceso en la conversación
         if conv_id:
             supabase_admin.table("conversaciones_closer") \
                 .update({"proceso_codigo": codigo_proceso}) \
                 .eq("id", conv_id) \
                 .execute()
 
-    # 4. Obtener historial de conversación
+    # 4. Detectar si el cliente quiere alertas de procesos
+    if detectar_interes_alerta(mensaje):
+        keywords, instituciones = extraer_keywords_interes(mensaje)
+        if keywords or instituciones:
+            registrar_alerta_cliente(conv_id, phone, nombre, keywords, instituciones)
+            kw_texto = ", ".join(keywords + instituciones)
+            contexto_adicional += f"\nEl cliente acaba de pedir alertas sobre: {kw_texto}. Confírmale que lo tienes anotado y que le avisarás cuando aparezcan procesos de ese tipo."
+
+    # 5. Obtener historial
     historial = obtener_historial(conv_id)
 
-    # 5. Generar respuesta con Claude
-    respuesta = await generar_respuesta_claude(mensaje, historial, contexto_adicional)
+    # 6. Generar respuesta con Gemini
+    respuesta = await generar_respuesta_gemini(mensaje, historial, contexto_adicional)
 
-    # 6. Guardar respuesta del agente
-    guardar_mensaje(conv_id, "agente", respuesta, canal, generado_por_ia=True)
+    # 7. Guardar respuesta del agente
+    guardar_mensaje(conv_id, "agente", respuesta, generado_por_ia=True)
 
-    # 7. Responder al cliente vía ManyChat
-    await responder_manychat(contact_id, canal, respuesta)
+    # 8. Enviar respuesta al cliente vía Evolution API
+    await enviar_whatsapp(phone, respuesta)
 
-    # 8. Detectar señal de cierre → alerta Telegram
+    # 9. Detectar señal de cierre → alerta Telegram + actualizar estado
     if detectar_senal_cierre(mensaje):
-        nombre_display = nombre or contact_id
+        nombre_display = nombre or phone
         alerta = f"""🔥 <b>SEÑAL DE CIERRE DETECTADA</b>
 
 👤 <b>Contacto:</b> {nombre_display}
-📱 <b>Canal:</b> {canal.upper()}
+📱 <b>WhatsApp:</b> {phone}
 💬 <b>Mensaje:</b> {mensaje[:200]}
 
 🤖 <b>Respuesta del agente:</b>
 {respuesta[:200]}
 
-<i>Considera entrar tú a cerrar la venta.</i>"""
+<i>👆 Entra tú a cerrar la venta.</i>"""
         await enviar_telegram(alerta)
 
-        # Actualizar etapa a "interesado"
         if conv_id:
             supabase_admin.table("conversaciones_closer") \
-                .update({"etapa": "interesado"}) \
+                .update({"etapa": "interesado", "estado": "hot"}) \
                 .eq("id", conv_id) \
                 .execute()
 
-    # 9. Programar próximo followup (día +2 si es nuevo)
-    if conv.get("etapa") == "nuevo" and conv_id:
+    # 10. Actualizar estado y próximo followup si es conversación nueva
+    elif conv_id and conv.get("etapa") == "nuevo":
         supabase_admin.table("conversaciones_closer") \
             .update({
                 "etapa": "respondido",
+                "estado": "engaged",
                 "proximo_followup_en": (datetime.utcnow() + timedelta(days=2)).isoformat()
+            }) \
+            .eq("id", conv_id) \
+            .execute()
+    elif conv_id:
+        # Cliente respondió — resetear el contador de followup si estaba en silent
+        supabase_admin.table("conversaciones_closer") \
+            .update({
+                "estado": "engaged",
+                "ultimo_mensaje_en": datetime.utcnow().isoformat()
             }) \
             .eq("id", conv_id) \
             .execute()
@@ -476,15 +755,16 @@ No tenemos este proceso en nuestra base de datos. Ofrece analizarlo en la plataf
     print(f"[Closer] Procesado OK — conv_id={conv_id}")
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# FOLLOWUPS — CRON DIARIO 9AM
+# ═══════════════════════════════════════════════════════════════════════
+
 @closer_router.post("/followup/run")
 async def ejecutar_followups(
     background_tasks: BackgroundTasks,
     x_agent_secret: Optional[str] = Header(None)
 ):
-    """
-    Cron diario (n8n lo llama cada mañana a las 9am).
-    Detecta conversaciones que necesitan followup y envía mensajes.
-    """
+    """Cron diario 9am — n8n llama este endpoint. Dispara followups pendientes."""
     if x_agent_secret != AGENT_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -493,15 +773,18 @@ async def ejecutar_followups(
 
 
 async def ejecutar_followups_bg():
-    """Procesa followups pendientes"""
-    print("[Closer] Iniciando followups...")
+    """Procesa followups pendientes según secuencia 2/5/7/14 días"""
+    print("[Closer] Iniciando cron de followups...")
 
     try:
         ahora = datetime.utcnow().isoformat()
+
+        # Conversaciones con followup pendiente que no están cerradas ni son hot
         result = supabase_admin.table("conversaciones_closer") \
             .select("*") \
             .lte("proximo_followup_en", ahora) \
             .not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]) \
+            .not_.in_("estado", ["hot", "cerrado", "perdido"]) \
             .lt("followups_enviados", 4) \
             .execute()
 
@@ -509,80 +792,158 @@ async def ejecutar_followups_bg():
         print(f"[Closer] {len(conversaciones)} followups pendientes")
 
         for conv in conversaciones:
-            await procesar_followup(conv)
-            await asyncio.sleep(2)  # Pausa entre followups
+            await procesar_followup_individual(conv)
+            await asyncio.sleep(3)  # pausa entre mensajes
 
     except Exception as e:
         print(f"[Closer] Error en followups: {e}")
 
 
-FOLLOWUP_MENSAJES = [
-    # Followup 1 — día 2
-    "Hola {nombre}, soy Lab de LicitacionLab 👋 ¿Pudiste revisar la información sobre las licitaciones activas del DGCP? Te puedo ayudar a encontrar oportunidades para tu empresa.",
+# Días entre cada followup: 2, 5, 7, 14
+DIAS_FOLLOWUP = [2, 3, 2, 7]  # días desde el anterior (2→5→7→14)
 
-    # Followup 2 — día 4
-    "Hola {nombre}, esta semana hay {total_procesos} procesos nuevos en el DGCP. ¿Tu empresa participa en licitaciones de infraestructura o construcción? Te puedo mostrar las que aplican.",
+async def procesar_followup_individual(conv: dict):
+    """Genera y envía el followup contextual con Gemini"""
+    conv_id     = conv.get("id")
+    phone       = conv.get("telefono")
+    nombre      = (conv.get("nombre_contacto") or "").split()[0] or "amigo"
+    paso        = conv.get("followups_enviados", 0)
+    estado      = conv.get("estado", "silent")
+    proceso_cod = conv.get("proceso_codigo")
 
-    # Followup 3 — día 7
-    "Hola {nombre}, muchas empresas constructoras en RD están perdiendo licitaciones por no enterarse a tiempo. LicitacionLab las detecta automáticamente y analiza los pliegos. ¿Te interesa ver cómo funciona? Es gratis registrarse 👉 app.licitacionlab.com",
+    if not phone:
+        print(f"[Closer] Conv {conv_id} sin teléfono — saltando")
+        return
 
-    # Followup 4 — día 14
-    "Hola {nombre}, último mensaje de mi parte. Si en algún momento necesitas apoyo con licitaciones del DGCP, aquí estaré. El registro en LicitacionLab es gratis: app.licitacionlab.com — Éxitos 🤝",
-]
-
-
-async def procesar_followup(conv: dict):
-    """Envía el followup correspondiente a una conversación"""
-    conv_id = conv.get("id")
-    followups_enviados = conv.get("followups_enviados", 0)
-
-    if followups_enviados >= len(FOLLOWUP_MENSAJES):
-        # Marcar como inactivo
+    if paso >= 4:
+        # Secuencia agotada — marcar como perdido
         supabase_admin.table("conversaciones_closer") \
-            .update({"etapa": "inactivo"}) \
+            .update({"etapa": "inactivo", "estado": "perdido"}) \
             .eq("id", conv_id) \
             .execute()
         return
 
-    # Obtener total de procesos activos para personalizar
-    try:
-        res = supabase.table("procesos") \
-            .select("id", count="exact") \
-            .eq("estado_proceso", "Proceso publicado") \
-            .execute()
-        total_procesos = res.count or 0
-    except:
-        total_procesos = 25
+    # Actualizar estado a silent si no ha respondido
+    supabase_admin.table("conversaciones_closer") \
+        .update({"estado": "silent"}) \
+        .eq("id", conv_id) \
+        .execute()
 
-    nombre = conv.get("nombre_contacto") or "amigo"
-    mensaje = FOLLOWUP_MENSAJES[followups_enviados].format(
-        nombre=nombre.split()[0],  # Solo primer nombre
-        total_procesos=total_procesos
-    )
+    # Obtener historial para contexto
+    historial = obtener_historial(conv_id, limite=6)
 
-    # Enviar vía ManyChat
-    await responder_manychat(conv["contacto_id"], conv["canal"], mensaje)
+    # Generar mensaje contextual con Gemini
+    mensaje = await generar_followup_gemini(historial, nombre, paso, estado, proceso_cod)
+
+    # Enviar vía Evolution API
+    await enviar_whatsapp(phone, mensaje)
 
     # Guardar en historial
-    guardar_mensaje(conv_id, "agente", mensaje, conv["canal"], generado_por_ia=True)
+    guardar_mensaje(conv_id, "agente", mensaje, generado_por_ia=True)
 
     # Calcular próximo followup
-    dias_siguientes = [2, 2, 3, 7]  # días entre followups
-    dias = dias_siguientes[followups_enviados] if followups_enviados < len(dias_siguientes) else 7
+    dias = DIAS_FOLLOWUP[paso] if paso < len(DIAS_FOLLOWUP) else 7
     proximo = (datetime.utcnow() + timedelta(days=dias)).isoformat()
 
     supabase_admin.table("conversaciones_closer").update({
-        "followups_enviados": followups_enviados + 1,
+        "followups_enviados": paso + 1,
         "proximo_followup_en": proximo,
         "ultimo_mensaje_en": datetime.utcnow().isoformat()
     }).eq("id", conv_id).execute()
 
-    print(f"[Closer] Followup {followups_enviados + 1} enviado a {nombre} ({conv['canal']})")
+    print(f"[Closer] Followup {paso + 1}/4 enviado a {nombre} ({phone})")
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# ALERTAS DE PROCESOS — CRON DIARIO 8AM
+# ═══════════════════════════════════════════════════════════════════════
+
+@closer_router.post("/alertas/run")
+async def ejecutar_alertas(
+    background_tasks: BackgroundTasks,
+    x_agent_secret: Optional[str] = Header(None)
+):
+    """Cron diario 8am — busca procesos nuevos por cliente y notifica."""
+    if x_agent_secret != AGENT_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    background_tasks.add_task(ejecutar_alertas_bg)
+    return {"status": "iniciado", "mensaje": "Alertas de procesos procesándose en background"}
+
+
+async def ejecutar_alertas_bg():
+    """Revisa alertas activas y notifica si hay procesos nuevos"""
+    print("[Closer] Iniciando cron de alertas de procesos...")
+
+    try:
+        result = supabase_admin.table("alertas_cliente") \
+            .select("*") \
+            .eq("activa", True) \
+            .execute()
+
+        alertas = result.data or []
+        print(f"[Closer] {len(alertas)} alertas activas")
+
+        for alerta in alertas:
+            await procesar_alerta_individual(alerta)
+            await asyncio.sleep(2)
+
+    except Exception as e:
+        print(f"[Closer] Error en alertas: {e}")
+
+
+async def procesar_alerta_individual(alerta: dict):
+    """Busca procesos para una alerta y notifica si hay nuevos"""
+    phone        = alerta.get("contact_phone")
+    nombre       = alerta.get("contact_name") or "amigo"
+    keywords     = alerta.get("keywords") or []
+    instituciones = alerta.get("instituciones") or []
+    ultimo_notif = alerta.get("ultimo_proceso_notificado")
+
+    if not phone or not keywords:
+        return
+
+    # Buscar procesos activos que coincidan
+    procesos = buscar_procesos_por_keywords(keywords, instituciones)
+    if not procesos:
+        print(f"[Closer] Sin procesos para {phone} con keywords {keywords}")
+        return
+
+    # Filtrar procesos ya notificados
+    if ultimo_notif:
+        procesos = [p for p in procesos if p.get("codigo_proceso") != ultimo_notif]
+
+    if not procesos:
+        print(f"[Closer] Solo procesos ya notificados para {phone}")
+        return
+
+    # Generar mensaje personalizado con Gemini
+    nombre_corto = nombre.split()[0] if nombre else "amigo"
+    mensaje = await generar_mensaje_alerta_proceso(nombre_corto, procesos, keywords)
+
+    if not mensaje:
+        return
+
+    # Enviar vía Evolution API
+    await enviar_whatsapp(phone, mensaje)
+
+    # Actualizar último proceso notificado
+    supabase_admin.table("alertas_cliente") \
+        .update({"ultimo_proceso_notificado": procesos[0].get("codigo_proceso")}) \
+        .eq("id", alerta["id"]) \
+        .execute()
+
+    print(f"[Closer] Alerta enviada a {phone} — {len(procesos)} proceso(s)")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# ENDPOINTS ADMIN
+# ═══════════════════════════════════════════════════════════════════════
 
 @closer_router.get("/conversaciones")
 async def listar_conversaciones(
     etapa: Optional[str] = None,
+    estado: Optional[str] = None,
     limite: int = 20,
     x_agent_secret: Optional[str] = Header(None)
 ):
@@ -598,6 +959,8 @@ async def listar_conversaciones(
 
     if etapa:
         query = query.eq("etapa", etapa)
+    if estado:
+        query = query.eq("estado", estado)
 
     result = query.execute()
     return {
@@ -612,7 +975,7 @@ async def marcar_conversacion(
     payload: MarcarEtapaPayload,
     x_agent_secret: Optional[str] = Header(None)
 ):
-    """Lonny marca manualmente una etapa (ej: cerrado_ganado)"""
+    """Lonny marca manualmente una etapa desde Telegram"""
     if x_agent_secret != AGENT_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -625,9 +988,34 @@ async def marcar_conversacion(
     if payload.notas:
         update_data["notas"] = payload.notas
 
+    # Si Lonny cierra la venta, también actualizar estado
+    if payload.etapa == "cerrado_ganado":
+        update_data["estado"] = "cerrado"
+    elif payload.etapa == "cerrado_perdido":
+        update_data["estado"] = "perdido"
+
     supabase_admin.table("conversaciones_closer") \
         .update(update_data) \
         .eq("id", conversacion_id) \
         .execute()
 
     return {"success": True, "conversacion_id": conversacion_id, "etapa": payload.etapa}
+
+
+@closer_router.post("/alerta/test")
+async def test_alerta(x_agent_secret: Optional[str] = Header(None)):
+    """Prueba que el módulo de alertas funciona correctamente"""
+    if x_agent_secret != AGENT_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    await enviar_telegram("✅ <b>Agente Closer</b> — test de conectividad OK\n\nGemini: " +
+                          ("✅ configurado" if gemini_client else "❌ sin API key") +
+                          "\nEvolution API: " +
+                          ("✅ configurado" if EVOLUTION_API_URL else "❌ sin URL"))
+
+    return {
+        "gemini": bool(gemini_client),
+        "evolution_api": bool(EVOLUTION_API_URL),
+        "telegram": bool(TELEGRAM_BOT_TOKEN),
+        "status": "ok"
+    }
