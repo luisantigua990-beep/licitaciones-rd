@@ -149,6 +149,34 @@ def scraper_loop():
         time.sleep(INTERVALO_MINUTOS * 60)
 
 
+def reprocesar_pendientes_loop():
+    """
+    Cada 30 minutos reintenta los procesos marcados como pendiente_analisis.
+    Ocurre cuando Gemini estuvo con 503 o el PDF era muy grande.
+    """
+    time.sleep(180)  # esperar 3 min al arranque
+    while True:
+        try:
+            pendientes = supabase_admin.table("analisis_pliego") \
+                .select("proceso_id") \
+                .eq("estado", "pendiente_analisis") \
+                .limit(5) \
+                .execute()
+            if pendientes.data:
+                print(f"🔄 Reprocesando {len(pendientes.data)} pliego(s) pendientes...")
+                for row in pendientes.data:
+                    pid = row["proceso_id"]
+                    try:
+                        print(f"🔄 Reintentando análisis: {pid}")
+                        ejecutar_analisis_gemini(pid)
+                    except Exception as e:
+                        print(f"❌ Error reprocesando {pid}: {e}")
+                    time.sleep(10)
+        except Exception as e:
+            print(f"❌ Error en loop reprocesar_pendientes: {e}")
+        time.sleep(30 * 60)  # 30 minutos
+
+
 def nurturing_loop():
     """Ejecuta la secuencia de nurturing de emails una vez al día."""
     time.sleep(120)
@@ -179,6 +207,11 @@ async def lifespan(app: FastAPI):
     hilo_nurturing = threading.Thread(target=nurturing_loop, daemon=True)
     hilo_nurturing.start()
     print("✅ Nurturing de emails iniciado (cada 24 horas)")
+
+    # Reproceso automático de pliegos pendiente_analisis (cada 30 min)
+    hilo_pendientes = threading.Thread(target=reprocesar_pendientes_loop, daemon=True)
+    hilo_pendientes.start()
+    print("✅ Reproceso de pliegos pendientes iniciado (cada 30 minutos)")
 
     yield
     print("🛑 Servidor detenido")
@@ -1989,8 +2022,23 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
                 "sec-fetch-mode": "navigate",
                 "X-Requested-With": "",  # el retrieve no es XHR
             }
-            resp_pdf = session.get(url_real, headers=headers_retrieve, timeout=60)
-            print(f"📦 Respuesta RetrieveFile: {resp_pdf.status_code}, {len(resp_pdf.content)} bytes, Content-Type: {resp_pdf.headers.get('Content-Type', '?')}")
+            # Descarga con streaming + retry para evitar IncompleteRead en PDFs grandes
+            MAX_INTENTOS_DL = 3
+            for _intento_dl in range(MAX_INTENTOS_DL):
+                try:
+                    resp_pdf = session.get(url_real, headers=headers_retrieve, timeout=120, stream=True)
+                    _chunks = []
+                    for _chunk in resp_pdf.iter_content(chunk_size=1024 * 1024):
+                        if _chunk:
+                            _chunks.append(_chunk)
+                    # Reemplazar .content con los bytes acumulados
+                    resp_pdf._content = b"".join(_chunks)
+                    print(f"📦 Respuesta RetrieveFile: {resp_pdf.status_code}, {len(resp_pdf.content):,} bytes, Content-Type: {resp_pdf.headers.get('Content-Type', '?')}")
+                    break
+                except Exception as _e_dl:
+                    print(f"⚠️ Error descarga intento {_intento_dl+1}/{MAX_INTENTOS_DL}: {_e_dl}")
+                    if _intento_dl == MAX_INTENTOS_DL - 1:
+                        raise
         else:
             print(f"⚠️ Redirect JS no parseable: {repr(js_body[:300])}")
 
@@ -2059,7 +2107,31 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     if len(texto_completo.strip()) < 500:
         print(f"⚠️ PDF escaneado detectado ({len(texto_completo)} chars) — enviando bytes a Gemini Vision")
         import base64 as _b64
-        pdf_b64 = _b64.b64encode(pdf_bytes).decode("utf-8")
+
+        # Si el PDF es muy grande (> 15 MB), recortar a las primeras 30 páginas
+        # para no exceder el límite de Gemini Vision y evitar el 503
+        PDF_MAX_BYTES = 15 * 1024 * 1024  # 15 MB
+        if len(pdf_bytes) > PDF_MAX_BYTES:
+            print(f"⚠️ PDF escaneado grande ({len(pdf_bytes):,} bytes) — recortando a primeras 30 páginas")
+            try:
+                import io as _io
+                from pypdf import PdfReader as _PdfReader, PdfWriter as _PdfWriter
+                _reader = _PdfReader(_io.BytesIO(pdf_bytes))
+                _writer = _PdfWriter()
+                _max_pags = min(30, len(_reader.pages))
+                for _p in range(_max_pags):
+                    _writer.add_page(_reader.pages[_p])
+                _buf = _io.BytesIO()
+                _writer.write(_buf)
+                pdf_bytes_vision = _buf.getvalue()
+                print(f"✂️ PDF recortado: {len(pdf_bytes_vision):,} bytes ({_max_pags} páginas)")
+            except Exception as _e_crop:
+                print(f"⚠️ Error recortando PDF: {_e_crop} — usando primeros 15 MB")
+                pdf_bytes_vision = pdf_bytes[:PDF_MAX_BYTES]
+        else:
+            pdf_bytes_vision = pdf_bytes
+
+        pdf_b64 = _b64.b64encode(pdf_bytes_vision).decode("utf-8")
         # Devolvemos un dict especial que ejecutar_analisis_gemini usará
         return {"__pdf_bytes_b64": pdf_b64, "__texto": texto_completo}
 
