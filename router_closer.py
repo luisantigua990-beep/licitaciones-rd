@@ -465,7 +465,7 @@ async def generar_respuesta_gemini(
 
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.0-flash-001",
             contents=prompt,
             config=types.GenerateContentConfig(
                 max_output_tokens=300,
@@ -526,7 +526,7 @@ Instrucciones:
 
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.0-flash-001",
             contents=prompt,
             config=types.GenerateContentConfig(
                 max_output_tokens=200,
@@ -573,7 +573,7 @@ Instrucciones:
 
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.0-flash-001",
             contents=prompt,
             config=types.GenerateContentConfig(
                 max_output_tokens=300,
