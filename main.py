@@ -149,10 +149,34 @@ def scraper_loop():
         time.sleep(INTERVALO_MINUTOS * 60)
 
 
+def ejecutar_analisis_gemini_sin_email(proceso_id: str):
+    """
+    Variante del análisis Gemini para uso interno (reproceso automático).
+    NO envía email al completar — el email solo se manda cuando el usuario
+    lo solicita manualmente desde la app.
+    """
+    try:
+        print(f"🔄 Reprocesando (sin email): {proceso_id}")
+        # Si ya está completado, no hacer nada — no reenviar email
+        existente = supabase_admin.table("analisis_pliego")\
+            .select("estado")\
+            .eq("proceso_id", proceso_id)\
+            .eq("estado", "completado")\
+            .execute()
+        if existente.data:
+            print(f"⚡ {proceso_id} ya completado, saltando reproceso.")
+            return
+        # Correr el análisis completo pero sin enviar email al final
+        ejecutar_analisis_gemini(proceso_id, enviar_email=False)
+    except Exception as e:
+        print(f"❌ Error en reproceso sin email {proceso_id}: {e}")
+
+
 def reprocesar_pendientes_loop():
     """
     Cada 30 minutos reintenta los procesos marcados como pendiente_analisis.
     Ocurre cuando Gemini estuvo con 503 o el PDF era muy grande.
+    NO envía emails — solo completa el análisis en BD.
     """
     time.sleep(180)  # esperar 3 min al arranque
     while True:
@@ -168,7 +192,7 @@ def reprocesar_pendientes_loop():
                     pid = row["proceso_id"]
                     try:
                         print(f"🔄 Reintentando análisis: {pid}")
-                        ejecutar_analisis_gemini(pid)
+                        ejecutar_analisis_gemini_sin_email(pid)
                     except Exception as e:
                         print(f"❌ Error reprocesando {pid}: {e}")
                     time.sleep(10)
@@ -1486,8 +1510,36 @@ INSTRUCCIONES IMPORTANTES:
    Si hay un campo "vigencia_oferta_dias", búscalo en el cuerpo del pliego (no en el cronograma).
 
 6. Para los checklist_documentos, NO OMITAS NINGÚN documento que aparezca en el pliego.
-   Revisa exhaustivamente todas las secciones de "documentos requeridos", "credenciales",
-   "oferta técnica", "oferta económica" y similares. Incluye TODOS, aunque sean muchos.
+   Revisa exhaustivamente TODAS las secciones: "documentos requeridos", "credenciales",
+   "oferta técnica", "oferta económica", "habilitación", "capacidad legal", "capacidad técnica",
+   "capacidad financiera" y similares. Incluye TODOS, aunque sean muchos.
+   Clasifícalos correctamente:
+   - legal: Registro Mercantil, RNC, cédula, estatutos, poderes, compromisos éticos, declaraciones juradas
+   - tecnica: metodología, cronograma, experiencia en proyectos, fichas técnicas, RPE/RNCE, certificaciones
+   - financiera: estados financieros, balance general, declaración ISR, índices financieros, líneas de crédito
+
+7. EXPERIENCIA DE LA EMPRESA — extrae con MÁXIMO DETALLE:
+   - Años de experiencia mínimos exigidos a la empresa
+   - Cantidad y tipo de proyectos/contratos similares requeridos (ej: "3 contratos de obras viales > RD$50M")
+   - Montos mínimos de contratos anteriores ejecutados
+   - Si se exige que los contratos hayan sido con entidades del Estado o también privados
+   - Sector o especialidad específica requerida (agua potable, vías, edificaciones, IT, etc.)
+   - Periodo de tiempo en que deben haberse ejecutado (últimos 5 años, últimos 10 años, etc.)
+
+8. PERSONAL CLAVE — extrae CADA posición por separado con todos sus requisitos:
+   - Título académico exacto (Ingeniero Civil, Arquitecto, Licenciado en Administración, etc.)
+   - Años de experiencia general y específica en el área
+   - Si requiere registro profesional (RPE, CODIA, COLLEGESRO, etc.)
+   - Si es dedicación exclusiva o puede trabajar en otros proyectos simultáneamente
+   - Si es subsanable o no (aplica regla del punto 4)
+   - Cualquier certificación adicional requerida
+
+9. EQUIPOS Y MAQUINARIA — lista CADA equipo por separado con especificaciones:
+   - Tipo y descripción del equipo (no agrupar, listar uno a uno)
+   - Cantidad mínima requerida
+   - Antigüedad máxima permitida si se especifica
+   - Si debe ser propio o puede ser alquilado/comprometido
+   - Capacidad o potencia mínima si se especifica
 
 Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes ni después):
 {
@@ -1508,28 +1560,50 @@ Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes
     }
   ],
   "requisitos_experiencia": {
-    "obras_similares": "...",
-    "montos_facturados": "...",
-    "anos_experiencia_empresa": "...",
-    "otros": "..."
+    "anos_experiencia_empresa": "Años mínimos de existencia/operación de la empresa",
+    "contratos_similares": "Cantidad y tipo de contratos similares requeridos con montos mínimos",
+    "sector_especialidad": "Sector o especialidad específica exigida (obras viales, plomería, IT, etc.)",
+    "periodo_referencia": "Período en que deben haberse ejecutado (ej: últimos 5 años)",
+    "ambito": "Si aplica solo contratos estatales o también privados",
+    "montos_facturados": "Facturación anual mínima o acumulada exigida si aplica",
+    "otros": "Cualquier otro requisito de experiencia no cubierto arriba"
   },
   "requisitos_financieros": {
-    "indice_liquidez": "...",
-    "indice_endeudamiento": "...",
-    "patrimonio_minimo": "...",
-    "otros": "..."
+    "indice_liquidez": "Valor mínimo requerido o N/A",
+    "indice_endeudamiento": "Valor máximo permitido o N/A",
+    "patrimonio_minimo": "Monto mínimo de patrimonio o N/A",
+    "otros": "Otros índices o requisitos financieros"
   },
   "garantias_exigidas": [
     {"tipo": "Garantía de seriedad|Garantía de fiel cumplimiento|Garantía de anticipo|Otro", "monto_o_porcentaje": "...", "es_subsanable": false}
   ],
   "personal_y_equipos": {
-    "personal_clave": [{"posicion": "...", "titulo": "...", "anos_experiencia": "...", "es_subsanable": true}],
-    "equipos_minimos": ["..."]
+    "personal_clave": [
+      {
+        "posicion": "Nombre exacto del cargo (ej: Director de Obra, Coordinador Técnico)",
+        "titulo": "Título académico requerido (ej: Ingeniero Civil colegiado)",
+        "anos_experiencia_general": "Años de experiencia profesional general",
+        "anos_experiencia_especifica": "Años en el área específica del proyecto",
+        "registro_profesional": "RPE, CODIA, COLLEGESRO u otro requerido, o N/A",
+        "dedicacion": "Exclusiva|Parcial|No especificado",
+        "es_subsanable": true,
+        "nota": "Cualquier requisito adicional relevante"
+      }
+    ],
+    "equipos_minimos": [
+      {
+        "equipo": "Nombre y tipo del equipo (ej: Excavadora sobre orugas)",
+        "cantidad": "Cantidad mínima requerida",
+        "especificaciones": "Capacidad, potencia u otras especificaciones técnicas requeridas",
+        "antiguedad_maxima": "Años máximos de antigüedad permitidos o N/A",
+        "modalidad": "Propio|Alquilado|Comprometido|Cualquiera"
+      }
+    ]
   },
   "checklist_documentos": {
-    "legal": [{"documento": "...", "es_subsanable": false, "nota": "Solo true si el pliego dice explícitamente Subsanable"}],
-    "tecnica": [{"documento": "...", "es_subsanable": false, "nota": ""}],
-    "financiera": [{"documento": "...", "es_subsanable": false, "nota": ""}]
+    "legal": [{"documento": "Nombre exacto del documento", "es_subsanable": false, "nota": "Aclaraciones del pliego si las hay"}],
+    "tecnica": [{"documento": "Nombre exacto del documento", "es_subsanable": false, "nota": ""}],
+    "financiera": [{"documento": "Nombre exacto del documento", "es_subsanable": false, "nota": ""}]
   },
   "plazos_clave": {
     "visita_sitio": "DD/MM/YYYY HH:MM o N/A",
@@ -2367,29 +2441,78 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
     req_fin = analisis.get("requisitos_financieros") or {}
 
     exp_rows = ""
-    labels_exp = {"obras_similares": "Obras similares", "montos_facturados": "Montos facturados", "anos_experiencia_empresa": "Años de experiencia", "otros": "Otros requisitos"}
+    labels_exp = {
+        "anos_experiencia_empresa": "Años de experiencia empresa",
+        "contratos_similares":      "Contratos similares requeridos",
+        "sector_especialidad":      "Sector / especialidad",
+        "periodo_referencia":       "Período de referencia",
+        "ambito":                   "Ámbito (estatal/privado)",
+        "montos_facturados":        "Facturación mínima",
+        "otros":                    "Otros requisitos",
+        # compatibilidad con estructura anterior
+        "obras_similares":          "Obras similares",
+    }
     for k, label in labels_exp.items():
         v = req_exp.get(k, "")
-        if v:
-            exp_rows += f"<tr><td style='padding:6px 12px;font-size:12px;color:#6b7280;width:35%;'>{label}</td><td style='padding:6px 12px;font-size:13px;color:#374151;'>{v}</td></tr>"
+        if v and v not in ("N/A", "n/a", ""):
+            exp_rows += f"<tr style='border-bottom:1px solid #f3f4f6;'><td style='padding:7px 12px;font-size:12px;color:#6b7280;width:38%;vertical-align:top;'>{label}</td><td style='padding:7px 12px;font-size:13px;color:#374151;'>{v}</td></tr>"
 
     fin_rows = ""
     labels_fin = {"indice_liquidez": "Índice de liquidez", "indice_endeudamiento": "Índice de endeudamiento", "patrimonio_minimo": "Patrimonio mínimo", "otros": "Otros"}
     for k, label in labels_fin.items():
         v = req_fin.get(k, "")
-        if v:
-            fin_rows += f"<tr><td style='padding:6px 12px;font-size:12px;color:#6b7280;width:35%;'>{label}</td><td style='padding:6px 12px;font-size:13px;color:#374151;'>{v}</td></tr>"
+        if v and v not in ("N/A", "n/a", ""):
+            fin_rows += f"<tr style='border-bottom:1px solid #f3f4f6;'><td style='padding:7px 12px;font-size:12px;color:#6b7280;width:38%;'>{label}</td><td style='padding:7px 12px;font-size:13px;color:#374151;'>{v}</td></tr>"
 
     # ── Personal clave ────────────────────────────────────
-    personal     = (analisis.get("personal_y_equipos") or {}).get("personal_clave") or []
-    equipos      = (analisis.get("personal_y_equipos") or {}).get("equipos_minimos") or []
+    personal_raw = (analisis.get("personal_y_equipos") or {}).get("personal_clave") or []
+    equipos_raw  = (analisis.get("personal_y_equipos") or {}).get("equipos_minimos") or []
     personal_html = ""
-    for p in (personal if isinstance(personal, list) else []):
+    for p in (personal_raw if isinstance(personal_raw, list) else []):
         subsanable_p = p.get("es_subsanable", True)
-        badge_p = "" if subsanable_p else " <span style='color:#dc2626;font-size:10px;'>❌ No subsanable</span>"
-        personal_html += f"<tr><td style='padding:5px 12px;font-size:13px;'><strong>{p.get('posicion','')}</strong>{badge_p}</td><td style='padding:5px 12px;font-size:12px;color:#6b7280;'>{p.get('titulo','')} · {p.get('anos_experiencia','')} años exp.</td></tr>"
+        badge_p  = "<span style='background:#fef2f2;color:#dc2626;font-size:10px;padding:1px 5px;border-radius:4px;margin-left:5px;'>❌ NO subsanable</span>" if not subsanable_p else "<span style='background:#f0fdf4;color:#16a34a;font-size:10px;padding:1px 5px;border-radius:4px;margin-left:5px;'>✅ Subsanable</span>"
+        posicion = p.get("posicion","")
+        titulo   = p.get("titulo","")
+        # Soporte nuevo formato con campos separados
+        exp_gen  = p.get("anos_experiencia_general") or p.get("anos_experiencia","")
+        exp_esp  = p.get("anos_experiencia_especifica","")
+        registro = p.get("registro_profesional","")
+        dedicacion = p.get("dedicacion","")
+        nota_p   = p.get("nota","")
+        detalles = []
+        if titulo:   detalles.append(titulo)
+        if exp_gen:  detalles.append(f"{exp_gen} años exp. general")
+        if exp_esp:  detalles.append(f"{exp_esp} años exp. específica")
+        if registro and registro not in ("N/A","n/a","No especificado",""):  detalles.append(f"Registro: {registro}")
+        if dedicacion and dedicacion not in ("No especificado",""):          detalles.append(f"Dedicación: {dedicacion}")
+        if nota_p:   detalles.append(nota_p)
+        detalles_str = " · ".join(d for d in detalles if d)
+        personal_html += f"""<tr style='border-bottom:1px solid #f3f4f6;'>
+          <td style='padding:8px 12px;font-size:13px;vertical-align:top;'>
+            <strong style='color:#1e293b;'>{posicion}</strong>{badge_p}
+          </td>
+          <td style='padding:8px 12px;font-size:12px;color:#6b7280;'>{detalles_str}</td>
+        </tr>"""
 
-    equipos_html = "".join(f"<li style='font-size:13px;margin:3px 0;'>{e}</li>" for e in equipos if e)
+    # ── Equipos ───────────────────────────────────────────
+    equipos_html = ""
+    for e in (equipos_raw if isinstance(equipos_raw, list) else []):
+        if isinstance(e, dict):
+            nombre_eq   = e.get("equipo","")
+            cantidad_eq = e.get("cantidad","")
+            specs_eq    = e.get("especificaciones","")
+            antig_eq    = e.get("antiguedad_maxima","")
+            modal_eq    = e.get("modalidad","")
+            detalle_eq  = []
+            if cantidad_eq: detalle_eq.append(f"Cant: {cantidad_eq}")
+            if specs_eq and specs_eq not in ("N/A",""):    detalle_eq.append(specs_eq)
+            if antig_eq and antig_eq not in ("N/A",""):    detalle_eq.append(f"Máx {antig_eq} años antigüedad")
+            if modal_eq and modal_eq not in ("Cualquiera","No especificado",""):  detalle_eq.append(modal_eq)
+            detalle_str = " · ".join(d for d in detalle_eq if d)
+            sub_eq = f"<span style='font-size:11px;color:#6b7280;'> — {detalle_str}</span>" if detalle_str else ""
+            equipos_html += f"<li style='font-size:13px;margin:4px 0;color:#374151;'><strong>{nombre_eq}</strong>{sub_eq}</li>"
+        elif isinstance(e, str) and e:
+            equipos_html += f"<li style='font-size:13px;margin:4px 0;color:#374151;'>{e}</li>"
 
     return f"""<!DOCTYPE html>
 <html>
@@ -2441,8 +2564,8 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
 
   {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">💰 Requisitos financieros</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + fin_rows + '</table></td></tr>' if fin_rows else ''}
 
-  {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">👷 Personal clave requerido</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + personal_html + '</table></td></tr>' if personal_html else ''}
-  {'<tr><td style="padding:4px 28px 8px;"><p style="margin:0 0 4px;font-size:12px;font-weight:bold;color:#6b7280;">🚜 Equipos mínimos:</p><ul style="margin:0;padding-left:18px;font-size:13px;color:#374151;">' + equipos_html + '</ul></td></tr>' if equipos_html else ''}
+  {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">👷 Personal clave requerido</p><p style="margin:0 0 8px;font-size:11px;color:#9ca3af;">Cada posición con su subsanabilidad — los NO subsanables son críticos para la habilitación.</p><table width="100%" style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0"><tr style=\'background:#f8fafc;\'><th style=\'padding:6px 12px;font-size:11px;color:#6b7280;text-align:left;\'>Posición</th><th style=\'padding:6px 12px;font-size:11px;color:#6b7280;text-align:left;\'>Perfil requerido</th></tr>' + personal_html + '</table></td></tr>' if personal_html else ''}
+  {'<tr><td style="padding:4px 28px 8px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;">🚜 Equipos y maquinaria mínimos</p><ul style="margin:0;padding-left:18px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 10px 10px 26px;">' + equipos_html + '</ul></td></tr>' if equipos_html else ''}
 
   <tr><td style="padding:16px 28px 24px;" align="center">
     <p style="margin:0 0 12px;font-size:13px;color:#64748b;">¿Te interesa participar en este proceso?</p>
@@ -2467,29 +2590,35 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
 </html>"""
 
 
-def ejecutar_analisis_gemini(proceso_id: str):
-    """Descarga el pliego, lo lee y guarda el JSON en Supabase en segundo plano"""
+def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True):
+    """Descarga el pliego, lo lee y guarda el JSON en Supabase en segundo plano.
+
+    Args:
+        enviar_email: Si True (default), envía el email al completar.
+                      Pasar False en reproceso automático para evitar spam.
+    """
     try:
         print(f"🚀 Iniciando IA para: {proceso_id}")
 
-        # ── CACHE: si ya está completado, no reprocesar ──────
+        # ── CACHE: si ya está completado ──────
         existente = supabase_admin.table("analisis_pliego")\
-            .select("estado, alertas_fraude, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, checklist_legal")\
+            .select("estado")\
             .eq("proceso_id", proceso_id)\
             .eq("estado", "completado")\
             .execute()
         if existente.data:
-            print(f"⚡ Cache hit — {proceso_id} ya analizado, enviando email igual.")
-            # Re-consultar con todos los campos necesarios para el email
-            full = supabase_admin.table("analisis_pliego")\
-                .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos")\
-                .eq("proceso_id", proceso_id)\
-                .execute()
-            analisis_cacheado = full.data[0] if full.data else existente.data[0]
-            # Normalizar: checklist_categorizado -> checklist_documentos para que el email lo encuentre
-            if analisis_cacheado.get("checklist_categorizado") and not analisis_cacheado.get("checklist_documentos"):
-                analisis_cacheado["checklist_documentos"] = analisis_cacheado["checklist_categorizado"]
-            enviar_email_analisis(proceso_id, analisis_cacheado)
+            if enviar_email:
+                print(f"⚡ Cache hit — {proceso_id} ya analizado, enviando email.")
+                full = supabase_admin.table("analisis_pliego")\
+                    .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, puntaje_go_nogo, tipo_proceso")\
+                    .eq("proceso_id", proceso_id)\
+                    .execute()
+                analisis_cacheado = full.data[0] if full.data else {}
+                if analisis_cacheado.get("checklist_categorizado") and not analisis_cacheado.get("checklist_documentos"):
+                    analisis_cacheado["checklist_documentos"] = analisis_cacheado["checklist_categorizado"]
+                enviar_email_analisis(proceso_id, analisis_cacheado)
+            else:
+                print(f"⚡ Cache hit — {proceso_id} ya completado, saltando (reproceso automático).")
             return
         
         # 1. ACTUALIZAR ESTADO EN SUPABASE
@@ -2691,8 +2820,8 @@ def ejecutar_analisis_gemini(proceso_id: str):
                 for sub in subs:
                     enviar_push_y_limpiar(
                         sub,
-                        titulo="Análisis listo — Revisa tu correo",
-                        cuerpo=f"El análisis de {proceso_id} está completo. Te enviamos los detalles por correo.",
+                        titulo=f"📋 Análisis listo: {proceso_id}",
+                        cuerpo=f"El análisis del pliego está completo. Abre la app para ver resultados o descarga el PDF.",
                         url=f"{APP_URL}?proceso={proceso_id}"
                     )
         except Exception as e_push:
