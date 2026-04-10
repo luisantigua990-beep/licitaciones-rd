@@ -476,52 +476,65 @@ def notificar_procesos_nuevos(procesos_nuevos):
 
     try:
         from notifications import enviar_notificacion
+        from pywebpush import WebPushException
 
-        result = supabase.table("user_subscriptions")\
-            .select("*")\
-            .eq("active", True)\
-            .execute()
+        result = supabase.table("user_subscriptions")            .select("*")            .eq("active", True)            .execute()
 
         suscripciones = result.data
         if not suscripciones:
-            print("ℹ️  Sin suscriptores activos")
+            print("ℹ️  Sin suscriptores activos para notificar")
             return
 
+        print(f"📋 {len(suscripciones)} suscriptores activos, {len(procesos_nuevos)} proceso(s) nuevo(s)")
+
+        APP_URL = os.getenv("APP_URL", "https://app.licitacionlab.com")
         notificaciones_enviadas = 0
+        errores = 0
 
         for proceso in procesos_nuevos:
-            titulo_proceso = proceso.get("titulo", "Nueva licitación")[:60]
-            entidad = proceso.get("unidad_compra", "")
-            monto = proceso.get("monto_estimado")
-            monto_str = f" | RD${monto:,.0f}" if monto else ""
-            codigo = proceso.get("codigo_proceso", "")
+            titulo_proceso = proceso.get("titulo", "Nueva licitación")[:70]
+            entidad        = (proceso.get("unidad_compra") or "")[:40]
+            monto          = proceso.get("monto_estimado")
+            monto_str      = f" | RD${monto:,.0f}" if monto else ""
+            codigo         = proceso.get("codigo_proceso", "")
+            url_proceso    = f"{APP_URL}?proceso={codigo}"
 
             for sub in suscripciones:
                 subscription_info = {
                     "endpoint": sub["endpoint"],
-                    "keys": {
-                        "auth": sub["auth"],
-                        "p256dh": sub["p256dh"]
-                    }
+                    "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}
                 }
+                try:
+                    resultado = enviar_notificacion(
+                        subscription_info,
+                        titulo=f"🏗️ {entidad}{monto_str}",
+                        cuerpo=titulo_proceso,
+                        url=url_proceso
+                    )
+                    if resultado is True:
+                        notificaciones_enviadas += 1
+                    elif resultado == "410":
+                        # Suscripción expirada — desactivar
+                        supabase.table("user_subscriptions")                            .update({"active": False})                            .eq("endpoint", sub["endpoint"]).execute()
+                        print(f"🧹 Suscripción 410 desactivada: {sub['endpoint'][:50]}...")
+                    else:
+                        errores += 1
+                        print(f"⚠️  Push falló (False) para {sub['endpoint'][:50]}...")
+                except WebPushException as e:
+                    errores += 1
+                    resp = getattr(e, "response", None)
+                    status = getattr(resp, "status_code", "?") if resp else "?"
+                    print(f"❌ WebPushException [{status}]: {str(e)[:120]}")
+                except Exception as e:
+                    errores += 1
+                    print(f"❌ Error push inesperado: {type(e).__name__}: {str(e)[:120]}")
 
-                # Usar URL directa del portal DGCP si existe, si no la PWA
-                url_proceso = proceso.get("url") or f"https://comprasdominicanas.gob.do/proceso/{codigo}"
-
-                ok = enviar_notificacion(
-                    subscription_info,
-                    titulo=f"🏗️ {entidad}{monto_str}",
-                    cuerpo=titulo_proceso,
-                    url=url_proceso
-                )
-
-                if ok:
-                    notificaciones_enviadas += 1
-
-        print(f"🔔 {notificaciones_enviadas} notificaciones enviadas")
+        print(f"🔔 Push: {notificaciones_enviadas} enviadas, {errores} errores")
 
     except Exception as e:
-        print(f"❌ Error enviando notificaciones: {e}")
+        import traceback
+        print(f"❌ Error en notificar_procesos_nuevos: {e}")
+        traceback.print_exc()
 
 
 # ============================================
