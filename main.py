@@ -13,7 +13,7 @@ import time
 import urllib3
 import json
 import io
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 from bs4 import BeautifulSoup
 import requests
 from datetime import datetime, timedelta
@@ -1032,9 +1032,18 @@ async def solicitar_analisis_proceso(codigo_proceso: str, background_tasks: Back
         estado_actual = existente_check.data[0].get("estado") if existente_check.data else None
 
         if estado_actual == "completado":
-            # Ya está analizado — solo enviar el email, no reprocesar
-            print(f"⚡ solicitar_analisis: {codigo_proceso} ya completado, enviando email sin reprocesar")
-            background_tasks.add_task(ejecutar_analisis_gemini, codigo_proceso)
+            # Ya está analizado — recuperar datos y enviar email directo, sin tocar Gemini
+            print(f"⚡ Cache hit — {codigo_proceso} ya analizado, enviando email sin reprocesar")
+            def _enviar_cache():
+                full = supabase_admin.table("analisis_pliego")\
+                    .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, tipo_proceso")\
+                    .eq("proceso_id", codigo_proceso)\
+                    .execute()
+                analisis_cacheado = full.data[0] if full.data else {}
+                if analisis_cacheado.get("checklist_categorizado") and not analisis_cacheado.get("checklist_documentos"):
+                    analisis_cacheado["checklist_documentos"] = analisis_cacheado["checklist_categorizado"]
+                enviar_email_analisis(codigo_proceso, analisis_cacheado)
+            background_tasks.add_task(_enviar_cache)
             return {"ok": True, "status": "cache_hit"}
 
         supabase_admin.table("analisis_pliego").upsert({
