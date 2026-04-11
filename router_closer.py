@@ -549,8 +549,22 @@ Extrae SOLO lo que puedas inferir con certeza. NO inventes nada. Devuelve SOLO J
             model="gemini-2.5-flash", contents=prompt,
             config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.1)
         )
-        texto = response.text.strip().replace("```json", "").replace("```", "")
-        datos = {k: v for k, v in json.loads(texto).items() if v is not None and v != []}
+        texto = response.text.strip()
+        # Limpiar markdown y buscar el bloque JSON
+        texto = texto.replace("```json", "").replace("```", "").strip()
+        # Extraer solo el bloque {} para evitar texto extra antes/después
+        idx_ini = texto.find("{")
+        idx_fin = texto.rfind("}")
+        if idx_ini == -1 or idx_fin == -1:
+            return
+        texto = texto[idx_ini:idx_fin + 1]
+        try:
+            datos = {k: v for k, v in json.loads(texto).items() if v is not None and v != []}
+        except json.JSONDecodeError:
+            # Último recurso: limpiar caracteres problemáticos
+            import re as _re
+            texto = _re.sub(r'[ -]', ' ', texto)
+            datos = {k: v for k, v in json.loads(texto).items() if v is not None and v != []}
         if datos:
             actualizar_perfil_prospecto(phone, conv_id, nombre, datos)
             if datos.get("tipos_proceso") or datos.get("instituciones_interes"):
@@ -1025,18 +1039,21 @@ async def procesar_imagen_bg(phone: str, image_url: str, caption: str = "", nomb
         # 2. Pedirle a Gemini que extraiga la información del proceso de la imagen
         from google.genai import types as _types
 
+        # Prompt estructurado — pedir JSON limpio para extraer el código del proceso
+        caption_texto = f"El cliente escribió junto a la imagen: '{caption}'" if caption else ""
         prompt_extraccion = (
-            "Analiza esta imagen que un cliente envió por WhatsApp. "
-            "Puede ser una foto de una convocatoria, un proceso del DGCP, un pliego, "
-            "una pantalla del portal comprasdominicana, o cualquier documento de licitación. "
-            "Extrae TODA la información relevante que veas: "
-            "código del proceso, nombre/título, institución o entidad, "
-            "monto estimado, fecha de cierre de ofertas, tipo de proceso, "
-            "y cualquier otro dato importante. "
-            "Si hay un caption del cliente, tenlo en cuenta también. "
-            f"Caption del cliente: '{caption}'" if caption else "" +
-            "Responde en español con un resumen claro de lo que encontraste en la imagen. "
-            "Si no es un documento de licitación, describe brevemente qué ves."
+            "Eres un asistente que analiza imágenes de documentos de licitaciones públicas dominicanas.\n"
+            "Analiza esta imagen y extrae la información. Puede ser una pantalla del portal "
+            "comprasdominicana.gob.do, una convocatoria, un pliego o cualquier documento del DGCP.\n"
+            f"{caption_texto}\n\n"
+            "Devuelve ÚNICAMENTE un JSON válido sin markdown ni explicaciones, con este formato exacto:\n"
+            '{"codigo_proceso": "XXXX-XXX-XXX-0000-0000 o null", '
+            '"titulo": "nombre del proceso o null", '
+            '"entidad": "institución o null", '
+            '"monto": "monto estimado o null", '
+            '"fecha_cierre": "fecha de cierre en formato YYYY-MM-DD o null", '
+            '"tipo_proceso": "LPN/CP/CM/etc o null", '
+            '"otros_datos": "cualquier dato adicional relevante o null"}'
         )
 
         extraccion_resp = gemini_client.models.generate_content(
@@ -1045,23 +1062,61 @@ async def procesar_imagen_bg(phone: str, image_url: str, caption: str = "", nomb
                 prompt_extraccion,
                 _types.Part.from_bytes(data=image_bytes, mime_type=content_type)
             ],
-            config=_types.GenerateContentConfig(max_output_tokens=600, temperature=0.1)
+            config=_types.GenerateContentConfig(max_output_tokens=400, temperature=0.05)
         )
-        info_extraida = extraccion_resp.text.strip() if extraccion_resp.text else ""
+        raw = (extraccion_resp.text or "").strip().replace("```json", "").replace("```", "").strip()
 
-        if not info_extraida:
+        if not raw:
             print(f"[Closer] No se pudo extraer info de la imagen de {phone}")
             return
 
-        print(f"[Closer] 🖼️ Info extraída: {info_extraida[:150]}")
+        print(f"[Closer] 🖼️ Info extraída: {raw[:200]}")
 
-        # 3. Construir el "mensaje" combinando lo extraído + el caption original
+        # Parsear el JSON para obtener el código del proceso
+        import json as _json
+        datos_imagen = {}
+        try:
+            datos_imagen = _json.loads(raw)
+        except Exception:
+            # Si no es JSON válido, usar el texto crudo como descripción
+            datos_imagen = {"otros_datos": raw}
+
+        codigo_detectado = datos_imagen.get("codigo_proceso") or ""
+        titulo_imagen    = datos_imagen.get("titulo") or ""
+        entidad_imagen   = datos_imagen.get("entidad") or ""
+        monto_imagen     = datos_imagen.get("monto") or ""
+        fecha_imagen     = datos_imagen.get("fecha_cierre") or ""
+        otros_imagen     = datos_imagen.get("otros_datos") or ""
+
+        # 3. Construir mensaje sintetizado que el agente va a procesar
+        # Si detectamos un código de proceso, lo ponemos primero para que
+        # detectar_proceso_en_mensaje() lo encuentre y dispare la lógica correcta
+        partes = []
         if caption:
-            mensaje_sintetizado = f"{caption}\n\n[Imagen analizada: {info_extraida}]"
-        else:
-            mensaje_sintetizado = f"[El cliente envió una imagen con esta información: {info_extraida}]"
+            partes.append(caption)
+        if codigo_detectado and codigo_detectado.upper() != "NULL":
+            partes.append(f"Proceso: {codigo_detectado.upper()}")
+        if titulo_imagen and titulo_imagen.upper() != "NULL":
+            partes.append(f"Título: {titulo_imagen}")
+        if entidad_imagen and entidad_imagen.upper() != "NULL":
+            partes.append(f"Entidad: {entidad_imagen}")
+        if monto_imagen and monto_imagen.upper() != "NULL":
+            partes.append(f"Monto: {monto_imagen}")
+        if fecha_imagen and fecha_imagen.upper() != "NULL":
+            partes.append(f"Cierre: {fecha_imagen}")
+        if otros_imagen and otros_imagen.upper() != "NULL":
+            partes.append(otros_imagen)
 
-        # 4. Procesar igual que un mensaje de texto normal
+        mensaje_sintetizado = " | ".join(partes) if partes else f"El cliente envió una imagen de licitación"
+        print(f"[Closer] 🖼️ Mensaje sintetizado: {mensaje_sintetizado[:200]}")
+
+        # 4. Si tenemos código detectado, construir mensaje con ese código explícito
+        # para que detectar_proceso_en_mensaje() lo pesque y dispare el análisis
+        if codigo_detectado and codigo_detectado.upper() != "NULL":
+            mensaje_sintetizado = f"{codigo_detectado.upper()} — {mensaje_sintetizado}"
+
+        # 5. Procesar igual que un mensaje de texto — el agente busca el proceso,
+        # dispara análisis si no existe, y vende la consultoría
         await procesar_mensaje_bg(phone, mensaje_sintetizado, nombre)
 
     except Exception as e:
@@ -1136,7 +1191,12 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
     intencion          = detectar_intencion(mensaje)
     codigo_proceso     = detectar_proceso_en_mensaje(mensaje)
 
-    print(f"[Closer] Intención detectada: {intencion}")
+    # Si el mensaje viene de imagen y contiene un código de proceso, forzar intención
+    if not intencion == "consulta_proceso" and codigo_proceso:
+        intencion = "consulta_proceso"
+        print(f"[Closer] Intención promovida a consulta_proceso por código detectado: {codigo_proceso}")
+    else:
+        print(f"[Closer] Intención detectada: {intencion}")
 
     # ── Guardar intención en la conversación ──
     if conv_id and intencion not in ("saludo", "consulta_general"):
@@ -1254,6 +1314,16 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
                     "Dile al cliente que verifique el código y que si es un proceso reciente "
                     "puede tardar unos minutos en aparecer en el sistema."
                 )
+
+        # Si el mensaje vino de una imagen, personalizar el contexto de venta
+        if "[Imagen analizada" in mensaje or (codigo_proceso and "|" in mensaje):
+            contexto_adicional += (
+                "\nNOTA IMPORTANTE: El cliente envi\u00f3 una IMAGEN con este proceso. "
+                "Eso indica inter\u00e9s activo y real. "
+                "Abre tu respuesta reconociendo la imagen: "
+                "'Vi que me mandaste la convocatoria de [proceso]...' "
+                "y cierra directamente ofreciendo preparar la oferta completa."
+            )
 
         if conv_id:
             supabase_admin.table("conversaciones_closer")                 .update({"proceso_codigo": codigo_proceso})                 .eq("id", conv_id).execute()
