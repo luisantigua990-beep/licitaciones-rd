@@ -203,15 +203,119 @@ async def enviar_telegram(mensaje: str):
             print(f"[Telegram] Error: {e}")
 
 
-async def enviar_whatsapp(phone: str, mensaje: str):
+# ── Contador global de mensajes enviados esta hora (anti-ban) ─────────────────
+_mensajes_hora: list = []   # lista de timestamps de envíos recientes
+MAX_MENSAJES_POR_HORA = 25  # límite conservador para número nuevo
+
+
+def _en_horario_permitido() -> bool:
+    """
+    Bloquea envíos entre 11pm y 8am hora RD (UTC-4).
+    11pm RD = 03:00 UTC | 8am RD = 12:00 UTC
+    """
+    from datetime import timezone
+    hora_utc = datetime.now(timezone.utc).hour
+    # Convertir a hora RD (UTC-4)
+    hora_rd = (hora_utc - 4) % 24
+    # Bloqueado: 23:00 - 07:59 hora RD
+    return not (hora_rd >= 23 or hora_rd < 8)
+
+
+def _dentro_del_limite_hora() -> bool:
+    """Verifica que no hayamos excedido MAX_MENSAJES_POR_HORA en los últimos 60 min."""
+    global _mensajes_hora
+    ahora    = datetime.utcnow()
+    hace_1h  = ahora - timedelta(hours=1)
+    # Limpiar entradas viejas
+    _mensajes_hora = [t for t in _mensajes_hora if t > hace_1h]
+    return len(_mensajes_hora) < MAX_MENSAJES_POR_HORA
+
+
+async def _simular_typing(phone_clean: str, segundos: float):
+    """
+    Llama al endpoint de typing de Z-API para simular que el agente está escribiendo.
+    Hace la interacción parecer humana ante los sistemas de detección de WhatsApp.
+    """
+    if not ZAPI_INSTANCE_ID or not ZAPI_TOKEN:
+        return
+    url_typing = (
+        f"https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}"
+        f"/typing?phone={phone_clean}&duration={int(segundos * 1000)}"
+    )
+    headers = {"Client-Token": ZAPI_CLIENT_TOKEN} if ZAPI_CLIENT_TOKEN else {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(url_typing, headers=headers)
+    except Exception:
+        pass  # El typing es cosmético — si falla, no importa
+
+
+async def enviar_whatsapp(phone: str, mensaje: str, es_followup: bool = False):
+    """
+    Envío anti-ban con:
+    - Bloqueo de horario nocturno (11pm - 8am hora RD)
+    - Límite de 25 mensajes/hora
+    - Delay humanizado antes de enviar (simula escritura)
+    - Typing indicator vía Z-API
+    """
+    import random
+
     if not ZAPI_INSTANCE_ID or not ZAPI_TOKEN:
         print(f"[Z-API] Sin config — msg para {phone}: {mensaje[:80]}")
+        return
+
+    # ── Verificar horario permitido ──────────────────────────────────────────
+    if not _en_horario_permitido():
+        from datetime import timezone as _tz
+        hora_utc_ahora = datetime.now(_tz.utc)
+        hora_rd        = (hora_utc_ahora.hour - 4) % 24
+
+        if es_followup:
+            # Followups y alertas: NO bloquear el server esperando.
+            # El cron de followup/alertas corre diariamente a las 9am/6pm.
+            # Simplemente no enviamos — el cron del día siguiente lo reintentará
+            # porque proximo_followup_en ya venció y seguirá en la query.
+            print(f"[Z-API] 🌙 Followup fuera de horario ({hora_rd}h RD) — {phone} se enviará en el próximo cron")
+            return
+        else:
+            # Mensajes reactivos (el cliente escribió de noche):
+            # Calculamos cuántos segundos faltan para las 8am hora RD (12:00 UTC)
+            # y esperamos — así la respuesta llega a primera hora del día.
+            hora_8am_utc = hora_utc_ahora.replace(hour=12, minute=0, second=0, microsecond=0)
+            if hora_utc_ahora >= hora_8am_utc:
+                # Ya pasó las 8am UTC de hoy → la próxima 8am es mañana
+                hora_8am_utc = hora_8am_utc + timedelta(days=1)
+            segundos_espera = (hora_8am_utc - hora_utc_ahora).total_seconds()
+            print(f"[Z-API] 🌙 Mensaje reactivo fuera de horario ({hora_rd}h RD) — "
+                  f"esperando {segundos_espera/3600:.1f}h hasta las 8am para {phone}")
+            await asyncio.sleep(segundos_espera)
+            print(f"[Z-API] ☀️ Son las 8am — enviando mensaje que estaba en espera para {phone}")
+
+    # ── Verificar límite por hora ─────────────────────────────────────────────
+    if not _dentro_del_limite_hora():
+        print(f"[Z-API] ⛔ Límite de {MAX_MENSAJES_POR_HORA} msg/hora alcanzado — {phone} descartado")
         return
 
     phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "")
     url     = f"https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}/send-text"
     headers = {"Client-Token": ZAPI_CLIENT_TOKEN} if ZAPI_CLIENT_TOKEN else {}
 
+    # ── Delay humanizado ─────────────────────────────────────────────────────
+    # Respuestas reactivas (cliente escribió): 2-6 segundos
+    # Followups y alertas (outbound): 5-15 segundos (más cuidado)
+    if es_followup:
+        delay = random.uniform(5.0, 15.0)
+    else:
+        # Delay proporcional al largo del mensaje (simula tiempo de escritura)
+        chars_por_seg = random.uniform(18, 30)  # velocidad de escritura humana
+        delay_escritura = len(mensaje) / chars_por_seg
+        delay = max(2.0, min(delay_escritura, 8.0))
+
+    # Simular typing durante el delay
+    await _simular_typing(phone_clean, delay)
+    await asyncio.sleep(delay)
+
+    # ── Enviar mensaje ────────────────────────────────────────────────────────
     async with httpx.AsyncClient(timeout=15) as client:
         try:
             resp = await client.post(url, headers=headers, json={
@@ -221,7 +325,8 @@ async def enviar_whatsapp(phone: str, mensaje: str):
             if resp.status_code not in (200, 201):
                 print(f"[Z-API] Error {resp.status_code}: {resp.text[:200]}")
             else:
-                print(f"[Z-API] Enviado a {phone_clean}")
+                _mensajes_hora.append(datetime.utcnow())
+                print(f"[Z-API] ✅ Enviado a {phone_clean} (delay={delay:.1f}s, hora={len(_mensajes_hora)}/h)")
         except Exception as e:
             print(f"[Z-API] Error: {e}")
 
@@ -678,14 +783,56 @@ async def generar_followup_gemini(
     historial: list, nombre: str, paso: int,
     estado: str, proceso_codigo: str = None
 ) -> str:
-    if not gemini_client:
-        return f"Hola {nombre}, pudiste revisar la informacion que te compartí?"
+    """
+    Genera el mensaje de followup según el día en la secuencia:
+      Paso 0 → Día 2  — Valor + proceso relevante
+      Paso 1 → Día 5  — Urgencia con fecha real
+      Paso 2 → Día 7  — Prueba social + objeción
+      Paso 3 → Día 14 — Último intento, puerta abierta
+    """
+    nombre_corto = nombre.split()[0] if nombre else "amigo"
 
+    if not gemini_client:
+        fallbacks = {
+            0: f"Hola {nombre_corto}, ¿pudiste revisar la información que te compartí sobre las licitaciones?",
+            1: f"{nombre_corto}, hay un par de procesos activos que podrían interesarle a tu empresa. ¿Me das 2 minutos?",
+            2: f"{nombre_corto}, empresas como la tuya están ganando contratos con nosotros. ¿Cuándo hablamos?",
+            3: f"Hola {nombre_corto}, entiendo que estás ocupado. Cuando estés listo, aquí estamos. 🤝",
+        }
+        return fallbacks.get(paso, fallbacks[3])
+
+    # Contexto estratégico por paso
     contextos_paso = {
-        0: "Primer followup (dia 2). Muestra valor con info util sobre procesos activos.",
-        1: "Segundo followup (dia 5). Crea urgencia suave con fechas proximas.",
-        2: "Tercer followup (dia 7). Prueba social: empresas dominicanas que ganan licitaciones.",
-        3: "Cuarto followup (dia 14). Despedida amigable, deja la puerta abierta.",
+        0: (
+            "DÍA 2 — Primer seguimiento. El cliente no respondió aún. "
+            "Tu objetivo: reactivar con VALOR real. "
+            "Estrategia: menciona un proceso activo relevante (si tienes uno del CONTEXTO) "
+            "o pregunta directamente por qué tipo de licitaciones está buscando. "
+            "NO menciones precio todavía. Cierra con pregunta de calificación."
+        ),
+        1: (
+            "DÍA 5 — Segundo seguimiento. Crea URGENCIA real. "
+            "Estrategia: menciona que hay procesos con fechas próximas de cierre "
+            "y que preparar una oferta toma tiempo. "
+            "Di algo como: 'Para presentarse en [fecha], el equipo necesita al menos X días.' "
+            "Cierra preguntando si tiene algún proceso en mente ahora mismo."
+        ),
+        2: (
+            "DÍA 7 — Tercer seguimiento. PRUEBA SOCIAL + manejo de objeción. "
+            "Estrategia: menciona (sin inventar números exactos) que empresas dominicanas "
+            "están ganando contratos con apoyo profesional en la preparación de ofertas. "
+            "Luego aplica labeling suave: 'Parece que todavía estás evaluando si vale la pena...' "
+            "Remata con el argumento del riesgo: una sola página mal firmada anula meses de trabajo. "
+            "CTA: ofrece una llamada rápida de 15 minutos sin compromiso."
+        ),
+        3: (
+            "DÍA 14 — Último intento. Tono de cierre amigable, NO desesperado. "
+            "Estrategia: di que entiendes que quizás no es el momento, "
+            "pero que cuando llegue el proceso correcto, aquí estarás. "
+            "Deja la puerta 100% abierta. "
+            "Cierra con algo cálido y sin presión — este mensaje es para quedar bien, "
+            "no para vender. El cliente puede volver en semanas."
+        ),
     }
 
     historial_texto = ""
@@ -693,39 +840,62 @@ async def generar_followup_gemini(
         rol = "Cliente" if msg["rol"] == "cliente" else "Lab"
         historial_texto += f"{rol}: {msg['contenido']}\n"
 
+    # Info del proceso si existe
     proceso_info = ""
     if proceso_codigo:
         proceso = buscar_proceso_dgcp(proceso_codigo)
         if proceso:
-            proceso_info = f"El cliente pregunto por {proceso_codigo} — {proceso.get('titulo', '')} de {proceso.get('unidad_compra', '')}."
+            monto   = proceso.get("monto_estimado", 0)
+            monto_f = f"RD${float(monto):,.0f}" if monto else "monto no publicado"
+            fecha   = str(proceso.get("fecha_fin_recepcion_ofertas", ""))[:10]
+            # Calcular días restantes para urgencia en paso 1
+            dias_restantes = ""
+            if fecha:
+                try:
+                    from datetime import date
+                    dias = (date.fromisoformat(fecha) - date.today()).days
+                    if dias >= 0:
+                        dias_restantes = f" — cierra en {dias} días"
+                except Exception:
+                    pass
+            proceso_info = (
+                f"Proceso de interés del cliente: {proceso_codigo} — "
+                f"{proceso.get('titulo', '')} | {proceso.get('unidad_compra', '')} | "
+                f"{monto_f}{dias_restantes}"
+            )
+
+    instruccion = contextos_paso.get(paso, contextos_paso[3])
 
     prompt = f"""{SYSTEM_PROMPT}
 
-Envias un mensaje de seguimiento a {nombre}.
-Contexto: {contextos_paso.get(paso, contextos_paso[3])}
+═══ CONTEXTO DE ESTE FOLLOWUP ═══
+{instruccion}
+
+{f"Proceso relevante: {proceso_info}" if proceso_info else ""}
 Estado del cliente: {estado}
-{proceso_info}
 
-Historial:
-{historial_texto if historial_texto else "(sin historial)"}
+═══ HISTORIAL ═══
+{historial_texto if historial_texto else "(sin historial — cliente nunca respondió)"}
 
-Instrucciones:
-- Un solo mensaje de WhatsApp, natural, español dominicano
-- Maximo 3 oraciones
-- No menciones que es un seguimiento
-- Cierra con pregunta o CTA suave
-- Solo el texto del mensaje, sin comillas"""
+═══ INSTRUCCIONES DE FORMATO ═══
+- Escríbele a {nombre_corto} directamente
+- Un solo mensaje de WhatsApp, español dominicano natural
+- Máximo 3-4 oraciones
+- NO menciones que es un seguimiento automático
+- NO uses asteriscos ni markdown
+- Cierra siempre con pregunta o CTA concreto
+- Solo el texto, sin comillas"""
 
     try:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=200, temperature=0.8)
+            config=types.GenerateContentConfig(max_output_tokens=250, temperature=0.78)
         )
         return response.text.strip()
     except Exception as e:
         print(f"[Gemini] Error followup: {e}")
-        return f"Hola {nombre}, como vas con los temas de licitaciones?"
+        return f"Hola {nombre_corto}, ¿cómo vas con los temas de licitaciones?"
 
 
 async def generar_mensaje_alerta_proceso(nombre: str, procesos: list, keywords: list) -> str:
@@ -805,12 +975,97 @@ async def recibir_mensaje_zapi(request: Request, background_tasks: BackgroundTas
             background_tasks.add_task(procesar_audio_bg, phone, audio_url, nombre)
             return {"status": "recibido", "processing": True, "tipo": "audio"}
 
+    # ── Soporte de imágenes con info de procesos ───────────────────────────────
+    # Z-API envía: {"image": {"imageUrl": "https://...", "mimeType": "image/jpeg", "caption": "..."}}
+    # El cliente puede mandar una foto de un proceso, convocatoria, pliego, etc.
+    # Gemini lee la imagen y extrae toda la información relevante.
+    image_data = body.get("image")
+    if image_data and isinstance(image_data, dict):
+        image_url = image_data.get("imageUrl", "")
+        if image_url:
+            # El caption es texto adicional que el cliente escribió junto a la imagen
+            caption = image_data.get("caption", "") or ""
+            nombre  = body.get("senderName", "") or body.get("pushName", "") or ""
+            background_tasks.add_task(procesar_imagen_bg, phone, image_url, caption, nombre)
+            return {"status": "recibido", "processing": True, "tipo": "imagen"}
+
     if not texto:
         return {"status": "ok", "skipped": "no_text"}
 
     nombre = body.get("senderName", "") or body.get("pushName", "") or ""
     background_tasks.add_task(procesar_mensaje_bg, phone, texto, nombre)
     return {"status": "recibido", "processing": True}
+
+
+async def procesar_imagen_bg(phone: str, image_url: str, caption: str = "", nombre: str = ""):
+    """
+    Descarga la imagen que el cliente envió (foto de proceso, convocatoria,
+    pliego, pantalla del DGCP, etc.), Gemini la lee y extrae toda la
+    información relevante, luego responde como si fuera un mensaje de texto.
+
+    Z-API envía imageUrl en el webhook — disponible 30 días en su storage.
+    """
+    print(f"[Closer] 🖼️ Imagen recibida de {phone} — analizando...")
+    try:
+        # 1. Descargar la imagen
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(image_url)
+            if resp.status_code != 200:
+                print(f"[Closer] Error descargando imagen: {resp.status_code}")
+                return
+            image_bytes   = resp.content
+            content_type  = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
+
+        print(f"[Closer] Imagen descargada: {len(image_bytes):,} bytes ({content_type})")
+
+        if not gemini_client:
+            print("[Closer] Gemini no configurado — imagen ignorada")
+            return
+
+        # 2. Pedirle a Gemini que extraiga la información del proceso de la imagen
+        from google.genai import types as _types
+
+        prompt_extraccion = (
+            "Analiza esta imagen que un cliente envió por WhatsApp. "
+            "Puede ser una foto de una convocatoria, un proceso del DGCP, un pliego, "
+            "una pantalla del portal comprasdominicana, o cualquier documento de licitación. "
+            "Extrae TODA la información relevante que veas: "
+            "código del proceso, nombre/título, institución o entidad, "
+            "monto estimado, fecha de cierre de ofertas, tipo de proceso, "
+            "y cualquier otro dato importante. "
+            "Si hay un caption del cliente, tenlo en cuenta también. "
+            f"Caption del cliente: '{caption}'" if caption else "" +
+            "Responde en español con un resumen claro de lo que encontraste en la imagen. "
+            "Si no es un documento de licitación, describe brevemente qué ves."
+        )
+
+        extraccion_resp = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                prompt_extraccion,
+                _types.Part.from_bytes(data=image_bytes, mime_type=content_type)
+            ],
+            config=_types.GenerateContentConfig(max_output_tokens=600, temperature=0.1)
+        )
+        info_extraida = extraccion_resp.text.strip() if extraccion_resp.text else ""
+
+        if not info_extraida:
+            print(f"[Closer] No se pudo extraer info de la imagen de {phone}")
+            return
+
+        print(f"[Closer] 🖼️ Info extraída: {info_extraida[:150]}")
+
+        # 3. Construir el "mensaje" combinando lo extraído + el caption original
+        if caption:
+            mensaje_sintetizado = f"{caption}\n\n[Imagen analizada: {info_extraida}]"
+        else:
+            mensaje_sintetizado = f"[El cliente envió una imagen con esta información: {info_extraida}]"
+
+        # 4. Procesar igual que un mensaje de texto normal
+        await procesar_mensaje_bg(phone, mensaje_sintetizado, nombre)
+
+    except Exception as e:
+        print(f"[Closer] Error procesando imagen de {phone}: {e}")
 
 
 async def procesar_audio_bg(phone: str, audio_url: str, nombre: str = ""):
@@ -1144,11 +1399,16 @@ async def ejecutar_followups_bg():
         print(f"[Closer] {len(conversaciones)} followups pendientes")
         for conv in conversaciones:
             await procesar_followup_individual(conv)
-            await asyncio.sleep(3)
+            await asyncio.sleep(10)  # Anti-ban: pausa entre followups outbound
     except Exception as e:
         print(f"[Closer] Error followups: {e}")
 
 
+# Días de espera ENTRE cada followup para llegar a los días 2, 5, 7 y 14
+# Día 0 (primer contacto) → +2d → Followup 1 (día 2)
+# Followup 1 (día 2)      → +3d → Followup 2 (día 5)
+# Followup 2 (día 5)      → +2d → Followup 3 (día 7)
+# Followup 3 (día 7)      → +7d → Followup 4 (día 14) — último intento
 DIAS_FOLLOWUP = [2, 3, 2, 7]
 
 
@@ -1176,7 +1436,7 @@ async def procesar_followup_individual(conv: dict):
     historial = obtener_historial(conv_id, limite=6)
     mensaje   = await generar_followup_gemini(historial, nombre, paso, estado, proceso_cod)
 
-    await enviar_whatsapp(phone, mensaje)
+    await enviar_whatsapp(phone, mensaje, es_followup=True)  # Anti-ban: delay mayor para outbound
     guardar_mensaje(conv_id, "agente", mensaje, generado_por_ia=True)
 
     nuevo_paso  = paso + 1
@@ -1224,7 +1484,7 @@ async def ejecutar_alertas_bg():
         print(f"[Closer] {len(alertas)} alertas activas")
         for alerta in alertas:
             await procesar_alerta_individual(alerta)
-            await asyncio.sleep(2)
+            await asyncio.sleep(8)  # Anti-ban: pausa entre alertas outbound
     except Exception as e:
         print(f"[Closer] Error alertas: {e}")
 
@@ -1264,7 +1524,7 @@ async def procesar_alerta_individual(alerta: dict):
     if not mensaje:
         return
 
-    await enviar_whatsapp(phone, mensaje)
+    await enviar_whatsapp(phone, mensaje, es_followup=True)  # Anti-ban: delay mayor para outbound
 
     # Marcar como notificados (máximo 50 en memoria para no crecer infinito)
     codigos_nuevos   = [p.get("codigo_proceso") for p in procesos_nuevos]
