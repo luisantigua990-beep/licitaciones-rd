@@ -3407,25 +3407,38 @@ def debug_html_lista_portal(_: None = Depends(verificar_admin)):
 
 @app.post("/api/webhook/analizar-pliego")
 async def webhook_analisis_pliego(request: Request, background_tasks: BackgroundTasks):
-    """Endpoint llamado por Supabase (Webhook) al insertar un nuevo seguimiento"""
+    """Endpoint llamado por Supabase (Webhook) al insertar un nuevo seguimiento.
+    Solo actua si el endpoint directo /analizar no lo tomo ya (evita email doble)."""
     payload = await request.json()
-    
     registro = payload.get("record", {})
     proceso_id = registro.get("proceso_codigo")
-    
-    if proceso_id:
-        async def _analizar_con_semaforo():
-            # Esperar turno — máximo 5 análisis simultáneos
-            async with _semaforo_analisis:
-                # Ejecutar en threadpool para no bloquear el event loop
-                # (ejecutar_analisis_gemini es síncrona y hace I/O pesado)
-                loop = asyncio.get_event_loop()
-                await asyncio.wait_for(loop.run_in_executor(_executor_gemini, ejecutar_analisis_gemini, proceso_id), timeout=600)
 
-        background_tasks.add_task(_analizar_con_semaforo)
-        return {"status": "success", "message": f"IA encolada para {proceso_id}"}
-    
-    return {"status": "error", "message": "Payload inválido o sin proceso_codigo"}
+    if not proceso_id:
+        return {"status": "error", "message": "Payload invalido o sin proceso_codigo"}
+
+    # Guard anti-duplicado: si ya hay registro en analisis_pliego con estado activo,
+    # el endpoint /analizar ya lo tomo primero — no encolar de nuevo.
+    try:
+        check = supabase_admin.table("analisis_pliego") \
+            .select("estado") \
+            .eq("proceso_id", proceso_id) \
+            .execute()
+        if check.data:
+            estado = check.data[0].get("estado", "")
+            if estado in ("completado", "procesando", "pendiente", "pendiente_analisis"):
+                print(f"Webhook saltado — {proceso_id} ya en estado {estado!r}")
+                return {"status": "skipped", "message": f"Ya procesado: {estado}"}
+    except Exception as e:
+        print(f"Webhook guard error: {e}")
+
+    async def _analizar_con_semaforo():
+        async with _semaforo_analisis:
+            loop = asyncio.get_event_loop()
+            await asyncio.wait_for(loop.run_in_executor(_executor_gemini, ejecutar_analisis_gemini, proceso_id), timeout=600)
+
+    background_tasks.add_task(_analizar_con_semaforo)
+    return {"status": "success", "message": f"IA encolada para {proceso_id}"}
+
 
 
 # ══════════════════════════════════════════════════
