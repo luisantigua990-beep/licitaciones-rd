@@ -16,12 +16,15 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
 API_BASE_URL = "https://datosabiertos.dgcp.gob.do/api-dgcp/v1"
 
 # Ciclo de refresco del Data Warehouse de la DGCP (cada 8 horas)
 CICLO_HORAS_DGCP = 8
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Cliente admin para tablas con RLS (user_subscriptions, filtros_usuario)
+supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # ============================================
 # CRON LOG
@@ -478,7 +481,7 @@ def notificar_procesos_nuevos(procesos_nuevos):
         from notifications import enviar_notificacion
         from pywebpush import WebPushException
 
-        result = supabase.table("user_subscriptions")            .select("*")            .eq("active", True)            .execute()
+        result = supabase_admin.table("user_subscriptions")            .select("*")            .eq("active", True)            .execute()
 
         suscripciones = result.data
         if not suscripciones:
@@ -515,7 +518,7 @@ def notificar_procesos_nuevos(procesos_nuevos):
                         notificaciones_enviadas += 1
                     elif resultado == "410":
                         # Suscripción expirada — desactivar
-                        supabase.table("user_subscriptions")                            .update({"active": False})                            .eq("endpoint", sub["endpoint"]).execute()
+                        supabase_admin.table("user_subscriptions")                            .update({"active": False})                            .eq("endpoint", sub["endpoint"]).execute()
                         print(f"🧹 Suscripción 410 desactivada: {sub['endpoint'][:50]}...")
                     else:
                         errores += 1
