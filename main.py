@@ -16,12 +16,12 @@ import io
 from PyPDF2 import PdfReader
 from bs4 import BeautifulSoup
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 
 
-from fastapi import FastAPI, Query, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, Query, HTTPException, BackgroundTasks, Request, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -70,6 +70,23 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Cliente admin para tablas con RLS estricto (cron_log, analisis_pliego)
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+# ============================================
+# PROTECCIÓN ENDPOINTS ADMIN
+# ============================================
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
+
+def verificar_admin(x_admin_key: str = Header(None)):
+    """
+    Dependencia que protege todos los endpoints /api/admin/*.
+    Requiere el header: X-Admin-Key: <ADMIN_SECRET>
+    Configura ADMIN_SECRET en Railway como variable de entorno.
+    """
+    if not ADMIN_SECRET:
+        raise HTTPException(status_code=500, detail="ADMIN_SECRET no configurado en Railway")
+    if x_admin_key != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
 
 # ============================================
 # CONFIGURACIÓN DE INTELIGENCIA ARTIFICIAL
@@ -1337,7 +1354,7 @@ async def desuscribirse(payload: dict):
     return {"ok": True}
 
 @app.post("/api/admin/forzar-monitor")
-async def forzar_monitor():
+async def forzar_monitor(_: None = Depends(verificar_admin)):
     from monitor import obtener_todas_las_paginas, guardar_procesos_nuevos, procesar_articulos_de_nuevos, notificar_procesos_nuevos
     procesos = obtener_todas_las_paginas(fecha_desde="2026-02-20", fecha_hasta="2026-02-24")
     nuevos = guardar_procesos_nuevos(procesos)
@@ -1377,7 +1394,7 @@ async def enviar_prueba(payload: dict):
 
 
 @app.post("/api/admin/notificar-seguimiento")
-async def notificar_seguimiento():
+async def notificar_seguimiento(_: None = Depends(verificar_admin)):
     from notifications import enviar_notificacion
     from datetime import date, timedelta
 
@@ -1474,7 +1491,7 @@ async def notificar_seguimiento():
     return {"notificaciones_enviadas": enviadas, "seguimientos_revisados": len(seguimientos)}
 
 @app.get("/api/admin/cron-log")
-def ver_cron_log(job: str = None, limit: int = 50):
+def ver_cron_log(job: str = None, limit: int = 50, _: None = Depends(verificar_admin)):
     query = supabase.table("cron_log").select("*").order("ejecutado_at", desc=True).limit(limit)
     if job:
         query = query.eq("job", job)
@@ -2222,8 +2239,10 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
                 pdf_bytes_vision = _buf.getvalue()
                 print(f"✂️ PDF recortado: {len(pdf_bytes_vision):,} bytes ({_max_pags} páginas)")
             except Exception as _e_crop:
-                print(f"⚠️ Error recortando PDF: {_e_crop} — usando primeros 15 MB")
-                pdf_bytes_vision = pdf_bytes[:PDF_MAX_BYTES]
+                # Cortar bytes crudos produce PDF corrupto que Gemini rechaza con "no pages"
+                # Mejor lanzar excepción para que el proceso quede en error con mensaje claro
+                print(f"⚠️ Error recortando PDF: {_e_crop} — PDF demasiado grande, no se puede procesar")
+                raise Exception(f"PDF escaneado demasiado grande ({len(pdf_bytes):,} bytes) y pypdf no pudo recortarlo: {_e_crop}")
         else:
             pdf_bytes_vision = pdf_bytes
 
@@ -2860,7 +2879,7 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True):
         }).execute()
 
 @app.get("/api/admin/test-pliego")
-def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
+def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567"), _: None = Depends(verificar_admin)):
     """
     Diagnóstico del scraper de pliegos.
     Ejecuta el flujo completo y devuelve un reporte detallado del HTML recibido
@@ -3006,7 +3025,7 @@ def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567")):
 
 
 @app.post("/api/admin/forzar-analisis")
-async def forzar_analisis(background_tasks: BackgroundTasks, codigo: str):
+async def forzar_analisis(background_tasks: BackgroundTasks, codigo: str, _: None = Depends(verificar_admin)):
     """Re-corre el análisis Gemini ignorando el cache. Limpia el estado primero."""
     try:
         supabase_admin.table("analisis_pliego").update({
@@ -3026,7 +3045,7 @@ async def forzar_analisis(background_tasks: BackgroundTasks, codigo: str):
 
 
 @app.get("/api/admin/debug-precio-articulo")
-def debug_precio_articulo(notice_uid: str = "DO1.NTC.1679301"):
+def debug_precio_articulo(notice_uid: str = "DO1.NTC.1679301", _: None = Depends(verificar_admin)):
     """Ver HTML exacto de las celdas de precio — usa mismos headers que scraper_articulos_portal"""
     import requests as _req
     from bs4 import BeautifulSoup as _BS
@@ -3096,7 +3115,7 @@ def debug_precio_articulo(notice_uid: str = "DO1.NTC.1679301"):
 
 
 @app.post("/api/admin/rellenar-precios-articulos")
-async def rellenar_precios_articulos(background_tasks: BackgroundTasks):
+async def rellenar_precios_articulos(background_tasks: BackgroundTasks, _: None = Depends(verificar_admin)):
     """
     Re-scrapea artículos existentes que tienen precio_total_estimado = NULL.
     Corre en background para no bloquear el servidor.
@@ -3163,7 +3182,7 @@ async def rellenar_precios_articulos(background_tasks: BackgroundTasks):
 
 
 @app.get("/api/admin/html-articulos")
-def debug_html_articulos(codigo: str = None, notice_uid: str = None):
+def debug_html_articulos(codigo: str = None, notice_uid: str = None, _: None = Depends(verificar_admin)):
     """
     Endpoint de diagnóstico para analizar estructura HTML de artículos del portal DGCP.
     Uso: GET /api/admin/html-articulos?notice_uid=DO1.NTC.1681956
@@ -3251,7 +3270,7 @@ def debug_html_articulos(codigo: str = None, notice_uid: str = None):
 
 
 @app.get("/api/admin/test-articulos-portal")
-def test_articulos_portal(notice_uid: str = None, codigo: str = None):
+def test_articulos_portal(notice_uid: str = None, codigo: str = None, _: None = Depends(verificar_admin)):
     """
     Prueba el scraper de artículos directamente del portal DGCP.
     Uso: GET /api/admin/test-articulos-portal?notice_uid=DO1.NTC.1681956
@@ -3285,7 +3304,7 @@ def test_articulos_portal(notice_uid: str = None, codigo: str = None):
 
 
 @app.get("/api/admin/html-lista-raw")
-def debug_html_lista_raw():
+def debug_html_lista_raw(_: None = Depends(verificar_admin)):
     """Devuelve zonas clave del HTML de la lista para encontrar noticeUID"""
     import re as _re
     import requests as _req
@@ -3331,7 +3350,7 @@ def debug_html_lista_raw():
 
 
 @app.get("/api/admin/html-lista-portal")
-def debug_html_lista_portal():
+def debug_html_lista_portal(_: None = Depends(verificar_admin)):
     """
     Descarga el HTML raw de la lista del portal y busca noticeUID.
     Uso: GET /api/admin/html-lista-portal
