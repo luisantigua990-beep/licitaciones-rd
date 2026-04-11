@@ -45,6 +45,9 @@ def enviar_notificacion(subscription_info: dict, titulo: str, cuerpo: str, url: 
         print(f"❌ WebPushException [{status}] endpoint={subscription_info.get('endpoint','')[:60]}: {str(e)[:150]} | resp: {body}")
         if status in (404, 410):
             return "410"
+        # 400 con VapidPkHashMismatch = claves VAPID rotadas, suscripción inválida
+        if status == 400 and "VapidPkHashMismatch" in body:
+            return "410"
         return False
 
     except Exception as e:
