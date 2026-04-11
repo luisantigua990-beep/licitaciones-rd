@@ -790,12 +790,83 @@ async def recibir_mensaje_zapi(request: Request, background_tasks: BackgroundTas
         body.get("body", "") or
         ""
     )
+
+    # ── Soporte de notas de voz (Z-API plan pago) ─────────────────────────────
+    # Z-API envía: {"audio": {"audioUrl": "https://...", "mimeType": "audio/ogg; codecs=opus", "ptt": true}}
+    # Los archivos están disponibles 30 días en el storage de Z-API.
+    # Gemini 2.5 Flash transcribe el audio directamente sin servicio externo.
+    es_audio = False
+    audio_data = body.get("audio")
+    if not texto and audio_data and isinstance(audio_data, dict):
+        audio_url = audio_data.get("audioUrl", "")
+        if audio_url:
+            es_audio = True
+            nombre = body.get("senderName", "") or body.get("pushName", "") or ""
+            background_tasks.add_task(procesar_audio_bg, phone, audio_url, nombre)
+            return {"status": "recibido", "processing": True, "tipo": "audio"}
+
     if not texto:
         return {"status": "ok", "skipped": "no_text"}
 
     nombre = body.get("senderName", "") or body.get("pushName", "") or ""
     background_tasks.add_task(procesar_mensaje_bg, phone, texto, nombre)
     return {"status": "recibido", "processing": True}
+
+
+async def procesar_audio_bg(phone: str, audio_url: str, nombre: str = ""):
+    """
+    Descarga la nota de voz desde Z-API, la transcribe con Gemini y
+    la procesa igual que un mensaje de texto normal.
+
+    Requiere Z-API plan pago (la URL del audio viene en el webhook).
+    Los archivos están disponibles 30 días en el storage de Z-API.
+    """
+    print(f"[Closer] 🎤 Audio recibido de {phone} — transcribiendo...")
+    try:
+        # 1. Descargar el audio desde Z-API
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(audio_url)
+            if resp.status_code != 200:
+                print(f"[Closer] Error descargando audio: {resp.status_code}")
+                return
+            audio_bytes = resp.content
+            content_type = resp.headers.get("content-type", "audio/ogg")
+
+        print(f"[Closer] Audio descargado: {len(audio_bytes):,} bytes ({content_type})")
+
+        # 2. Transcribir con Gemini 2.5 Flash (acepta audio nativo)
+        if not gemini_client:
+            print("[Closer] Gemini no configurado — audio ignorado")
+            return
+
+        import base64 as _b64
+        audio_b64    = _b64.b64encode(audio_bytes).decode("utf-8")
+        # Normalizar mime type para Gemini
+        mime_gemini  = "audio/ogg" if "ogg" in content_type else content_type.split(";")[0].strip()
+
+        from google.genai import types as _types
+        transcripcion_resp = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                "Transcribe este audio de WhatsApp exactamente como fue dicho, en español. "
+                "Devuelve SOLO el texto transcrito, sin explicaciones ni comillas.",
+                _types.Part.from_bytes(data=audio_bytes, mime_type=mime_gemini)
+            ],
+            config=_types.GenerateContentConfig(max_output_tokens=500, temperature=0.1)
+        )
+        texto_transcrito = transcripcion_resp.text.strip() if transcripcion_resp.text else ""
+
+        if not texto_transcrito:
+            print(f"[Closer] Transcripción vacía para audio de {phone}")
+            return
+
+        print(f"[Closer] 🎤 Transcripción: {texto_transcrito[:100]}")
+
+        # 3. Procesar como mensaje de texto normal — flujo idéntico
+        await procesar_mensaje_bg(phone, texto_transcrito, nombre)
+
+    except Exception as e:
+        print(f"[Closer] Error procesando audio de {phone}: {e}")
 
 
 async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
