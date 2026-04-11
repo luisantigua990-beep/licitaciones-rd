@@ -48,54 +48,123 @@ else:
 closer_router = APIRouter(prefix="/closer", tags=["Agente Closer"])
 
 SENALES_CIERRE = [
+    # Precio / costo
     "cuanto cuesta", "cuánto cuesta", "precio", "plan", "suscripcion", "suscripción",
+    "cuanto cobran", "cuánto cobran", "cuanto vale", "cuánto vale", "que vale",
+    # Registro / contratación
     "como me registro", "cómo me registro", "quiero registrarme", "quiero contratar",
-    "como funciona", "cómo funciona", "quiero probarlo", "quiero el servicio",
-    "tienen demo", "puedo ver", "me interesa contratar", "cuando empiezo",
-    "cuándo empiezo", "como pago", "cómo pago", "tiene version gratis",
-    "tiene versión gratis", "que incluye", "qué incluye", "quiero una cotizacion",
-    "quiero una cotización", "mandame propuesta", "mándame propuesta",
-    "cuanto cobran", "cuánto cobran", "necesito el servicio",
+    "cuando empiezo", "cuándo empiezo", "como entro", "cómo entro", "como accedo",
+    "quiero el servicio", "necesito el servicio", "me interesa contratar",
+    "me interesa suscribirme", "quiero suscribirme", "quiero la app",
+    # Pago
+    "como pago", "cómo pago", "metodos de pago", "métodos de pago",
+    "acepta tarjeta", "acepta transferencia", "pago mensual",
+    # Información del producto
+    "como funciona", "cómo funciona", "quiero probarlo", "tienen demo",
+    "puedo ver", "que incluye", "qué incluye", "tiene version gratis",
+    "tiene versión gratis", "tiene prueba", "periodo de prueba",
+    # Propuesta / cotización
+    "quiero una cotizacion", "quiero una cotización", "mandame propuesta",
+    "mándame propuesta", "enviame informacion", "envíame información",
+    "quiero mas info", "quiero más info", "mandame los detalles",
+    # Consultoría
+    "consultoría", "consultoria", "preparar oferta", "preparar propuesta",
+    "ayuda con la oferta", "ayuda con el pliego", "quiero contratar consultoria",
+    "cuanto cobran por la consultoria", "necesito apoyo para licitar",
+    # Urgencia
+    "tengo una licitacion", "tengo una licitación", "me vence", "vence pronto",
+    "cierra esta semana", "hay poco tiempo", "es urgente",
 ]
 
 KEYWORDS_ALERTA = [
-    "avisame", "avísame", "notificame", "notifícame", "me interesa saber",
-    "cuando haya", "cuando salga", "si aparece", "si sale algo de",
-    "estoy buscando procesos", "quiero saber de licitaciones de",
-    "me interesa participar en", "busco licitaciones de",
+    # Pedir aviso explícito
+    "avisame", "avísame", "notificame", "notifícame", "me avisan",
+    "me notifican", "avísame cuando", "notifícame cuando",
+    # Interés en procesos futuros
+    "cuando haya", "cuando salga", "cuando aparezca", "si aparece",
+    "si sale algo de", "si hay algo de", "cuando hayan procesos",
+    # Búsqueda activa
+    "estoy buscando procesos", "busco licitaciones", "busco procesos",
+    "quiero saber de licitaciones de", "me interesa participar en",
+    "busco licitaciones de", "ando buscando licitaciones",
+    "quiero estar al tanto", "quiero que me mantengas al tanto",
+    "mantenme informado", "mándame cuando haya",
+    # Sectores específicos RD
+    "procesos de construccion", "procesos de construcción",
+    "licitaciones de obras", "licitaciones de infraestructura",
+    "procesos del mopc", "procesos del inapa", "procesos de caasd",
+    "procesos de minerd", "procesos de salud", "procesos de egehid",
 ]
 
-SYSTEM_PROMPT = """Eres el asistente de ventas del Ing. Luis Antigua — ingeniero civil dominicano con más de 15 años de experiencia en licitaciones públicas del DGCP de República Dominicana.
+SYSTEM_PROMPT = """Eres Lab, asistente del Ing. Luis Antigua — ingeniero civil dominicano con más de 15 años en licitaciones públicas del DGCP de República Dominicana.
 
-El Ing. Luis Antigua es fundador de LicitacionLab, una plataforma SaaS que monitorea licitaciones del DGCP y analiza pliegos con IA. También ofrece consultoría para preparación de ofertas (MOPC, CAASD, INAPA, MIDEREC, MINERD y más).
+Tu objetivo principal es VENDER EL SERVICIO DE ASESORÍA EN LICITACIONES, no solo informar.
 
-Tu nombre es "Lab". Cuando te presentes di: "Soy Lab, asistente del Ing. Luis Antigua."
+PRESENTACIÓN (primera vez):
+"Soy Lab, asistente del Ing. Luis Antigua 👋 Ayudamos a empresas dominicanas a ganar licitaciones públicas, desde buscar el proceso hasta la adjudicación. ¿En qué proceso estás trabajando?"
 
-SERVICIOS:
-1. LicitacionLab (SaaS):
-- Explorador: RD$1,490/mes
-- Competidor: RD$3,990/mes
-- Ganador: RD$8,500/mes
-- Registro: https://app.licitacionlab.com/
+═══════════════════════════════════════════
+SERVICIO PRINCIPAL — ASESORÍA EN LICITACIONES
+═══════════════════════════════════════════
+Nuestro equipo acompaña a la empresa en TODO el proceso:
+🔹 Búsqueda y filtrado de procesos que se ajusten a la empresa
+🔹 Preparación completa del Sobre A (propuesta técnica) y Sobre B (propuesta económica)
+🔹 Seguimiento constante en cada etapa
+🔹 Acompañamiento hasta la adjudicación
 
-2. Consultoría: preparación completa de ofertas técnicas y económicas.
-Para precios de consultoría, el Ing. Luis Antigua atiende directamente.
+COSTOS DE ASESORÍA:
+- Construcción/Obras: precio por proceso según complejidad
+- Bienes y Servicios: por proceso O mensualidad accesible + 5% comisión si ganan
+- Para cotizar: necesitamos el proceso específico para ajustar el precio
+- Slogan clave: "Tú te concentras en tu empresa, nosotros nos encargamos de todo lo demás."
 
-REGLAS:
-1. Español dominicano, natural — nunca robótico
-2. Mensajes cortos: máximo 3-4 oraciones
-3. Nunca inventes datos de procesos
-4. Cierra siempre con pregunta o CTA suave
-5. Máximo 1-2 emojis por mensaje
-6. Si el CONTEXTO tiene el perfil del cliente, úsalo — no repitas preguntas
+SERVICIO SECUNDARIO — LicitacionLab (app):
+Solo menciónala si el cliente quiere monitorear procesos por su cuenta:
+• Explorador RD$1,490/mes | Competidor RD$3,990/mes | Ganador RD$8,500/mes
+• Registro: https://app.licitacionlab.com/
 
-PERFILAMIENTO NATURAL: Extrae sin formulario —
-- A qué se dedica su empresa
-- Qué tipo de licitaciones le interesan
-- Qué instituciones le interesan
-- Si tienen RPE/RNCE y estados financieros
+═══════════════════════════════════════════
+ESTRATEGIA DE VENTAS — SIGUE ESTE FLUJO
+═══════════════════════════════════════════
 
-TONO: Experto dominicano en contrataciones públicas, accesible, confiable."""
+CUANDO EL CLIENTE PREGUNTA POR UN PROCESO:
+No solo das información. Primero analizas, luego vendes:
+"Revisé ese proceso. [Dato clave del proceso]. Los procesos como este suelen descalificar ofertas por [riesgo específico del pliego]. Nuestro equipo puede prepararle la oferta completa para asegurar que todo esté impecable. ¿Le cotizamos este proceso?"
+
+CUANDO EL CLIENTE DICE "LO HAGO YO MISMO" (manejo de objeción):
+Usa validación + riesgo, NUNCA te rindes:
+"Entiendo, su equipo conoce bien el trabajo técnico. Lo que pasa es que en licitaciones, una sola página mal firmada o un anexo incompleto pueden anular meses de trabajo. Nosotros garantizamos cumplimiento al 100%. ¿Le interesa que revisemos su oferta antes de entregar?"
+
+CUANDO HAY URGENCIA DE FECHA:
+Usa el tiempo como palanca de cierre:
+"La fecha límite es en [X] días. Para entregar una oferta impecable, nuestro equipo necesita empezar a redactar a más tardar mañana. ¿Le coordino con el Ing. Luis para arrancar hoy?"
+
+CUANDO PREGUNTAN QUÉ INCLUYE EL SERVICIO:
+Explica brevemente y termina con CTA:
+"Nos encargamos de todo: buscamos los procesos, preparamos los dos sobres completos (técnico y económico), y le damos seguimiento hasta la adjudicación. Tú te concentras en tu empresa. ¿Tiene algún proceso en mente ahora mismo?"
+
+CUANDO EL LEAD ES MUY PROMETEDOR (score alto, proceso grande, empresa seria):
+Di: "Un momento, voy a ponerlo en contacto directo con nuestro Consultor Senior para este proceso." y escala a Lonny.
+
+═══════════════════════════════════════════
+REGLAS ESTRICTAS
+═══════════════════════════════════════════
+1. Español dominicano natural — directo, como habla un ingeniero de confianza
+2. Mensajes CORTOS: máximo 3-4 oraciones
+3. NUNCA inventes datos de procesos, montos ni fechas
+4. SIEMPRE termina con una pregunta o CTA orientado a cotizar/contratar
+5. Máximo 2 emojis por mensaje
+6. Si ya tienes el perfil del cliente en el CONTEXTO, úsalo — no repitas preguntas
+7. Si no puedes resolver algo, di que el Ing. Luis le escribe en breve
+
+PERFILAMIENTO (extrae naturalmente en la conversación):
+- ¿A qué se dedica la empresa?
+- ¿Qué tipo de obras/servicios hacen?
+- ¿Qué instituciones les interesan?
+- ¿Han participado antes en licitaciones?
+- ¿Tienen RPE/RNCE y estados financieros?
+
+TONO: Consultor experto. Seguro. Dominicano. Que el cliente sienta que NECESITA este equipo para ganar."""
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -164,14 +233,14 @@ async def enviar_whatsapp(phone: str, mensaje: str):
 def buscar_analisis_pliego(codigo_o_texto: str) -> Optional[dict]:
     try:
         result = supabase_admin.table("analisis_pliego") \
-            .select("resumen_ejecutivo, alertas_fraude, checklist_categorizado, plazos_clave, proceso_id") \
+            .select("resumen_ejecutivo, alertas_fraude, checklist_categorizado, checklist_legal, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, plazos_clave, tipo_proceso, proceso_id") \
             .eq("proceso_id", codigo_o_texto) \
             .limit(1).execute()
         if result.data:
             return result.data[0]
 
         result2 = supabase_admin.table("analisis_pliego") \
-            .select("resumen_ejecutivo, alertas_fraude, checklist_categorizado, plazos_clave, proceso_id") \
+            .select("resumen_ejecutivo, alertas_fraude, checklist_categorizado, checklist_legal, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, plazos_clave, tipo_proceso, proceso_id") \
             .ilike("proceso_id", f"%{codigo_o_texto}%") \
             .limit(1).execute()
         if result2.data:
@@ -202,31 +271,48 @@ def buscar_proceso_dgcp(codigo_o_texto: str) -> Optional[dict]:
 
 
 def buscar_procesos_por_keywords(keywords: list, instituciones: list = None, monto_min: float = None) -> list:
+    """
+    Busca procesos activos del DGCP por keywords y/o instituciones.
+    Estrategia: primero intenta match por título, luego amplía si no hay resultados.
+    """
     try:
-        query = supabase_admin.table("procesos") \
-            .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas") \
-            .eq("estado_proceso", "Proceso publicado")
+        estados_activos = ["Proceso publicado", "Publicado", "En curso"]
+        resultados_totales = []
 
-        if monto_min:
-            query = query.gte("monto_estimado", monto_min)
-        if instituciones:
+        # Búsqueda por cada keyword individualmente para maximizar resultados
+        for kw in (keywords or [])[:4]:
+            query = supabase_admin.table("procesos")                 .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso")                 .in_("estado_proceso", estados_activos)                 .ilike("titulo", f"%{kw}%")
+
+            if monto_min:
+                query = query.gte("monto_estimado", monto_min)
+            if instituciones:
+                # Filtrar por primera institución si hay
+                query = query.ilike("unidad_compra", f"%{instituciones[0]}%")
+
+            res = query.order("fecha_fin_recepcion_ofertas", desc=False).limit(5).execute()
+            for p in (res.data or []):
+                if p["codigo_proceso"] not in [r["codigo_proceso"] for r in resultados_totales]:
+                    resultados_totales.append(p)
+
+        # Si hay instituciones pero no keywords, buscar solo por institución
+        if not keywords and instituciones:
             for inst in instituciones[:2]:
-                query = query.ilike("unidad_compra", f"%{inst}%")
+                query = supabase_admin.table("procesos")                     .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso")                     .in_("estado_proceso", estados_activos)                     .ilike("unidad_compra", f"%{inst}%")
+                if monto_min:
+                    query = query.gte("monto_estimado", monto_min)
+                res = query.order("fecha_fin_recepcion_ofertas", desc=False).limit(5).execute()
+                for p in (res.data or []):
+                    if p["codigo_proceso"] not in [r["codigo_proceso"] for r in resultados_totales]:
+                        resultados_totales.append(p)
 
-        result   = query.order("fecha_fin_recepcion_ofertas", desc=False).limit(5).execute()
-        procesos = result.data or []
+        # Ordenar por fecha más próxima y retornar los mejores 5
+        try:
+            resultados_totales.sort(key=lambda x: str(x.get("fecha_fin_recepcion_ofertas") or "9999"))
+        except Exception:
+            pass
 
-        if keywords and procesos:
-            filtrados = []
-            for p in procesos:
-                titulo = (p.get("titulo") or "").lower()
-                for kw in keywords:
-                    if kw.lower() in titulo:
-                        filtrados.append(p)
-                        break
-            return filtrados if filtrados else procesos[:3]
+        return resultados_totales[:5]
 
-        return procesos[:3]
     except Exception as e:
         print(f"[Closer] Error buscar_procesos_keywords: {e}")
         return []
@@ -457,6 +543,60 @@ def detectar_interes_alerta(mensaje: str) -> bool:
     return any(kw in msg_lower for kw in KEYWORDS_ALERTA)
 
 
+def detectar_intencion(mensaje: str) -> str:
+    """
+    Detecta la intención principal del mensaje para contextualizar la respuesta.
+    Retorna: 'consulta_proceso' | 'quiere_alerta' | 'senal_cierre' |
+             'pregunta_precio' | 'consulta_general' | 'saludo' | 'otro'
+    """
+    msg = mensaje.lower().strip()
+
+    # Saludos
+    if any(s in msg for s in ["hola", "buenos dias", "buenas tardes", "buenas noches",
+                               "buenas", "saludos", "como estas", "hey", "qué más"]):
+        if len(msg) < 30:  # Solo saludo, sin pregunta real
+            return "saludo"
+
+    # Código de proceso explícito
+    if re.search(r'[A-Z]{2,10}-[A-Z]{2,5}-[A-Z]{2,5}-\d{4}-\d{4}', mensaje.upper()):
+        return "consulta_proceso"
+
+    # Pregunta directa de precio
+    if any(p in msg for p in ["cuanto cuesta", "cuánto cuesta", "precio", "cuanto cobran",
+                               "cuánto cobran", "como pago", "cómo pago", "plan", "suscripcion"]):
+        return "pregunta_precio"
+
+    # Señal de cierre
+    if detectar_senal_cierre(mensaje):
+        return "senal_cierre"
+
+    # Quiere alerta
+    if detectar_interes_alerta(mensaje):
+        return "quiere_alerta"
+
+    # Busca procesos sin código
+    if any(p in msg for p in ["hay procesos", "hay licitaciones", "busco procesos",
+                               "que procesos", "qué procesos", "existen procesos",
+                               "procesos de", "licitaciones de", "hay algo de"]):
+        return "busqueda_procesos"
+
+    # Pregunta de consultoría
+    if any(p in msg for p in ["consultoria", "consultoría", "preparar oferta",
+                               "ayuda con", "como preparo", "cómo preparo",
+                               "documentos para licitar"]):
+        return "consulta_consultoria"
+
+    # Objeción "lo hago yo mismo"
+    if any(p in msg for p in ["lo hago yo", "lo hacemos nosotros", "lo voy a hacer",
+                               "no necesito", "ya tenemos experiencia", "podemos solos",
+                               "yo mismo", "mi equipo lo hace", "nos encargamos nosotros",
+                               "lo preparo yo"]):
+        return "objecion_lo_hago_yo"
+
+    # General
+    return "consulta_general"
+
+
 def extraer_keywords_interes(mensaje: str):
     instituciones_conocidas = [
         "mopc", "caasd", "inapa", "miderec", "minerd",
@@ -482,39 +622,56 @@ def extraer_keywords_interes(mensaje: str):
 async def generar_respuesta_gemini(
     mensaje_cliente: str,
     historial: list,
-    contexto_adicional: str = ""
+    contexto_adicional: str = "",
+    intencion: str = "consulta_general"
 ) -> str:
     if not gemini_client:
-        return "Disculpa, tuve un problema tecnico. Escribeme en un momento."
+        return "Disculpa, tuve un problema técnico. Escríbeme en un momento."
 
     historial_texto = ""
     for msg in historial[-8:]:
-        rol = "Cliente" if msg["rol"] == "cliente" else "Lab (tu)"
+        rol = "Cliente" if msg["rol"] == "cliente" else "Lab (tú)"
         historial_texto += f"{rol}: {msg['contenido']}\n"
+
+    # Instrucción específica según la intención detectada
+    instruccion_intencion = {
+        "consulta_proceso":    "El cliente pregunta por un proceso específico. Analiza los datos del CONTEXTO, menciona un riesgo concreto de descalificación, y cierra ofreciendo cotizar la preparación de la oferta.",
+        "busqueda_procesos":   "El cliente busca procesos. Muestra los que encontraste y termina preguntando si quiere que preparemos la oferta para alguno.",
+        "pregunta_precio":     "Explica brevemente la asesoría y los dos esquemas de precio (por proceso / mensualidad + comisión). Cierra pidiendo el proceso específico para cotizar.",
+        "quiere_alerta":       "Confirma que guardaste sus intereses. Dile que cuando aparezca un proceso le avisas y le ofreces preparar la oferta.",
+        "senal_cierre":        "El cliente está listo. Da el siguiente paso concreto: coordinar con el Ing. Luis para cotizar. Sé directo.",
+        "consulta_consultoria":"Explica el servicio completo con el slogan al final. Cierra preguntando si tiene un proceso en mente.",
+        "objecion_lo_hago_yo": "Aplica validación + riesgo. Valida que confía en su equipo, pero menciona que un error técnico puede anular todo. Ofrece al menos revisar la oferta.",
+        "saludo":              "Saluda brevemente y pregunta en qué proceso está trabajando o qué tipo de licitaciones le interesan.",
+        "consulta_general":    "Responde con valor y cierra siempre con una pregunta orientada a cotizar o avanzar.",
+    }.get(intencion, "Responde con valor y cierra con CTA hacia la consultoría.")
 
     prompt = f"""{SYSTEM_PROMPT}
 
---- HISTORIAL ---
-{historial_texto if historial_texto else "(conversacion nueva)"}
+═══ HISTORIAL DE CONVERSACIÓN ═══
+{historial_texto if historial_texto else "(conversación nueva — preséntate)"}
 
---- CONTEXTO ADICIONAL ---
-{contexto_adicional if contexto_adicional else "(ninguno)"}
+═══ CONTEXTO / DATOS DISPONIBLES ═══
+{contexto_adicional if contexto_adicional else "(sin contexto adicional)"}
 
---- MENSAJE DEL CLIENTE ---
+═══ INSTRUCCIÓN ESPECÍFICA PARA ESTE MENSAJE ═══
+{instruccion_intencion}
+
+═══ MENSAJE DEL CLIENTE ═══
 {mensaje_cliente}
 
---- TU RESPUESTA (solo el texto) ---"""
+═══ TU RESPUESTA (solo el texto, sin comillas, sin explicaciones) ═══"""
 
     try:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=300, temperature=0.75)
+            config=types.GenerateContentConfig(max_output_tokens=350, temperature=0.72)
         )
         return response.text.strip()
     except Exception as e:
         print(f"[Gemini] Error: {e}")
-        return "Disculpa, tuve un problema tecnico. Escribeme en un momento."
+        return "Disculpa, tuve un problema técnico. Escríbeme en un momento."
 
 
 async def generar_followup_gemini(
@@ -650,61 +807,185 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
     guardar_mensaje(conv_id, "cliente", mensaje)
 
     contexto_adicional = ""
+    intencion          = detectar_intencion(mensaje)
     codigo_proceso     = detectar_proceso_en_mensaje(mensaje)
 
+    print(f"[Closer] Intención detectada: {intencion}")
+
+    # ── Guardar intención en la conversación ──
+    if conv_id and intencion not in ("saludo", "consulta_general"):
+        supabase_admin.table("conversaciones_closer")             .update({"intencion_detectada": intencion})             .eq("id", conv_id).execute()
+
+    # ── Manejo por intención ──────────────────────────────────────────────────
+
+    # 1. El cliente menciona un código de proceso específico
     if codigo_proceso:
         analisis = buscar_analisis_pliego(codigo_proceso)
-        if analisis:
-            resumen            = str(analisis.get("resumen_ejecutivo", ""))[:600]
+        if analisis and analisis.get("resumen_ejecutivo"):
+            resumen       = str(analisis.get("resumen_ejecutivo", ""))[:500]
+            alertas       = analisis.get("alertas_fraude") or []
+            req_exp       = analisis.get("requisitos_experiencia") or {}
+            req_fin       = analisis.get("requisitos_financieros") or {}
+            restricciones = analisis.get("restricciones_participacion") or {}
+            proceso       = buscar_proceso_dgcp(codigo_proceso)
+            monto         = (proceso or {}).get("monto_estimado", 0)
+            monto_fmt     = f"RD${float(monto):,.0f}" if monto else "no publicado"
+            fecha_cierre  = str((proceso or {}).get("fecha_fin_recepcion_ofertas", ""))[:10]
+            entidad       = (proceso or {}).get("unidad_compra", "")
+
+            # Calcular días restantes para urgencia
+            dias_restantes = ""
+            if fecha_cierre:
+                try:
+                    from datetime import date
+                    dias = (date.fromisoformat(fecha_cierre) - date.today()).days
+                    if dias >= 0:
+                        dias_restantes = f"⏰ QUEDAN {dias} DÍAS para el cierre de ofertas."
+                    else:
+                        dias_restantes = "⚠️ Este proceso ya cerró."
+                except Exception:
+                    pass
+
+            # Riesgos de descalificación detectados
+            riesgos = []
+            if isinstance(alertas, list) and alertas:
+                riesgos.append(f"Alertas detectadas: {str(alertas[0])[:150]}")
+            if isinstance(req_exp, dict) and req_exp:
+                riesgos.append(f"Experiencia requerida: {str(req_exp)[:150]}")
+            if isinstance(req_fin, dict) and req_fin:
+                riesgos.append(f"Requisitos financieros: {str(req_fin)[:150]}")
+            if isinstance(restricciones, dict) and restricciones:
+                riesgos.append(f"Restricciones: {str(restricciones)[:100]}")
+            riesgos_texto = "\n".join(riesgos) if riesgos else "Proceso estándar DGCP."
+
+            # ── Checklist de documentos requeridos ──────────────────────
+            checklist_raw  = analisis.get("checklist_categorizado") or analisis.get("checklist_legal") or {}
+            docs_lista     = ""
+            if isinstance(checklist_raw, dict):
+                for categoria, items in checklist_raw.items():
+                    if isinstance(items, list) and items:
+                        docs_lista += f"\n  [{categoria.upper()}]\n"
+                        for item in items[:6]:  # máximo 6 por categoría
+                            nombre_doc = item if isinstance(item, str) else item.get("nombre", str(item))
+                            docs_lista += f"    • {str(nombre_doc)[:80]}\n"
+            elif isinstance(checklist_raw, list):
+                for item in checklist_raw[:12]:
+                    nombre_doc = item if isinstance(item, str) else item.get("nombre", str(item))
+                    docs_lista += f"  • {str(nombre_doc)[:80]}\n"
+
+            # ── Garantías y personal ─────────────────────────────────────────
+            garantias   = analisis.get("garantias_exigidas") or {}
+            personal    = analisis.get("personal_y_equipos") or {}
+            plazos      = analisis.get("plazos_clave") or {}
+            tipo        = analisis.get("tipo_proceso", "")
+
+            extra_info = ""
+            if isinstance(garantias, dict) and garantias:
+                extra_info += f"Garantías requeridas: {str(garantias)[:200]}\n"
+            if isinstance(personal, dict) and personal:
+                extra_info += f"Personal/equipos: {str(personal)[:200]}\n"
+            if isinstance(plazos, dict) and plazos:
+                extra_info += f"Plazos clave: {str(plazos)[:200]}\n"
+
             contexto_adicional = (
-                f"ANALISIS DISPONIBLE del proceso {codigo_proceso}:\n{resumen}\n"
-                "Usa esta info y menciona que en LicitacionLab pueden ver el analisis completo."
+                f"ANÁLISIS COMPLETO — {codigo_proceso} ({tipo})\n"
+                f"Entidad: {entidad}\n"
+                f"Monto: {monto_fmt}\n"
+                f"Cierre: {fecha_cierre} | {dias_restantes}\n\n"
+                f"RESUMEN: {resumen}\n\n"
+                f"DOCUMENTOS REQUERIDOS (checklist):{docs_lista if docs_lista else ' No disponible'}\n"
+                f"INFORMACIÓN ADICIONAL:\n{extra_info if extra_info else 'No disponible'}\n"
+                f"RIESGOS DE DESCALIFICACIÓN:\n{riesgos_texto}\n\n"
+                "INSTRUCCIÓN PARA TU RESPUESTA:\n"
+                "1. Menciona 2-3 documentos clave del checklist que suelen ser problemáticos\n"
+                "2. Usa los riesgos de descalificación como argumento de venta\n"
+                "3. Menciona los días restantes como urgencia\n"
+                "4. Cierra preguntando si quiere que le cotizemos la preparación completa de la oferta\n"
+                "Recuerda: nuestro servicio prepara TODO (Sobre A + Sobre B + seguimiento)"
             )
         else:
             proceso = buscar_proceso_dgcp(codigo_proceso)
             if proceso:
                 monto     = proceso.get("monto_estimado", 0)
                 monto_fmt = f"RD${float(monto):,.0f}" if monto else "no publicado"
+                fecha     = str(proceso.get("fecha_fin_recepcion_ofertas", "por confirmar"))[:10]
                 contexto_adicional = (
-                    f"DATOS del proceso {codigo_proceso}:\n"
+                    f"DATOS BÁSICOS del proceso {codigo_proceso} (pliego pendiente de análisis):\n"
                     f"- Entidad: {proceso.get('unidad_compra', '---')}\n"
-                    f"- Titulo: {proceso.get('titulo', '---')}\n"
+                    f"- Título: {proceso.get('titulo', '---')}\n"
                     f"- Monto: {monto_fmt}\n"
                     f"- Estado: {proceso.get('estado_proceso', '---')}\n"
-                    f"- Cierre ofertas: {proceso.get('fecha_fin_recepcion_ofertas', '---')}\n"
-                    "Menciona que pueden ver el analisis completo en LicitacionLab."
+                    f"- Cierre ofertas: {fecha}\n\n"
+                    "Dile que el análisis completo del pliego ya está siendo generado "
+                    "y que en unos minutos le mandas el resumen. "
+                    "Menciona LicitacionLab para ver el resultado completo."
                 )
+                # Disparar análisis en background
+                asyncio.create_task(disparar_analisis_pliego_bg(codigo_proceso, phone, conv_id))
             else:
                 contexto_adicional = (
-                    f"El cliente pregunta por {codigo_proceso}. No esta analizado aun, "
-                    "pero ya iniciamos el analisis automaticamente. "
-                    "Dile que en unos minutos tendra el resumen."
+                    f"El proceso {codigo_proceso} no está en nuestra base de datos aún. "
+                    "Dile al cliente que verifique el código y que si es un proceso reciente "
+                    "puede tardar unos minutos en aparecer en el sistema."
                 )
-                asyncio.create_task(disparar_analisis_pliego_bg(codigo_proceso, phone, conv_id))
 
         if conv_id:
-            supabase_admin.table("conversaciones_closer") \
-                .update({"proceso_codigo": codigo_proceso}) \
-                .eq("id", conv_id).execute()
+            supabase_admin.table("conversaciones_closer")                 .update({"proceso_codigo": codigo_proceso})                 .eq("id", conv_id).execute()
 
+    # 2. Cliente busca procesos sin código específico
+    elif intencion == "busqueda_procesos":
+        keywords, instituciones = extraer_keywords_interes(mensaje)
+        procesos_encontrados    = buscar_procesos_por_keywords(keywords, instituciones)
+        if procesos_encontrados:
+            lista = ""
+            for p in procesos_encontrados[:3]:
+                monto   = p.get("monto_estimado", 0)
+                monto_f = f"RD${float(monto):,.0f}" if monto else "monto no publicado"
+                fecha   = str(p.get("fecha_fin_recepcion_ofertas", "?"))[:10]
+                lista  += f"• {p.get('titulo', 'Sin título')[:60]} | {p.get('unidad_compra','')} | {monto_f} | Cierre: {fecha}\n"
+            contexto_adicional = (
+                f"PROCESOS ACTIVOS ENCONTRADOS ({', '.join(keywords + instituciones)}):\n{lista}\n"
+                "Comparte estos procesos de forma clara y pregunta si le interesa "
+                "ver el análisis de alguno o si quiere que le avisemos cuando haya más."
+            )
+        else:
+            contexto_adicional = (
+                f"No encontré procesos activos para {', '.join(keywords + instituciones) or 'esa búsqueda'}. "
+                "Dile que no hay procesos activos con esos criterios ahora mismo, "
+                "pero que si quiere te deja sus intereses y le avisas cuando aparezca algo."
+            )
+
+    # 3. Quiere alertas automáticas
     if detectar_interes_alerta(mensaje):
         keywords, instituciones = extraer_keywords_interes(mensaje)
         if keywords or instituciones:
             registrar_alerta_cliente(conv_id, phone, nombre, keywords, instituciones)
             kw_texto           = ", ".join(keywords + instituciones)
             contexto_adicional += (
-                f"\nEl cliente pide alertas sobre: {kw_texto}. "
-                "Confirmale que lo tienes anotado."
+                f"\nACCIÓN TOMADA: Se registró alerta para {kw_texto}. "
+                "Confirmale que quedó registrado y que cada día revisamos y le avisamos "
+                "si aparece algo que le interese."
             )
 
+    # ── Contexto de perfil ────────────────────────────────────────────────────
     perfil          = obtener_perfil_prospecto(phone)
     contexto_perfil = construir_contexto_perfil(perfil)
     if contexto_perfil:
         contexto_adicional = contexto_perfil + "\n\n" + contexto_adicional
 
-    historial = obtener_historial(conv_id)
-    respuesta = await generar_respuesta_gemini(mensaje, historial, contexto_adicional)
+    # ── Contexto de precio si pregunta por precio ─────────────────────────────
+    if intencion == "pregunta_precio":
+        contexto_adicional += (
+            "\nEl cliente pregunta por precio/planes. "
+            "Da los 3 planes con precios directamente y cierra con CTA al registro: "
+            "https://app.licitacionlab.com/"
+        )
 
+    # ── Generar respuesta IA ──────────────────────────────────────────────────
+    historial = obtener_historial(conv_id)
+    respuesta = await generar_respuesta_gemini(mensaje, historial, contexto_adicional, intencion)
+
+    # Extracción de perfil en background
     asyncio.create_task(
         extraer_y_actualizar_perfil(mensaje, historial, phone, conv_id, nombre, perfil)
     )
@@ -712,38 +993,53 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
     guardar_mensaje(conv_id, "agente", respuesta, generado_por_ia=True)
     await enviar_whatsapp(phone, respuesta)
 
-    if detectar_senal_cierre(mensaje):
+    # ── Actualizar etapa y notificar a Lonny si hay señal de cierre ──────────
+    if detectar_senal_cierre(mensaje) or intencion == "senal_cierre":
         nombre_display = nombre or phone
+        # Enriquecer notificación con perfil del prospecto
+        perfil_texto = ""
+        if perfil:
+            empresa = perfil.get("nombre_empresa", "no registrada")
+            sector  = perfil.get("sector", "no registrado")
+            rpe     = "✅" if perfil.get("tiene_rpe") else ("❌" if perfil.get("tiene_rpe") is False else "?")
+            rnce    = "✅" if perfil.get("tiene_rnce") else ("❌" if perfil.get("tiene_rnce") is False else "?")
+            ef      = "✅" if perfil.get("tiene_estados_financieros") else ("❌" if perfil.get("tiene_estados_financieros") is False else "?")
+            score_v = conv.get("score", 0)
+            perfil_texto = (
+                f"\n📊 Perfil:\n"
+                f"  Empresa: {empresa} | Sector: {sector}\n"
+                f"  RPE: {rpe} | RNCE: {rnce} | Est.Fin: {ef}\n"
+                f"  Score: {score_v}/100\n"
+            )
+        proceso_texto = f"\n📋 Proceso: {conv.get('proceso_codigo')}\n" if conv.get("proceso_codigo") else ""
         alerta = (
-            f"SENAL DE CIERRE DETECTADA\n\n"
-            f"Contacto: {nombre_display}\n"
-            f"WhatsApp: {phone}\n"
-            f"Mensaje: {mensaje[:200]}\n\n"
-            f"Respuesta del agente:\n{respuesta[:200]}\n\n"
-            f"Entra tu a cerrar la venta."
+            f"🔥 SEÑAL DE CIERRE\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 {nombre_display}\n"
+            f"📱 +{phone}"
+            f"{perfil_texto}"
+            f"{proceso_texto}"
+            f"\n💬 Dice: \"{mensaje[:250]}\"\n"
+            f"\n🤖 Lab: \"{respuesta[:250]}\"\n"
+            f"\n👆 ENTRA TÚ A CERRAR."
         )
         await enviar_telegram(alerta)
         if conv_id:
-            supabase_admin.table("conversaciones_closer") \
-                .update({"etapa": "interesado", "estado": "hot"}) \
-                .eq("id", conv_id).execute()
+            supabase_admin.table("conversaciones_closer")                 .update({"etapa": "interesado", "estado": "hot"})                 .eq("id", conv_id).execute()
+
     elif conv_id and conv.get("etapa") == "nuevo":
-        supabase_admin.table("conversaciones_closer") \
-            .update({
+        supabase_admin.table("conversaciones_closer")             .update({
                 "etapa":               "respondido",
                 "estado":              "engaged",
                 "proximo_followup_en": (datetime.utcnow() + timedelta(days=2)).isoformat()
-            }) \
-            .eq("id", conv_id).execute()
+            })             .eq("id", conv_id).execute()
     elif conv_id:
-        supabase_admin.table("conversaciones_closer") \
-            .update({
+        supabase_admin.table("conversaciones_closer")             .update({
                 "estado":            "engaged",
                 "ultimo_mensaje_en": datetime.utcnow().isoformat()
-            }) \
-            .eq("id", conv_id).execute()
+            })             .eq("id", conv_id).execute()
 
-    print(f"[Closer] OK conv_id={conv_id}")
+    print(f"[Closer] OK conv_id={conv_id} intencion={intencion}")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -836,10 +1132,17 @@ async def ejecutar_alertas(
     background_tasks: BackgroundTasks,
     x_agent_secret: Optional[str] = Header(None)
 ):
+    """
+    Cron diario a las 6pm (configurar en n8n o Railway cron):
+    POST /closer/alertas/run
+    Header: X-Agent-Secret: <AGENT_SECRET>
+
+    Configuración n8n: Cron trigger → todos los días → hora 18:00 (6pm hora RD = UTC-4 → 22:00 UTC)
+    """
     if x_agent_secret != AGENT_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
     background_tasks.add_task(ejecutar_alertas_bg)
-    return {"status": "iniciado"}
+    return {"status": "iniciado", "mensaje": "Revisión de alertas iniciada"}
 
 
 async def ejecutar_alertas_bg():
@@ -856,38 +1159,56 @@ async def ejecutar_alertas_bg():
 
 
 async def procesar_alerta_individual(alerta: dict):
+    """
+    Revisa si hay procesos nuevos para el cliente y le manda un WhatsApp.
+    Solo notifica procesos que NO le hayan sido notificados antes.
+    """
     phone         = alerta.get("contact_phone")
     nombre        = alerta.get("contact_name", "")
     keywords      = alerta.get("keywords") or []
     instituciones = alerta.get("instituciones") or []
 
-    if not phone or not keywords:
+    if not phone:
+        return
+    if not keywords and not instituciones:
         return
 
     procesos = buscar_procesos_por_keywords(keywords, instituciones)
     if not procesos:
+        print(f"[Closer] Sin procesos para alerta de {phone} — keywords: {keywords}")
         return
 
     ya_notificados = alerta.get("procesos_notificados") or []
-    nuevos         = [p.get("codigo_proceso") for p in procesos if p.get("codigo_proceso") not in ya_notificados]
+    procesos_nuevos = [
+        p for p in procesos
+        if p.get("codigo_proceso") and p.get("codigo_proceso") not in ya_notificados
+    ]
 
-    if not nuevos:
+    if not procesos_nuevos:
+        print(f"[Closer] Sin procesos NUEVOS para {phone} — ya notificados: {len(ya_notificados)}")
         return
 
-    procesos_nuevos = [p for p in procesos if p.get("codigo_proceso") in nuevos]
-    mensaje         = await generar_mensaje_alerta_proceso(nombre or phone, procesos_nuevos, keywords)
-
+    # Generar mensaje con IA
+    mensaje = await generar_mensaje_alerta_proceso(nombre or phone, procesos_nuevos, keywords)
     if not mensaje:
         return
 
     await enviar_whatsapp(phone, mensaje)
 
-    actualizados = list(set(ya_notificados + nuevos))[-20:]
-    supabase_admin.table("alertas_cliente") \
-        .update({"procesos_notificados": actualizados}) \
-        .eq("id", alerta["id"]).execute()
+    # Marcar como notificados (máximo 50 en memoria para no crecer infinito)
+    codigos_nuevos   = [p.get("codigo_proceso") for p in procesos_nuevos]
+    actualizados     = list(set(ya_notificados + codigos_nuevos))[-50:]
+    supabase_admin.table("alertas_cliente")         .update({
+            "procesos_notificados": actualizados,
+            "ultimo_check_at":      datetime.utcnow().isoformat()
+        })         .eq("id", alerta["id"]).execute()
 
-    print(f"[Closer] Alerta enviada a {phone}: {nuevos}")
+    # Guardar en historial de mensajes si hay conv_id
+    conv_id = alerta.get("conversation_id")
+    if conv_id:
+        guardar_mensaje(str(conv_id), "agente", mensaje, generado_por_ia=True)
+
+    print(f"[Closer] ✅ Alerta enviada a {phone}: {codigos_nuevos}")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -971,8 +1292,42 @@ async def registrar_interes_manual(
 async def test_alerta(x_agent_secret: Optional[str] = Header(None)):
     if x_agent_secret != AGENT_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized")
-    await enviar_telegram("Test Agente Closer — modulo de alertas funcionando correctamente.")
+    # Contar alertas activas y conversaciones
+    try:
+        alertas  = supabase_admin.table("alertas_cliente").select("id", count="exact").eq("activa", True).execute()
+        convs    = supabase_admin.table("conversaciones_closer").select("id", count="exact").not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]).execute()
+        hot      = supabase_admin.table("conversaciones_closer").select("id", count="exact").eq("estado", "hot").execute()
+        resumen  = (
+            f"✅ Test Agente Closer OK\n\n"
+            f"📊 Estado actual:\n"
+            f"• Alertas activas: {alertas.count or 0}\n"
+            f"• Conversaciones activas: {convs.count or 0}\n"
+            f"• Hot leads: {hot.count or 0}\n\n"
+            f"Sistema funcionando correctamente."
+        )
+        await enviar_telegram(resumen)
+    except Exception as e:
+        await enviar_telegram(f"Test Closer — Error: {e}")
     return {"status": "ok"}
+
+
+@closer_router.get("/stats")
+async def stats_closer(x_agent_secret: Optional[str] = Header(None)):
+    """Estadísticas rápidas del agente para el panel."""
+    if x_agent_secret != AGENT_SECRET:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        alertas  = supabase_admin.table("alertas_cliente").select("id", count="exact").eq("activa", True).execute()
+        convs    = supabase_admin.table("conversaciones_closer").select("id, etapa, estado, nombre_contacto, score").not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]).order("score", desc=True).limit(10).execute()
+        hot      = [c for c in (convs.data or []) if c.get("estado") == "hot"]
+        return {
+            "alertas_activas":       alertas.count or 0,
+            "conversaciones_activas": len(convs.data or []),
+            "hot_leads":             len(hot),
+            "top_leads":             convs.data or [],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1112,37 +1467,82 @@ async def generar_resumen_diario_bg():
 # ═══════════════════════════════════════════════════════════════════════
 
 async def disparar_analisis_pliego_bg(codigo_proceso: str, phone: str, conv_id: str):
+    """
+    Dispara el análisis de un pliego que aún no está en BD.
+    Usa el endpoint interno /api/procesos/{codigo}/analizar del main.py.
+    Luego notifica al cliente por WhatsApp cuando esté listo.
+    """
     try:
-        print(f"[Closer] Analisis automatico de {codigo_proceso}")
+        print(f"[Closer] Disparando análisis automático de {codigo_proceso}")
 
         proceso = buscar_proceso_dgcp(codigo_proceso)
         if not proceso:
+            await enviar_whatsapp(phone,
+                f"No encontré el proceso {codigo_proceso} en nuestra base de datos. "
+                f"¿Puedes confirmar el código exacto? 🔍"
+            )
             return
 
-        base_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "http://localhost:8000")
-        if not base_url.startswith("http"):
-            base_url = f"https://{base_url}"
+        # URL interna del propio Railway service
+        base_url = os.environ.get("APP_URL", "")
+        if not base_url:
+            railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+            base_url = f"https://{railway_domain}" if railway_domain else "http://localhost:8080"
 
-        async with httpx.AsyncClient(timeout=120) as client:
+        # Avisar al cliente que ya estamos en ello
+        await enviar_whatsapp(phone,
+            f"Perfecto, ya inicié el análisis del pliego {codigo_proceso} 🤖 "
+            f"Dame unos minutos y te mando el resumen completo."
+        )
+        guardar_mensaje(conv_id, "agente",
+            f"Análisis iniciado para {codigo_proceso} — esperando resultado...",
+            generado_por_ia=False
+        )
+
+        # Llamar al endpoint de análisis del main.py
+        # Necesitamos un user_id dummy para que el endpoint no falle
+        # Usamos el endpoint admin que no requiere user_id
+        async with httpx.AsyncClient(timeout=300) as client:
             resp = await client.post(
-                f"{base_url}/analisis/procesar",
-                json={"proceso_id": codigo_proceso},
-                headers={"X-Admin-Key": os.environ.get("ADMIN_KEY", "")}
+                f"{base_url}/api/procesos/{codigo_proceso}/analizar",
+                params={"user_id": "closer-agent"},
+                headers={"X-Admin-Key": os.environ.get("ADMIN_SECRET", "")}
             )
-            if resp.status_code == 200:
-                await asyncio.sleep(5)
-                analisis = buscar_analisis_pliego(codigo_proceso)
-                if analisis:
-                    resumen = str(analisis.get("resumen_ejecutivo", ""))[:400]
-                    mensaje = (
-                        f"Listo! Aqui el resumen del proceso {codigo_proceso}:\n\n"
-                        f"{resumen}\n\n"
-                        f"Para ver el analisis completo con alertas de fraude y checklist, "
-                        f"registrate en https://app.licitacionlab.com/"
-                    )
-                    await enviar_whatsapp(phone, mensaje)
-                    guardar_mensaje(conv_id, "agente", mensaje, generado_por_ia=True)
-            else:
-                print(f"[Closer] Error analisis: {resp.status_code}")
+            print(f"[Closer] Análisis dispatch: {resp.status_code}")
+
+        # Esperar hasta 5 minutos revisando cada 30s si el análisis completó
+        for intento in range(10):
+            await asyncio.sleep(30)
+            analisis = buscar_analisis_pliego(codigo_proceso)
+            if analisis and analisis.get("resumen_ejecutivo"):
+                resumen = str(analisis.get("resumen_ejecutivo", ""))[:500]
+                monto   = proceso.get("monto_estimado", 0)
+                monto_fmt = f"RD${float(monto):,.0f}" if monto else "no publicado"
+                fecha   = str(proceso.get("fecha_fin_recepcion_ofertas", "por confirmar"))[:10]
+
+                mensaje = (
+                    f"✅ Listo el análisis de *{codigo_proceso}*\n\n"
+                    f"📋 *{proceso.get('titulo', '')}*\n"
+                    f"🏛 {proceso.get('unidad_compra', '')}\n"
+                    f"💰 {monto_fmt}\n"
+                    f"📅 Cierre: {fecha}\n\n"
+                    f"{resumen}\n\n"
+                    f"Para ver el checklist completo, alertas de fraude y todos los requisitos, "
+                    f"entra a: https://app.licitacionlab.com/ 🚀"
+                )
+                await enviar_whatsapp(phone, mensaje)
+                guardar_mensaje(conv_id, "agente", mensaje, generado_por_ia=True)
+                print(f"[Closer] Análisis entregado a {phone} — {codigo_proceso}")
+                return
+
+        # Si después de 5 min no completó
+        await enviar_whatsapp(phone,
+            f"El análisis de {codigo_proceso} está tardando más de lo normal. "
+            f"Te lo envío en cuanto esté listo, ¡no te preocupes! 👌"
+        )
     except Exception as e:
-        print(f"[Closer] Error analisis_bg: {e}")
+        print(f"[Closer] Error disparar_analisis_bg: {e}")
+        await enviar_whatsapp(phone,
+            f"Tuve un problema procesando el pliego {codigo_proceso}. "
+            f"Avísale al Ing. Luis directamente para que te ayude."
+        )
