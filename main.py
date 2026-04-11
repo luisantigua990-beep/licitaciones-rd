@@ -293,7 +293,7 @@ app = FastAPI(
 # Permitir conexiones desde cualquier origen (para la PWA)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://app.licitacionlab.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -2274,6 +2274,18 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
         return
 
     try:
+        # Guard anti-duplicado: UPDATE atómico — solo procede si email_enviado_at es NULL
+        # Si dos invocaciones concurrentes llegan aquí, solo la primera actualiza la fila
+        from datetime import timezone as _tz
+        lock_result = supabase_admin.table("analisis_pliego") \
+            .update({"email_enviado_at": datetime.now(_tz.utc).isoformat()}) \
+            .eq("proceso_id", proceso_id) \
+            .is_("email_enviado_at", "null") \
+            .execute()
+        if not lock_result.data:
+            print(f"⚡ Email ya enviado para {proceso_id} — saltando duplicado")
+            return
+
         # 1. Buscar el user_id que siguió este proceso
         seg = supabase_admin.table("seguimiento_procesos")\
             .select("user_id")\
@@ -2660,7 +2672,7 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True):
             if enviar_email:
                 print(f"⚡ Cache hit — {proceso_id} ya analizado, enviando email.")
                 full = supabase_admin.table("analisis_pliego")\
-                    .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, puntaje_go_nogo, tipo_proceso")\
+                    .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, tipo_proceso")\
                     .eq("proceso_id", proceso_id)\
                     .execute()
                 analisis_cacheado = full.data[0] if full.data else {}
