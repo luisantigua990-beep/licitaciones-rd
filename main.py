@@ -176,11 +176,32 @@ def reprocesar_pendientes_loop():
     """
     Cada 30 minutos reintenta los procesos marcados como pendiente_analisis.
     Ocurre cuando Gemini estuvo con 503 o el PDF era muy grande.
+    También rescata registros 'procesando' con más de 2h de antigüedad
+    (huérfanos por reinicios de Railway).
     NO envía emails — solo completa el análisis en BD.
     """
     time.sleep(180)  # esperar 3 min al arranque
     while True:
         try:
+            # ── RESCATE DE HUÉRFANOS ──────────────────────────────────────
+            # Si un análisis lleva más de 2h en 'procesando', Railway lo reinició
+            # y nunca terminó. Lo reseteamos a pendiente_analisis para reintentarlo.
+            from datetime import timezone
+            hace_2h = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+            huerfanos = supabase_admin.table("analisis_pliego") \
+                .select("proceso_id") \
+                .eq("estado", "procesando") \
+                .lt("actualizado_en", hace_2h) \
+                .execute()
+            if huerfanos.data:
+                ids_huerfanos = [r["proceso_id"] for r in huerfanos.data]
+                print(f"🚑 Rescatando {len(ids_huerfanos)} análisis huérfanos (procesando > 2h)...")
+                supabase_admin.table("analisis_pliego") \
+                    .update({"estado": "pendiente_analisis", "actualizado_en": datetime.now(timezone.utc).isoformat()}) \
+                    .in_("proceso_id", ids_huerfanos) \
+                    .execute()
+
+            # ── REPROCESO DE PENDIENTES ───────────────────────────────────
             pendientes = supabase_admin.table("analisis_pliego") \
                 .select("proceso_id") \
                 .eq("estado", "pendiente_analisis") \
@@ -970,6 +991,7 @@ async def enviar_bienvenida(request: Request):
         return {"ok": False}
 
 
+@app.post("/api/procesos/{codigo_proceso}/analizar")
 async def solicitar_analisis_proceso(codigo_proceso: str, background_tasks: BackgroundTasks):
     """
     Solicita análisis IA de un proceso desde el frontend.
