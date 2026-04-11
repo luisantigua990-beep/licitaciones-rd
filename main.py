@@ -2683,11 +2683,66 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True):
                 print(f"⚡ Cache hit — {proceso_id} ya completado, saltando (reproceso automático).")
             return
         
-        # 1. ACTUALIZAR ESTADO EN SUPABASE
-        supabase_admin.table("analisis_pliego").upsert({
-            "proceso_id": proceso_id, 
-            "estado": "procesando"
-        }).execute()
+        # 1. TOMAR EL LOCK ATÓMICO — solo UNA instancia puede pasar
+        #
+        # Estrategia:
+        #   a) Intentar INSERT con ON CONFLICT (proceso_id) DO UPDATE solo si estado no es
+        #      'procesando' ni 'completado'. Si la fila no existía, la crea. Si existía en
+        #      estado pendiente/error, la toma. Si estaba procesando/completado, NO actualiza
+        #      y devuelve la fila existente para que podamos detectarlo.
+        #
+        # Usamos SQL crudo via RPC para tener control total del ON CONFLICT.
+        from datetime import timezone as _tz2
+        _ahora = datetime.now(_tz2.utc).isoformat()
+        sql_lock = f"""
+            INSERT INTO analisis_pliego (proceso_id, estado, creado_en, actualizado_en)
+            VALUES ('{proceso_id}', 'procesando', '{_ahora}', '{_ahora}')
+            ON CONFLICT (proceso_id) DO UPDATE
+                SET estado = 'procesando', actualizado_en = '{_ahora}'
+                WHERE analisis_pliego.estado NOT IN ('procesando', 'completado')
+            RETURNING estado;
+        """
+        try:
+            result_lock = supabase_admin.rpc("ejecutar_sql_lock", {"query": sql_lock}).execute()
+        except Exception:
+            result_lock = None
+
+        # Fallback si el RPC no existe: usar UPDATE condicional + verificación
+        # INSERT inicial si no hay fila, luego UPDATE condicional
+        _fila_existente = supabase_admin.table("analisis_pliego") \
+            .select("estado") \
+            .eq("proceso_id", proceso_id) \
+            .execute()
+
+        if not _fila_existente.data:
+            # No hay fila — crearla en estado procesando (primera vez)
+            supabase_admin.table("analisis_pliego").insert({
+                "proceso_id": proceso_id,
+                "estado": "procesando"
+            }).execute()
+        else:
+            _estado_previo = _fila_existente.data[0].get("estado", "")
+            if _estado_previo in ("procesando", "completado"):
+                if _estado_previo == "completado" and enviar_email:
+                    print(f"⚡ Cache hit tardío — {proceso_id} ya completado, enviando email.")
+                    _full = supabase_admin.table("analisis_pliego") \
+                        .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, tipo_proceso") \
+                        .eq("proceso_id", proceso_id) \
+                        .execute()
+                    _analisis_cacheado = _full.data[0] if _full.data else {}
+                    if _analisis_cacheado.get("checklist_categorizado") and not _analisis_cacheado.get("checklist_documentos"):
+                        _analisis_cacheado["checklist_documentos"] = _analisis_cacheado["checklist_categorizado"]
+                    enviar_email_analisis(proceso_id, _analisis_cacheado)
+                else:
+                    print(f"🔒 {proceso_id} ya en estado {_estado_previo!r} — saliendo para evitar duplicado")
+                return
+            # Tomar el lock: UPDATE solo si nadie más lo tomó en el microsegundo entre el SELECT y aquí
+            _lock2 = supabase_admin.table("analisis_pliego").update({
+                "estado": "procesando"
+            }).eq("proceso_id", proceso_id).not_.in_("estado", ["procesando", "completado"]).execute()
+            if not _lock2.data:
+                print(f"🔒 Race condition — {proceso_id} tomado por otra instancia, saliendo")
+                return
 
         # 2. SCRAPING Y EXTRACCIÓN DEL PDF
         # VÍA 1: URL con noticeUID guardada por el scraper en tiempo real
