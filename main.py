@@ -44,7 +44,7 @@ def enviar_push_y_limpiar(sub: dict, titulo: str, cuerpo: str, url: str = "/") -
     )
     if resultado == "410":
         try:
-            supabase.table("user_subscriptions") \
+            supabase_admin.table("user_subscriptions") \
                 .update({"active": False}) \
                 .eq("endpoint", sub["endpoint"]).execute()
             print(f"🧹 Suscripción 410 desactivada: {sub['endpoint'][:50]}...")
@@ -648,7 +648,7 @@ def _obtener_procesos_para_usuario(user_id: str) -> list:
     """
     try:
         # Ver si tiene intereses en user_subscriptions
-        subs = supabase.table("user_subscriptions") \
+        subs = supabase_admin.table("user_subscriptions") \
             .select("intereses_rubros") \
             .eq("user_id", user_id) \
             .eq("active", True) \
@@ -843,7 +843,7 @@ def ejecutar_nurturing():
                 if proximo == 2:
                     procesos     = _obtener_procesos_para_usuario(uid)
                     tiene_perfil = bool(procesos and
-                        supabase.table("user_subscriptions")
+                        supabase_admin.table("user_subscriptions")
                             .select("intereses_rubros").eq("user_id", uid)
                             .eq("active", True).limit(1).execute().data)
                     subject = "3 oportunidades activas que quizás no viste todavía"
@@ -1308,7 +1308,7 @@ async def suscribirse(payload: dict):
             "intereses_rubros": payload.get("rubros", []),
             "active": True
         }
-        supabase.table("user_subscriptions").upsert(data, on_conflict="endpoint").execute()
+        supabase_admin.table("user_subscriptions").upsert(data, on_conflict="endpoint").execute()
         return {"ok": True, "message": "Suscripción guardada"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1322,7 +1322,7 @@ async def actualizar_userid_suscripcion(payload: dict):
         user_id  = payload.get("user_id")
         if not endpoint or not user_id or user_id == "user":
             return {"ok": False, "detail": "Datos inválidos"}
-        supabase.table("user_subscriptions") \
+        supabase_admin.table("user_subscriptions") \
             .update({"user_id": user_id}) \
             .eq("endpoint", endpoint).execute()
         return {"ok": True}
@@ -1333,7 +1333,7 @@ async def actualizar_userid_suscripcion(payload: dict):
 @app.post("/api/notificaciones/desuscribirse")
 async def desuscribirse(payload: dict):
     endpoint = payload.get("endpoint")
-    supabase.table("user_subscriptions").update({"active": False}).eq("endpoint", endpoint).execute()
+    supabase_admin.table("user_subscriptions").update({"active": False}).eq("endpoint", endpoint).execute()
     return {"ok": True}
 
 @app.post("/api/admin/forzar-monitor")
@@ -1351,7 +1351,7 @@ async def forzar_monitor():
 async def actualizar_intereses(payload: dict):
     endpoint = payload.get("endpoint")
     rubros = payload.get("rubros", [])
-    supabase.table("user_subscriptions").update({"intereses_rubros": rubros}).eq("endpoint", endpoint).execute()
+    supabase_admin.table("user_subscriptions").update({"intereses_rubros": rubros}).eq("endpoint", endpoint).execute()
     return {"ok": True}
 
 
@@ -1359,7 +1359,7 @@ async def actualizar_intereses(payload: dict):
 async def enviar_prueba(payload: dict):
     endpoint = payload.get("endpoint")
     try:
-        result = supabase.table("user_subscriptions").select("*").eq("endpoint", endpoint).single().execute()
+        result = supabase_admin.table("user_subscriptions").select("*").eq("endpoint", endpoint).single().execute()
         sub = result.data
         subscription_info = {
             "endpoint": sub["endpoint"],
@@ -1405,7 +1405,7 @@ async def notificar_seguimiento():
     user_ids = list(set(s["user_id"] for s in seguimientos))
     subs_map = {}
     for uid in user_ids:
-        subs = supabase.table("user_subscriptions") \
+        subs = supabase_admin.table("user_subscriptions") \
             .select("endpoint,auth,p256dh") \
             .eq("user_id", uid).eq("active", True).execute().data or []
         if subs:
@@ -2837,7 +2837,7 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True):
                 .select("user_id").eq("proceso_codigo", proceso_id).execute()
             user_ids_push = list(set(s["user_id"] for s in (seg.data or [])))
             for uid in user_ids_push:
-                subs = supabase.table("user_subscriptions") \
+                subs = supabase_admin.table("user_subscriptions") \
                     .select("endpoint,auth,p256dh").eq("user_id", uid).eq("active", True).execute().data or []
                 for sub in subs:
                     enviar_push_y_limpiar(
