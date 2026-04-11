@@ -150,7 +150,7 @@ Di: "Un momento, voy a ponerlo en contacto directo con nuestro Consultor Senior 
 REGLAS ESTRICTAS
 ═══════════════════════════════════════════
 1. Español dominicano natural — directo, como habla un ingeniero de confianza
-2. Mensajes CORTOS: máximo 3-4 oraciones
+2. Longitud según lo que amerite: si el cliente pregunta por documentos, requisitos o información de un proceso, da la respuesta COMPLETA aunque sean 8-10 oraciones. Si es un saludo, 2 oraciones bastan. El objetivo es que el cliente entienda, no que el mensaje sea corto.
 3. NUNCA inventes datos de procesos, montos ni fechas
 4. SIEMPRE termina con una pregunta o CTA orientado a cotizar/contratar
 6. Si ya tienes el perfil del cliente en el CONTEXTO, úsalo — no repitas preguntas
@@ -611,6 +611,93 @@ def construir_contexto_perfil(perfil: Optional[dict]) -> str:
     return ("PERFIL DEL CLIENTE:\n" + "\n".join(partes)) if partes else ""
 
 
+def guardar_intenciones_directas(
+    phone: str, conv_id: str, nombre: str,
+    mensaje: str, codigo_proceso: str = None, intencion: str = None
+):
+    """
+    Guarda intenciones del cliente SIN depender de Gemini.
+    Se llama siempre que hay señales claras de interés en el mensaje.
+    Complementa a extraer_y_actualizar_perfil que puede fallar.
+    """
+    try:
+        keywords_nuevos    = []
+        instituciones_new  = []
+        notas              = []
+
+        # Si el cliente mencionó un proceso específico, extraer institución y tipo
+        if codigo_proceso:
+            partes = codigo_proceso.upper().split("-")
+            # Formato: INSTITUCION-TIPO-MODALIDAD-AÑO-NUM
+            if len(partes) >= 2:
+                instituciones_new.append(partes[0])  # MIVHED, MOPC, INAPA, etc.
+            if len(partes) >= 3:
+                modalidad = partes[2]  # LPN, CP, CM, SI, etc.
+                mapa_tipos = {
+                    "LPN": "obras", "LPI": "obras", "CP":  "obras",
+                    "CM":  "compra menor", "SI": "servicios",
+                    "SO":  "servicios", "PEPU": "publicidad",
+                    "PEEX": "consultoria", "PEOR": "consultoria"
+                }
+                tipo = mapa_tipos.get(modalidad, modalidad.lower())
+                if tipo not in keywords_nuevos:
+                    keywords_nuevos.append(tipo)
+            notas.append(f"Interesado en proceso {codigo_proceso}")
+
+        # Extraer keywords del texto del mensaje
+        msg_lower = mensaje.lower()
+        rubros = [
+            ("construccion", "construcción"), ("construcción", "construcción"),
+            ("obra", "obras"), ("infraestructura", "infraestructura"),
+            ("alcantarillado", "alcantarillado"), ("acueducto", "acueducto"),
+            ("drenaje", "drenaje"), ("carretera", "carretera"),
+            ("edificio", "edificio"), ("rehabilitacion", "rehabilitación"),
+            ("mantenimiento", "mantenimiento"), ("saneamiento", "saneamiento"),
+            ("electricidad", "electricidad"), ("plomeria", "plomería"),
+            ("consultoria", "consultoría"), ("supervision", "supervisión"),
+            ("bienes", "bienes"), ("equipos", "equipos"), ("suministro", "suministro"),
+            ("tecnologia", "tecnología"), ("informatica", "informática"),
+            ("salud", "salud"), ("educacion", "educación"),
+        ]
+        instituciones_conocidas = [
+            ("mopc", "MOPC"), ("caasd", "CAASD"), ("inapa", "INAPA"),
+            ("miderec", "MIDEREC"), ("minerd", "MINERD"), ("egehid", "EGEHID"),
+            ("coraasan", "CORAASAN"), ("mivhed", "MIVHED"), ("eted", "ETED"),
+            ("ayuntamiento", "Ayuntamiento"), ("coraavega", "CORAAVEGA"),
+            ("intrant", "INTRANT"), ("dgcp", "DGCP"),
+        ]
+        for patron, kw in rubros:
+            if patron in msg_lower and kw not in keywords_nuevos:
+                keywords_nuevos.append(kw)
+        for patron, inst in instituciones_conocidas:
+            if patron in msg_lower and inst not in instituciones_new:
+                instituciones_new.append(inst)
+
+        # Solo proceder si hay algo nuevo que guardar
+        if not keywords_nuevos and not instituciones_new and not notas:
+            return
+
+        # Actualizar perfil_prospectos
+        perfil_data = {}
+        if keywords_nuevos:
+            perfil_data["tipos_proceso"] = keywords_nuevos
+        if instituciones_new:
+            perfil_data["instituciones_interes"] = instituciones_new
+        if notas:
+            perfil_data["notas_agente"] = " | ".join(notas)
+
+        if perfil_data:
+            actualizar_perfil_prospecto(phone, conv_id, nombre, perfil_data)
+
+        # Registrar/actualizar alerta
+        if keywords_nuevos or instituciones_new:
+            registrar_alerta_cliente(conv_id, phone, nombre, keywords_nuevos, instituciones_new)
+            print(f"[Closer] 💾 Intenciones directas guardadas para {phone}: {keywords_nuevos} | {instituciones_new}")
+
+    except Exception as e:
+        print(f"[Closer] Error guardar_intenciones_directas: {e}")
+
+
 def registrar_alerta_cliente(conv_id: str, phone: str, nombre: str, keywords: list, instituciones: list = None):
     try:
         existing = supabase_admin.table("alertas_cliente") \
@@ -785,7 +872,7 @@ async def generar_respuesta_gemini(
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=350, temperature=0.72)
+            config=types.GenerateContentConfig(max_output_tokens=700, temperature=0.72)
         )
         return response.text.strip()
     except Exception as e:
@@ -904,7 +991,7 @@ Estado del cliente: {estado}
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=250, temperature=0.78)
+            config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.78)
         )
         return response.text.strip()
     except Exception as e:
@@ -940,7 +1027,7 @@ Procesos:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=300, temperature=0.7)
+            config=types.GenerateContentConfig(max_output_tokens=600, temperature=0.7)
         )
         return response.text.strip()
     except Exception as e:
@@ -1062,7 +1149,7 @@ async def procesar_imagen_bg(phone: str, image_url: str, caption: str = "", nomb
                 prompt_extraccion,
                 _types.Part.from_bytes(data=image_bytes, mime_type=content_type)
             ],
-            config=_types.GenerateContentConfig(max_output_tokens=400, temperature=0.05)
+            config=_types.GenerateContentConfig(max_output_tokens=600, temperature=0.05)
         )
         raw = (extraccion_resp.text or "").strip().replace("```json", "").replace("```", "").strip()
 
@@ -1081,7 +1168,21 @@ async def procesar_imagen_bg(phone: str, image_url: str, caption: str = "", nomb
             # Si no es JSON válido, usar el texto crudo como descripción
             datos_imagen = {"otros_datos": raw}
 
-        codigo_detectado = datos_imagen.get("codigo_proceso") or ""
+        codigo_raw       = datos_imagen.get("codigo_proceso") or ""
+        # Validar que el código tiene formato real de proceso DGCP
+        # Patrón: LETRAS-LETRAS-LETRAS-YYYY-NNNN (ej: MIVHED-CCC-LPN-2026-0008)
+        import re as _re_img
+        codigo_detectado = ""
+        if codigo_raw and codigo_raw.upper() not in ("NULL", "NONE", "N/A", ""):
+            # Buscar patrón de código en el texto extraído
+            match_codigo = _re_img.search(
+                r'[A-Z]{2,15}-[A-Z]{2,5}-[A-Z]{2,5}-\d{4}-\d{4}',
+                codigo_raw.upper()
+            )
+            if match_codigo:
+                codigo_detectado = match_codigo.group()
+            elif len(codigo_raw) > 10:  # Si no matchea el patrón pero es largo, igual úsalo
+                codigo_detectado = codigo_raw.strip()
         titulo_imagen    = datos_imagen.get("titulo") or ""
         entidad_imagen   = datos_imagen.get("entidad") or ""
         monto_imagen     = datos_imagen.get("monto") or ""
