@@ -617,35 +617,17 @@ def guardar_intenciones_directas(
 ):
     """
     Guarda intenciones del cliente SIN depender de Gemini.
-    Se llama siempre que hay señales claras de interés en el mensaje.
-    Complementa a extraer_y_actualizar_perfil que puede fallar.
+    REGLA CLAVE: Las alertas automáticas (notificaciones futuras) solo se registran
+    cuando el cliente EXPLÍCITAMENTE pide ser avisado (intencion == 'quiere_alerta').
+    El perfil se actualiza en todos los casos donde hay info relevante.
+    Así evitamos registrar alertas para alguien que solo mencionó un rubro
+    de pasada sin pedir ser notificado.
     """
     try:
-        keywords_nuevos    = []
-        instituciones_new  = []
-        notas              = []
+        keywords_nuevos   = []
+        instituciones_new = []
+        notas             = []
 
-        # Si el cliente mencionó un proceso específico, extraer institución y tipo
-        if codigo_proceso:
-            partes = codigo_proceso.upper().split("-")
-            # Formato: INSTITUCION-TIPO-MODALIDAD-AÑO-NUM
-            if len(partes) >= 2:
-                instituciones_new.append(partes[0])  # MIVHED, MOPC, INAPA, etc.
-            if len(partes) >= 3:
-                modalidad = partes[2]  # LPN, CP, CM, SI, etc.
-                mapa_tipos = {
-                    "LPN": "obras", "LPI": "obras", "CP":  "obras",
-                    "CM":  "compra menor", "SI": "servicios",
-                    "SO":  "servicios", "PEPU": "publicidad",
-                    "PEEX": "consultoria", "PEOR": "consultoria"
-                }
-                tipo = mapa_tipos.get(modalidad, modalidad.lower())
-                if tipo not in keywords_nuevos:
-                    keywords_nuevos.append(tipo)
-            notas.append(f"Interesado en proceso {codigo_proceso}")
-
-        # Extraer keywords del texto del mensaje
-        msg_lower = mensaje.lower()
         rubros = [
             ("construccion", "construcción"), ("construcción", "construcción"),
             ("obra", "obras"), ("infraestructura", "infraestructura"),
@@ -666,6 +648,82 @@ def guardar_intenciones_directas(
             ("ayuntamiento", "Ayuntamiento"), ("coraavega", "CORAAVEGA"),
             ("intrant", "INTRANT"), ("dgcp", "DGCP"),
         ]
+
+        msg_lower = mensaje.lower()
+
+        # ── Caso 1: el cliente mencionó un proceso específico ─────────────────
+        # Siempre guardamos en perfil (interés implícito claro)
+        if codigo_proceso:
+            partes = codigo_proceso.upper().split("-")
+            if len(partes) >= 2:
+                instituciones_new.append(partes[0])
+            if len(partes) >= 3:
+                mapa_tipos = {
+                    "LPN": "obras", "LPI": "obras", "CP": "obras",
+                    "CM": "compra menor", "SI": "servicios",
+                    "SO": "servicios", "PEPU": "publicidad",
+                    "PEEX": "consultoría", "PEOR": "consultoría"
+                }
+                tipo = mapa_tipos.get(partes[2], partes[2].lower())
+                if tipo not in keywords_nuevos:
+                    keywords_nuevos.append(tipo)
+            notas.append(f"Consultó proceso {codigo_proceso}")
+
+            # Extraer más keywords del mensaje en este contexto
+            for patron, kw in rubros:
+                if patron in msg_lower and kw not in keywords_nuevos:
+                    keywords_nuevos.append(kw)
+            for patron, inst in instituciones_conocidas:
+                if patron in msg_lower and inst not in instituciones_new:
+                    instituciones_new.append(inst)
+
+            # Guardar en perfil siempre
+            perfil_data = {}
+            if keywords_nuevos:
+                perfil_data["tipos_proceso"] = keywords_nuevos
+            if instituciones_new:
+                perfil_data["instituciones_interes"] = instituciones_new
+            if notas:
+                perfil_data["notas_agente"] = " | ".join(notas)
+            if perfil_data:
+                actualizar_perfil_prospecto(phone, conv_id, nombre, perfil_data)
+
+            # Alerta solo si el cliente también pidió ser avisado
+            if intencion == "quiere_alerta" and (keywords_nuevos or instituciones_new):
+                registrar_alerta_cliente(conv_id, phone, nombre, keywords_nuevos, instituciones_new)
+                print(f"[Closer] 💾 Alerta+perfil guardados para {phone}: {keywords_nuevos} | {instituciones_new}")
+            else:
+                print(f"[Closer] 💾 Perfil actualizado para {phone}: {keywords_nuevos} | {instituciones_new}")
+            return
+
+        # ── Caso 2: el cliente pidió EXPLÍCITAMENTE alertas/avisos ───────────
+        # Solo en este caso registramos la alerta automática
+        if intencion == "quiere_alerta":
+            for patron, kw in rubros:
+                if patron in msg_lower and kw not in keywords_nuevos:
+                    keywords_nuevos.append(kw)
+            for patron, inst in instituciones_conocidas:
+                if patron in msg_lower and inst not in instituciones_new:
+                    instituciones_new.append(inst)
+
+            if not keywords_nuevos and not instituciones_new:
+                return  # No detectamos qué le interesa — Gemini lo manejará
+
+            # Guardar en perfil
+            perfil_data = {}
+            if keywords_nuevos:
+                perfil_data["tipos_proceso"] = keywords_nuevos
+            if instituciones_new:
+                perfil_data["instituciones_interes"] = instituciones_new
+            actualizar_perfil_prospecto(phone, conv_id, nombre, perfil_data)
+
+            # Registrar alerta para este cliente específico
+            registrar_alerta_cliente(conv_id, phone, nombre, keywords_nuevos, instituciones_new)
+            print(f"[Closer] 🔔 Alerta registrada para {phone}: {keywords_nuevos} | {instituciones_new}")
+            return
+
+        # ── Caso 3: mención pasajera en conversación normal ──────────────────
+        # Solo actualizamos el perfil (sector/tipo de empresa), NO creamos alerta
         for patron, kw in rubros:
             if patron in msg_lower and kw not in keywords_nuevos:
                 keywords_nuevos.append(kw)
@@ -673,26 +731,14 @@ def guardar_intenciones_directas(
             if patron in msg_lower and inst not in instituciones_new:
                 instituciones_new.append(inst)
 
-        # Solo proceder si hay algo nuevo que guardar
-        if not keywords_nuevos and not instituciones_new and not notas:
-            return
-
-        # Actualizar perfil_prospectos
-        perfil_data = {}
-        if keywords_nuevos:
-            perfil_data["tipos_proceso"] = keywords_nuevos
-        if instituciones_new:
-            perfil_data["instituciones_interes"] = instituciones_new
-        if notas:
-            perfil_data["notas_agente"] = " | ".join(notas)
-
-        if perfil_data:
-            actualizar_perfil_prospecto(phone, conv_id, nombre, perfil_data)
-
-        # Registrar/actualizar alerta
         if keywords_nuevos or instituciones_new:
-            registrar_alerta_cliente(conv_id, phone, nombre, keywords_nuevos, instituciones_new)
-            print(f"[Closer] 💾 Intenciones directas guardadas para {phone}: {keywords_nuevos} | {instituciones_new}")
+            perfil_data = {}
+            if keywords_nuevos:
+                perfil_data["tipos_proceso"] = keywords_nuevos
+            if instituciones_new:
+                perfil_data["instituciones_interes"] = instituciones_new
+            actualizar_perfil_prospecto(phone, conv_id, nombre, perfil_data)
+            print(f"[Closer] 📝 Perfil enriquecido para {phone} (sin alerta): {keywords_nuevos}")
 
     except Exception as e:
         print(f"[Closer] Error guardar_intenciones_directas: {e}")
@@ -841,16 +887,16 @@ async def generar_respuesta_gemini(
 
     # Instrucción específica según la intención detectada
     instruccion_intencion = {
-        "consulta_proceso":    "El cliente pregunta por un proceso específico. Analiza los datos del CONTEXTO, menciona un riesgo concreto de descalificación, y cierra ofreciendo cotizar la preparación de la oferta.",
-        "busqueda_procesos":   "El cliente busca procesos. Muestra los que encontraste y termina preguntando si quiere que preparemos la oferta para alguno.",
-        "pregunta_precio":     "Explica brevemente la asesoría y los dos esquemas de precio (por proceso / mensualidad + comisión). Cierra pidiendo el proceso específico para cotizar.",
-        "quiere_alerta":       "Confirma que guardaste sus intereses. Dile que cuando aparezca un proceso le avisas y le ofreces preparar la oferta.",
-        "senal_cierre":        "El cliente está listo. Da el siguiente paso concreto: coordinar con el Ing. Luis para cotizar. Sé directo.",
-        "consulta_consultoria":"Explica el servicio completo con el slogan al final. Cierra preguntando si tiene un proceso en mente.",
-        "objecion_lo_hago_yo": "Aplica validación + riesgo. Valida que confía en su equipo, pero menciona que un error técnico puede anular todo. Ofrece al menos revisar la oferta.",
-        "saludo":              "Saluda brevemente y pregunta en qué proceso está trabajando o qué tipo de licitaciones le interesan.",
-        "consulta_general":    "Responde con valor y cierra siempre con una pregunta orientada a cotizar o avanzar.",
-    }.get(intencion, "Responde con valor y cierra con CTA hacia la consultoría.")
+        "consulta_proceso":    "El cliente pregunta por un proceso. Analiza el CONTEXTO, menciona un riesgo de descalificación, y cierra ofreciendo cotizar la oferta. NUNCA termines con coma — siempre oración completa.",
+        "busqueda_procesos":   "Muestra los procesos encontrados con título, monto y fecha de cierre. Cierra preguntando si preparamos la oferta para alguno. NUNCA termines con coma — siempre oración completa.",
+        "pregunta_precio":     "Explica la asesoría y los dos esquemas de precio (por proceso / mensualidad + comisión). Cierra pidiendo el proceso específico. NUNCA termines con coma — siempre oración completa.",
+        "quiere_alerta":       "Confirma exactamente qué quedó registrado (menciona el rubro). Di que cada día a las 6pm revisamos y si hay algo nuevo le avisamos. Cierra con pregunta. NUNCA termines con coma — siempre oración completa.",
+        "senal_cierre":        "El cliente está listo. Da el siguiente paso: coordinar con el Ing. Luis para cotizar. Sé directo. NUNCA termines con coma — siempre oración completa.",
+        "consulta_consultoria":"Explica el servicio con el slogan al final. Cierra preguntando si tiene un proceso en mente. NUNCA termines con coma — siempre oración completa.",
+        "objecion_lo_hago_yo": "Aplica validación + riesgo. Ofrece al menos revisar la oferta antes de entregar. NUNCA termines con coma — siempre oración completa.",
+        "saludo":              "Saluda y pregunta en qué proceso está trabajando o qué tipo de licitaciones le interesan. NUNCA termines con coma — siempre oración completa.",
+        "consulta_general":    "Responde con valor y cierra con pregunta orientada a cotizar. NUNCA termines con coma — siempre oración completa.",
+    }.get(intencion, "Responde con valor, cierra con CTA hacia la consultoría. NUNCA termines con coma.")
 
     prompt = f"""{SYSTEM_PROMPT}
 
@@ -866,13 +912,15 @@ async def generar_respuesta_gemini(
 ═══ MENSAJE DEL CLIENTE ═══
 {mensaje_cliente}
 
-═══ TU RESPUESTA (solo el texto, sin comillas, sin explicaciones) ═══"""
+═══ TU RESPUESTA (solo el texto, sin comillas, sin explicaciones) ═══
+REGLA ABSOLUTA: NUNCA termines con una coma o a mitad de oración. Si el mensaje es largo,
+cierra la última idea con punto antes de terminar. Mensaje incompleto = respuesta inválida."""
 
     try:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=700, temperature=0.72)
+            config=types.GenerateContentConfig(max_output_tokens=1200, temperature=0.72)
         )
         return response.text.strip()
     except Exception as e:
