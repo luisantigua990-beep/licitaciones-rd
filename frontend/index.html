@@ -3629,6 +3629,25 @@ async function agregarSeguimiento(codigo) {
     await cargarSeguimiento();
     actualizarBtnSeguir(codigo);
     mostrarToast('Proceso agregado al seguimiento');
+
+    // ── SOLICITAR ANÁLISIS IA AUTOMÁTICAMENTE ──────────────────────
+    // Llamar al backend para que analice el pliego y envíe el email al completar
+    try {
+      const resAnalisis = await fetch(`${API}/api/procesos/${codigo}/analizar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (resAnalisis.ok) {
+        console.log(`✅ Análisis IA solicitado para ${codigo}`);
+      } else {
+        console.warn(`⚠️ Análisis IA no iniciado para ${codigo}:`, resAnalisis.status);
+      }
+    } catch(eAnalisis) {
+      console.warn('⚠️ Error solicitando análisis IA:', eAnalisis);
+      // No mostrar error al usuario — el análisis es en segundo plano
+    }
+    // ──────────────────────────────────────────────────────────────
+
   } catch(e) {
     console.error('Error agregando seguimiento:', e);
     mostrarToast('Error al agregar. Intenta de nuevo.');
