@@ -563,7 +563,7 @@ Extrae SOLO lo que puedas inferir con certeza. NO inventes nada. Devuelve SOLO J
         except json.JSONDecodeError:
             # Último recurso: limpiar caracteres problemáticos
             import re as _re
-            texto = _re.sub(r'[ -]', ' ', texto)
+            texto = _re.sub(r'[ -  ]', ' ', texto)
             datos = {k: v for k, v in json.loads(texto).items() if v is not None and v != []}
         if datos:
             actualizar_perfil_prospecto(phone, conv_id, nombre, datos)
@@ -826,10 +826,12 @@ def detectar_intencion(mensaje: str) -> str:
     if detectar_interes_alerta(mensaje):
         return "quiere_alerta"
 
-    # Busca procesos sin código
-    if any(p in msg for p in ["hay procesos", "hay licitaciones", "busco procesos",
-                               "que procesos", "qué procesos", "existen procesos",
-                               "procesos de", "licitaciones de", "hay algo de"]):
+    # Busca procesos sin código (¡Ajustado con singulares y sinónimos!)
+    if any(p in msg for p in ["hay procesos", "hay proceso", "hay licitaciones", "hay licitacion", 
+                               "busco procesos", "busco proceso", "que procesos", "qué procesos", 
+                               "que proceso", "qué proceso", "existen procesos", "procesos de", 
+                               "licitaciones de", "hay algo de", "cual proceso", "cuál proceso", 
+                               "disponible", "activo"]):
         return "busqueda_procesos"
 
     # Pregunta de consultoría
@@ -856,10 +858,11 @@ def extraer_keywords_interes(mensaje: str):
     ]
     tipos_obra = [
         "construccion", "construcción", "infraestructura", "alcantarillado",
-        "drenaje", "acueducto", "carretera", "puente", "edificio",
+        "drenaje", "acueducto", "carretera", "puente", "edificio", "edificacion", "edificación",
         "rehabilitacion", "rehabilitación", "mantenimiento", "saneamiento",
         "electricidad", "plomeria", "plomería",
-        "consultoria", "consultoría", "supervision", "supervisión"
+        "consultoria", "consultoría", "supervision", "supervisión",
+        "obra", "obras", "casa", "casas", "vivienda", "viviendas", "remodelacion", "remodelación"
     ]
     msg_lower     = mensaje.lower()
     keywords      = [t for t in tipos_obra if t in msg_lower]
@@ -888,7 +891,7 @@ async def generar_respuesta_gemini(
     # Instrucción específica según la intención detectada
     instruccion_intencion = {
         "consulta_proceso":    "El cliente pregunta por un proceso. Analiza el CONTEXTO, menciona un riesgo de descalificación, y cierra ofreciendo cotizar la oferta. NUNCA termines con coma — siempre oración completa.",
-        "busqueda_procesos":   "Muestra los procesos encontrados con título, monto y fecha de cierre. Cierra preguntando si preparamos la oferta para alguno. NUNCA termines con coma — siempre oración completa.",
+        "busqueda_procesos":   "REGLA ESTRICTA: MUESTRA INMEDIATAMENTE la lista de procesos que están en el CONTEXTO. Usa viñetas. NO pidas más información (ni presupuesto, ni especialidad) sin antes mostrar la lista. Si no hay procesos, dilo. Cierra ofreciendo cotizar la preparación de la oferta para alguno de ellos. NUNCA termines con coma.",
         "pregunta_precio":     "Explica la asesoría y los dos esquemas de precio (por proceso / mensualidad + comisión). Cierra pidiendo el proceso específico. NUNCA termines con coma — siempre oración completa.",
         "quiere_alerta":       "Confirma exactamente qué quedó registrado (menciona el rubro). Di que cada día a las 6pm revisamos y si hay algo nuevo le avisamos. Cierra con pregunta. NUNCA termines con coma — siempre oración completa.",
         "senal_cierre":        "El cliente está listo. Da el siguiente paso: coordinar con el Ing. Luis para cotizar. Sé directo. NUNCA termines con coma — siempre oración completa.",
@@ -1340,6 +1343,13 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
     intencion          = detectar_intencion(mensaje)
     codigo_proceso     = detectar_proceso_en_mensaje(mensaje)
 
+    # --- NUEVO BLOQUE: Promover intención basada en keywords si era charla general ---
+    keywords, instituciones = extraer_keywords_interes(mensaje)
+    if intencion in ["consulta_general", "saludo"] and (keywords or instituciones):
+        intencion = "busqueda_procesos"
+        print(f"[Closer] Intención promovida a busqueda_procesos por mención de rubro/institución")
+    # -------------------------------------------------------------------------------
+
     # Si el mensaje viene de imagen y contiene un código de proceso, forzar intención
     if not intencion == "consulta_proceso" and codigo_proceso:
         intencion = "consulta_proceso"
@@ -1479,7 +1489,7 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
 
     # 2. Cliente busca procesos sin código específico
     elif intencion == "busqueda_procesos":
-        keywords, instituciones = extraer_keywords_interes(mensaje)
+        # keywords e instituciones ya fueron extraídas arriba
         procesos_encontrados    = buscar_procesos_por_keywords(keywords, instituciones)
         if procesos_encontrados:
             lista = ""
@@ -1488,21 +1498,27 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
                 monto_f = f"RD${float(monto):,.0f}" if monto else "monto no publicado"
                 fecha   = str(p.get("fecha_fin_recepcion_ofertas", "?"))[:10]
                 lista  += f"• {p.get('titulo', 'Sin título')[:60]} | {p.get('unidad_compra','')} | {monto_f} | Cierre: {fecha}\n"
+            
+            # --- CONTEXTO AJUSTADO ---
             contexto_adicional = (
-                f"PROCESOS ACTIVOS ENCONTRADOS ({', '.join(keywords + instituciones)}):\n{lista}\n"
-                "Comparte estos procesos de forma clara y pregunta si le interesa "
-                "ver el análisis de alguno o si quiere que le avisemos cuando haya más."
+                f"🚨 TIENES QUE MOSTRAR ESTA LISTA AL CLIENTE AHORA MISMO:\n{lista}\n"
+                "Pega esta lista en tu respuesta. Después de mostrarla, pregúntale "
+                "si quiere que coticemos la preparación de la oferta para alguno de ellos."
             )
         else:
+            # --- CONTEXTO AJUSTADO ---
             contexto_adicional = (
                 f"No encontré procesos activos para {', '.join(keywords + instituciones) or 'esa búsqueda'}. "
-                "Dile que no hay procesos activos con esos criterios ahora mismo, "
-                "pero que si quiere te deja sus intereses y le avisas cuando aparezca algo."
+                "Dile claramente que no hay procesos activos con esos criterios ahora mismo, "
+                "pero que si quiere te deja sus datos y le avisas cuando aparezca algo."
             )
 
     # 3. Quiere alertas automáticas
     if detectar_interes_alerta(mensaje):
-        keywords, instituciones = extraer_keywords_interes(mensaje)
+        # Asegurar que tenemos keywords para la alerta
+        if not keywords and not instituciones:
+            keywords, instituciones = extraer_keywords_interes(mensaje)
+            
         if keywords or instituciones:
             registrar_alerta_cliente(conv_id, phone, nombre, keywords, instituciones)
             kw_texto           = ", ".join(keywords + instituciones)
