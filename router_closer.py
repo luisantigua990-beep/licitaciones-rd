@@ -96,12 +96,12 @@ KEYWORDS_ALERTA = [
     "procesos de minerd", "procesos de salud", "procesos de egehid",
 ]
 
-SYSTEM_PROMPT = """Eres Licy, asistente del Ing. Luis Antigua — ingeniero civil dominicano con más de 8 años en licitaciones públicas del DGCP de República Dominicana.
+SYSTEM_PROMPT = """Eres Licy, asistente del Ing. Luis Antigua — ingeniero civil dominicano con más de 8 años en licitaciones públicas del DGCP de República Dominicana. Licy es un hombre, así que habla en masculino siempre (ej: "estoy listo", "soy el asistente", nunca "lista" ni "la asistente").
 
 Tu objetivo principal es VENDER EL SERVICIO DE ASESORÍA EN LICITACIONES, no solo informar.
 
 PRESENTACIÓN (primera vez):
-"Soy Licy, asistente del Ing. Luis Antigua 👋 Ayudamos a empresas dominicanas a ganar licitaciones públicas, desde buscar el proceso hasta la adjudicación. ¿En qué proceso estás trabajando?"
+"Soy Licy, asistente del Ing. Luis Antigua 👋 Ayudamos a empresas dominicanas a ganar licitaciones públicas, desde buscar el proceso hasta la adjudicación. ¿En qué proceso estás trabajando o qué tipo de licitaciones te interesan?"
 
 ═══════════════════════════════════════════
 SERVICIO PRINCIPAL — ASESORÍA EN LICITACIONES
@@ -890,12 +890,21 @@ Devuelve SOLO JSON:
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                max_output_tokens=350,
+                max_output_tokens=400,
                 temperature=0.05
             )
         )
-        datos = json.loads(response.text)
+        raw = (response.text or "").strip()
+        if not raw:
+            print("[Motor Semántico] Gemini devolvió texto vacío")
+            return [], []
+        # Parseo robusto — quitar markdown si Gemini lo agrega
+        raw = raw.replace("```json", "").replace("```", "").strip()
+        idx_i, idx_f = raw.find("{"), raw.rfind("}")
+        if idx_i == -1 or idx_f == -1:
+            print(f"[Motor Semántico] Sin JSON en respuesta: {raw[:80]}")
+            return [], []
+        datos = json.loads(raw[idx_i:idx_f + 1])
         terminos = [str(k).lower().strip() for k in (datos.get("keywords") or []) if k][:7]
         instituciones = [str(i).upper().strip() for i in (datos.get("instituciones") or []) if i]
         print(f"[Motor Semántico] kw={terminos} | inst={instituciones}")
@@ -924,7 +933,7 @@ async def generar_respuesta_gemini(mensaje_cliente: str, historial: list, contex
         "senal_cierre":        "El cliente está listo. Da el siguiente paso: coordinar con el Ing. Luis para cotizar. Sé directo. NUNCA termines con coma — siempre oración completa.",
         "consulta_consultoria":"Explica el servicio con el slogan al final. Cierra preguntando si tiene un proceso en mente. NUNCA termines con coma — siempre oración completa.",
         "objecion_lo_hago_yo": "Aplica validación + riesgo. Ofrece al menos revisar la oferta antes de entregar. NUNCA termines con coma — siempre oración completa.",
-        "saludo":              "Saluda y pregunta en qué proceso está trabajando o qué tipo de licitaciones le interesan. Si el HISTORIAL tiene contexto previo, úsalo para personalizar. NUNCA termines con coma — siempre oración completa.",
+        "saludo":              "IMPORTANTE: Responde el saludo de forma NATURAL primero (ej: '¡Bien gracias! ¿Y tú?'). Luego en un SEGUNDO párrafo separado por doble salto de línea, pregunta en qué puedo ayudarle hoy o qué tipo de licitaciones le interesan. NO vendas nada en el primer párrafo. Si el HISTORIAL tiene contexto previo, úsalo en el segundo párrafo.",
         "consulta_general":    "Responde con valor y cierra con pregunta orientada a cotizar. NUNCA termines con coma — siempre oración completa.",
     }.get(intencion, "Responde con valor, cierra con CTA hacia la consultoría. NUNCA termines con coma.")
 
@@ -1111,6 +1120,23 @@ async def procesar_audio_bg(phone: str, audio_url: str, nombre: str = ""):
         print(f"[Closer] Error audio: {e}")
 
 
+
+def _dividir_respuesta_saludo(respuesta: str) -> list:
+    """
+    Divide la respuesta de saludo en dos mensajes separados para sonar más humano.
+    Mensaje 1: saludo natural + "bien y tú?" o similar
+    Mensaje 2: la pregunta de negocio
+    """
+    for sep in ["\n\n", "\n", "! ", "? "]:
+        partes = respuesta.split(sep, 1)
+        if len(partes) == 2:
+            sufijo = "!" if sep == "! " else "?" if sep == "? " else ""
+            p1 = partes[0].strip() + sufijo
+            p2 = partes[1].strip()
+            if len(p1) > 10 and len(p2) > 15:
+                return [p1, p2]
+    return [respuesta]
+
 async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
     print(f"[Closer] Procesando phone={phone} msg={mensaje[:60]}")
 
@@ -1222,8 +1248,18 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
     respuesta = await generar_respuesta_gemini(mensaje, historial, contexto_adicional, intencion)
 
     asyncio.create_task(extraer_y_actualizar_perfil(mensaje, historial, phone, conv_id, nombre, perfil))
-    guardar_mensaje(conv_id, "agente", respuesta, generado_por_ia=True)
-    await enviar_whatsapp(phone, respuesta)
+
+    # Para saludos: dividir en dos mensajes (más humano)
+    if intencion == "saludo":
+        partes = _dividir_respuesta_saludo(respuesta)
+        for i, parte in enumerate(partes):
+            guardar_mensaje(conv_id, "agente", parte, generado_por_ia=True)
+            await enviar_whatsapp(phone, parte)
+            if i < len(partes) - 1:
+                await asyncio.sleep(3)  # pausa natural entre mensajes
+    else:
+        guardar_mensaje(conv_id, "agente", respuesta, generado_por_ia=True)
+        await enviar_whatsapp(phone, respuesta)
 
     if detectar_senal_cierre(mensaje) or intencion == "senal_cierre":
         await enviar_telegram(f"🔥 SEÑAL DE CIERRE\n👤 {nombre or phone}\n📱 +{phone}\n💬 \"{mensaje[:150]}\"")
