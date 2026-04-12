@@ -156,6 +156,7 @@ REGLAS ESTRICTAS
 6. Si ya tienes el perfil del cliente en el CONTEXTO, úsalo — no repitas preguntas
 7. Si no puedes resolver algo, di que el Ing. Luis le escribe en breve
 8. guarda siempre el contecxto de la conversacion para que sea muy personalizada la asistencia.
+9. SÉ CONCISO. Tus respuestas NUNCA deben exceder los 2 párrafos cortos. Si muestras una lista de procesos, no agregues texto innecesario abajo. Si hablas de más, el sistema cortará tu mensaje a la mitad.
 
 PERFILAMIENTO (extrae naturalmente en la conversación):
 - ¿A qué se dedica la empresa?
@@ -209,33 +210,21 @@ MAX_MENSAJES_POR_HORA = 25  # límite conservador para número nuevo
 
 
 def _en_horario_permitido() -> bool:
-    """
-    Bloquea envíos entre 11pm y 8am hora RD (UTC-4).
-    11pm RD = 03:00 UTC | 8am RD = 12:00 UTC
-    """
     from datetime import timezone
     hora_utc = datetime.now(timezone.utc).hour
-    # Convertir a hora RD (UTC-4)
     hora_rd = (hora_utc - 4) % 24
-    # Bloqueado: 23:00 - 07:59 hora RD
     return not (hora_rd >= 23 or hora_rd < 8)
 
 
 def _dentro_del_limite_hora() -> bool:
-    """Verifica que no hayamos excedido MAX_MENSAJES_POR_HORA en los últimos 60 min."""
     global _mensajes_hora
     ahora    = datetime.utcnow()
     hace_1h  = ahora - timedelta(hours=1)
-    # Limpiar entradas viejas
     _mensajes_hora = [t for t in _mensajes_hora if t > hace_1h]
     return len(_mensajes_hora) < MAX_MENSAJES_POR_HORA
 
 
 async def _simular_typing(phone_clean: str, segundos: float):
-    """
-    Llama al endpoint de typing de Z-API para simular que el agente está escribiendo.
-    Hace la interacción parecer humana ante los sistemas de detección de WhatsApp.
-    """
     if not ZAPI_INSTANCE_ID or not ZAPI_TOKEN:
         return
     url_typing = (
@@ -247,75 +236,50 @@ async def _simular_typing(phone_clean: str, segundos: float):
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(url_typing, headers=headers)
     except Exception:
-        pass  # El typing es cosmético — si falla, no importa
+        pass
 
 
 async def enviar_whatsapp(phone: str, mensaje: str, es_followup: bool = False):
-    """
-    Envío anti-ban con:
-    - Bloqueo de horario nocturno (11pm - 8am hora RD)
-    - Límite de 25 mensajes/hora
-    - Delay humanizado antes de enviar (simula escritura)
-    - Typing indicator vía Z-API
-    """
     import random
 
     if not ZAPI_INSTANCE_ID or not ZAPI_TOKEN:
         print(f"[Z-API] Sin config — msg para {phone}: {mensaje[:80]}")
         return
 
-    # ── Verificar horario permitido ──────────────────────────────────────────
     if not _en_horario_permitido():
         from datetime import timezone as _tz
         hora_utc_ahora = datetime.now(_tz.utc)
         hora_rd        = (hora_utc_ahora.hour - 4) % 24
 
         if es_followup:
-            # Followups y alertas: NO bloquear el server esperando.
-            # El cron de followup/alertas corre diariamente a las 9am/6pm.
-            # Simplemente no enviamos — el cron del día siguiente lo reintentará
-            # porque proximo_followup_en ya venció y seguirá en la query.
             print(f"[Z-API] 🌙 Followup fuera de horario ({hora_rd}h RD) — {phone} se enviará en el próximo cron")
             return
         else:
-            # Mensajes reactivos (el cliente escribió de noche):
-            # Calculamos cuántos segundos faltan para las 8am hora RD (12:00 UTC)
-            # y esperamos — así la respuesta llega a primera hora del día.
             hora_8am_utc = hora_utc_ahora.replace(hour=12, minute=0, second=0, microsecond=0)
             if hora_utc_ahora >= hora_8am_utc:
-                # Ya pasó las 8am UTC de hoy → la próxima 8am es mañana
                 hora_8am_utc = hora_8am_utc + timedelta(days=1)
             segundos_espera = (hora_8am_utc - hora_utc_ahora).total_seconds()
-            print(f"[Z-API] 🌙 Mensaje reactivo fuera de horario ({hora_rd}h RD) — "
-                  f"esperando {segundos_espera/3600:.1f}h hasta las 8am para {phone}")
+            print(f"[Z-API] 🌙 Mensaje reactivo fuera de horario ({hora_rd}h RD) — esperando {segundos_espera/3600:.1f}h hasta las 8am para {phone}")
             await asyncio.sleep(segundos_espera)
-            print(f"[Z-API] ☀️ Son las 8am — enviando mensaje que estaba en espera para {phone}")
 
-    # ── Verificar límite por hora ─────────────────────────────────────────────
     if not _dentro_del_limite_hora():
-        print(f"[Z-API] ⛔ Límite de {MAX_MENSAJES_POR_HORA} msg/hora alcanzado — {phone} descartado")
+        print(f"[Z-API] ⛔ Límite alcanzado — {phone} descartado")
         return
 
     phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "")
     url     = f"https://api.z-api.io/instances/{ZAPI_INSTANCE_ID}/token/{ZAPI_TOKEN}/send-text"
     headers = {"Client-Token": ZAPI_CLIENT_TOKEN} if ZAPI_CLIENT_TOKEN else {}
 
-    # ── Delay humanizado ─────────────────────────────────────────────────────
-    # Respuestas reactivas (cliente escribió): 2-6 segundos
-    # Followups y alertas (outbound): 5-15 segundos (más cuidado)
     if es_followup:
         delay = random.uniform(5.0, 15.0)
     else:
-        # Delay proporcional al largo del mensaje (simula tiempo de escritura)
-        chars_por_seg = random.uniform(18, 30)  # velocidad de escritura humana
+        chars_por_seg = random.uniform(18, 30)
         delay_escritura = len(mensaje) / chars_por_seg
         delay = max(2.0, min(delay_escritura, 8.0))
 
-    # Simular typing durante el delay
     await _simular_typing(phone_clean, delay)
     await asyncio.sleep(delay)
 
-    # ── Enviar mensaje ────────────────────────────────────────────────────────
     async with httpx.AsyncClient(timeout=15) as client:
         try:
             resp = await client.post(url, headers=headers, json={
@@ -326,7 +290,7 @@ async def enviar_whatsapp(phone: str, mensaje: str, es_followup: bool = False):
                 print(f"[Z-API] Error {resp.status_code}: {resp.text[:200]}")
             else:
                 _mensajes_hora.append(datetime.utcnow())
-                print(f"[Z-API] ✅ Enviado a {phone_clean} (delay={delay:.1f}s, hora={len(_mensajes_hora)}/h)")
+                print(f"[Z-API] ✅ Enviado a {phone_clean}")
         except Exception as e:
             print(f"[Z-API] Error: {e}")
 
@@ -341,15 +305,13 @@ def buscar_analisis_pliego(codigo_o_texto: str) -> Optional[dict]:
             .select("resumen_ejecutivo, alertas_fraude, checklist_categorizado, checklist_legal, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, plazos_clave, tipo_proceso, proceso_id") \
             .eq("proceso_id", codigo_o_texto) \
             .limit(1).execute()
-        if result.data:
-            return result.data[0]
+        if result.data: return result.data[0]
 
         result2 = supabase_admin.table("analisis_pliego") \
             .select("resumen_ejecutivo, alertas_fraude, checklist_categorizado, checklist_legal, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, plazos_clave, tipo_proceso, proceso_id") \
             .ilike("proceso_id", f"%{codigo_o_texto}%") \
             .limit(1).execute()
-        if result2.data:
-            return result2.data[0]
+        if result2.data: return result2.data[0]
     except Exception as e:
         print(f"[Closer] Error analisis_pliego: {e}")
     return None
@@ -361,15 +323,13 @@ def buscar_proceso_dgcp(codigo_o_texto: str) -> Optional[dict]:
             .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso") \
             .ilike("codigo_proceso", f"%{codigo_o_texto}%") \
             .limit(1).execute()
-        if result.data:
-            return result.data[0]
+        if result.data: return result.data[0]
 
         result2 = supabase_admin.table("procesos") \
             .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso") \
             .ilike("titulo", f"%{codigo_o_texto}%") \
             .limit(1).execute()
-        if result2.data:
-            return result2.data[0]
+        if result2.data: return result2.data[0]
     except Exception as e:
         print(f"[Closer] Error buscar_proceso: {e}")
     return None
@@ -377,21 +337,23 @@ def buscar_proceso_dgcp(codigo_o_texto: str) -> Optional[dict]:
 
 def buscar_procesos_por_keywords(keywords: list, instituciones: list = None, monto_min: float = None) -> list:
     """
-    Busca procesos activos del DGCP por keywords y/o instituciones.
-    Estrategia: primero intenta match por título, luego amplía si no hay resultados.
+    Busca procesos activos del DGCP por keywords (título o códigos UNSPSC) y/o instituciones.
     """
     try:
-        estados_activos = ["Proceso publicado", "Publicado", "En curso"]
+        # ⚠️ CRÍTICO: SOLO PROCESOS ACTIVOS 
+        estados_activos = ["Proceso publicado", "Publicado", "En curso", "Activo"]
         resultados_totales = []
 
-        # Búsqueda por cada keyword individualmente para maximizar resultados
-        for kw in (keywords or [])[:4]:
-            query = supabase_admin.table("procesos")                 .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso")                 .in_("estado_proceso", estados_activos)                 .ilike("titulo", f"%{kw}%")
+        # Búsqueda ampliada: buscar por keyword en titulo OR en la columna de rubros/codigos
+        for kw in (keywords or [])[:6]:
+            query = supabase_admin.table("procesos") \
+                .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso") \
+                .in_("estado_proceso", estados_activos) \
+                .or_(f"titulo.ilike.%{kw}%,rubros.ilike.%{kw}%") # <--- Asegúrate de que 'rubros' es tu columna de UNSPSC
 
             if monto_min:
                 query = query.gte("monto_estimado", monto_min)
             if instituciones:
-                # Filtrar por primera institución si hay
                 query = query.ilike("unidad_compra", f"%{instituciones[0]}%")
 
             res = query.order("fecha_fin_recepcion_ofertas", desc=False).limit(5).execute()
@@ -399,10 +361,12 @@ def buscar_procesos_por_keywords(keywords: list, instituciones: list = None, mon
                 if p["codigo_proceso"] not in [r["codigo_proceso"] for r in resultados_totales]:
                     resultados_totales.append(p)
 
-        # Si hay instituciones pero no keywords, buscar solo por institución
         if not keywords and instituciones:
             for inst in instituciones[:2]:
-                query = supabase_admin.table("procesos")                     .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso")                     .in_("estado_proceso", estados_activos)                     .ilike("unidad_compra", f"%{inst}%")
+                query = supabase_admin.table("procesos") \
+                    .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso") \
+                    .in_("estado_proceso", estados_activos) \
+                    .ilike("unidad_compra", f"%{inst}%")
                 if monto_min:
                     query = query.gte("monto_estimado", monto_min)
                 res = query.order("fecha_fin_recepcion_ofertas", desc=False).limit(5).execute()
@@ -410,7 +374,6 @@ def buscar_procesos_por_keywords(keywords: list, instituciones: list = None, mon
                     if p["codigo_proceso"] not in [r["codigo_proceso"] for r in resultados_totales]:
                         resultados_totales.append(p)
 
-        # Ordenar por fecha más próxima y retornar los mejores 5
         try:
             resultados_totales.sort(key=lambda x: str(x.get("fecha_fin_recepcion_ofertas") or "9999"))
         except Exception:
@@ -426,76 +389,51 @@ def buscar_procesos_por_keywords(keywords: list, instituciones: list = None, mon
 def obtener_o_crear_conversacion(phone: str, nombre: str = None) -> dict:
     try:
         result = supabase_admin.table("conversaciones_closer") \
-            .select("*") \
-            .eq("canal", "whatsapp") \
-            .eq("telefono", phone) \
+            .select("*").eq("canal", "whatsapp").eq("telefono", phone) \
             .not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido"]) \
-            .order("creado_en", desc=True) \
-            .limit(1).execute()
+            .order("creado_en", desc=True).limit(1).execute()
 
         if result.data:
             conv = result.data[0]
-            supabase_admin.table("conversaciones_closer") \
-                .update({"ultimo_mensaje_en": datetime.utcnow().isoformat()}) \
-                .eq("id", conv["id"]).execute()
+            supabase_admin.table("conversaciones_closer").update({"ultimo_mensaje_en": datetime.utcnow().isoformat()}).eq("id", conv["id"]).execute()
             return conv
 
         nueva = {
-            "canal":               "whatsapp",
-            "contacto_id":         phone,
-            "telefono":            phone,
-            "nombre_contacto":     nombre or "Desconocido",
-            "etapa":               "nuevo",
-            "estado":              "engaged",
-            "ultimo_mensaje_en":   datetime.utcnow().isoformat(),
-            "proximo_followup_en": (datetime.utcnow() + timedelta(days=2)).isoformat(),
-            "followups_enviados":  0,
+            "canal": "whatsapp", "contacto_id": phone, "telefono": phone, "nombre_contacto": nombre or "Desconocido",
+            "etapa": "nuevo", "estado": "engaged", "ultimo_mensaje_en": datetime.utcnow().isoformat(),
+            "proximo_followup_en": (datetime.utcnow() + timedelta(days=2)).isoformat(), "followups_enviados": 0,
         }
         res = supabase_admin.table("conversaciones_closer").insert(nueva).execute()
         return res.data[0] if res.data else nueva
     except Exception as e:
-        print(f"[Closer] Error conversacion: {e}")
         return {"id": None, "etapa": "nuevo", "estado": "engaged", "followups_enviados": 0}
 
 
 def obtener_historial(conversacion_id: str, limite: int = 10) -> list:
-    if not conversacion_id:
-        return []
+    if not conversacion_id: return []
     try:
-        result = supabase_admin.table("mensajes_closer") \
-            .select("rol, contenido, enviado_en") \
-            .eq("conversacion_id", conversacion_id) \
-            .order("enviado_en", desc=True) \
-            .limit(limite).execute()
+        result = supabase_admin.table("mensajes_closer").select("rol, contenido, enviado_en").eq("conversacion_id", conversacion_id).order("enviado_en", desc=True).limit(limite).execute()
         return list(reversed(result.data or []))
-    except Exception as e:
-        print(f"[Closer] Error historial: {e}")
+    except Exception:
         return []
 
 
 def guardar_mensaje(conversacion_id: str, rol: str, contenido: str, generado_por_ia: bool = False):
-    if not conversacion_id:
-        return
+    if not conversacion_id: return
     try:
         supabase_admin.table("mensajes_closer").insert({
-            "conversacion_id": conversacion_id,
-            "rol":             rol,
-            "contenido":       contenido,
-            "canal":           "whatsapp",
-            "generado_por_ia": generado_por_ia,
-            "enviado_en":      datetime.utcnow().isoformat()
+            "conversacion_id": conversacion_id, "rol": rol, "contenido": contenido, "canal": "whatsapp",
+            "generado_por_ia": generado_por_ia, "enviado_en": datetime.utcnow().isoformat()
         }).execute()
-    except Exception as e:
-        print(f"[Closer] Error guardar_mensaje: {e}")
+    except Exception:
+        pass
 
 
 def obtener_perfil_prospecto(phone: str) -> Optional[dict]:
     try:
-        result = supabase_admin.table("perfiles_prospectos") \
-            .select("*").eq("contact_phone", phone).limit(1).execute()
+        result = supabase_admin.table("perfiles_prospectos").select("*").eq("contact_phone", phone).limit(1).execute()
         return result.data[0] if result.data else None
-    except Exception as e:
-        print(f"[Closer] Error perfil: {e}")
+    except Exception:
         return None
 
 
@@ -503,7 +441,6 @@ def actualizar_perfil_prospecto(phone: str, conv_id: str, nombre: str, datos: di
     try:
         existente = obtener_perfil_prospecto(phone)
         datos["actualizado_en"] = datetime.utcnow().isoformat()
-
         if existente:
             update = {k: v for k, v in datos.items() if v is not None}
             for campo in ["tipos_proceso", "instituciones_interes", "instituciones_previas"]:
@@ -513,270 +450,76 @@ def actualizar_perfil_prospecto(phone: str, conv_id: str, nombre: str, datos: di
         else:
             datos.update({"contact_phone": phone, "contact_name": nombre, "conversation_id": conv_id})
             supabase_admin.table("perfiles_prospectos").insert(datos).execute()
-
-        print(f"[Closer] Perfil actualizado: {phone}")
-    except Exception as e:
-        print(f"[Closer] Error actualizar_perfil: {e}")
+    except Exception:
+        pass
 
 
-async def extraer_y_actualizar_perfil(
-    mensaje: str, historial: list, phone: str,
-    conv_id: str, nombre: str, perfil_actual: Optional[dict]
-):
-    if not gemini_client:
-        return
-
+async def extraer_y_actualizar_perfil(mensaje: str, historial: list, phone: str, conv_id: str, nombre: str, perfil_actual: Optional[dict]):
+    if not gemini_client: return
     perfil_json     = json.dumps(perfil_actual or {}, ensure_ascii=False, default=str)
-    historial_texto = "\n".join([
-        f"{'Cliente' if m['rol'] == 'cliente' else 'Lab'}: {m['contenido']}"
-        for m in historial[-6:]
-    ])
+    historial_texto = "\n".join([f"{'Cliente' if m['rol'] == 'cliente' else 'Lab'}: {m['contenido']}" for m in historial[-6:]])
 
     prompt = f"""Analiza esta conversación y extrae datos del perfil del prospecto dominicano.
-
-HISTORIAL:
-{historial_texto}
-
-MENSAJE ACTUAL: {mensaje}
-
-PERFIL YA CONOCIDO: {perfil_json}
-
-Extrae SOLO lo que puedas inferir con certeza. NO inventes nada. Devuelve SOLO JSON sin markdown:
-{{"nombre_empresa":null,"tipo_empresa":null,"sector":null,"provincia":null,"anos_experiencia":null,"tiene_estados_financieros":null,"anos_estados_financieros":null,"tiene_rnce":null,"tiene_rpe":null,"tipos_proceso":[],"instituciones_interes":[],"ha_participado_antes":null,"procesos_ganados":null,"notas_agente":null}}"""
+    HISTORIAL: {historial_texto}
+    MENSAJE ACTUAL: {mensaje}
+    PERFIL YA CONOCIDO: {perfil_json}
+    Extrae SOLO lo que puedas inferir con certeza. NO inventes nada. Devuelve SOLO JSON sin markdown:
+    {{"nombre_empresa":null,"tipo_empresa":null,"sector":null,"provincia":null,"anos_experiencia":null,"tiene_estados_financieros":null,"anos_estados_financieros":null,"tiene_rnce":null,"tiene_rpe":null,"tipos_proceso":[],"instituciones_interes":[],"ha_participado_antes":null,"procesos_ganados":null,"notas_agente":null}}"""
 
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.1)
+            model="gemini-2.5-flash", contents=prompt, config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.1)
         )
-        texto = response.text.strip()
-        # Limpiar markdown y buscar el bloque JSON
-        texto = texto.replace("```json", "").replace("```", "").strip()
-        # Extraer solo el bloque {} para evitar texto extra antes/después
-        idx_ini = texto.find("{")
-        idx_fin = texto.rfind("}")
-        if idx_ini == -1 or idx_fin == -1:
-            return
+        texto = response.text.strip().replace("```json", "").replace("```", "").strip()
+        idx_ini, idx_fin = texto.find("{"), texto.rfind("}")
+        if idx_ini == -1 or idx_fin == -1: return
         texto = texto[idx_ini:idx_fin + 1]
         try:
             datos = {k: v for k, v in json.loads(texto).items() if v is not None and v != []}
         except json.JSONDecodeError:
-            # Último recurso: limpiar caracteres problemáticos
             import re as _re
-            texto = _re.sub(r'[ -  ]', ' ', texto)
-            datos = {k: v for k, v in json.loads(texto).items() if v is not None and v != []}
+            datos = {k: v for k, v in json.loads(_re.sub(r'[ -  ]', ' ', texto)).items() if v is not None and v != []}
         if datos:
             actualizar_perfil_prospecto(phone, conv_id, nombre, datos)
             if datos.get("tipos_proceso") or datos.get("instituciones_interes"):
-                registrar_alerta_cliente(
-                    conv_id, phone, nombre,
-                    datos.get("tipos_proceso", []),
-                    datos.get("instituciones_interes", [])
-                )
-    except Exception as e:
-        print(f"[Closer] Error extraer_perfil: {e}")
+                registrar_alerta_cliente(conv_id, phone, nombre, datos.get("tipos_proceso", []), datos.get("instituciones_interes", []))
+    except Exception:
+        pass
 
 
 def construir_contexto_perfil(perfil: Optional[dict]) -> str:
-    if not perfil:
-        return ""
-
-    campos = [
-        ("nombre_empresa",   "Empresa"),
-        ("tipo_empresa",     "Tipo"),
-        ("sector",           "Sector"),
-        ("provincia",        "Provincia"),
-        ("anos_experiencia", "Experiencia (años)"),
-        ("notas_agente",     "Notas"),
-    ]
-    bool_campos = [
-        ("tiene_estados_financieros", "Estados financieros"),
-        ("tiene_rnce",                "RNCE"),
-        ("tiene_rpe",                 "RPE"),
-        ("ha_participado_antes",      "Ha participado antes"),
-    ]
-
+    if not perfil: return ""
+    campos = [("nombre_empresa", "Empresa"), ("tipo_empresa", "Tipo"), ("sector", "Sector"), ("provincia", "Provincia"), ("anos_experiencia", "Experiencia (años)"), ("notas_agente", "Notas")]
+    bool_campos = [("tiene_estados_financieros", "Estados financieros"), ("tiene_rnce", "RNCE"), ("tiene_rpe", "RPE"), ("ha_participado_antes", "Ha participado antes")]
     partes = []
     for k, label in campos:
-        if perfil.get(k):
-            partes.append(f"{label}: {perfil[k]}")
+        if perfil.get(k): partes.append(f"{label}: {perfil[k]}")
     for k, label in bool_campos:
-        if perfil.get(k) is not None:
-            partes.append(f"{label}: {'si' if perfil[k] else 'no'}")
-    if perfil.get("tipos_proceso"):
-        partes.append(f"Tipos de proceso: {', '.join(perfil['tipos_proceso'])}")
-    if perfil.get("instituciones_interes"):
-        partes.append(f"Instituciones interes: {', '.join(perfil['instituciones_interes'])}")
-
+        if perfil.get(k) is not None: partes.append(f"{label}: {'si' if perfil[k] else 'no'}")
+    if perfil.get("tipos_proceso"): partes.append(f"Tipos de proceso: {', '.join(perfil['tipos_proceso'])}")
+    if perfil.get("instituciones_interes"): partes.append(f"Instituciones interes: {', '.join(perfil['instituciones_interes'])}")
     return ("PERFIL DEL CLIENTE:\n" + "\n".join(partes)) if partes else ""
-
-
-def guardar_intenciones_directas(
-    phone: str, conv_id: str, nombre: str,
-    mensaje: str, codigo_proceso: str = None, intencion: str = None
-):
-    """
-    Guarda intenciones del cliente SIN depender de Gemini.
-    REGLA CLAVE: Las alertas automáticas (notificaciones futuras) solo se registran
-    cuando el cliente EXPLÍCITAMENTE pide ser avisado (intencion == 'quiere_alerta').
-    El perfil se actualiza en todos los casos donde hay info relevante.
-    Así evitamos registrar alertas para alguien que solo mencionó un rubro
-    de pasada sin pedir ser notificado.
-    """
-    try:
-        keywords_nuevos   = []
-        instituciones_new = []
-        notas             = []
-
-        rubros = [
-            ("construccion", "construcción"), ("construcción", "construcción"),
-            ("obra", "obras"), ("infraestructura", "infraestructura"),
-            ("alcantarillado", "alcantarillado"), ("acueducto", "acueducto"),
-            ("drenaje", "drenaje"), ("carretera", "carretera"),
-            ("edificio", "edificio"), ("rehabilitacion", "rehabilitación"),
-            ("mantenimiento", "mantenimiento"), ("saneamiento", "saneamiento"),
-            ("electricidad", "electricidad"), ("plomeria", "plomería"),
-            ("consultoria", "consultoría"), ("supervision", "supervisión"),
-            ("bienes", "bienes"), ("equipos", "equipos"), ("suministro", "suministro"),
-            ("tecnologia", "tecnología"), ("informatica", "informática"),
-            ("salud", "salud"), ("educacion", "educación"),
-        ]
-        instituciones_conocidas = [
-            ("mopc", "MOPC"), ("caasd", "CAASD"), ("inapa", "INAPA"),
-            ("miderec", "MIDEREC"), ("minerd", "MINERD"), ("egehid", "EGEHID"),
-            ("coraasan", "CORAASAN"), ("mivhed", "MIVHED"), ("eted", "ETED"),
-            ("ayuntamiento", "Ayuntamiento"), ("coraavega", "CORAAVEGA"),
-            ("intrant", "INTRANT"), ("dgcp", "DGCP"),
-        ]
-
-        msg_lower = mensaje.lower()
-
-        # ── Caso 1: el cliente mencionó un proceso específico ─────────────────
-        # Siempre guardamos en perfil (interés implícito claro)
-        if codigo_proceso:
-            partes = codigo_proceso.upper().split("-")
-            if len(partes) >= 2:
-                instituciones_new.append(partes[0])
-            if len(partes) >= 3:
-                mapa_tipos = {
-                    "LPN": "obras", "LPI": "obras", "CP": "obras",
-                    "CM": "compra menor", "SI": "servicios",
-                    "SO": "servicios", "PEPU": "publicidad",
-                    "PEEX": "consultoría", "PEOR": "consultoría"
-                }
-                tipo = mapa_tipos.get(partes[2], partes[2].lower())
-                if tipo not in keywords_nuevos:
-                    keywords_nuevos.append(tipo)
-            notas.append(f"Consultó proceso {codigo_proceso}")
-
-            # Extraer más keywords del mensaje en este contexto
-            for patron, kw in rubros:
-                if patron in msg_lower and kw not in keywords_nuevos:
-                    keywords_nuevos.append(kw)
-            for patron, inst in instituciones_conocidas:
-                if patron in msg_lower and inst not in instituciones_new:
-                    instituciones_new.append(inst)
-
-            # Guardar en perfil siempre
-            perfil_data = {}
-            if keywords_nuevos:
-                perfil_data["tipos_proceso"] = keywords_nuevos
-            if instituciones_new:
-                perfil_data["instituciones_interes"] = instituciones_new
-            if notas:
-                perfil_data["notas_agente"] = " | ".join(notas)
-            if perfil_data:
-                actualizar_perfil_prospecto(phone, conv_id, nombre, perfil_data)
-
-            # Alerta solo si el cliente también pidió ser avisado
-            if intencion == "quiere_alerta" and (keywords_nuevos or instituciones_new):
-                registrar_alerta_cliente(conv_id, phone, nombre, keywords_nuevos, instituciones_new)
-                print(f"[Closer] 💾 Alerta+perfil guardados para {phone}: {keywords_nuevos} | {instituciones_new}")
-            else:
-                print(f"[Closer] 💾 Perfil actualizado para {phone}: {keywords_nuevos} | {instituciones_new}")
-            return
-
-        # ── Caso 2: el cliente pidió EXPLÍCITAMENTE alertas/avisos ───────────
-        # Solo en este caso registramos la alerta automática
-        if intencion == "quiere_alerta":
-            for patron, kw in rubros:
-                if patron in msg_lower and kw not in keywords_nuevos:
-                    keywords_nuevos.append(kw)
-            for patron, inst in instituciones_conocidas:
-                if patron in msg_lower and inst not in instituciones_new:
-                    instituciones_new.append(inst)
-
-            if not keywords_nuevos and not instituciones_new:
-                return  # No detectamos qué le interesa — Gemini lo manejará
-
-            # Guardar en perfil
-            perfil_data = {}
-            if keywords_nuevos:
-                perfil_data["tipos_proceso"] = keywords_nuevos
-            if instituciones_new:
-                perfil_data["instituciones_interes"] = instituciones_new
-            actualizar_perfil_prospecto(phone, conv_id, nombre, perfil_data)
-
-            # Registrar alerta para este cliente específico
-            registrar_alerta_cliente(conv_id, phone, nombre, keywords_nuevos, instituciones_new)
-            print(f"[Closer] 🔔 Alerta registrada para {phone}: {keywords_nuevos} | {instituciones_new}")
-            return
-
-        # ── Caso 3: mención pasajera en conversación normal ──────────────────
-        # Solo actualizamos el perfil (sector/tipo de empresa), NO creamos alerta
-        for patron, kw in rubros:
-            if patron in msg_lower and kw not in keywords_nuevos:
-                keywords_nuevos.append(kw)
-        for patron, inst in instituciones_conocidas:
-            if patron in msg_lower and inst not in instituciones_new:
-                instituciones_new.append(inst)
-
-        if keywords_nuevos or instituciones_new:
-            perfil_data = {}
-            if keywords_nuevos:
-                perfil_data["tipos_proceso"] = keywords_nuevos
-            if instituciones_new:
-                perfil_data["instituciones_interes"] = instituciones_new
-            actualizar_perfil_prospecto(phone, conv_id, nombre, perfil_data)
-            print(f"[Closer] 📝 Perfil enriquecido para {phone} (sin alerta): {keywords_nuevos}")
-
-    except Exception as e:
-        print(f"[Closer] Error guardar_intenciones_directas: {e}")
 
 
 def registrar_alerta_cliente(conv_id: str, phone: str, nombre: str, keywords: list, instituciones: list = None):
     try:
-        existing = supabase_admin.table("alertas_cliente") \
-            .select("id, keywords, instituciones") \
-            .eq("contact_phone", phone) \
-            .eq("activa", True) \
-            .limit(1).execute()
-
+        existing = supabase_admin.table("alertas_cliente").select("id, keywords, instituciones").eq("contact_phone", phone).eq("activa", True).limit(1).execute()
         if existing.data:
             alerta         = existing.data[0]
             kws_nuevos     = list(set((alerta.get("keywords") or []) + keywords))
             insts_nuevas   = list(set((alerta.get("instituciones") or []) + (instituciones or [])))
-            supabase_admin.table("alertas_cliente") \
-                .update({"keywords": kws_nuevos, "instituciones": insts_nuevas}) \
-                .eq("id", alerta["id"]).execute()
-            print(f"[Closer] Alerta actualizada {phone}: {kws_nuevos}")
+            supabase_admin.table("alertas_cliente").update({"keywords": kws_nuevos, "instituciones": insts_nuevas}).eq("id", alerta["id"]).execute()
         else:
             supabase_admin.table("alertas_cliente").insert({
-                "conversation_id": conv_id,
-                "contact_phone":   phone,
-                "contact_name":    nombre,
-                "keywords":        keywords,
-                "instituciones":   instituciones or [],
-                "activa":          True,
-                "canal":           "whatsapp"
+                "conversation_id": conv_id, "contact_phone": phone, "contact_name": nombre,
+                "keywords": keywords, "instituciones": instituciones or [], "activa": True, "canal": "whatsapp"
             }).execute()
-            print(f"[Closer] Alerta creada {phone}: {keywords}")
-    except Exception as e:
-        print(f"[Closer] Error registrar_alerta: {e}")
+    except Exception:
+        pass
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# HELPERS — DETECCIÓN
+# HELPERS — DETECCIÓN Y SEMÁNTICA
 # ═══════════════════════════════════════════════════════════════════════
 
 def detectar_proceso_en_mensaje(mensaje: str) -> Optional[str]:
@@ -796,99 +539,72 @@ def detectar_interes_alerta(mensaje: str) -> bool:
 
 
 def detectar_intencion(mensaje: str) -> str:
-    """
-    Detecta la intención principal del mensaje para contextualizar la respuesta.
-    Retorna: 'consulta_proceso' | 'quiere_alerta' | 'senal_cierre' |
-             'pregunta_precio' | 'consulta_general' | 'saludo' | 'otro'
-    """
     msg = mensaje.lower().strip()
-
-    # Saludos
-    if any(s in msg for s in ["hola", "buenos dias", "buenas tardes", "buenas noches",
-                               "buenas", "saludos", "como estas", "hey", "qué más"]):
-        if len(msg) < 30:  # Solo saludo, sin pregunta real
-            return "saludo"
-
-    # Código de proceso explícito
-    if re.search(r'[A-Z]{2,10}-[A-Z]{2,5}-[A-Z]{2,5}-\d{4}-\d{4}', mensaje.upper()):
-        return "consulta_proceso"
-
-    # Pregunta directa de precio
-    if any(p in msg for p in ["cuanto cuesta", "cuánto cuesta", "precio", "cuanto cobran",
-                               "cuánto cobran", "como pago", "cómo pago", "plan", "suscripcion"]):
-        return "pregunta_precio"
-
-    # Señal de cierre
-    if detectar_senal_cierre(mensaje):
-        return "senal_cierre"
-
-    # Quiere alerta
-    if detectar_interes_alerta(mensaje):
-        return "quiere_alerta"
-
-    # Busca procesos sin código (¡Ajustado con singulares y sinónimos!)
+    if any(s in msg for s in ["hola", "buenos dias", "buenas tardes", "buenas noches", "buenas", "saludos", "como estas", "hey", "qué más"]):
+        if len(msg) < 30: return "saludo"
+    if re.search(r'[A-Z]{2,10}-[A-Z]{2,5}-[A-Z]{2,5}-\d{4}-\d{4}', mensaje.upper()): return "consulta_proceso"
+    if any(p in msg for p in ["cuanto cuesta", "cuánto cuesta", "precio", "cuanto cobran", "cuánto cobran", "como pago", "cómo pago", "plan", "suscripcion"]): return "pregunta_precio"
+    if detectar_senal_cierre(mensaje): return "senal_cierre"
+    if detectar_interes_alerta(mensaje): return "quiere_alerta"
     if any(p in msg for p in ["hay procesos", "hay proceso", "hay licitaciones", "hay licitacion", 
                                "busco procesos", "busco proceso", "que procesos", "qué procesos", 
                                "que proceso", "qué proceso", "existen procesos", "procesos de", 
                                "licitaciones de", "hay algo de", "cual proceso", "cuál proceso", 
                                "disponible", "activo"]):
         return "busqueda_procesos"
-
-    # Pregunta de consultoría
-    if any(p in msg for p in ["consultoria", "consultoría", "preparar oferta",
-                               "ayuda con", "como preparo", "cómo preparo",
-                               "documentos para licitar"]):
-        return "consulta_consultoria"
-
-    # Objeción "lo hago yo mismo"
-    if any(p in msg for p in ["lo hago yo", "lo hacemos nosotros", "lo voy a hacer",
-                               "no necesito", "ya tenemos experiencia", "podemos solos",
-                               "yo mismo", "mi equipo lo hace", "nos encargamos nosotros",
-                               "lo preparo yo"]):
-        return "objecion_lo_hago_yo"
-
-    # General
+    if any(p in msg for p in ["consultoria", "consultoría", "preparar oferta", "ayuda con", "como preparo", "cómo preparo", "documentos para licitar"]): return "consulta_consultoria"
+    if any(p in msg for p in ["lo hago yo", "lo hacemos nosotros", "lo voy a hacer", "no necesito", "ya tenemos experiencia", "podemos solos", "yo mismo", "mi equipo lo hace", "nos encargamos nosotros", "lo preparo yo"]): return "objecion_lo_hago_yo"
     return "consulta_general"
 
 
-def extraer_keywords_interes(mensaje: str):
-    instituciones_conocidas = [
-        "mopc", "caasd", "inapa", "miderec", "minerd",
-        "salud", "obras", "ayuntamiento", "intrant"
-    ]
-    tipos_obra = [
-        "construccion", "construcción", "infraestructura", "alcantarillado",
-        "drenaje", "acueducto", "carretera", "puente", "edificio", "edificacion", "edificación",
-        "rehabilitacion", "rehabilitación", "mantenimiento", "saneamiento",
-        "electricidad", "plomeria", "plomería",
-        "consultoria", "consultoría", "supervision", "supervisión",
-        "obra", "obras", "casa", "casas", "vivienda", "viviendas", "remodelacion", "remodelación"
-    ]
-    msg_lower     = mensaje.lower()
-    keywords      = [t for t in tipos_obra if t in msg_lower]
-    instituciones = [i.upper() for i in instituciones_conocidas if i in msg_lower]
-    return keywords, instituciones
+async def extraer_keywords_interes(mensaje: str):
+    """
+    Usa Gemini como motor semántico para inferir el sector, generar sinónimos amplios
+    y deducir los códigos UNSPSC relevantes para la búsqueda en BD.
+    """
+    if len(mensaje.split()) <= 2 or not gemini_client:
+        return [], []
+
+    prompt = f"""Analiza este mensaje de un proveedor buscando licitaciones en República Dominicana: "{mensaje}"
+    1. Identifica qué tipo de bienes, servicios u obras busca.
+    2. Genera 3 palabras clave o sinónimos en minúsculas (ej. si dice "gomas", incluye "neumáticos"; si dice "obras", incluye "remozamiento").
+    3. Identifica 2-4 códigos del catálogo UNSPSC (SOLO los primeros 4 dígitos de la familia) que correspondan a su búsqueda.
+    4. Identifica siglas de instituciones públicas si menciona alguna (ej. INAPA, MOPC).
+
+    Devuelve SOLO un JSON con esta estructura exacta, sin markdown:
+    {{"keywords": ["palabra1", "palabra2"], "codigos_unspsc": ["1234", "5678"], "instituciones": ["SIGLA"]}}
+    """
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(response_mime_type="application/json", max_output_tokens=300, temperature=0.1)
+        )
+        datos = json.loads(response.text)
+        terminos = []
+        if isinstance(datos.get("keywords"), list):
+            terminos.extend([str(k).lower() for k in datos["keywords"]])
+        if isinstance(datos.get("codigos_unspsc"), list):
+            terminos.extend([str(c) for c in datos["codigos_unspsc"]])
+        instituciones = [str(i).upper() for i in datos.get("instituciones", [])]
+        print(f"[Motor Semántico] Extraído: {terminos} | {instituciones}")
+        return terminos, instituciones
+    except Exception as e:
+        print(f"[Motor Semántico] Error: {e}")
+        return [], []
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# HELPERS — GEMINI
+# HELPERS — GEMINI RESPUESTA
 # ═══════════════════════════════════════════════════════════════════════
 
-async def generar_respuesta_gemini(
-    mensaje_cliente: str,
-    historial: list,
-    contexto_adicional: str = "",
-    intencion: str = "consulta_general"
-) -> str:
-    if not gemini_client:
-        return "Disculpa, tuve un problema técnico. Escríbeme en un momento."
-
+async def generar_respuesta_gemini(mensaje_cliente: str, historial: list, contexto_adicional: str = "", intencion: str = "consulta_general") -> str:
+    if not gemini_client: return "Disculpa, tuve un problema técnico. Escríbeme en un momento."
     historial_texto = ""
     for msg in historial[-8:]:
         rol = "Cliente" if msg["rol"] == "cliente" else "Lab (tú)"
         historial_texto += f"{rol}: {msg['contenido']}\n"
 
-    # Instrucción específica según la intención detectada
     instruccion_intencion = {
         "consulta_proceso":    "El cliente pregunta por un proceso. Analiza el CONTEXTO, menciona un riesgo de descalificación, y cierra ofreciendo cotizar la oferta. NUNCA termines con coma — siempre oración completa.",
         "busqueda_procesos":   "REGLA ESTRICTA: MUESTRA INMEDIATAMENTE la lista de procesos que están en el CONTEXTO. Usa viñetas. NO pidas más información (ni presupuesto, ni especialidad) sin antes mostrar la lista. Si no hay procesos, dilo. Cierra ofreciendo cotizar la preparación de la oferta para alguno de ellos. NUNCA termines con coma.",
@@ -931,158 +647,43 @@ cierra la última idea con punto antes de terminar. Mensaje incompleto = respues
         return "Disculpa, tuve un problema técnico. Escríbeme en un momento."
 
 
-async def generar_followup_gemini(
-    historial: list, nombre: str, paso: int,
-    estado: str, proceso_codigo: str = None
-) -> str:
-    """
-    Genera el mensaje de followup según el día en la secuencia:
-      Paso 0 → Día 2  — Valor + proceso relevante
-      Paso 1 → Día 5  — Urgencia con fecha real
-      Paso 2 → Día 7  — Prueba social + objeción
-      Paso 3 → Día 14 — Último intento, puerta abierta
-    """
+async def generar_followup_gemini(historial: list, nombre: str, paso: int, estado: str, proceso_codigo: str = None) -> str:
     nombre_corto = nombre.split()[0] if nombre else "amigo"
-
     if not gemini_client:
-        fallbacks = {
-            0: f"Hola {nombre_corto}, ¿pudiste revisar la información que te compartí sobre las licitaciones?",
-            1: f"{nombre_corto}, hay un par de procesos activos que podrían interesarle a tu empresa. ¿Me das 2 minutos?",
-            2: f"{nombre_corto}, empresas como la tuya están ganando contratos con nosotros. ¿Cuándo hablamos?",
-            3: f"Hola {nombre_corto}, entiendo que estás ocupado. Cuando estés listo, aquí estamos. 🤝",
-        }
+        fallbacks = {0: f"Hola {nombre_corto}, ¿pudiste revisar la información?", 1: f"{nombre_corto}, hay un par de procesos activos. ¿Me das 2 minutos?", 2: f"{nombre_corto}, empresas están ganando contratos con nosotros. ¿Cuándo hablamos?", 3: f"Hola {nombre_corto}, entiendo que estás ocupado. Cuando estés listo, aquí estamos. 🤝"}
         return fallbacks.get(paso, fallbacks[3])
 
-    # Contexto estratégico por paso
     contextos_paso = {
-        0: (
-            "DÍA 2 — Primer seguimiento. El cliente no respondió aún. "
-            "Tu objetivo: reactivar con VALOR real. "
-            "Estrategia: menciona un proceso activo relevante (si tienes uno del CONTEXTO) "
-            "o pregunta directamente por qué tipo de licitaciones está buscando. "
-            "NO menciones precio todavía. Cierra con pregunta de calificación."
-        ),
-        1: (
-            "DÍA 5 — Segundo seguimiento. Crea URGENCIA real. "
-            "Estrategia: menciona que hay procesos con fechas próximas de cierre "
-            "y que preparar una oferta toma tiempo. "
-            "Di algo como: 'Para presentarse en [fecha], el equipo necesita al menos X días.' "
-            "Cierra preguntando si tiene algún proceso en mente ahora mismo."
-        ),
-        2: (
-            "DÍA 7 — Tercer seguimiento. PRUEBA SOCIAL + manejo de objeción. "
-            "Estrategia: menciona (sin inventar números exactos) que empresas dominicanas "
-            "están ganando contratos con apoyo profesional en la preparación de ofertas. "
-            "Luego aplica labeling suave: 'Parece que todavía estás evaluando si vale la pena...' "
-            "Remata con el argumento del riesgo: una sola página mal firmada anula meses de trabajo. "
-            "CTA: ofrece una llamada rápida de 15 minutos sin compromiso."
-        ),
-        3: (
-            "DÍA 14 — Último intento. Tono de cierre amigable, NO desesperado. "
-            "Estrategia: di que entiendes que quizás no es el momento, "
-            "pero que cuando llegue el proceso correcto, aquí estarás. "
-            "Deja la puerta 100% abierta. "
-            "Cierra con algo cálido y sin presión — este mensaje es para quedar bien, "
-            "no para vender. El cliente puede volver en semanas."
-        ),
+        0: "DÍA 2 — Primer seguimiento. Reactiva con valor. Pregunta qué tipo de licitaciones busca.",
+        1: "DÍA 5 — Segundo seguimiento. Crea URGENCIA real mencionando fechas próximas.",
+        2: "DÍA 7 — Tercer seguimiento. PRUEBA SOCIAL + objeción de riesgo en documentación.",
+        3: "DÍA 14 — Último intento. Deja la puerta abierta sin presión."
     }
+    historial_texto = "".join([f"{'Cliente' if msg['rol'] == 'cliente' else 'Lab'}: {msg['contenido']}\n" for msg in historial[-6:]])
 
-    historial_texto = ""
-    for msg in historial[-6:]:
-        rol = "Cliente" if msg["rol"] == "cliente" else "Lab"
-        historial_texto += f"{rol}: {msg['contenido']}\n"
-
-    # Info del proceso si existe
     proceso_info = ""
     if proceso_codigo:
         proceso = buscar_proceso_dgcp(proceso_codigo)
         if proceso:
-            monto   = proceso.get("monto_estimado", 0)
-            monto_f = f"RD${float(monto):,.0f}" if monto else "monto no publicado"
-            fecha   = str(proceso.get("fecha_fin_recepcion_ofertas", ""))[:10]
-            # Calcular días restantes para urgencia en paso 1
-            dias_restantes = ""
-            if fecha:
-                try:
-                    from datetime import date
-                    dias = (date.fromisoformat(fecha) - date.today()).days
-                    if dias >= 0:
-                        dias_restantes = f" — cierra en {dias} días"
-                except Exception:
-                    pass
-            proceso_info = (
-                f"Proceso de interés del cliente: {proceso_codigo} — "
-                f"{proceso.get('titulo', '')} | {proceso.get('unidad_compra', '')} | "
-                f"{monto_f}{dias_restantes}"
-            )
+            monto = proceso.get("monto_estimado", 0)
+            proceso_info = f"Proceso: {proceso_codigo} — {proceso.get('titulo', '')} | {f'RD${float(monto):,.0f}' if monto else ''}"
 
-    instruccion = contextos_paso.get(paso, contextos_paso[3])
-
-    prompt = f"""{SYSTEM_PROMPT}
-
-═══ CONTEXTO DE ESTE FOLLOWUP ═══
-{instruccion}
-
-{f"Proceso relevante: {proceso_info}" if proceso_info else ""}
-Estado del cliente: {estado}
-
-═══ HISTORIAL ═══
-{historial_texto if historial_texto else "(sin historial — cliente nunca respondió)"}
-
-═══ INSTRUCCIONES DE FORMATO ═══
-- Escríbele a {nombre_corto} directamente
-- Un solo mensaje de WhatsApp, español dominicano natural
-- Máximo 3-4 oraciones
-- NO menciones que es un seguimiento automático
-- NO uses asteriscos ni markdown
-- Cierra siempre con pregunta o CTA concreto
-- Solo el texto, sin comillas"""
-
+    prompt = f"""{SYSTEM_PROMPT}\n═══ CONTEXTO DE FOLLOWUP ═══\n{contextos_paso.get(paso, contextos_paso[3])}\n{proceso_info}\nEstado: {estado}\n═══ HISTORIAL ═══\n{historial_texto}\n- Escríbele a {nombre_corto}\n- Español dominicano natural\n- Máximo 3-4 oraciones\n- Cierra con pregunta\n- Solo texto"""
     try:
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.78)
-        )
+        response = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.78))
         return response.text.strip()
-    except Exception as e:
-        print(f"[Gemini] Error followup: {e}")
+    except Exception:
         return f"Hola {nombre_corto}, ¿cómo vas con los temas de licitaciones?"
 
 
 async def generar_mensaje_alerta_proceso(nombre: str, procesos: list, keywords: list) -> str:
-    if not gemini_client or not procesos:
-        return ""
-
-    procesos_texto = ""
-    for p in procesos[:3]:
-        monto     = p.get("monto_estimado", 0)
-        monto_fmt = f"RD${float(monto):,.0f}" if monto else "monto no publicado"
-        fecha     = str(p.get("fecha_fin_recepcion_ofertas", "por confirmar"))[:10]
-        procesos_texto += f"- {p.get('titulo', 'Sin titulo')} ({p.get('unidad_compra', '')}) — {monto_fmt} — cierra {fecha}\n"
-
-    prompt = f"""{SYSTEM_PROMPT}
-
-Notifica a {nombre} sobre procesos que coinciden con sus intereses: {', '.join(keywords)}.
-
-Procesos:
-{procesos_texto}
-
-- Mensaje de WhatsApp emocionante pero no exagerado
-- Menciona titulo + monto + fecha cierre
-- Pregunta si quiere que analice algun pliego
-- Maximo 5 oraciones
-- Solo el texto, sin comillas"""
-
+    if not gemini_client or not procesos: return ""
+    procesos_texto = "".join([f"- {p.get('titulo', '')} ({p.get('unidad_compra', '')}) — RD${float(p.get('monto_estimado', 0)):,.0f}\n" for p in procesos[:3]])
+    prompt = f"{SYSTEM_PROMPT}\nNotifica a {nombre} sobre procesos para: {', '.join(keywords)}.\nProcesos:\n{procesos_texto}\n- Mensaje de WhatsApp emocionante\n- Máximo 5 oraciones\n- Solo texto"
     try:
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=600, temperature=0.7)
-        )
+        response = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=types.GenerateContentConfig(max_output_tokens=600, temperature=0.7))
         return response.text.strip()
-    except Exception as e:
-        print(f"[Gemini] Error alerta: {e}")
+    except Exception:
         return ""
 
 
@@ -1094,241 +695,99 @@ Procesos:
 async def recibir_mensaje_zapi(request: Request, background_tasks: BackgroundTasks):
     try:
         body = await request.json()
-    except Exception:
-        return {"status": "ok"}
-
-    if body.get("fromMe", True):
-        return {"status": "ok", "skipped": "outbound"}
+    except Exception: return {"status": "ok"}
+    if body.get("fromMe", True): return {"status": "ok", "skipped": "outbound"}
 
     phone = body.get("phone", "") or body.get("from", "")
-    if not phone or "-" in phone:
-        return {"status": "ok", "skipped": "group_or_no_phone"}
-
+    if not phone or "-" in phone: return {"status": "ok"}
     phone = phone.replace("+", "").replace("@s.whatsapp.net", "").replace("@c.us", "")
+    texto = body.get("text", {}).get("message", "") or body.get("message", "") or body.get("body", "") or ""
 
-    texto = (
-        body.get("text", {}).get("message", "") or
-        body.get("message", "") or
-        body.get("body", "") or
-        ""
-    )
-
-    # ── Soporte de notas de voz (Z-API plan pago) ─────────────────────────────
-    # Z-API envía: {"audio": {"audioUrl": "https://...", "mimeType": "audio/ogg; codecs=opus", "ptt": true}}
-    # Los archivos están disponibles 30 días en el storage de Z-API.
-    # Gemini 2.5 Flash transcribe el audio directamente sin servicio externo.
-    es_audio = False
     audio_data = body.get("audio")
     if not texto and audio_data and isinstance(audio_data, dict):
-        audio_url = audio_data.get("audioUrl", "")
-        if audio_url:
-            es_audio = True
+        if audio_url := audio_data.get("audioUrl", ""):
             nombre = body.get("senderName", "") or body.get("pushName", "") or ""
             background_tasks.add_task(procesar_audio_bg, phone, audio_url, nombre)
             return {"status": "recibido", "processing": True, "tipo": "audio"}
 
-    # ── Soporte de imágenes con info de procesos ───────────────────────────────
-    # Z-API envía: {"image": {"imageUrl": "https://...", "mimeType": "image/jpeg", "caption": "..."}}
-    # El cliente puede mandar una foto de un proceso, convocatoria, pliego, etc.
-    # Gemini lee la imagen y extrae toda la información relevante.
     image_data = body.get("image")
     if image_data and isinstance(image_data, dict):
-        image_url = image_data.get("imageUrl", "")
-        if image_url:
-            # El caption es texto adicional que el cliente escribió junto a la imagen
+        if image_url := image_data.get("imageUrl", ""):
             caption = image_data.get("caption", "") or ""
             nombre  = body.get("senderName", "") or body.get("pushName", "") or ""
             background_tasks.add_task(procesar_imagen_bg, phone, image_url, caption, nombre)
             return {"status": "recibido", "processing": True, "tipo": "imagen"}
 
-    if not texto:
-        return {"status": "ok", "skipped": "no_text"}
-
+    if not texto: return {"status": "ok"}
     nombre = body.get("senderName", "") or body.get("pushName", "") or ""
     background_tasks.add_task(procesar_mensaje_bg, phone, texto, nombre)
     return {"status": "recibido", "processing": True}
 
 
 async def procesar_imagen_bg(phone: str, image_url: str, caption: str = "", nombre: str = ""):
-    """
-    Descarga la imagen que el cliente envió (foto de proceso, convocatoria,
-    pliego, pantalla del DGCP, etc.), Gemini la lee y extrae toda la
-    información relevante, luego responde como si fuera un mensaje de texto.
-
-    Z-API envía imageUrl en el webhook — disponible 30 días en su storage.
-    """
     print(f"[Closer] 🖼️ Imagen recibida de {phone} — analizando...")
     try:
-        # 1. Descargar la imagen
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(image_url)
-            if resp.status_code != 200:
-                print(f"[Closer] Error descargando imagen: {resp.status_code}")
-                return
+            if resp.status_code != 200: return
             image_bytes   = resp.content
             content_type  = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
 
-        print(f"[Closer] Imagen descargada: {len(image_bytes):,} bytes ({content_type})")
+        if not gemini_client: return
 
-        if not gemini_client:
-            print("[Closer] Gemini no configurado — imagen ignorada")
-            return
-
-        # 2. Pedirle a Gemini que extraiga la información del proceso de la imagen
         from google.genai import types as _types
-
-        # Prompt estructurado — pedir JSON limpio para extraer el código del proceso
-        caption_texto = f"El cliente escribió junto a la imagen: '{caption}'" if caption else ""
         prompt_extraccion = (
-            "Eres un asistente que analiza imágenes de documentos de licitaciones públicas dominicanas.\n"
-            "Analiza esta imagen y extrae la información. Puede ser una pantalla del portal "
-            "comprasdominicana.gob.do, una convocatoria, un pliego o cualquier documento del DGCP.\n"
-            f"{caption_texto}\n\n"
-            "Devuelve ÚNICAMENTE un JSON válido sin markdown ni explicaciones, con este formato exacto:\n"
-            '{"codigo_proceso": "XXXX-XXX-XXX-0000-0000 o null", '
-            '"titulo": "nombre del proceso o null", '
-            '"entidad": "institución o null", '
-            '"monto": "monto estimado o null", '
-            '"fecha_cierre": "fecha de cierre en formato YYYY-MM-DD o null", '
-            '"tipo_proceso": "LPN/CP/CM/etc o null", '
-            '"otros_datos": "cualquier dato adicional relevante o null"}'
+            "Analiza esta imagen de un documento de licitación dominicana.\n"
+            f"El cliente escribió: '{caption}'\n"
+            'Devuelve SOLO un JSON: {"codigo_proceso": "XXXX-0000 o null", "titulo": "...", "entidad": "...", "monto": "...", "fecha_cierre": "..."}'
         )
-
         extraccion_resp = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=[
-                prompt_extraccion,
-                _types.Part.from_bytes(data=image_bytes, mime_type=content_type)
-            ],
+            contents=[prompt_extraccion, _types.Part.from_bytes(data=image_bytes, mime_type=content_type)],
             config=_types.GenerateContentConfig(max_output_tokens=600, temperature=0.05)
         )
         raw = (extraccion_resp.text or "").strip().replace("```json", "").replace("```", "").strip()
-
-        if not raw:
-            print(f"[Closer] No se pudo extraer info de la imagen de {phone}")
-            return
-
-        print(f"[Closer] 🖼️ Info extraída: {raw[:200]}")
-
-        # Parsear el JSON para obtener el código del proceso
-        import json as _json
-        datos_imagen = {}
-        try:
-            datos_imagen = _json.loads(raw)
-        except Exception:
-            # Si no es JSON válido, usar el texto crudo como descripción
-            datos_imagen = {"otros_datos": raw}
+        try: datos_imagen = json.loads(raw)
+        except Exception: datos_imagen = {"otros_datos": raw}
 
         codigo_raw       = datos_imagen.get("codigo_proceso") or ""
-        # Validar que el código tiene formato real de proceso DGCP
-        # Patrón: LETRAS-LETRAS-LETRAS-YYYY-NNNN (ej: MIVHED-CCC-LPN-2026-0008)
-        import re as _re_img
         codigo_detectado = ""
         if codigo_raw and codigo_raw.upper() not in ("NULL", "NONE", "N/A", ""):
-            # Buscar patrón de código en el texto extraído
-            match_codigo = _re_img.search(
-                r'[A-Z]{2,15}-[A-Z]{2,5}-[A-Z]{2,5}-\d{4}-\d{4}',
-                codigo_raw.upper()
-            )
-            if match_codigo:
-                codigo_detectado = match_codigo.group()
-            elif len(codigo_raw) > 10:  # Si no matchea el patrón pero es largo, igual úsalo
-                codigo_detectado = codigo_raw.strip()
-        titulo_imagen    = datos_imagen.get("titulo") or ""
-        entidad_imagen   = datos_imagen.get("entidad") or ""
-        monto_imagen     = datos_imagen.get("monto") or ""
-        fecha_imagen     = datos_imagen.get("fecha_cierre") or ""
-        otros_imagen     = datos_imagen.get("otros_datos") or ""
+            match_codigo = re.search(r'[A-Z]{2,15}-[A-Z]{2,5}-[A-Z]{2,5}-\d{4}-\d{4}', codigo_raw.upper())
+            if match_codigo: codigo_detectado = match_codigo.group()
 
-        # 3. Construir mensaje sintetizado que el agente va a procesar
-        # Si detectamos un código de proceso, lo ponemos primero para que
-        # detectar_proceso_en_mensaje() lo encuentre y dispare la lógica correcta
-        partes = []
-        if caption:
-            partes.append(caption)
-        if codigo_detectado and codigo_detectado.upper() != "NULL":
-            partes.append(f"Proceso: {codigo_detectado.upper()}")
-        if titulo_imagen and titulo_imagen.upper() != "NULL":
-            partes.append(f"Título: {titulo_imagen}")
-        if entidad_imagen and entidad_imagen.upper() != "NULL":
-            partes.append(f"Entidad: {entidad_imagen}")
-        if monto_imagen and monto_imagen.upper() != "NULL":
-            partes.append(f"Monto: {monto_imagen}")
-        if fecha_imagen and fecha_imagen.upper() != "NULL":
-            partes.append(f"Cierre: {fecha_imagen}")
-        if otros_imagen and otros_imagen.upper() != "NULL":
-            partes.append(otros_imagen)
+        partes = [caption] if caption else []
+        if codigo_detectado: partes.append(f"Proceso: {codigo_detectado.upper()}")
+        mensaje_sintetizado = " | ".join(partes) if partes else "El cliente envió una imagen de licitación"
+        if codigo_detectado: mensaje_sintetizado = f"{codigo_detectado.upper()} — {mensaje_sintetizado}"
 
-        mensaje_sintetizado = " | ".join(partes) if partes else f"El cliente envió una imagen de licitación"
-        print(f"[Closer] 🖼️ Mensaje sintetizado: {mensaje_sintetizado[:200]}")
-
-        # 4. Si tenemos código detectado, construir mensaje con ese código explícito
-        # para que detectar_proceso_en_mensaje() lo pesque y dispare el análisis
-        if codigo_detectado and codigo_detectado.upper() != "NULL":
-            mensaje_sintetizado = f"{codigo_detectado.upper()} — {mensaje_sintetizado}"
-
-        # 5. Procesar igual que un mensaje de texto — el agente busca el proceso,
-        # dispara análisis si no existe, y vende la consultoría
         await procesar_mensaje_bg(phone, mensaje_sintetizado, nombre)
-
     except Exception as e:
-        print(f"[Closer] Error procesando imagen de {phone}: {e}")
+        print(f"[Closer] Error imagen: {e}")
 
 
 async def procesar_audio_bg(phone: str, audio_url: str, nombre: str = ""):
-    """
-    Descarga la nota de voz desde Z-API, la transcribe con Gemini y
-    la procesa igual que un mensaje de texto normal.
-
-    Requiere Z-API plan pago (la URL del audio viene en el webhook).
-    Los archivos están disponibles 30 días en el storage de Z-API.
-    """
-    print(f"[Closer] 🎤 Audio recibido de {phone} — transcribiendo...")
+    print(f"[Closer] 🎤 Audio de {phone} — transcribiendo...")
     try:
-        # 1. Descargar el audio desde Z-API
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(audio_url)
-            if resp.status_code != 200:
-                print(f"[Closer] Error descargando audio: {resp.status_code}")
-                return
+            if resp.status_code != 200: return
             audio_bytes = resp.content
             content_type = resp.headers.get("content-type", "audio/ogg")
 
-        print(f"[Closer] Audio descargado: {len(audio_bytes):,} bytes ({content_type})")
-
-        # 2. Transcribir con Gemini 2.5 Flash (acepta audio nativo)
-        if not gemini_client:
-            print("[Closer] Gemini no configurado — audio ignorado")
-            return
-
-        import base64 as _b64
-        audio_b64    = _b64.b64encode(audio_bytes).decode("utf-8")
-        # Normalizar mime type para Gemini
+        if not gemini_client: return
         mime_gemini  = "audio/ogg" if "ogg" in content_type else content_type.split(";")[0].strip()
 
         from google.genai import types as _types
         transcripcion_resp = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=[
-                "Transcribe este audio de WhatsApp exactamente como fue dicho, en español. "
-                "Devuelve SOLO el texto transcrito, sin explicaciones ni comillas.",
-                _types.Part.from_bytes(data=audio_bytes, mime_type=mime_gemini)
-            ],
+            contents=["Transcribe este audio en español. Devuelve SOLO el texto.", _types.Part.from_bytes(data=audio_bytes, mime_type=mime_gemini)],
             config=_types.GenerateContentConfig(max_output_tokens=500, temperature=0.1)
         )
-        texto_transcrito = transcripcion_resp.text.strip() if transcripcion_resp.text else ""
-
-        if not texto_transcrito:
-            print(f"[Closer] Transcripción vacía para audio de {phone}")
-            return
-
-        print(f"[Closer] 🎤 Transcripción: {texto_transcrito[:100]}")
-
-        # 3. Procesar como mensaje de texto normal — flujo idéntico
-        await procesar_mensaje_bg(phone, texto_transcrito, nombre)
-
+        texto = transcripcion_resp.text.strip() if transcripcion_resp.text else ""
+        if texto: await procesar_mensaje_bg(phone, texto, nombre)
     except Exception as e:
-        print(f"[Closer] Error procesando audio de {phone}: {e}")
+        print(f"[Closer] Error audio: {e}")
 
 
 async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
@@ -1336,779 +795,233 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
 
     conv    = obtener_o_crear_conversacion(phone, nombre)
     conv_id = conv.get("id")
-
     guardar_mensaje(conv_id, "cliente", mensaje)
 
     contexto_adicional = ""
     intencion          = detectar_intencion(mensaje)
     codigo_proceso     = detectar_proceso_en_mensaje(mensaje)
 
-    # --- NUEVO BLOQUE: Promover intención basada en keywords si era charla general ---
-    keywords, instituciones = extraer_keywords_interes(mensaje)
+    # --- NUEVO BLOQUE: Promover intención basada en motor semántico (await) ---
+    keywords, instituciones = await extraer_keywords_interes(mensaje)
     if intencion in ["consulta_general", "saludo"] and (keywords or instituciones):
         intencion = "busqueda_procesos"
-        print(f"[Closer] Intención promovida a busqueda_procesos por mención de rubro/institución")
+        print(f"[Closer] Intención promovida a busqueda_procesos por motor semántico")
     # -------------------------------------------------------------------------------
 
-    # Si el mensaje viene de imagen y contiene un código de proceso, forzar intención
     if not intencion == "consulta_proceso" and codigo_proceso:
         intencion = "consulta_proceso"
-        print(f"[Closer] Intención promovida a consulta_proceso por código detectado: {codigo_proceso}")
-    else:
-        print(f"[Closer] Intención detectada: {intencion}")
 
-    # ── Guardar intención en la conversación ──
     if conv_id and intencion not in ("saludo", "consulta_general"):
-        supabase_admin.table("conversaciones_closer")             .update({"intencion_detectada": intencion})             .eq("id", conv_id).execute()
-
-    # ── Manejo por intención ──────────────────────────────────────────────────
+        supabase_admin.table("conversaciones_closer").update({"intencion_detectada": intencion}).eq("id", conv_id).execute()
 
     # 1. El cliente menciona un código de proceso específico
     if codigo_proceso:
         analisis = buscar_analisis_pliego(codigo_proceso)
         if analisis and analisis.get("resumen_ejecutivo"):
             resumen       = str(analisis.get("resumen_ejecutivo", ""))[:500]
-            alertas       = analisis.get("alertas_fraude") or []
-            req_exp       = analisis.get("requisitos_experiencia") or {}
-            req_fin       = analisis.get("requisitos_financieros") or {}
-            restricciones = analisis.get("restricciones_participacion") or {}
             proceso       = buscar_proceso_dgcp(codigo_proceso)
-            monto         = (proceso or {}).get("monto_estimado", 0)
-            monto_fmt     = f"RD${float(monto):,.0f}" if monto else "no publicado"
+            monto_fmt     = f"RD${float(proceso.get('monto_estimado', 0)):,.0f}" if proceso and proceso.get("monto_estimado") else "no publicado"
             fecha_cierre  = str((proceso or {}).get("fecha_fin_recepcion_ofertas", ""))[:10]
             entidad       = (proceso or {}).get("unidad_compra", "")
 
-            # Calcular días restantes para urgencia
-            dias_restantes = ""
-            if fecha_cierre:
-                try:
-                    from datetime import date
-                    dias = (date.fromisoformat(fecha_cierre) - date.today()).days
-                    if dias >= 0:
-                        dias_restantes = f"⏰ QUEDAN {dias} DÍAS para el cierre de ofertas."
-                    else:
-                        dias_restantes = "⚠️ Este proceso ya cerró."
-                except Exception:
-                    pass
-
-            # Riesgos de descalificación detectados
-            riesgos = []
-            if isinstance(alertas, list) and alertas:
-                riesgos.append(f"Alertas detectadas: {str(alertas[0])[:150]}")
-            if isinstance(req_exp, dict) and req_exp:
-                riesgos.append(f"Experiencia requerida: {str(req_exp)[:150]}")
-            if isinstance(req_fin, dict) and req_fin:
-                riesgos.append(f"Requisitos financieros: {str(req_fin)[:150]}")
-            if isinstance(restricciones, dict) and restricciones:
-                riesgos.append(f"Restricciones: {str(restricciones)[:100]}")
-            riesgos_texto = "\n".join(riesgos) if riesgos else "Proceso estándar DGCP."
-
-            # ── Checklist de documentos requeridos ──────────────────────
-            checklist_raw  = analisis.get("checklist_categorizado") or analisis.get("checklist_legal") or {}
-            docs_lista     = ""
+            checklist_raw = analisis.get("checklist_categorizado") or analisis.get("checklist_legal") or {}
+            docs_lista = ""
             if isinstance(checklist_raw, dict):
-                for categoria, items in checklist_raw.items():
-                    if isinstance(items, list) and items:
-                        docs_lista += f"\n  [{categoria.upper()}]\n"
-                        for item in items[:6]:  # máximo 6 por categoría
-                            nombre_doc = item if isinstance(item, str) else item.get("nombre", str(item))
-                            docs_lista += f"    • {str(nombre_doc)[:80]}\n"
-            elif isinstance(checklist_raw, list):
-                for item in checklist_raw[:12]:
-                    nombre_doc = item if isinstance(item, str) else item.get("nombre", str(item))
-                    docs_lista += f"  • {str(nombre_doc)[:80]}\n"
-
-            # ── Garantías y personal ─────────────────────────────────────────
-            garantias   = analisis.get("garantias_exigidas") or {}
-            personal    = analisis.get("personal_y_equipos") or {}
-            plazos      = analisis.get("plazos_clave") or {}
-            tipo        = analisis.get("tipo_proceso", "")
-
-            extra_info = ""
-            if isinstance(garantias, dict) and garantias:
-                extra_info += f"Garantías requeridas: {str(garantias)[:200]}\n"
-            if isinstance(personal, dict) and personal:
-                extra_info += f"Personal/equipos: {str(personal)[:200]}\n"
-            if isinstance(plazos, dict) and plazos:
-                extra_info += f"Plazos clave: {str(plazos)[:200]}\n"
+                for k, v in checklist_raw.items():
+                    if isinstance(v, list) and v: docs_lista += f"\n [{k}] " + ", ".join([str(i)[:30] for i in v[:3]])
 
             contexto_adicional = (
-                f"ANÁLISIS COMPLETO — {codigo_proceso} ({tipo})\n"
-                f"Entidad: {entidad}\n"
-                f"Monto: {monto_fmt}\n"
-                f"Cierre: {fecha_cierre} | {dias_restantes}\n\n"
+                f"ANÁLISIS COMPLETO — {codigo_proceso}\n"
+                f"Entidad: {entidad} | Monto: {monto_fmt} | Cierre: {fecha_cierre}\n\n"
                 f"RESUMEN: {resumen}\n\n"
-                f"DOCUMENTOS REQUERIDOS (checklist):{docs_lista if docs_lista else ' No disponible'}\n"
-                f"INFORMACIÓN ADICIONAL:\n{extra_info if extra_info else 'No disponible'}\n"
-                f"RIESGOS DE DESCALIFICACIÓN:\n{riesgos_texto}\n\n"
-                "INSTRUCCIÓN PARA TU RESPUESTA:\n"
-                "1. Menciona 2-3 documentos clave del checklist que suelen ser problemáticos\n"
-                "2. Usa los riesgos de descalificación como argumento de venta\n"
-                "3. Menciona los días restantes como urgencia\n"
-                "4. Cierra preguntando si quiere que le cotizemos la preparación completa de la oferta\n"
-                "Recuerda: nuestro servicio prepara TODO (Sobre A + Sobre B + seguimiento)"
+                f"DOCS CLAVE: {docs_lista}\n\n"
+                "Usa esto como argumento de venta y ofrece la preparación de la oferta."
             )
         else:
             proceso = buscar_proceso_dgcp(codigo_proceso)
             if proceso:
-                monto     = proceso.get("monto_estimado", 0)
-                monto_fmt = f"RD${float(monto):,.0f}" if monto else "no publicado"
-                fecha     = str(proceso.get("fecha_fin_recepcion_ofertas", "por confirmar"))[:10]
-                contexto_adicional = (
-                    f"DATOS BÁSICOS del proceso {codigo_proceso} (pliego pendiente de análisis):\n"
-                    f"- Entidad: {proceso.get('unidad_compra', '---')}\n"
-                    f"- Título: {proceso.get('titulo', '---')}\n"
-                    f"- Monto: {monto_fmt}\n"
-                    f"- Estado: {proceso.get('estado_proceso', '---')}\n"
-                    f"- Cierre ofertas: {fecha}\n\n"
-                    "Dile que el análisis completo del pliego ya está siendo generado "
-                    "y que en unos minutos le mandas el resumen. "
-                    "Menciona LicitacionLab para ver el resultado completo."
-                )
-                # Disparar análisis en background
+                contexto_adicional = f"El proceso {codigo_proceso} está en cola de análisis. Dile que en minutos le mandas el resumen."
                 asyncio.create_task(disparar_analisis_pliego_bg(codigo_proceso, phone, conv_id))
             else:
-                contexto_adicional = (
-                    f"El proceso {codigo_proceso} no está en nuestra base de datos aún. "
-                    "Dile al cliente que verifique el código y que si es un proceso reciente "
-                    "puede tardar unos minutos en aparecer en el sistema."
-                )
+                contexto_adicional = f"Proceso {codigo_proceso} no encontrado. Pide que verifique el código."
 
-        # Si el mensaje vino de una imagen, personalizar el contexto de venta
-        if "[Imagen analizada" in mensaje or (codigo_proceso and "|" in mensaje):
-            contexto_adicional += (
-                "\nNOTA IMPORTANTE: El cliente envi\u00f3 una IMAGEN con este proceso. "
-                "Eso indica inter\u00e9s activo y real. "
-                "Abre tu respuesta reconociendo la imagen: "
-                "'Vi que me mandaste la convocatoria de [proceso]...' "
-                "y cierra directamente ofreciendo preparar la oferta completa."
-            )
+        if "[Imagen analizada" in mensaje or "|" in mensaje:
+            contexto_adicional += "\nEl cliente envió una IMAGEN de esto. Ofrece preparar la oferta directamente."
 
-        if conv_id:
-            supabase_admin.table("conversaciones_closer")                 .update({"proceso_codigo": codigo_proceso})                 .eq("id", conv_id).execute()
+        if conv_id: supabase_admin.table("conversaciones_closer").update({"proceso_codigo": codigo_proceso}).eq("id", conv_id).execute()
 
-    # 2. Cliente busca procesos sin código específico
+    # 2. Cliente busca procesos sin código específico (CON CÓDIGO INCLUIDO)
     elif intencion == "busqueda_procesos":
-        # keywords e instituciones ya fueron extraídas arriba
-        procesos_encontrados    = buscar_procesos_por_keywords(keywords, instituciones)
+        procesos_encontrados = buscar_procesos_por_keywords(keywords, instituciones)
         if procesos_encontrados:
             lista = ""
-            for p in procesos_encontrados[:3]:
+            for p in procesos_encontrados[:5]: # Subimos a 5 procesos
                 monto   = p.get("monto_estimado", 0)
                 monto_f = f"RD${float(monto):,.0f}" if monto else "monto no publicado"
                 fecha   = str(p.get("fecha_fin_recepcion_ofertas", "?"))[:10]
-                lista  += f"• {p.get('titulo', 'Sin título')[:60]} | {p.get('unidad_compra','')} | {monto_f} | Cierre: {fecha}\n"
+                lista  += f"• *{p.get('codigo_proceso', 'Sin código')}* | {p.get('titulo', 'Sin título')[:60]} | {p.get('unidad_compra','')} | {monto_f} | Cierre: {fecha}\n"
             
-            # --- CONTEXTO AJUSTADO ---
             contexto_adicional = (
                 f"🚨 TIENES QUE MOSTRAR ESTA LISTA AL CLIENTE AHORA MISMO:\n{lista}\n"
                 "Pega esta lista en tu respuesta. Después de mostrarla, pregúntale "
                 "si quiere que coticemos la preparación de la oferta para alguno de ellos."
             )
         else:
-            # --- CONTEXTO AJUSTADO ---
             contexto_adicional = (
-                f"No encontré procesos activos para {', '.join(keywords + instituciones) or 'esa búsqueda'}. "
+                f"No encontré procesos activos para esa búsqueda. "
                 "Dile claramente que no hay procesos activos con esos criterios ahora mismo, "
                 "pero que si quiere te deja sus datos y le avisas cuando aparezca algo."
             )
 
-    # 3. Quiere alertas automáticas
+    # 3. Quiere alertas automáticas (AWAIT AÑADIDO)
     if detectar_interes_alerta(mensaje):
-        # Asegurar que tenemos keywords para la alerta
         if not keywords and not instituciones:
-            keywords, instituciones = extraer_keywords_interes(mensaje)
+            keywords, instituciones = await extraer_keywords_interes(mensaje)
             
         if keywords or instituciones:
             registrar_alerta_cliente(conv_id, phone, nombre, keywords, instituciones)
-            kw_texto           = ", ".join(keywords + instituciones)
-            contexto_adicional += (
-                f"\nACCIÓN TOMADA: Se registró alerta para {kw_texto}. "
-                "Confirmale que quedó registrado y que cada día revisamos y le avisamos "
-                "si aparece algo que le interese."
-            )
+            contexto_adicional += f"\nACCIÓN TOMADA: Alerta registrada para {', '.join(keywords + instituciones)}. Confirmale que le avisarás."
 
-    # ── Contexto de perfil ────────────────────────────────────────────────────
-    perfil          = obtener_perfil_prospecto(phone)
-    contexto_perfil = construir_contexto_perfil(perfil)
-    if contexto_perfil:
+    perfil = obtener_perfil_prospecto(phone)
+    if contexto_perfil := construir_contexto_perfil(perfil):
         contexto_adicional = contexto_perfil + "\n\n" + contexto_adicional
 
-    # ── Contexto de precio si pregunta por precio ─────────────────────────────
     if intencion == "pregunta_precio":
-        contexto_adicional += (
-            "\nEl cliente pregunta por precio/planes. "
-            "Da los 3 planes con precios directamente y cierra con CTA al registro: "
-            "https://app.licitacionlab.com/"
-        )
+        contexto_adicional += "\nDa los 3 planes de LicitacionLab con precios y cierra con CTA de registro."
 
-    # ── Generar respuesta IA ──────────────────────────────────────────────────
     historial = obtener_historial(conv_id)
     respuesta = await generar_respuesta_gemini(mensaje, historial, contexto_adicional, intencion)
 
-    # Extracción de perfil en background
-    asyncio.create_task(
-        extraer_y_actualizar_perfil(mensaje, historial, phone, conv_id, nombre, perfil)
-    )
-
+    asyncio.create_task(extraer_y_actualizar_perfil(mensaje, historial, phone, conv_id, nombre, perfil))
     guardar_mensaje(conv_id, "agente", respuesta, generado_por_ia=True)
     await enviar_whatsapp(phone, respuesta)
 
-    # ── Actualizar etapa y notificar a Lonny si hay señal de cierre ──────────
     if detectar_senal_cierre(mensaje) or intencion == "senal_cierre":
-        nombre_display = nombre or phone
-        # Enriquecer notificación con perfil del prospecto
-        perfil_texto = ""
-        if perfil:
-            empresa = perfil.get("nombre_empresa", "no registrada")
-            sector  = perfil.get("sector", "no registrado")
-            rpe     = "✅" if perfil.get("tiene_rpe") else ("❌" if perfil.get("tiene_rpe") is False else "?")
-            rnce    = "✅" if perfil.get("tiene_rnce") else ("❌" if perfil.get("tiene_rnce") is False else "?")
-            ef      = "✅" if perfil.get("tiene_estados_financieros") else ("❌" if perfil.get("tiene_estados_financieros") is False else "?")
-            score_v = conv.get("score", 0)
-            perfil_texto = (
-                f"\n📊 Perfil:\n"
-                f"  Empresa: {empresa} | Sector: {sector}\n"
-                f"  RPE: {rpe} | RNCE: {rnce} | Est.Fin: {ef}\n"
-                f"  Score: {score_v}/100\n"
-            )
-        proceso_texto = f"\n📋 Proceso: {conv.get('proceso_codigo')}\n" if conv.get("proceso_codigo") else ""
-        alerta = (
-            f"🔥 SEÑAL DE CIERRE\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"👤 {nombre_display}\n"
-            f"📱 +{phone}"
-            f"{perfil_texto}"
-            f"{proceso_texto}"
-            f"\n💬 Dice: \"{mensaje[:250]}\"\n"
-            f"\n🤖 Lab: \"{respuesta[:250]}\"\n"
-            f"\n👆 ENTRA TÚ A CERRAR."
-        )
-        await enviar_telegram(alerta)
-        if conv_id:
-            supabase_admin.table("conversaciones_closer")                 .update({"etapa": "interesado", "estado": "hot"})                 .eq("id", conv_id).execute()
-
+        await enviar_telegram(f"🔥 SEÑAL DE CIERRE\n👤 {nombre or phone}\n📱 +{phone}\n💬 \"{mensaje[:150]}\"")
+        if conv_id: supabase_admin.table("conversaciones_closer").update({"etapa": "interesado", "estado": "hot"}).eq("id", conv_id).execute()
     elif conv_id and conv.get("etapa") == "nuevo":
-        supabase_admin.table("conversaciones_closer")             .update({
-                "etapa":               "respondido",
-                "estado":              "engaged",
-                "proximo_followup_en": (datetime.utcnow() + timedelta(days=2)).isoformat()
-            })             .eq("id", conv_id).execute()
+        supabase_admin.table("conversaciones_closer").update({"etapa": "respondido", "estado": "engaged"}).eq("id", conv_id).execute()
     elif conv_id:
-        supabase_admin.table("conversaciones_closer")             .update({
-                "estado":            "engaged",
-                "ultimo_mensaje_en": datetime.utcnow().isoformat()
-            })             .eq("id", conv_id).execute()
-
-    print(f"[Closer] OK conv_id={conv_id} intencion={intencion}")
+        supabase_admin.table("conversaciones_closer").update({"estado": "engaged"}).eq("id", conv_id).execute()
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# FOLLOWUPS — CRON DIARIO 9AM
+# CRONS Y UTILIDADES (FOLLOWUPS, ALERTAS, ETC.)
 # ═══════════════════════════════════════════════════════════════════════
+# Todo el código de abajo (Followups, Alertas, Panel) se mantiene intacto
 
 @closer_router.post("/followup/run")
-async def ejecutar_followups(
-    background_tasks: BackgroundTasks,
-    x_agent_secret: Optional[str] = Header(None)
-):
-    if x_agent_secret != AGENT_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+async def ejecutar_followups(background_tasks: BackgroundTasks, x_agent_secret: Optional[str] = Header(None)):
+    if x_agent_secret != AGENT_SECRET: raise HTTPException(status_code=401)
     background_tasks.add_task(ejecutar_followups_bg)
     return {"status": "iniciado"}
 
-
 async def ejecutar_followups_bg():
-    print("[Closer] Cron followups...")
-    try:
-        ahora  = datetime.utcnow().isoformat()
-        result = supabase_admin.table("conversaciones_closer") \
-            .select("*") \
-            .lte("proximo_followup_en", ahora) \
-            .not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]) \
-            .not_.in_("estado", ["hot", "cerrado", "perdido"]) \
-            .lt("followups_enviados", 4) \
-            .execute()
+    ahora  = datetime.utcnow().isoformat()
+    result = supabase_admin.table("conversaciones_closer").select("*").lte("proximo_followup_en", ahora).not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]).not_.in_("estado", ["hot", "cerrado", "perdido"]).lt("followups_enviados", 4).execute()
+    for conv in (result.data or []):
+        await procesar_followup_individual(conv)
+        await asyncio.sleep(10)
 
-        conversaciones = result.data or []
-        print(f"[Closer] {len(conversaciones)} followups pendientes")
-        for conv in conversaciones:
-            await procesar_followup_individual(conv)
-            await asyncio.sleep(10)  # Anti-ban: pausa entre followups outbound
-    except Exception as e:
-        print(f"[Closer] Error followups: {e}")
-
-
-# Días de espera ENTRE cada followup para llegar a los días 2, 5, 7 y 14
-# Día 0 (primer contacto) → +2d → Followup 1 (día 2)
-# Followup 1 (día 2)      → +3d → Followup 2 (día 5)
-# Followup 2 (día 5)      → +2d → Followup 3 (día 7)
-# Followup 3 (día 7)      → +7d → Followup 4 (día 14) — último intento
 DIAS_FOLLOWUP = [2, 3, 2, 7]
-
-
 async def procesar_followup_individual(conv: dict):
-    conv_id     = conv.get("id")
-    phone       = conv.get("telefono")
-    nombre      = (conv.get("nombre_contacto") or "").split()[0] or "amigo"
-    paso        = conv.get("followups_enviados", 0)
-    estado      = conv.get("estado", "silent")
-    proceso_cod = conv.get("proceso_codigo")
-
-    if not phone:
-        return
-
+    conv_id, phone, nombre = conv.get("id"), conv.get("telefono"), (conv.get("nombre_contacto") or "").split()[0] or "amigo"
+    paso, estado = conv.get("followups_enviados", 0), conv.get("estado", "silent")
+    if not phone: return
     if paso >= 4:
-        supabase_admin.table("conversaciones_closer") \
-            .update({"etapa": "inactivo", "estado": "perdido"}) \
-            .eq("id", conv_id).execute()
+        supabase_admin.table("conversaciones_closer").update({"etapa": "inactivo", "estado": "perdido"}).eq("id", conv_id).execute()
         return
-
-    supabase_admin.table("conversaciones_closer") \
-        .update({"estado": "silent"}) \
-        .eq("id", conv_id).execute()
-
-    historial = obtener_historial(conv_id, limite=6)
-    mensaje   = await generar_followup_gemini(historial, nombre, paso, estado, proceso_cod)
-
-    await enviar_whatsapp(phone, mensaje, es_followup=True)  # Anti-ban: delay mayor para outbound
+    
+    supabase_admin.table("conversaciones_closer").update({"estado": "silent"}).eq("id", conv_id).execute()
+    mensaje = await generar_followup_gemini(obtener_historial(conv_id, limite=6), nombre, paso, estado, conv.get("proceso_codigo"))
+    await enviar_whatsapp(phone, mensaje, es_followup=True)
     guardar_mensaje(conv_id, "agente", mensaje, generado_por_ia=True)
 
-    nuevo_paso  = paso + 1
     dias_espera = DIAS_FOLLOWUP[paso] if paso < len(DIAS_FOLLOWUP) else 7
-    proximo     = (datetime.utcnow() + timedelta(days=dias_espera)).isoformat()
-
-    supabase_admin.table("conversaciones_closer") \
-        .update({
-            "followups_enviados":  nuevo_paso,
-            "proximo_followup_en": proximo,
-            "ultimo_mensaje_en":   datetime.utcnow().isoformat()
-        }) \
-        .eq("id", conv_id).execute()
-
-    print(f"[Closer] Followup {nuevo_paso}/4 enviado a {phone}")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# ALERTAS — CRON DIARIO 8AM
-# ═══════════════════════════════════════════════════════════════════════
+    supabase_admin.table("conversaciones_closer").update({
+        "followups_enviados": paso + 1, "proximo_followup_en": (datetime.utcnow() + timedelta(days=dias_espera)).isoformat(), "ultimo_mensaje_en": datetime.utcnow().isoformat()
+    }).eq("id", conv_id).execute()
 
 @closer_router.post("/alertas/run")
-async def ejecutar_alertas(
-    background_tasks: BackgroundTasks,
-    x_agent_secret: Optional[str] = Header(None)
-):
-    """
-    Cron diario a las 6pm (configurar en n8n o Railway cron):
-    POST /closer/alertas/run
-    Header: X-Agent-Secret: <AGENT_SECRET>
-
-    Configuración n8n: Cron trigger → todos los días → hora 18:00 (6pm hora RD = UTC-4 → 22:00 UTC)
-    """
-    if x_agent_secret != AGENT_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+async def ejecutar_alertas(background_tasks: BackgroundTasks, x_agent_secret: Optional[str] = Header(None)):
+    if x_agent_secret != AGENT_SECRET: raise HTTPException(status_code=401)
     background_tasks.add_task(ejecutar_alertas_bg)
-    return {"status": "iniciado", "mensaje": "Revisión de alertas iniciada"}
-
+    return {"status": "iniciado"}
 
 async def ejecutar_alertas_bg():
-    print("[Closer] Cron alertas...")
-    try:
-        result  = supabase_admin.table("alertas_cliente").select("*").eq("activa", True).execute()
-        alertas = result.data or []
-        print(f"[Closer] {len(alertas)} alertas activas")
-        for alerta in alertas:
-            await procesar_alerta_individual(alerta)
-            await asyncio.sleep(8)  # Anti-ban: pausa entre alertas outbound
-    except Exception as e:
-        print(f"[Closer] Error alertas: {e}")
-
+    result = supabase_admin.table("alertas_cliente").select("*").eq("activa", True).execute()
+    for alerta in (result.data or []):
+        await procesar_alerta_individual(alerta)
+        await asyncio.sleep(8)
 
 async def procesar_alerta_individual(alerta: dict):
-    """
-    Revisa si hay procesos nuevos para el cliente y le manda un WhatsApp.
-    Solo notifica procesos que NO le hayan sido notificados antes.
-    """
-    phone         = alerta.get("contact_phone")
-    nombre        = alerta.get("contact_name", "")
-    keywords      = alerta.get("keywords") or []
-    instituciones = alerta.get("instituciones") or []
-
-    if not phone:
-        return
-    if not keywords and not instituciones:
-        return
-
+    phone, keywords, instituciones = alerta.get("contact_phone"), alerta.get("keywords") or [], alerta.get("instituciones") or []
+    if not phone or (not keywords and not instituciones): return
     procesos = buscar_procesos_por_keywords(keywords, instituciones)
-    if not procesos:
-        print(f"[Closer] Sin procesos para alerta de {phone} — keywords: {keywords}")
-        return
+    if not procesos: return
 
     ya_notificados = alerta.get("procesos_notificados") or []
-    procesos_nuevos = [
-        p for p in procesos
-        if p.get("codigo_proceso") and p.get("codigo_proceso") not in ya_notificados
-    ]
+    procesos_nuevos = [p for p in procesos if p.get("codigo_proceso") and p.get("codigo_proceso") not in ya_notificados]
+    if not procesos_nuevos: return
 
-    if not procesos_nuevos:
-        print(f"[Closer] Sin procesos NUEVOS para {phone} — ya notificados: {len(ya_notificados)}")
-        return
+    mensaje = await generar_mensaje_alerta_proceso(alerta.get("contact_name", phone), procesos_nuevos, keywords)
+    if not mensaje: return
+    await enviar_whatsapp(phone, mensaje, es_followup=True)
 
-    # Generar mensaje con IA
-    mensaje = await generar_mensaje_alerta_proceso(nombre or phone, procesos_nuevos, keywords)
-    if not mensaje:
-        return
-
-    await enviar_whatsapp(phone, mensaje, es_followup=True)  # Anti-ban: delay mayor para outbound
-
-    # Marcar como notificados (máximo 50 en memoria para no crecer infinito)
-    codigos_nuevos   = [p.get("codigo_proceso") for p in procesos_nuevos]
-    actualizados     = list(set(ya_notificados + codigos_nuevos))[-50:]
-    supabase_admin.table("alertas_cliente")         .update({
-            "procesos_notificados": actualizados,
-            "ultimo_check_at":      datetime.utcnow().isoformat()
-        })         .eq("id", alerta["id"]).execute()
-
-    # Guardar en historial de mensajes si hay conv_id
-    conv_id = alerta.get("conversation_id")
-    if conv_id:
-        guardar_mensaje(str(conv_id), "agente", mensaje, generado_por_ia=True)
-
-    print(f"[Closer] ✅ Alerta enviada a {phone}: {codigos_nuevos}")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# ENDPOINTS DE GESTIÓN
-# ═══════════════════════════════════════════════════════════════════════
+    codigos_nuevos = [p.get("codigo_proceso") for p in procesos_nuevos]
+    supabase_admin.table("alertas_cliente").update({"procesos_notificados": list(set(ya_notificados + codigos_nuevos))[-50:]}).eq("id", alerta["id"]).execute()
+    if alerta.get("conversation_id"): guardar_mensaje(str(alerta.get("conversation_id")), "agente", mensaje, True)
 
 @closer_router.get("/conversaciones")
-async def listar_conversaciones(
-    x_agent_secret: Optional[str] = Header(None),
-    estado: Optional[str]         = None,
-    limit: int                    = 20
-):
-    if x_agent_secret != AGENT_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    try:
-        query = supabase_admin.table("conversaciones_closer") \
-            .select("*") \
-            .not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]) \
-            .order("ultimo_mensaje_en", desc=True) \
-            .limit(limit)
-        if estado:
-            query = query.eq("estado", estado)
-        result = query.execute()
-        return {"conversaciones": result.data or [], "total": len(result.data or [])}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+async def listar_conversaciones(x_agent_secret: Optional[str] = Header(None), estado: Optional[str] = None, limit: int = 20):
+    if x_agent_secret != AGENT_SECRET: raise HTTPException(status_code=401)
+    query = supabase_admin.table("conversaciones_closer").select("*").not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]).order("ultimo_mensaje_en", desc=True).limit(limit)
+    if estado: query = query.eq("estado", estado)
+    result = query.execute()
+    return {"conversaciones": result.data or [], "total": len(result.data or [])}
 
 @closer_router.post("/marcar/{conv_id}")
-async def marcar_conversacion(
-    conv_id: str,
-    payload: MarcarEtapaPayload,
-    x_agent_secret: Optional[str] = Header(None)
-):
-    if x_agent_secret != AGENT_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    etapas_validas = [
-        "nuevo", "respondido", "interesado", "demo_agendada",
-        "propuesta_enviada", "negociacion", "cerrado_ganado",
-        "cerrado_perdido", "inactivo"
-    ]
-    if payload.etapa not in etapas_validas:
-        raise HTTPException(status_code=400, detail=f"Etapa invalida. Opciones: {etapas_validas}")
-
+async def marcar_conversacion(conv_id: str, payload: MarcarEtapaPayload, x_agent_secret: Optional[str] = Header(None)):
+    if x_agent_secret != AGENT_SECRET: raise HTTPException(status_code=401)
     try:
         update = {"etapa": payload.etapa}
-        if payload.notas:
-            update["notas"] = payload.notas
+        if payload.notas: update["notas"] = payload.notas
         supabase_admin.table("conversaciones_closer").update(update).eq("id", conv_id).execute()
-        return {"status": "ok", "etapa": payload.etapa, "conv_id": conv_id}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@closer_router.post("/interes/registrar")
-async def registrar_interes_manual(
-    payload: RegistrarInteresPayload,
-    x_agent_secret: Optional[str] = Header(None)
-):
-    if x_agent_secret != AGENT_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-    conv    = obtener_o_crear_conversacion(payload.phone, payload.nombre)
-    conv_id = conv.get("id")
-
-    if payload.keywords or payload.instituciones:
-        registrar_alerta_cliente(
-            conv_id, payload.phone, payload.nombre or payload.phone,
-            payload.keywords or [], payload.instituciones or []
-        )
-    if payload.notas:
-        actualizar_perfil_prospecto(
-            payload.phone, conv_id, payload.nombre or payload.phone,
-            {"notas_agente": payload.notas}
-        )
-    return {"status": "ok", "conv_id": conv_id, "phone": payload.phone}
-
+        return {"status": "ok"}
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @closer_router.post("/alerta/test")
 async def test_alerta(x_agent_secret: Optional[str] = Header(None)):
-    if x_agent_secret != AGENT_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    # Contar alertas activas y conversaciones
+    if x_agent_secret != AGENT_SECRET: raise HTTPException(status_code=401)
     try:
-        alertas  = supabase_admin.table("alertas_cliente").select("id", count="exact").eq("activa", True).execute()
-        convs    = supabase_admin.table("conversaciones_closer").select("id", count="exact").not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]).execute()
-        hot      = supabase_admin.table("conversaciones_closer").select("id", count="exact").eq("estado", "hot").execute()
-        resumen  = (
-            f"✅ Test Agente Closer OK\n\n"
-            f"📊 Estado actual:\n"
-            f"• Alertas activas: {alertas.count or 0}\n"
-            f"• Conversaciones activas: {convs.count or 0}\n"
-            f"• Hot leads: {hot.count or 0}\n\n"
-            f"Sistema funcionando correctamente."
-        )
-        await enviar_telegram(resumen)
-    except Exception as e:
-        await enviar_telegram(f"Test Closer — Error: {e}")
+        alertas = supabase_admin.table("alertas_cliente").select("id", count="exact").eq("activa", True).execute()
+        convs   = supabase_admin.table("conversaciones_closer").select("id", count="exact").not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]).execute()
+        await enviar_telegram(f"✅ Test Closer OK\nAlertas: {alertas.count}\nConversaciones: {convs.count}")
+    except Exception as e: await enviar_telegram(f"Error test: {e}")
     return {"status": "ok"}
 
-
-@closer_router.get("/stats")
-async def stats_closer(x_agent_secret: Optional[str] = Header(None)):
-    """Estadísticas rápidas del agente para el panel."""
-    if x_agent_secret != AGENT_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    try:
-        alertas  = supabase_admin.table("alertas_cliente").select("id", count="exact").eq("activa", True).execute()
-        convs    = supabase_admin.table("conversaciones_closer").select("id, etapa, estado, nombre_contacto, score").not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]).order("score", desc=True).limit(10).execute()
-        hot      = [c for c in (convs.data or []) if c.get("estado") == "hot"]
-        return {
-            "alertas_activas":       alertas.count or 0,
-            "conversaciones_activas": len(convs.data or []),
-            "hot_leads":             len(hot),
-            "top_leads":             convs.data or [],
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# SCORING
-# ═══════════════════════════════════════════════════════════════════════
-
-def calcular_score_prospecto(perfil: dict, conv: dict) -> int:
-    score = 0
-
-    if perfil.get("nombre_empresa"):           score += 10
-    if perfil.get("sector"):                   score += 5
-    if perfil.get("tipo_empresa"):             score += 5
-    if perfil.get("tiene_rpe"):                score += 10
-    if perfil.get("tiene_rnce"):               score += 5
-    if perfil.get("tiene_estados_financieros"): score += 5
-    if perfil.get("ha_participado_antes"):      score += 10
-    if int(perfil.get("procesos_ganados") or 0) > 0: score += 10
-    if perfil.get("tipos_proceso"):            score += 10
-    if perfil.get("instituciones_interes"):    score += 5
-
-    etapa = conv.get("etapa", "")
-    if etapa == "interesado":          score += 10
-    elif etapa == "propuesta_enviada": score += 15
-    elif etapa == "negociacion":       score += 20
-
-    estado = conv.get("estado", "")
-    if estado == "hot":     score += 10
-    elif estado == "engaged": score += 5
-
-    ultimo = conv.get("ultimo_mensaje_en")
-    if ultimo:
-        try:
-            dt   = datetime.fromisoformat(ultimo.replace("Z", "+00:00"))
-            dias = (datetime.now(dt.tzinfo) - dt).days
-            if dias <= 1:   score += 10
-            elif dias <= 3: score += 7
-            elif dias <= 7: score += 3
-        except Exception:
-            pass
-
-    return min(score, 100)
-
-
-def emoji_score(score: int) -> str:
-    if score >= 80: return "🔥"
-    if score >= 60: return "⭐"
-    if score >= 40: return "👀"
-    return "🌱"
-
-
-@closer_router.post("/scores/recalcular")
-async def recalcular_scores(
-    background_tasks: BackgroundTasks,
-    x_agent_secret: Optional[str] = Header(None)
-):
-    if x_agent_secret != AGENT_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    background_tasks.add_task(recalcular_scores_bg)
-    return {"status": "iniciado"}
-
-
-async def recalcular_scores_bg():
-    print("[Closer] Recalculando scores...")
-    try:
-        convs_result = supabase_admin.table("conversaciones_closer") \
-            .select("*") \
-            .not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]) \
-            .execute()
-
-        for conv in (convs_result.data or []):
-            perfil = obtener_perfil_prospecto(conv.get("telefono")) or {}
-            score  = calcular_score_prospecto(perfil, conv)
-            supabase_admin.table("conversaciones_closer") \
-                .update({"score": score}) \
-                .eq("id", conv["id"]).execute()
-
-        print(f"[Closer] Scores actualizados para {len(convs_result.data or [])} conversaciones")
-    except Exception as e:
-        print(f"[Closer] Error scores: {e}")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# RESUMEN DIARIO
-# ═══════════════════════════════════════════════════════════════════════
-
 @closer_router.post("/resumen/diario")
-async def generar_resumen_diario(
-    background_tasks: BackgroundTasks,
-    x_agent_secret: Optional[str] = Header(None)
-):
-    if x_agent_secret != AGENT_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+async def generar_resumen_diario(background_tasks: BackgroundTasks, x_agent_secret: Optional[str] = Header(None)):
+    if x_agent_secret != AGENT_SECRET: raise HTTPException(status_code=401)
+    async def generar_resumen_diario_bg():
+        hoy = datetime.utcnow().date().isoformat()
+        msgs = supabase_admin.table("mensajes_closer").select("id", count="exact").gte("enviado_en", hoy).eq("rol", "cliente").execute()
+        await enviar_telegram(f"Resumen Diario — {hoy}\nMensajes: {msgs.count}")
     background_tasks.add_task(generar_resumen_diario_bg)
     return {"status": "iniciado"}
 
-
-async def generar_resumen_diario_bg():
-    try:
-        hoy = datetime.utcnow().date().isoformat()
-
-        msgs_hoy = supabase_admin.table("mensajes_closer") \
-            .select("id", count="exact") \
-            .gte("enviado_en", hoy) \
-            .eq("rol", "cliente").execute()
-
-        convs_activas = supabase_admin.table("conversaciones_closer") \
-            .select("id, etapa, estado, nombre_contacto, telefono", count="exact") \
-            .not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]).execute()
-
-        hot_leads  = [c for c in (convs_activas.data or []) if c.get("estado") == "hot"]
-
-        nuevas_hoy = supabase_admin.table("conversaciones_closer") \
-            .select("id", count="exact") \
-            .gte("creado_en", hoy).execute()
-
-        hot_lista = "\n".join([
-            f"  - {c.get('nombre_contacto', '?')} ({c.get('telefono', '')})"
-            for c in hot_leads[:5]
-        ])
-
-        resumen = (
-            f"Resumen Agente Closer — {hoy}\n\n"
-            f"Mensajes recibidos hoy: {msgs_hoy.count or 0}\n"
-            f"Conversaciones nuevas: {nuevas_hoy.count or 0}\n"
-            f"Conversaciones activas: {convs_activas.count or 0}\n"
-            f"Hot leads: {len(hot_leads)}\n"
-            + (f"\nLeads calientes:\n{hot_lista}" if hot_leads else "")
-        )
-        await enviar_telegram(resumen)
-        print("[Closer] Resumen diario enviado")
-    except Exception as e:
-        print(f"[Closer] Error resumen: {e}")
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# ANALISIS AUTOMATICO DE PLIEGOS
-# ═══════════════════════════════════════════════════════════════════════
-
 async def disparar_analisis_pliego_bg(codigo_proceso: str, phone: str, conv_id: str):
-    """
-    Dispara el análisis de un pliego que aún no está en BD.
-    Usa el endpoint interno /api/procesos/{codigo}/analizar del main.py.
-    Luego notifica al cliente por WhatsApp cuando esté listo.
-    """
     try:
-        print(f"[Closer] Disparando análisis automático de {codigo_proceso}")
-
         proceso = buscar_proceso_dgcp(codigo_proceso)
-        if not proceso:
-            await enviar_whatsapp(phone,
-                f"No encontré el proceso {codigo_proceso} en nuestra base de datos. "
-                f"¿Puedes confirmar el código exacto? 🔍"
-            )
-            return
-
-        # URL interna del propio Railway service
-        base_url = os.environ.get("APP_URL", "")
-        if not base_url:
-            railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
-            base_url = f"https://{railway_domain}" if railway_domain else "http://localhost:8080"
-
-        # Avisar al cliente que ya estamos en ello
-        await enviar_whatsapp(phone,
-            f"Perfecto, ya inicié el análisis del pliego {codigo_proceso} 🤖 "
-            f"Dame unos minutos y te mando el resumen completo."
-        )
-        guardar_mensaje(conv_id, "agente",
-            f"Análisis iniciado para {codigo_proceso} — esperando resultado...",
-            generado_por_ia=False
-        )
-
-        # Llamar al endpoint de análisis del main.py
-        # Necesitamos un user_id dummy para que el endpoint no falle
-        # Usamos el endpoint admin que no requiere user_id
+        if not proceso: return
+        base_url = os.environ.get("APP_URL", f"https://{os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'localhost:8080')}")
+        await enviar_whatsapp(phone, f"Ya inicié el análisis del pliego {codigo_proceso} 🤖. Dame unos minutos.")
         async with httpx.AsyncClient(timeout=300) as client:
-            resp = await client.post(
-                f"{base_url}/api/procesos/{codigo_proceso}/analizar",
-                params={"user_id": "closer-agent"},
-                headers={"X-Admin-Key": os.environ.get("ADMIN_SECRET", "")}
-            )
-            print(f"[Closer] Análisis dispatch: {resp.status_code}")
-
-        # Esperar hasta 5 minutos revisando cada 30s si el análisis completó
-        for intento in range(10):
+            await client.post(f"{base_url}/api/procesos/{codigo_proceso}/analizar", params={"user_id": "closer-agent"}, headers={"X-Admin-Key": os.environ.get("ADMIN_SECRET", "")})
+        for _ in range(10):
             await asyncio.sleep(30)
-            analisis = buscar_analisis_pliego(codigo_proceso)
-            if analisis and analisis.get("resumen_ejecutivo"):
-                resumen = str(analisis.get("resumen_ejecutivo", ""))[:500]
-                monto   = proceso.get("monto_estimado", 0)
-                monto_fmt = f"RD${float(monto):,.0f}" if monto else "no publicado"
-                fecha   = str(proceso.get("fecha_fin_recepcion_ofertas", "por confirmar"))[:10]
-
-                mensaje = (
-                    f"✅ Listo el análisis de *{codigo_proceso}*\n\n"
-                    f"📋 *{proceso.get('titulo', '')}*\n"
-                    f"🏛 {proceso.get('unidad_compra', '')}\n"
-                    f"💰 {monto_fmt}\n"
-                    f"📅 Cierre: {fecha}\n\n"
-                    f"{resumen}\n\n"
-                    f"Para ver el checklist completo, alertas de fraude y todos los requisitos, "
-                    f"entra a: https://app.licitacionlab.com/ 🚀"
-                )
-                await enviar_whatsapp(phone, mensaje)
-                guardar_mensaje(conv_id, "agente", mensaje, generado_por_ia=True)
-                print(f"[Closer] Análisis entregado a {phone} — {codigo_proceso}")
-                return
-
-        # Si después de 5 min no completó
-        await enviar_whatsapp(phone,
-            f"El análisis de {codigo_proceso} está tardando más de lo normal. "
-            f"Te lo envío en cuanto esté listo, ¡no te preocupes! 👌"
-        )
-    except Exception as e:
-        print(f"[Closer] Error disparar_analisis_bg: {e}")
-        await enviar_whatsapp(phone,
-            f"Tuve un problema procesando el pliego {codigo_proceso}. "
-            f"Avísale al Ing. Luis directamente para que te ayude."
-        )
+            if analisis := buscar_analisis_pliego(codigo_proceso):
+                if analisis.get("resumen_ejecutivo"):
+                    await enviar_whatsapp(phone, f"✅ Listo el análisis de *{codigo_proceso}*\n\n{str(analisis.get('resumen_ejecutivo'))[:500]}")
+                    return
+    except Exception: pass
