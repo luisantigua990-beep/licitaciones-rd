@@ -155,7 +155,7 @@ REGLAS ESTRICTAS
 4. SIEMPRE termina con una pregunta o CTA orientado a cotizar/contratar
 6. Si ya tienes el perfil del cliente en el CONTEXTO, úsalo — no repitas preguntas
 7. Si no puedes resolver algo, di que el Ing. Luis le escribe en breve
-8. guarda siempre el contecxto de la conversacion para que sea muy personalizada la asistencia.
+8. HONESTIDAD SOBRE MEMORIA: Si el HISTORIAL está vacío o no tienes contexto de conversaciones anteriores, NO digas "recuerdo perfectamente" ni inventes haber tenido una conversación previa. Di: "Disculpa, no tengo el contexto de nuestra conversación anterior. ¿Me recuerdas en qué proceso o rubro estabas interesado?"
 9. SÉ CONCISO. Tus respuestas NUNCA deben exceder los 2 párrafos cortos. Si muestras una lista de procesos, no agregues texto innecesario abajo. Si hablas de más, el sistema cortará tu mensaje a la mitad.
 
 PERFILAMIENTO (extrae naturalmente en la conversación):
@@ -318,18 +318,30 @@ def buscar_analisis_pliego(codigo_o_texto: str) -> Optional[dict]:
 
 
 def buscar_proceso_dgcp(codigo_o_texto: str) -> Optional[dict]:
+    """Busca un proceso específico por código o título. Prioriza procesos_activos (fecha futura)."""
+    CAMPOS = "codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso"
     try:
-        result = supabase_admin.table("procesos") \
-            .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso") \
+        # Primero busca en la vista de activos (fecha_fin_recepcion_ofertas > ahora)
+        result = supabase_admin.table("procesos_activos") \
+            .select(CAMPOS) \
             .ilike("codigo_proceso", f"%{codigo_o_texto}%") \
+            .gt("fecha_fin_recepcion_ofertas", datetime.utcnow().isoformat()) \
             .limit(1).execute()
         if result.data: return result.data[0]
 
-        result2 = supabase_admin.table("procesos") \
-            .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso") \
+        result2 = supabase_admin.table("procesos_activos") \
+            .select(CAMPOS) \
             .ilike("titulo", f"%{codigo_o_texto}%") \
+            .gt("fecha_fin_recepcion_ofertas", datetime.utcnow().isoformat()) \
             .limit(1).execute()
         if result2.data: return result2.data[0]
+
+        # Fallback a tabla procesos completa (puede estar vencido)
+        result3 = supabase_admin.table("procesos") \
+            .select(CAMPOS) \
+            .ilike("codigo_proceso", f"%{codigo_o_texto}%") \
+            .limit(1).execute()
+        if result3.data: return result3.data[0]
     except Exception as e:
         print(f"[Closer] Error buscar_proceso: {e}")
     return None
@@ -337,48 +349,68 @@ def buscar_proceso_dgcp(codigo_o_texto: str) -> Optional[dict]:
 
 def buscar_procesos_por_keywords(keywords: list, instituciones: list = None, monto_min: float = None) -> list:
     """
-    Busca procesos activos del DGCP por keywords (título o códigos UNSPSC) y/o instituciones.
+    Busca procesos activos (fecha futura) usando la vista procesos_con_rubros.
+    Combina búsqueda en título del proceso + descripcion_articulo (rubros UNSPSC reales).
+    Soporta filtro simultáneo por institución y por rubro — ej: MIVHED + construcción.
+    Deduplica por codigo_proceso antes de retornar.
     """
     try:
-        # ⚠️ CRÍTICO: SOLO PROCESOS ACTIVOS 
-        estados_activos = ["Proceso publicado", "Publicado", "En curso", "Activo"]
-        resultados_totales = []
+        ahora = datetime.utcnow().isoformat()
+        CAMPOS = "codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso"
+        codigos_vistos: set = set()
+        resultados_totales: list = []
 
-        # Búsqueda ampliada: buscar por keyword en titulo OR en la columna de rubros/codigos
-        for kw in (keywords or [])[:6]:
-            query = supabase_admin.table("procesos") \
-                .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso") \
-                .in_("estado_proceso", estados_activos) \
-                .or_(f"titulo.ilike.%{kw}%,rubros.ilike.%{kw}%") # <--- Asegúrate de que 'rubros' es tu columna de UNSPSC
-
-            if monto_min:
-                query = query.gte("monto_estimado", monto_min)
-            if instituciones:
-                query = query.ilike("unidad_compra", f"%{instituciones[0]}%")
-
-            res = query.order("fecha_fin_recepcion_ofertas", desc=False).limit(5).execute()
-            for p in (res.data or []):
-                if p["codigo_proceso"] not in [r["codigo_proceso"] for r in resultados_totales]:
+        def _agregar(filas: list):
+            for p in (filas or []):
+                codigo = p.get("codigo_proceso")
+                if codigo and codigo not in codigos_vistos:
+                    codigos_vistos.add(codigo)
                     resultados_totales.append(p)
 
-        if not keywords and instituciones:
-            for inst in instituciones[:2]:
-                query = supabase_admin.table("procesos") \
-                    .select("codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso") \
-                    .in_("estado_proceso", estados_activos) \
-                    .ilike("unidad_compra", f"%{inst}%")
+        terminos = (keywords or [])[:8]
+        insts    = (instituciones or [])[:3]
+
+        if terminos:
+            for kw in terminos:
+                # Busca en título del proceso Y en descripcion_articulo (rubros UNSPSC)
+                or_filter = (
+                    f"titulo.ilike.%{kw}%,"
+                    f"descripcion_articulo.ilike.%{kw}%,"
+                    f"objeto_proceso.ilike.%{kw}%"
+                )
+                q = (supabase_admin.table("procesos_con_rubros")
+                     .select(CAMPOS)
+                     .gt("fecha_fin_recepcion_ofertas", ahora)
+                     .or_(or_filter))
                 if monto_min:
-                    query = query.gte("monto_estimado", monto_min)
-                res = query.order("fecha_fin_recepcion_ofertas", desc=False).limit(5).execute()
-                for p in (res.data or []):
-                    if p["codigo_proceso"] not in [r["codigo_proceso"] for r in resultados_totales]:
-                        resultados_totales.append(p)
+                    q = q.gte("monto_estimado", monto_min)
+                if insts:
+                    # Aplica filtro de institución sobre el mismo query (AND implícito)
+                    inst_filter = ",".join([f"unidad_compra.ilike.%{i}%" for i in insts])
+                    q = q.or_(inst_filter)
+                res = q.order("fecha_fin_recepcion_ofertas", desc=False).limit(8).execute()
+                _agregar(res.data)
+                if len(resultados_totales) >= 10:
+                    break
+
+        elif insts:
+            # Solo institución, sin rubro — busca todos los procesos activos de esa institución
+            for inst in insts:
+                q = (supabase_admin.table("procesos_con_rubros")
+                     .select(CAMPOS)
+                     .gt("fecha_fin_recepcion_ofertas", ahora)
+                     .ilike("unidad_compra", f"%{inst}%"))
+                if monto_min:
+                    q = q.gte("monto_estimado", monto_min)
+                res = q.order("fecha_fin_recepcion_ofertas", desc=False).limit(8).execute()
+                _agregar(res.data)
 
         try:
             resultados_totales.sort(key=lambda x: str(x.get("fecha_fin_recepcion_ofertas") or "9999"))
         except Exception:
             pass
 
+        print(f"[Closer] buscar_procesos → {len(resultados_totales)} encontrados para kw={terminos} inst={insts}")
         return resultados_totales[:5]
 
     except Exception as e:
@@ -404,8 +436,14 @@ def obtener_o_crear_conversacion(phone: str, nombre: str = None) -> dict:
             "proximo_followup_en": (datetime.utcnow() + timedelta(days=2)).isoformat(), "followups_enviados": 0,
         }
         res = supabase_admin.table("conversaciones_closer").insert(nueva).execute()
-        return res.data[0] if res.data else nueva
+        if res.data:
+            print(f"[Closer] ✅ Conversación creada id={res.data[0].get('id')} para {phone}")
+            return res.data[0]
+        else:
+            print(f"[Closer] ⚠️ INSERT conversación no devolvió data para {phone} — historial no funcionará")
+            return nueva
     except Exception as e:
+        print(f"[Closer] ❌ Error obtener_o_crear_conversacion: {e}")
         return {"id": None, "etapa": "nuevo", "estado": "engaged", "followups_enviados": 0}
 
 
@@ -540,16 +578,51 @@ def detectar_interes_alerta(mensaje: str) -> bool:
 
 def detectar_intencion(mensaje: str) -> str:
     msg = mensaje.lower().strip()
-    if any(s in msg for s in ["hola", "buenos dias", "buenas tardes", "buenas noches", "buenas", "saludos", "como estas", "hey", "qué más"]):
-        if len(msg) < 30: return "saludo"
+
+    # ── Mensajes completamente off-topic (no responder con ventas) ──────
+    TEMAS_IRRELEVANTES = [
+        "tengo hambre", "tengo sueño", "quiero dormir", "me voy a dormir",
+        "tengo sed", "estoy cansado", "qué hora es", "que hora es",
+        "cómo está el tiempo", "como está el tiempo", "chiste", "cuéntame un chiste",
+        "cuéntame algo", "aburrid", "me aburro", "quiero hablar", "qué haces",
+        "que haces", "cómo te llamas", "como te llamas", "eres un robot",
+        "te quiero", "te amo", "eres linda", "eres bonita",
+    ]
+    if any(t in msg for t in TEMAS_IRRELEVANTES):
+        return "fuera_de_tema"
+    # Detecta mensajes muy cortos y claramente off-topic
+    # CONSERVADOR: solo bloquea si no hay NINGUNA señal de negocio, rubro o institución
+    palabras_negocio = [
+        "proceso", "licitacion", "licitación", "oferta", "obra", "contrato",
+        "precio", "costo", "servicio", "empresa", "dgcp", "pliego", "sobre",
+        "presupuesto", "consultor", "licitar",
+        "mivhed", "inapa", "mopc", "caasd", "minerd", "msp", "egehid", "fonper",
+        "adn", "intrant", "coraasan", "mirex", "micm", "hacienda", "politur",
+        "uasd", "intec", "unphu", "pucmm", "itse", "mescyt", "mhc",
+        "lubricant", "aceite", "vehiculo", "medicament", "alimento", "vivere",
+        "equipo", "material", "uniforme", "pintura", "combustible", "diesel",
+        "computadora", "laptop", "mobiliario", "limpieza", "seguridad",
+        "construccion", "remozamien", "rehabilitac", "mantenimient", "suministro",
+        "herramienta", "ferreteria", "electrico", "plomeria",
+        "tiro", "tiraron", "sacaron", "publicaron", "hay", "tienen", "busco",
+        "andan", "salio", "lanzaron", "abrieron",
+    ]
+    if len(msg) < 25 and not any(p in msg for p in palabras_negocio) and \
+       not any(s in msg for s in ["hola", "buenos", "buenas", "saludos"]):
+        return "fuera_de_tema"
+
+    if any(s in msg for s in ["hola", "buenos dias", "buenas tardes", "buenas noches", "buenas",
+                               "saludos", "como estas", "cómo estás", "como estás", "cómo estas",
+                               "hey", "qué más", "que mas", "buenas", "ey"]):
+        if len(msg) < 40: return "saludo"
     if re.search(r'[A-Z]{2,10}-[A-Z]{2,5}-[A-Z]{2,5}-\d{4}-\d{4}', mensaje.upper()): return "consulta_proceso"
     if any(p in msg for p in ["cuanto cuesta", "cuánto cuesta", "precio", "cuanto cobran", "cuánto cobran", "como pago", "cómo pago", "plan", "suscripcion"]): return "pregunta_precio"
     if detectar_senal_cierre(mensaje): return "senal_cierre"
     if detectar_interes_alerta(mensaje): return "quiere_alerta"
-    if any(p in msg for p in ["hay procesos", "hay proceso", "hay licitaciones", "hay licitacion", 
-                               "busco procesos", "busco proceso", "que procesos", "qué procesos", 
-                               "que proceso", "qué proceso", "existen procesos", "procesos de", 
-                               "licitaciones de", "hay algo de", "cual proceso", "cuál proceso", 
+    if any(p in msg for p in ["hay procesos", "hay proceso", "hay licitaciones", "hay licitacion",
+                               "busco procesos", "busco proceso", "que procesos", "qué procesos",
+                               "que proceso", "qué proceso", "existen procesos", "procesos de",
+                               "licitaciones de", "hay algo de", "cual proceso", "cuál proceso",
                                "disponible", "activo"]):
         return "busqueda_procesos"
     if any(p in msg for p in ["consultoria", "consultoría", "preparar oferta", "ayuda con", "como preparo", "cómo preparo", "documentos para licitar"]): return "consulta_consultoria"
@@ -557,37 +630,275 @@ def detectar_intencion(mensaje: str) -> str:
     return "consulta_general"
 
 
+# ── Catálogo UNSPSC completo extraído de la BD (186 familias) ──────────────
+# Mapea familia UNSPSC → etiqueta en español con sinónimos dominicanos reales
+# Usado por el motor semántico para expandir búsquedas a todo el catálogo
+CATALOGO_UNSPSC = {
+    "10100000": "carnes productos carnicos pollo res cerdo embutidos salami longaniza",
+    "10110000": "veterinaria medicamentos animales mascotas antiparasitario",
+    "10120000": "alimento animal forraje maiz trigo avena peces ganado",
+    "10150000": "viveres alimentos frescos verduras hortalizas frutas arroz ajo cebolla",
+    "10160000": "flores plantas ornamentales arreglos florales",
+    "10170000": "abonos fertilizantes agroquimicos nutrientes plantas",
+    "10190000": "pesticidas herbicidas insecticidas baygon fumigacion",
+    "11100000": "materiales abrasivos lija esmeril pulimento",
+    "11110000": "arena agregados aridos materiales petreos gravilla",
+    "11120000": "fibras naturales algodon telas materiales",
+    "11150000": "hilos telas confeccion textiles costura",
+    "11160000": "uniformes ropa laboral cortinas telas casimir banderas",
+    "12130000": "senalizacion vial reflectivos marcas viales pintura carretera",
+    "12140000": "gases industriales oxigeno acetileno agua destilada",
+    "12160000": "aceites vegetales productos quimicos laboratorio acidos",
+    "12170000": "pinturas barnices brochas rodillos pintura esmalte",
+    "12180000": "adhesivos selladores pegamentos silicona impermeabilizante aceite lubricante",
+    "12350000": "reactivos laboratorio productos quimicos acido muriatico cloro",
+    "13100000": "plasticos resinas PVC polietileno tuberias plasticas",
+    "13110000": "caucho goma mangueras tuberias flexibles",
+    "14100000": "papel carton higienico servilletas",
+    "14110000": "papel bond papel oficina papeleria resmas cuadernos libretas",
+    "14120000": "carton empaques materiales impresos cajas embalaje",
+    "15100000": "combustibles gasolina diesel GLP gas vales tickets combustible",
+    "15110000": "gas propano butano cilindros GLP cocina",
+    "15120000": "lubricantes aceite motor aceite hidraulico grasa lubricante fluido",
+    "20110000": "equipos mineria perforacion extraccion",
+    "21100000": "maquinaria industrial equipos manufactura procesamiento",
+    "22100000": "maquinaria construccion equipos pesados excavadora retroexcavadora",
+    "23100000": "herramientas manuales llaves destornilladores martillo",
+    "23130000": "herramientas corte sierra taladro cortadora",
+    "23150000": "herramientas industriales equipos taller",
+    "23170000": "ferreteria piezas metalicas hardware tornillos",
+    "24100000": "empaques envases cajas bolsas contenedores",
+    "24110000": "contenedores almacenamiento depositos tanques",
+    "24120000": "paletas estantes almacenamiento bodegas",
+    "25100000": "vehiculos automoviles camiones camionetas pickup jeep bus",
+    "25110000": "motocicletas bicicletas",
+    "25170000": "repuestos autopartes vehiculos piezas accesorios carros",
+    "25180000": "neumaticos gomas llantas",
+    "26100000": "equipos electricos transformadores generadores plantas electricas",
+    "26110000": "baterias acumuladores UPS energia electrica",
+    "26120000": "materiales electricos cables alambres instalaciones electricas",
+    "27110000": "herramientas ferreteria tuberias plomeria gasfiteria",
+    "30100000": "estructuras metalicas hierro acero vigas columnas perfiles",
+    "30110000": "tubos tuberias PVC hierro plomeria red hidraulica",
+    "30120000": "escaleras andamios estructuras temporales plataformas",
+    "30130000": "prefabricados bloques concreto adoquines losetas",
+    "30150000": "maderas tablas madera construccion puertas madera",
+    "30160000": "puertas ventanas carpinteria aluminio herrajes",
+    "30170000": "ceramicas pisos azulejos revestimientos porcelanato",
+    "30180000": "pinturas impermeabilizantes recubrimientos acabados",
+    "30190000": "concreto cemento mezcla mortero",
+    "30200000": "vidrios cristales espejos mamparas",
+    "30220000": "impermeabilizacion techo laminas zinc cubierta",
+    "31150000": "tornillos pernos fijaciones anclajes",
+    "31160000": "valvulas accesorios tuberias plomeria conexiones",
+    "31200000": "componentes mecanicos engranajes transmision",
+    "31210000": "rodamientos cojinetes piezas mecanicas",
+    "32100000": "componentes electronicos circuitos semiconductores",
+    "32120000": "conectores cables electricos instalaciones",
+    "39100000": "lamparas iluminacion focos LED luminarias",
+    "39110000": "accesorios electricos tomacorrientes interruptores",
+    "39120000": "equipos electricos UPS baterias estabilizadores reguladores",
+    "40100000": "aires acondicionados refrigeracion split minisplit",
+    "40140000": "equipos HVAC ventilacion climatizacion fan coil",
+    "40150000": "tuberias plomeria sanitaria instalaciones hidraulicas",
+    "40160000": "bombas hidraulicas equipos agua presion",
+    "41100000": "equipos laboratorio instrumentos medicion analizadores",
+    "41110000": "reactivos insumos laboratorio pruebas diagnostico",
+    "41120000": "equipos cientificos medicion instrumentacion",
+    "42120000": "camillas equipos hospitalarios mobiliario clinico",
+    "42130000": "equipos diagnostico medico ecografo rayos X",
+    "42140000": "material quirurgico instrumental medico bisturi",
+    "42150000": "insumos medicos descartables guantes jeringas gasas",
+    "42160000": "equipos radiologia imagenologia tomografia",
+    "42180000": "material ortopedico protesis implantes",
+    "42220000": "equipos odontologicos dental silla dental",
+    "42270000": "equipos rehabilitacion fisioterapia",
+    "42280000": "equipos optica oftalmologia lentes",
+    "42290000": "equipos hospitalarios camas sillas ruedas camillas",
+    "42310000": "mobiliario medico hospitalario muebles clinica",
+    "43190000": "almacenamiento datos servidores storage",
+    "43200000": "computadoras laptops equipos informaticos desktop",
+    "43210000": "perifericos impresoras accesorios computadora escaner",
+    "43220000": "redes telecomunicaciones switches routers firewall",
+    "43230000": "software licencias sistemas informaticos ERP",
+    "44100000": "mobiliario oficina escritorios sillas mesas",
+    "44110000": "electrodomesticos equipos cocina nevera microondas",
+    "44120000": "suministros oficina utiles papeleria toner cartucho",
+    "45100000": "equipos fotografia camaras",
+    "45110000": "equipos audio video proyector presentacion",
+    "45120000": "televisores monitores pantallas",
+    "46150000": "alarmas seguridad CCTV camaras vigilancia circuito cerrado",
+    "46160000": "equipos bomberos emergencias extintores",
+    "46170000": "equipos proteccion personal EPP seguridad cascos",
+    "46180000": "armamento municiones seguridad publica policia",
+    "46190000": "cascos chalecos proteccion policial equipo tactico",
+    "47100000": "articulos limpieza generales",
+    "47120000": "productos limpieza desinfectantes jabon detergente cloro",
+    "47130000": "materiales aseo higiene papel higienico toalla",
+    "48100000": "equipos cocina industrial gastronómicos",
+    "48130000": "utensilios cocina cubiertos vajilla",
+    "49100000": "equipos deportivos canchas implementos pelotas",
+    "49120000": "juguetes juegos educativos recreacion",
+    "49160000": "instrumentos musicales",
+    "50100000": "frutas vegetales frescos alimentos mercado",
+    "50110000": "cereales granos arroz maiz platano",
+    "50120000": "proteinas carnes aves pescado mariscos",
+    "50130000": "lacteos huevos queso leche yogur",
+    "50150000": "aceites grasas comestibles manteca margarina",
+    "50160000": "azucar dulces mermeladas conservas",
+    "50170000": "condimentos especias sazon salsas",
+    "50180000": "bebidas jugos refrescos agua botellones",
+    "50190000": "enlatados conservas procesados latas",
+    "50200000": "panaderia reposteria pan galletas harina",
+    "50220000": "alimentos procesados preparados raciones",
+    "51100000": "antibioticos antimicrobianos medicamentos farmacos",
+    "51110000": "anestesicos sedantes medicamentos",
+    "51120000": "cardiovasculares medicamentos corazon hipertension",
+    "51130000": "vitaminas suplementos minerales multivitaminicos",
+    "51140000": "analgesicos antiinflamatorios ibuprofeno acetaminofen",
+    "51150000": "antiparasitarios antifungicos antimicóticos",
+    "51160000": "respiratorios broncodilatadores asma",
+    "51170000": "dermatologicos oftalmicos cremas gotas",
+    "51180000": "vacunas biologicos inmunologicos",
+    "51190000": "antidiabeticos hormonas insulina",
+    "51200000": "oncologicos quimioterapia cancer",
+    "51210000": "neurologicos psiquiatricos antidepresivos",
+    "52120000": "articulos domesticos hogar enseres",
+    "52130000": "electrodomesticos pequenos plancha secadora",
+    "52140000": "muebles hogar sala comedor",
+    "52150000": "ropa cama blancos textiles hogar sabanas",
+    "53100000": "uniformes ropa laboral vestimenta institucional",
+    "53110000": "ropa interior",
+    "53120000": "calzado zapatos botas",
+    "53130000": "accesorios ropa gorras mochilas bolsos",
+    "55100000": "libros publicaciones textos educativos",
+    "55120000": "materiales educativos didacticos",
+    "56100000": "mobiliario muebles escritorios sillas oficina",
+    "56110000": "mobiliario escolar educativo pupitres aulas",
+    "60100000": "material arte diseno grafico",
+    "60120000": "material educativo escolar",
+    "70110000": "servicios agricolas ganaderia",
+    "70140000": "servicios ambientales reforestacion medio ambiente",
+    "70170000": "servicios veterinarios",
+    "72100000": "construccion obras civiles remozamiento rehabilitacion edificacion infraestructura mejoramiento remodelacion",
+    "72130000": "demolicion excavacion movimiento tierra",
+    "73100000": "mantenimiento general",
+    "73110000": "mantenimiento equipos maquinaria reparacion",
+    "73120000": "mantenimiento instalaciones edificios",
+    "73130000": "mantenimiento vehiculos mecanica taller",
+    "73150000": "instalacion equipos sistemas",
+    "73180000": "reparacion equipos electronicos",
+    "76100000": "servicios limpieza aseo conserjeria",
+    "76110000": "servicios jardineria",
+    "76120000": "tratamiento agua saneamiento acueducto alcantarillado",
+    "78100000": "flete transporte carga logistica",
+    "78110000": "servicio transporte pasajeros bus ruta",
+    "78140000": "mudanzas mensajeria courier paqueteria",
+    "78180000": "servicio transporte logistica distribucion",
+    "80100000": "consultoria asesoria gerencial gestion",
+    "80110000": "recursos humanos nomina",
+    "80120000": "contabilidad auditoria finanzas",
+    "80130000": "marketing publicidad comunicacion",
+    "80140000": "servicios profesionales consultoria tecnica",
+    "81100000": "estudios ingenieria arquitectura diseno planos",
+    "81110000": "servicios ingenieria supervision inspeccion supervision obras",
+    "81140000": "topografia cartografia GIS",
+    "82100000": "impresion publicidad material grafico",
+    "82120000": "fotografia diseno grafico",
+    "83110000": "servicios forestales plantacion",
+    "84110000": "seguros polizas cobertura",
+    "84130000": "servicios bancarios financieros prestamos",
+    "85120000": "capacitacion formacion entrenamiento cursos",
+    "85160000": "servicios educativos",
+    "86100000": "servicios medicos salud clinica hospital",
+    "90100000": "servicios comunidad sociales",
+    "90110000": "servicios bienestar social",
+    "91110000": "servicios defensa seguridad nacional",
+    "92100000": "servicios electricidad energia",
+    "92120000": "servicios agua alcantarillado",
+    "93130000": "servicios fiscales tributarios",
+}
+
+# Texto comprimido del catálogo para inyectar en el prompt de Gemini
+_CATALOGO_TEXTO = "\n".join(
+    f"{fam}: {label}" for fam, label in CATALOGO_UNSPSC.items()
+)
+
+
+def _buscar_rubros_en_bd(termino: str, limite: int = 3) -> list:
+    """Busca descripciones reales de artículos en la BD para enriquecer el contexto."""
+    try:
+        res = supabase_admin.table("articulos_proceso") \
+            .select("descripcion_articulo") \
+            .ilike("descripcion_articulo", f"%{termino}%") \
+            .limit(limite).execute()
+        return [r["descripcion_articulo"] for r in (res.data or [])]
+    except Exception:
+        return []
+
+
 async def extraer_keywords_interes(mensaje: str):
     """
-    Usa Gemini como motor semántico para inferir el sector, generar sinónimos amplios
-    y deducir los códigos UNSPSC relevantes para la búsqueda en BD.
+    Motor semántico robusto con catálogo UNSPSC completo (186 familias).
+    Gemini recibe el catálogo real y genera sinónimos alineados con el vocabulario
+    exacto que usa el DGCP en sus procesos y artículos.
+    Funciona para CUALQUIER rubro del catálogo dominicano.
     """
-    if len(mensaje.split()) <= 2 or not gemini_client:
+    if not gemini_client:
         return [], []
 
-    prompt = f"""Analiza este mensaje de un proveedor buscando licitaciones en República Dominicana: "{mensaje}"
-    1. Identifica qué tipo de bienes, servicios u obras busca.
-    2. Genera 3 palabras clave o sinónimos en minúsculas (ej. si dice "gomas", incluye "neumáticos"; si dice "obras", incluye "remozamiento").
-    3. Identifica 2-4 códigos del catálogo UNSPSC (SOLO los primeros 4 dígitos de la familia) que correspondan a su búsqueda.
-    4. Identifica siglas de instituciones públicas si menciona alguna (ej. INAPA, MOPC).
+    msg_lower = mensaje.lower().strip()
+    # Señales mínimas para activar el motor — si no hay ninguna, no gastar tokens
+    SEÑALES = [
+        "proceso", "licitacion", "licitación", "obra", "construc", "servicio",
+        "suministro", "contrat", "hay", "tienen", "busco", "tiro", "sacaron",
+        "publicaron", "necesito", "busca", "procesos", "licitaciones", "andan",
+        "inapa", "mopc", "mivhed", "caasd", "minerd", "egehid", "fonper",
+        "lubric", "aceite", "vehiculo", "vehículo", "medicament", "alimento",
+        "equipo", "material", "uniforme", "pintura", "combustible", "diesel",
+        "computadora", "laptop", "mobiliario", "limpieza", "seguridad",
+    ]
+    tiene_señal = any(s in msg_lower for s in SEÑALES)
+    # También activar si el mensaje parece una pregunta de búsqueda de rubros
+    parece_busqueda = len(mensaje.split()) >= 3 or "?" in mensaje
+    if not tiene_señal and not parece_busqueda:
+        return [], []
 
-    Devuelve SOLO un JSON con esta estructura exacta, sin markdown:
-    {{"keywords": ["palabra1", "palabra2"], "codigos_unspsc": ["1234", "5678"], "instituciones": ["SIGLA"]}}
-    """
+    prompt = f"""Eres el motor de búsqueda del sistema LicitacionLab para licitaciones públicas de República Dominicana.
+
+CATÁLOGO UNSPSC COMPLETO DEL DGCP (familia: términos en español):
+{_CATALOGO_TEXTO}
+
+MENSAJE DEL USUARIO: "{mensaje}"
+
+Tu tarea: analizar qué rubros/productos/servicios/obras busca el usuario y generar términos de búsqueda
+que coincidan con el vocabulario REAL del catálogo UNSPSC y los títulos de procesos del DGCP.
+
+REGLAS:
+1. Usa el catálogo como referencia — genera términos que aparezcan en los campos "label" de arriba
+2. Para rubros amplios genera MÚLTIPLES sinónimos (ej: "construcción" → construc, remozamien, rehabilitac, obra, edificio, mejoramiento)
+3. Para productos específicos usa el término exacto (ej: "aceite de motor" → "aceite motor", "15W40", "lubricante")
+4. Detecta instituciones por nombre coloquial (ej: "el MIVHED", "inapa", "el minerd", "salud publica" → MSP)
+5. Si el mensaje es muy vago o no menciona rubro ni institución, devuelve listas vacías
+6. keywords deben ser en MINÚSCULAS, sin tildes, cortos (1-3 palabras)
+
+Devuelve SOLO JSON:
+{{"keywords": ["term1", "term2"], "instituciones": ["SIGLA"]}}"""
+
     try:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
-            config=types.GenerateContentConfig(response_mime_type="application/json", max_output_tokens=300, temperature=0.1)
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                max_output_tokens=350,
+                temperature=0.05
+            )
         )
         datos = json.loads(response.text)
-        terminos = []
-        if isinstance(datos.get("keywords"), list):
-            terminos.extend([str(k).lower() for k in datos["keywords"]])
-        if isinstance(datos.get("codigos_unspsc"), list):
-            terminos.extend([str(c) for c in datos["codigos_unspsc"]])
-        instituciones = [str(i).upper() for i in datos.get("instituciones", [])]
-        print(f"[Motor Semántico] Extraído: {terminos} | {instituciones}")
+        terminos = [str(k).lower().strip() for k in (datos.get("keywords") or []) if k][:7]
+        instituciones = [str(i).upper().strip() for i in (datos.get("instituciones") or []) if i]
+        print(f"[Motor Semántico] kw={terminos} | inst={instituciones}")
         return terminos, instituciones
     except Exception as e:
         print(f"[Motor Semántico] Error: {e}")
@@ -613,7 +924,7 @@ async def generar_respuesta_gemini(mensaje_cliente: str, historial: list, contex
         "senal_cierre":        "El cliente está listo. Da el siguiente paso: coordinar con el Ing. Luis para cotizar. Sé directo. NUNCA termines con coma — siempre oración completa.",
         "consulta_consultoria":"Explica el servicio con el slogan al final. Cierra preguntando si tiene un proceso en mente. NUNCA termines con coma — siempre oración completa.",
         "objecion_lo_hago_yo": "Aplica validación + riesgo. Ofrece al menos revisar la oferta antes de entregar. NUNCA termines con coma — siempre oración completa.",
-        "saludo":              "Saluda y pregunta en qué proceso está trabajando o qué tipo de licitaciones le interesan. NUNCA termines con coma — siempre oración completa.",
+        "saludo":              "Saluda y pregunta en qué proceso está trabajando o qué tipo de licitaciones le interesan. Si el HISTORIAL tiene contexto previo, úsalo para personalizar. NUNCA termines con coma — siempre oración completa.",
         "consulta_general":    "Responde con valor y cierra con pregunta orientada a cotizar. NUNCA termines con coma — siempre oración completa.",
     }.get(intencion, "Responde con valor, cierra con CTA hacia la consultoría. NUNCA termines con coma.")
 
@@ -639,9 +950,19 @@ cierra la última idea con punto antes de terminar. Mensaje incompleto = respues
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=1200, temperature=0.72)
+            config=types.GenerateContentConfig(max_output_tokens=2048, temperature=0.72)
         )
-        return response.text.strip()
+        texto = (response.text or "").strip()
+        # Detectar y corregir mensajes cortados a mitad de oración
+        CIERRES_VALIDOS = (".", "!", "?", "…", ")", "*", "🤝", "👋", "💪")
+        if texto and not texto.endswith(CIERRES_VALIDOS) and len(texto) > 80:
+            ultimo_cierre = max(
+                texto.rfind(". "), texto.rfind("? "), texto.rfind("! "),
+                texto.rfind(".\n"), texto.rfind("?\n"), texto.rfind("!\n"),
+            )
+            if ultimo_cierre > len(texto) * 0.5:
+                texto = texto[:ultimo_cierre + 1].strip()
+        return texto if texto else "Disculpa, tuve un problema técnico. Escríbeme en un momento."
     except Exception as e:
         print(f"[Gemini] Error: {e}")
         return "Disculpa, tuve un problema técnico. Escríbeme en un momento."
@@ -801,12 +1122,17 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
     intencion          = detectar_intencion(mensaje)
     codigo_proceso     = detectar_proceso_en_mensaje(mensaje)
 
-    # --- NUEVO BLOQUE: Promover intención basada en motor semántico (await) ---
+    # ── FIX: Si el mensaje es completamente off-topic, no responder ──────
+    if intencion == "fuera_de_tema":
+        print(f"[Closer] 🚫 Mensaje off-topic de {phone} — sin respuesta: '{mensaje[:50]}'")
+        return
+    # ─────────────────────────────────────────────────────────────────────
+
+    # --- Promover intención basada en motor semántico ---
     keywords, instituciones = await extraer_keywords_interes(mensaje)
     if intencion in ["consulta_general", "saludo"] and (keywords or instituciones):
         intencion = "busqueda_procesos"
         print(f"[Closer] Intención promovida a busqueda_procesos por motor semántico")
-    # -------------------------------------------------------------------------------
 
     if not intencion == "consulta_proceso" and codigo_proceso:
         intencion = "consulta_proceso"
@@ -850,25 +1176,28 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
 
         if conv_id: supabase_admin.table("conversaciones_closer").update({"proceso_codigo": codigo_proceso}).eq("id", conv_id).execute()
 
-    # 2. Cliente busca procesos sin código específico (CON CÓDIGO INCLUIDO)
+    # 2. Cliente busca procesos sin código específico
     elif intencion == "busqueda_procesos":
         procesos_encontrados = buscar_procesos_por_keywords(keywords, instituciones)
         if procesos_encontrados:
             lista = ""
-            for p in procesos_encontrados[:5]: # Subimos a 5 procesos
+            for p in procesos_encontrados[:5]:
                 monto   = p.get("monto_estimado", 0)
                 monto_f = f"RD${float(monto):,.0f}" if monto else "monto no publicado"
                 fecha   = str(p.get("fecha_fin_recepcion_ofertas", "?"))[:10]
-                lista  += f"• *{p.get('codigo_proceso', 'Sin código')}* | {p.get('titulo', 'Sin título')[:60]} | {p.get('unidad_compra','')} | {monto_f} | Cierre: {fecha}\n"
-            
+                codigo  = p.get("codigo_proceso", "Sin código")
+                titulo  = p.get("titulo", "Sin título")[:60]
+                entidad = p.get("unidad_compra", "Sin entidad")[:50]
+                lista  += f"• *{codigo}*\n  📋 {titulo}\n  🏛 {entidad}\n  💰 {monto_f}\n  📅 Entrega: {fecha}\n\n"
+
             contexto_adicional = (
-                f"🚨 TIENES QUE MOSTRAR ESTA LISTA AL CLIENTE AHORA MISMO:\n{lista}\n"
-                "Pega esta lista en tu respuesta. Después de mostrarla, pregúntale "
-                "si quiere que coticemos la preparación de la oferta para alguno de ellos."
+                f"🚨 MUESTRA ESTA LISTA AL CLIENTE EXACTAMENTE ASÍ (copia y pega):\n\n{lista}"
+                "Después de la lista, pregúntale si quiere que preparemos la oferta para alguno de ellos. "
+                "NO agregues texto antes de la lista, NO hagas preguntas antes de mostrarla."
             )
         else:
             contexto_adicional = (
-                f"No encontré procesos activos para esa búsqueda. "
+                "No encontré procesos activos para esa búsqueda. "
                 "Dile claramente que no hay procesos activos con esos criterios ahora mismo, "
                 "pero que si quiere te deja sus datos y le avisas cuando aparezca algo."
             )
