@@ -371,8 +371,26 @@ def buscar_procesos_por_keywords(familias: list = None, keywords: list = None, i
         terms = [k for k in (keywords or []) if k][:4]
         insts = (instituciones or [])[:3]
 
-        # ── BÚSQUEDA POR FAMILIA UNSPSC (precisa, sin falsos positivos) ──
-        if fams:
+        # ── PASO 1: BÚSQUEDA POR TÍTULO (más precisa para términos específicos) ──
+        # Siempre se intenta primero con keywords en el título del proceso
+        all_terms = list(set(terms + fams))  # keywords + familias como texto
+        titulo_terms = terms  # solo keywords de texto para buscar en títulos
+
+        if titulo_terms:
+            for kw in titulo_terms[:4]:
+                q = (supabase_admin.table("procesos_con_rubros")
+                     .select(CAMPOS)
+                     .gt("fecha_fin_recepcion_ofertas", ahora)
+                     .or_(f"titulo.ilike.%{kw}%,objeto_proceso.ilike.%{kw}%"))
+                if monto_min:
+                    q = q.gte("monto_estimado", monto_min)
+                if insts:
+                    q = q.ilike("unidad_compra", f"%{insts[0]}%")
+                res = q.order("fecha_fin_recepcion_ofertas", desc=False).limit(8).execute()
+                _agregar(res.data)
+
+        # ── PASO 2: BÚSQUEDA POR FAMILIA UNSPSC (cuando no hay resultados por título o hay familias) ──
+        if fams and len(resultados_totales) < 3:
             for fam in fams:
                 q = (supabase_admin.table("procesos_con_rubros")
                      .select(CAMPOS)
@@ -387,27 +405,8 @@ def buscar_procesos_por_keywords(familias: list = None, keywords: list = None, i
                 if len(resultados_totales) >= 10:
                     break
 
-        # ── BÚSQUEDA POR TEXTO (fallback cuando no hay familias) ──
-        if not resultados_totales and terms:
-            for kw in terms:
-                or_filter = (
-                    f"titulo.ilike.%{kw}%,"
-                    f"descripcion_articulo.ilike.%{kw}%,"
-                    f"objeto_proceso.ilike.%{kw}%"
-                )
-                q = (supabase_admin.table("procesos_con_rubros")
-                     .select(CAMPOS)
-                     .gt("fecha_fin_recepcion_ofertas", ahora)
-                     .or_(or_filter))
-                if monto_min:
-                    q = q.gte("monto_estimado", monto_min)
-                if insts:
-                    q = q.ilike("unidad_compra", f"%{insts[0]}%")
-                res = q.order("fecha_fin_recepcion_ofertas", desc=False).limit(8).execute()
-                _agregar(res.data)
-
-        # ── SOLO INSTITUCIÓN (sin rubro) ──
-        if not resultados_totales and insts and not fams and not terms:
+        # ── PASO 3: SOLO INSTITUCIÓN (sin rubro) ──
+        if not resultados_totales and insts and not fams and not titulo_terms:
             for inst in insts:
                 q = (supabase_admin.table("procesos_con_rubros")
                      .select(CAMPOS)
@@ -867,7 +866,7 @@ async def extraer_keywords_interes(mensaje: str):
     Funciona para CUALQUIER rubro del catálogo dominicano.
     """
     if not gemini_client:
-        return [], []
+        return [], [], []
 
     msg_lower = mensaje.lower().strip()
     # Señales mínimas para activar el motor — si no hay ninguna, no gastar tokens
@@ -884,7 +883,7 @@ async def extraer_keywords_interes(mensaje: str):
     # También activar si el mensaje parece una pregunta de búsqueda de rubros
     parece_busqueda = len(mensaje.split()) >= 3 or "?" in mensaje
     if not tiene_señal and not parece_busqueda:
-        return [], []
+        return [], [], []
 
     prompt = f"""Eres el motor de búsqueda del sistema LicitacionLab para licitaciones públicas de República Dominicana.
 
