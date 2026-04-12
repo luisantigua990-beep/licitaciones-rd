@@ -356,7 +356,7 @@ def buscar_procesos_por_keywords(familias: list = None, keywords: list = None, i
     """
     try:
         ahora = datetime.utcnow().isoformat()
-        CAMPOS = "codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso"
+        CAMPOS = "codigo_proceso, titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas, estado_proceso, descripcion_articulo, familia_unspsc"
         codigos_vistos: set = set()
         resultados_totales: list = []
 
@@ -1240,18 +1240,27 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
             lista = ""
             for p in procesos_encontrados[:5]:
                 monto   = p.get("monto_estimado", 0)
-                monto_f = f"RD${float(monto):,.0f}" if monto else "monto no publicado"
+                monto_f = f"RD${float(monto):,.0f}" if monto else "no publicado"
                 fecha   = str(p.get("fecha_fin_recepcion_ofertas", "?"))[:10]
                 codigo  = p.get("codigo_proceso", "Sin código")
-                titulo  = p.get("titulo", "Sin título")[:90]
-                entidad = p.get("unidad_compra", "Sin entidad")[:55]
-                lista  += f"• *{codigo}*\n  📋 {titulo}\n  🏛 {entidad}\n  💰 {monto_f}\n  📅 Entrega: {fecha}\n\n"
+                titulo  = (p.get("titulo") or "Sin título").strip().strip('"')
+                entidad = (p.get("unidad_compra") or "Sin entidad")[:60]
+                # Si la búsqueda fue por familia UNSPSC, mostrar el artículo que calificó
+                articulo = p.get("descripcion_articulo", "")
+                rubro_str = f"\n  🔩 Rubro: {articulo[:50]}" if articulo and familias else ""
+                lista  += f"• *{codigo}*\n  📋 {titulo}\n  🏛 {entidad}{rubro_str}\n  💰 {monto_f}\n  📅 Entrega: {fecha}\n\n"
 
-            contexto_adicional = (
-                f"🚨 MUESTRA ESTA LISTA AL CLIENTE EXACTAMENTE ASÍ (copia y pega):\n\n{lista}"
-                "Después de la lista, pregúntale si quiere que preparemos la oferta para alguno de ellos. "
-                "NO agregues texto antes de la lista, NO hagas preguntas antes de mostrarla."
-            )
+            # Enviar la lista directamente sin pasar por Gemini para evitar truncado
+            guardar_mensaje(conv_id, "agente", lista.strip(), generado_por_ia=False)
+            await enviar_whatsapp(phone, lista.strip())
+            await asyncio.sleep(2)
+            cierre = "¿Te interesa alguno de estos procesos para preparar la oferta?"
+            guardar_mensaje(conv_id, "agente", cierre, generado_por_ia=False)
+            await enviar_whatsapp(phone, cierre)
+            if conv_id:
+                supabase_admin.table("conversaciones_closer").update({"estado": "engaged"}).eq("id", conv_id).execute()
+            return  # salir sin generar respuesta Gemini
+
         else:
             contexto_adicional = (
                 "No encontré procesos activos para esa búsqueda. "
