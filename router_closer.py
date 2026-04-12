@@ -820,9 +820,7 @@ CATALOGO_UNSPSC = {
 }
 
 # Texto comprimido del catálogo para inyectar en el prompt de Gemini
-_CATALOGO_TEXTO = "\n".join(
-    f"{fam}: {label}" for fam, label in CATALOGO_UNSPSC.items()
-)
+_CATALOGO_TEXTO = """10150000:viveres,arroz,alimentos,comida|10170000:abono,fertilizante|10190000:pesticida,insecticida,fumigacion|11110000:arena,agregado,gravilla|11160000:uniforme,ropa,tela,cortina|12170000:pintura,barniz,brocha|12350000:reactivo,quimico,cloro,acido|13100000:plastico,PVC,polietileno|13110000:caucho,manguera,goma|14110000:papel,papeleria,toner,resma,cartucho|15100000:combustible,gasolina,diesel,GLP,vale|15110000:gas,propano,cilindro|15120000:lubricante,aceite motor,grasa,hidraulico,15W40|20110000:mineria,perforacion|22100000:maquinaria,excavadora,equipo pesado|23100000:herramienta,llave,destornillador|23170000:ferreteria,tornillo,hardware|25100000:vehiculo,camion,camioneta,pickup,jeep,bus,automovil|25170000:repuesto,autoparte,pieza vehiculo|25180000:neumatico,goma,llanta|26100000:generador,transformador,planta electrica|26120000:cable,alambre,electrico|30100000:estructura metalica,hierro,acero,viga|30110000:tuberia,PVC,plomeria|30150000:madera,tabla|30160000:puerta,ventana,aluminio,herraje|30170000:ceramica,piso,azulejo,porcelanato|30180000:impermeabilizante,recubrimiento|30190000:concreto,cemento,mezcla|39100000:lampara,iluminacion,LED|39120000:UPS,bateria,estabilizador|40100000:aire acondicionado,split,refrigeracion|40160000:bomba hidraulica,agua|41110000:insumo laboratorio,reactivo|42150000:insumo medico,guante,jeringa,descartable|43200000:computadora,laptop,desktop|43210000:impresora,periferico,scanner|43220000:red,switch,router,telecomunicaciones|43230000:software,licencia,sistema|44100000:mobiliario,escritorio,silla,mueble|44120000:utiles,papeleria,toner,oficina,suministro|46150000:camara,CCTV,vigilancia,alarma|46170000:EPP,casco,chaleco,proteccion|47120000:limpieza,desinfectante,jabon,detergente|47130000:aseo,papel higienico,toalla|50100000:fruta,vegetal,alimento fresco|50110000:cereal,grano,arroz,maiz|50120000:carne,pollo,pescado,proteina|50130000:lacteo,leche,queso,huevo|51100000:antibiotico,medicamento,farmaco|51140000:analgesico,ibuprofeno,acetaminofen|51180000:vacuna,biologico|52150000:sabana,blancos,textil hogar|53100000:uniforme,ropa laboral,vestimenta|53120000:calzado,zapato,bota|55100000:libro,texto educativo|56100000:mobiliario,mueble,escritorio|56110000:mobiliario escolar,pupitre,aula|70140000:ambiental,reforestacion|72100000:construccion,obra,remozamiento,rehabilitacion,edificacion,infraestructura,mejoramiento,remodelacion|72130000:demolicion,excavacion,movimiento tierra|73110000:mantenimiento equipo,reparacion|73120000:mantenimiento edificio,instalacion|73130000:mantenimiento vehiculo,mecanica|73150000:instalacion sistema|76100000:limpieza,aseo,conserjeria|76110000:jardineria|76120000:agua,saneamiento,acueducto,alcantarillado|78100000:transporte,flete,carga|78110000:transporte pasajero,bus|78180000:logistica,distribucion|80100000:consultoria,asesoria|80140000:servicio profesional,tecnico|81100000:ingenieria,arquitectura,diseno,plano|81110000:supervision,inspeccion obra|82100000:impresion,publicidad|84110000:seguro,poliza|85120000:capacitacion,formacion,curso|86100000:servicio medico,salud"""
 
 
 def _buscar_rubros_en_bd(termino: str, limite: int = 3) -> list:
@@ -890,7 +888,7 @@ Devuelve SOLO JSON:
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
-                max_output_tokens=400,
+                max_output_tokens=800,
                 temperature=0.05
             )
         )
@@ -902,6 +900,15 @@ Devuelve SOLO JSON:
         raw = raw.replace("```json", "").replace("```", "").strip()
         idx_i, idx_f = raw.find("{"), raw.rfind("}")
         if idx_i == -1 or idx_f == -1:
+            # JSON cortado — intentar cerrar manualmente
+            if idx_i != -1 and '"keywords"' in raw:
+                # Extraer keywords parciales de texto cortado
+                import re as _re
+                kws_found = _re.findall(r'"([a-záéíóúñ ]{3,25})"', raw[raw.find('"keywords"'):])
+                if kws_found:
+                    terminos = [k.lower().strip() for k in kws_found[:7] if k not in ('keywords','instituciones')]
+                    print(f"[Motor Semántico] JSON cortado — recuperado parcial: kw={terminos}")
+                    return terminos, []
             print(f"[Motor Semántico] Sin JSON en respuesta: {raw[:80]}")
             return [], []
         datos = json.loads(raw[idx_i:idx_f + 1])
@@ -926,8 +933,8 @@ async def generar_respuesta_gemini(mensaje_cliente: str, historial: list, contex
         historial_texto += f"{rol}: {msg['contenido']}\n"
 
     instruccion_intencion = {
-        "consulta_proceso":    "El cliente pregunta por un proceso. Analiza el CONTEXTO, menciona un riesgo de descalificación, y cierra ofreciendo cotizar la oferta. NUNCA termines con coma — siempre oración completa.",
-        "busqueda_procesos":   "REGLA ESTRICTA: MUESTRA INMEDIATAMENTE la lista de procesos que están en el CONTEXTO. Usa viñetas. NO pidas más información (ni presupuesto, ni especialidad) sin antes mostrar la lista. Si no hay procesos, dilo. Cierra ofreciendo cotizar la preparación de la oferta para alguno de ellos. NUNCA termines con coma.",
+        "consulta_proceso":    "El cliente pregunta por un proceso específico. Analiza el CONTEXTO con los datos del proceso (monto, entidad, fecha cierre). Menciona UN riesgo concreto de descalificación. Luego pregunta: '¿Quieres que te cotice la preparación de la oferta para este proceso?' — aquí SÍ corresponde cotizar. NUNCA termines con coma.",
+        "busqueda_procesos":   "REGLA ESTRICTA: MUESTRA INMEDIATAMENTE la lista de procesos que están en el CONTEXTO. Usa viñetas con código, entidad, monto y fecha. Si no hay procesos, dilo claramente. Después de mostrar la lista pregunta: '¿Te interesa alguno de estos procesos?' — NO ofrezcas cotización ni asesoría todavía, solo muestra los procesos y deja que el cliente elija. NUNCA termines con coma.",
         "pregunta_precio":     "Explica la asesoría y los dos esquemas de precio (por proceso / mensualidad + comisión). Cierra pidiendo el proceso específico. NUNCA termines con coma — siempre oración completa.",
         "quiere_alerta":       "Confirma exactamente qué quedó registrado (menciona el rubro). Di que cada día a las 6pm revisamos y si hay algo nuevo le avisamos. Cierra con pregunta. NUNCA termines con coma — siempre oración completa.",
         "senal_cierre":        "El cliente está listo. Da el siguiente paso: coordinar con el Ing. Luis para cotizar. Sé directo. NUNCA termines con coma — siempre oración completa.",
