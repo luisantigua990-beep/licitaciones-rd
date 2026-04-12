@@ -347,12 +347,12 @@ def buscar_proceso_dgcp(codigo_o_texto: str) -> Optional[dict]:
     return None
 
 
-def buscar_procesos_por_keywords(keywords: list, instituciones: list = None, monto_min: float = None) -> list:
+def buscar_procesos_por_keywords(familias: list = None, keywords: list = None, instituciones: list = None, monto_min: float = None) -> list:
     """
-    Busca procesos activos (fecha futura) usando la vista procesos_con_rubros.
-    Combina búsqueda en título del proceso + descripcion_articulo (rubros UNSPSC reales).
-    Soporta filtro simultáneo por institución y por rubro — ej: MIVHED + construcción.
-    Deduplica por codigo_proceso antes de retornar.
+    Busca procesos activos usando la vista procesos_con_rubros.
+    PRIORIDAD 1: familias UNSPSC (exacto, sin falsos positivos)
+    PRIORIDAD 2: keywords en texto (fallback)
+    Soporta filtro por institución combinado con cualquiera de los anteriores.
     """
     try:
         ahora = datetime.utcnow().isoformat()
@@ -367,12 +367,29 @@ def buscar_procesos_por_keywords(keywords: list, instituciones: list = None, mon
                     codigos_vistos.add(codigo)
                     resultados_totales.append(p)
 
-        terminos = (keywords or [])[:8]
-        insts    = (instituciones or [])[:3]
+        fams  = [f for f in (familias or []) if f][:4]
+        terms = [k for k in (keywords or []) if k][:4]
+        insts = (instituciones or [])[:3]
 
-        if terminos:
-            for kw in terminos:
-                # Busca en título del proceso Y en descripcion_articulo (rubros UNSPSC)
+        # ── BÚSQUEDA POR FAMILIA UNSPSC (precisa, sin falsos positivos) ──
+        if fams:
+            for fam in fams:
+                q = (supabase_admin.table("procesos_con_rubros")
+                     .select(CAMPOS)
+                     .gt("fecha_fin_recepcion_ofertas", ahora)
+                     .eq("familia_unspsc", fam))
+                if monto_min:
+                    q = q.gte("monto_estimado", monto_min)
+                if insts:
+                    q = q.ilike("unidad_compra", f"%{insts[0]}%")
+                res = q.order("fecha_fin_recepcion_ofertas", desc=False).limit(8).execute()
+                _agregar(res.data)
+                if len(resultados_totales) >= 10:
+                    break
+
+        # ── BÚSQUEDA POR TEXTO (fallback cuando no hay familias) ──
+        if not resultados_totales and terms:
+            for kw in terms:
                 or_filter = (
                     f"titulo.ilike.%{kw}%,"
                     f"descripcion_articulo.ilike.%{kw}%,"
@@ -385,16 +402,12 @@ def buscar_procesos_por_keywords(keywords: list, instituciones: list = None, mon
                 if monto_min:
                     q = q.gte("monto_estimado", monto_min)
                 if insts:
-                    # Aplica filtro de institución sobre el mismo query (AND implícito)
-                    inst_filter = ",".join([f"unidad_compra.ilike.%{i}%" for i in insts])
-                    q = q.or_(inst_filter)
+                    q = q.ilike("unidad_compra", f"%{insts[0]}%")
                 res = q.order("fecha_fin_recepcion_ofertas", desc=False).limit(8).execute()
                 _agregar(res.data)
-                if len(resultados_totales) >= 10:
-                    break
 
-        elif insts:
-            # Solo institución, sin rubro — busca todos los procesos activos de esa institución
+        # ── SOLO INSTITUCIÓN (sin rubro) ──
+        if not resultados_totales and insts and not fams and not terms:
             for inst in insts:
                 q = (supabase_admin.table("procesos_con_rubros")
                      .select(CAMPOS)
@@ -410,7 +423,7 @@ def buscar_procesos_por_keywords(keywords: list, instituciones: list = None, mon
         except Exception:
             pass
 
-        print(f"[Closer] buscar_procesos → {len(resultados_totales)} encontrados para kw={terminos} inst={insts}")
+        print(f"[Closer] buscar_procesos → {len(resultados_totales)} para fam={fams} kw={terms} inst={insts}")
         return resultados_totales[:5]
 
     except Exception as e:
@@ -869,19 +882,25 @@ CATÁLOGO UNSPSC COMPLETO DEL DGCP (familia: términos en español):
 
 MENSAJE DEL USUARIO: "{mensaje}"
 
-Tu tarea: analizar qué rubros/productos/servicios/obras busca el usuario y generar términos de búsqueda
-que coincidan con el vocabulario REAL del catálogo UNSPSC y los títulos de procesos del DGCP.
+Tu tarea: generar keywords PRECISAS para buscar en títulos y descripciones de artículos del DGCP.
 
-REGLAS:
-1. Usa el catálogo como referencia — genera términos que aparezcan en los campos "label" de arriba
-2. Para rubros amplios genera MÚLTIPLES sinónimos (ej: "construcción" → construc, remozamien, rehabilitac, obra, edificio, mejoramiento)
-3. Para productos específicos usa el término exacto (ej: "aceite de motor" → "aceite motor", "15W40", "lubricante")
-4. Detecta instituciones por nombre coloquial (ej: "el MIVHED", "inapa", "el minerd", "salud publica" → MSP)
-5. Si el mensaje es muy vago o no menciona rubro ni institución, devuelve listas vacías
-6. keywords deben ser en MINÚSCULAS, sin tildes, cortos (1-3 palabras)
+INSTRUCCIONES:
+1. Identifica qué busca el usuario y mapéalo a los códigos de familia UNSPSC del catálogo de arriba
+2. Devuelve los códigos de familia exactos (8 dígitos) que correspondan — máximo 4 familias
+3. También puedes incluir keywords de texto como fallback si no hay familia exacta
+4. Detecta instituciones por nombre coloquial: MIVHED, MOPC, INAPA, CAASD, MINERD, MSP, ADN, EGEHID, FONPER, etc.
+
+EJEMPLOS:
+- "lubricantes" → familias: ["15120000"], keywords: []
+- "construcción" → familias: ["72100000", "72130000"], keywords: []
+- "medicamentos" → familias: ["51100000","51140000","51160000"], keywords: []
+- "computadoras" → familias: ["43200000","43210000"], keywords: []
+- "alimentos viveres" → familias: ["10150000","50100000","50110000"], keywords: []
+- "uniformes" → familias: ["53100000","11160000"], keywords: []
+- "MIVHED construccion" → familias: ["72100000"], instituciones: ["MIVHED"]
 
 Devuelve SOLO JSON:
-{{"keywords": ["term1", "term2"], "instituciones": ["SIGLA"]}}"""
+{{"familias": ["15120000"], "keywords": [], "instituciones": ["SIGLA"]}}"""
 
     try:
         response = gemini_client.models.generate_content(
@@ -895,7 +914,7 @@ Devuelve SOLO JSON:
         raw = (response.text or "").strip()
         if not raw:
             print("[Motor Semántico] Gemini devolvió texto vacío")
-            return [], []
+            return [], [], []
         # Parseo robusto — quitar markdown si Gemini lo agrega
         raw = raw.replace("```json", "").replace("```", "").strip()
         idx_i, idx_f = raw.find("{"), raw.rfind("}")
@@ -908,17 +927,20 @@ Devuelve SOLO JSON:
                 if kws_found:
                     terminos = [k.lower().strip() for k in kws_found[:7] if k not in ('keywords','instituciones')]
                     print(f"[Motor Semántico] JSON cortado — recuperado parcial: kw={terminos}")
-                    return terminos, []
+                    return [], terminos, []
             print(f"[Motor Semántico] Sin JSON en respuesta: {raw[:80]}")
-            return [], []
+            return [], [], []
         datos = json.loads(raw[idx_i:idx_f + 1])
-        terminos = [str(k).lower().strip() for k in (datos.get("keywords") or []) if k][:7]
+        # Familias UNSPSC (códigos exactos de 8 dígitos)
+        familias = [str(f).strip() for f in (datos.get("familias") or []) if str(f).strip().isdigit() and len(str(f).strip()) == 8][:4]
+        # Keywords de texto como fallback
+        terminos = [str(k).lower().strip() for k in (datos.get("keywords") or []) if k][:4]
         instituciones = [str(i).upper().strip() for i in (datos.get("instituciones") or []) if i]
-        print(f"[Motor Semántico] kw={terminos} | inst={instituciones}")
-        return terminos, instituciones
+        print(f"[Motor Semántico] familias={familias} | kw={terminos} | inst={instituciones}")
+        return familias, terminos, instituciones
     except Exception as e:
         print(f"[Motor Semántico] Error: {e}")
-        return [], []
+        return [], [], []
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1154,6 +1176,7 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
     contexto_adicional = ""
     intencion          = detectar_intencion(mensaje)
     codigo_proceso     = detectar_proceso_en_mensaje(mensaje)
+    familias: list     = []  # familias UNSPSC del motor semántico
 
     # ── FIX: Si el mensaje es completamente off-topic, no responder ──────
     if intencion == "fuera_de_tema":
@@ -1162,9 +1185,10 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
     # ─────────────────────────────────────────────────────────────────────
 
     # --- Promover intención basada en motor semántico ---
-    keywords, instituciones = await extraer_keywords_interes(mensaje)
-    if intencion in ["consulta_general", "saludo"] and (keywords or instituciones):
+    familias, keywords, instituciones = await extraer_keywords_interes(mensaje)
+    if intencion in ["consulta_general", "saludo"] and (familias or keywords or instituciones):
         intencion = "busqueda_procesos"
+    # -------------------------------------------------------------------------------
         print(f"[Closer] Intención promovida a busqueda_procesos por motor semántico")
 
     if not intencion == "consulta_proceso" and codigo_proceso:
@@ -1211,7 +1235,7 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
 
     # 2. Cliente busca procesos sin código específico
     elif intencion == "busqueda_procesos":
-        procesos_encontrados = buscar_procesos_por_keywords(keywords, instituciones)
+        procesos_encontrados = buscar_procesos_por_keywords(familias, keywords, instituciones)
         if procesos_encontrados:
             lista = ""
             for p in procesos_encontrados[:5]:
@@ -1219,8 +1243,8 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
                 monto_f = f"RD${float(monto):,.0f}" if monto else "monto no publicado"
                 fecha   = str(p.get("fecha_fin_recepcion_ofertas", "?"))[:10]
                 codigo  = p.get("codigo_proceso", "Sin código")
-                titulo  = p.get("titulo", "Sin título")[:60]
-                entidad = p.get("unidad_compra", "Sin entidad")[:50]
+                titulo  = p.get("titulo", "Sin título")[:90]
+                entidad = p.get("unidad_compra", "Sin entidad")[:55]
                 lista  += f"• *{codigo}*\n  📋 {titulo}\n  🏛 {entidad}\n  💰 {monto_f}\n  📅 Entrega: {fecha}\n\n"
 
             contexto_adicional = (
@@ -1238,8 +1262,10 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
     # 3. Quiere alertas automáticas (AWAIT AÑADIDO)
     if detectar_interes_alerta(mensaje):
         if not keywords and not instituciones:
-            keywords, instituciones = await extraer_keywords_interes(mensaje)
-            
+            familias_a, keywords_a, instituciones_a = await extraer_keywords_interes(mensaje)
+            keywords = keywords_a or keywords
+            instituciones = instituciones_a or instituciones
+            familias = familias_a
         if keywords or instituciones:
             registrar_alerta_cliente(conv_id, phone, nombre, keywords, instituciones)
             contexto_adicional += f"\nACCIÓN TOMADA: Alerta registrada para {', '.join(keywords + instituciones)}. Confirmale que le avisarás."
@@ -1329,7 +1355,7 @@ async def ejecutar_alertas_bg():
 async def procesar_alerta_individual(alerta: dict):
     phone, keywords, instituciones = alerta.get("contact_phone"), alerta.get("keywords") or [], alerta.get("instituciones") or []
     if not phone or (not keywords and not instituciones): return
-    procesos = buscar_procesos_por_keywords(keywords, instituciones)
+    procesos = buscar_procesos_por_keywords([], keywords, instituciones)
     if not procesos: return
 
     ya_notificados = alerta.get("procesos_notificados") or []
