@@ -620,6 +620,17 @@ def detectar_intencion(mensaje: str) -> str:
         "tiro", "tiraron", "sacaron", "publicaron", "hay", "tienen", "busco",
         "andan", "salio", "lanzaron", "abrieron",
     ]
+    # Expresiones de interés en un proceso de la lista anterior — NUNCA off-topic
+    INTERES_PROCESO = [
+        "me interesa", "quiero ese", "ese me interesa", "el primero", "el segundo",
+        "el tercero", "el cuarto", "el quinto", "el ultimo", "el último", "ese proceso",
+        "quiero participar", "voy a participar", "me apunto", "cotiza", "cotízame",
+        "cotizame", "preparame", "prepárame", "cuanto cuesta preparar", "cuánto cuesta preparar",
+        "ese me llama", "me llama la atencion", "me llama la atención",
+    ]
+    if any(t in msg for t in INTERES_PROCESO):
+        return "consulta_proceso"
+
     if len(msg) < 25 and not any(p in msg for p in palabras_negocio) and \
        not any(s in msg for s in ["hola", "buenos", "buenas", "saludos"]):
         return "fuera_de_tema"
@@ -907,7 +918,7 @@ Devuelve SOLO JSON:
             model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(
-                max_output_tokens=800,
+                max_output_tokens=1200,
                 temperature=0.05
             )
         )
@@ -1196,6 +1207,62 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
 
     if conv_id and intencion not in ("saludo", "consulta_general"):
         supabase_admin.table("conversaciones_closer").update({"intencion_detectada": intencion}).eq("id", conv_id).execute()
+
+    # 1b. Interés en proceso por posición ("me interesa el último/primero/segundo")
+    if intencion == "consulta_proceso" and not codigo_proceso:
+        ultimo_codigo = None
+        for msg in reversed(historial[-10:]):
+            if msg.get("rol") == "agente":
+                codigos_en_historial = re.findall(r'[A-Z]{2,10}-[A-Z]{2,5}-[A-Z]{2,5}-\d{4}-\d{4}', msg.get("contenido", ""))
+                if codigos_en_historial:
+                    msg_lower = mensaje.lower()
+                    if any(p in msg_lower for p in ["ultimo","último","final","5","quinto"]):
+                        ultimo_codigo = codigos_en_historial[-1]
+                    elif any(p in msg_lower for p in ["primero","1","primer"]):
+                        ultimo_codigo = codigos_en_historial[0]
+                    elif any(p in msg_lower for p in ["segundo","2"]):
+                        ultimo_codigo = codigos_en_historial[1] if len(codigos_en_historial)>1 else codigos_en_historial[0]
+                    elif any(p in msg_lower for p in ["tercero","3"]):
+                        ultimo_codigo = codigos_en_historial[2] if len(codigos_en_historial)>2 else codigos_en_historial[0]
+                    elif any(p in msg_lower for p in ["cuarto","4"]):
+                        ultimo_codigo = codigos_en_historial[3] if len(codigos_en_historial)>3 else codigos_en_historial[0]
+                    else:
+                        ultimo_codigo = codigos_en_historial[-1]
+                    break
+        if ultimo_codigo:
+            print(f"[Closer] Interés por posición → {ultimo_codigo}")
+            analisis = buscar_analisis_pliego(ultimo_codigo)
+            proceso  = buscar_proceso_dgcp(ultimo_codigo)
+            if analisis and analisis.get("resumen_ejecutivo"):
+                resumen = str(analisis.get("resumen_ejecutivo",""))[:500]
+                monto_f = f"RD${float(proceso.get('monto_estimado',0)):,.0f}" if proceso and proceso.get("monto_estimado") else "no publicado"
+                fecha_c = str((proceso or {}).get("fecha_fin_recepcion_ofertas",""))[:10]
+                entidad = (proceso or {}).get("unidad_compra","")
+                checklist_raw = analisis.get("checklist_categorizado") or analisis.get("checklist_legal") or {}
+                docs = ""
+                if isinstance(checklist_raw, dict):
+                    for k,v in checklist_raw.items():
+                        if isinstance(v,list) and v: docs += f"\n [{k}] "+", ".join([str(i)[:30] for i in v[:3]])
+                contexto_adicional = (
+                    f"El cliente se interesó por {ultimo_codigo}.\n"
+                    f"ANÁLISIS: {entidad} | {monto_f} | Cierre: {fecha_c}\n"
+                    f"RESUMEN: {resumen}\nDOCS:{docs}\n\n"
+                    "Confirma que es ese proceso, explica qué se necesita para participar y ofrece cotizar la preparación."
+                )
+                if conv_id: supabase_admin.table("conversaciones_closer").update({"proceso_codigo": ultimo_codigo}).eq("id", conv_id).execute()
+            elif proceso:
+                titulo = (proceso.get("titulo") or "").strip()
+                contexto_adicional = (
+                    f"El cliente se interesó por {ultimo_codigo} — {titulo}. "
+                    f"No tenemos el análisis del pliego aún. Dile que en minutos le mandas el resumen "
+                    f"y pregúntale si quiere que cotizemos la preparación."
+                )
+                asyncio.create_task(disparar_analisis_pliego_bg(ultimo_codigo, phone, conv_id))
+                if conv_id: supabase_admin.table("conversaciones_closer").update({"proceso_codigo": ultimo_codigo}).eq("id", conv_id).execute()
+            else:
+                contexto_adicional = "El cliente expresó interés. Pídele que confirme el código exacto del proceso."
+        else:
+            contexto_adicional = "El cliente expresó interés en un proceso pero no queda claro cuál. Pídele que confirme el código."
 
     # 1. El cliente menciona un código de proceso específico
     if codigo_proceso:
