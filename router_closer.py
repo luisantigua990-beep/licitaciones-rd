@@ -631,12 +631,17 @@ def detectar_intencion(mensaje: str) -> str:
         return "consulta_proceso"
 
     if len(msg) < 25 and not any(p in msg for p in palabras_negocio) and \
-       not any(s in msg for s in ["hola", "buenos", "buenas", "saludos"]):
+       not any(s in msg for s in ["hola", "buenos", "buenas", "saludos", "hey", "ey",
+                                   "ok", "okay", "sí", "si", "claro", "dale", "oye",
+                                   "qué hay", "que hay", "buen dia", "good", "hi",
+                                   "hello", "sup", "wey", "wei", "aló", "alo"]):
         return "fuera_de_tema"
 
     if any(s in msg for s in ["hola", "buenos dias", "buenas tardes", "buenas noches", "buenas",
                                "saludos", "como estas", "cómo estás", "como estás", "cómo estas",
-                               "hey", "qué más", "que mas", "buenas", "ey"]):
+                               "hey", "qué más", "que mas", "ey", "ok", "okay", "sí", "si",
+                               "claro", "dale", "oye", "qué hay", "que hay", "buen dia",
+                               "good", "hi", "hello", "aló", "alo"]):
         if len(msg) < 40: return "saludo"
     if re.search(r'[A-Z]{2,10}-[A-Z]{2,5}-[A-Z]{2,5}-\d{4}-\d{4}', mensaje.upper()): return "consulta_proceso"
     if any(p in msg for p in ["cuanto cuesta", "cuánto cuesta", "precio", "cuanto cobran", "cuánto cobran", "como pago", "cómo pago", "plan", "suscripcion"]): return "pregunta_precio"
