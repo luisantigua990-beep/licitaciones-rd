@@ -24,12 +24,14 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
 PORTAL_URL = (
     "https://comunidad.comprasdominicana.gob.do/Public/Tendering/"
     "ContractNoticeManagement/Index?currentLanguage=es&Country=DO&Theme=DGCP"
 )
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # bypasa RLS
 
 def registrar_cron_log(job: str, status: str = "ok", detalle: dict = None, duracion_ms: int = None):
     """Registra ejecución del job en cron_log para auditoría."""
@@ -693,7 +695,7 @@ def notificar_proceso_inmediato(proceso, articulos):
         from notifications import enviar_notificacion
 
         suscripciones = (
-            supabase.table("user_subscriptions")
+            supabase_admin.table("user_subscriptions")  # service_role bypasa RLS
             .select("*")
             .eq("active", True)
             .execute()
@@ -913,7 +915,7 @@ def notificar_proceso_inmediato(proceso, articulos):
             )
             if resultado == "410":
                 try:
-                    supabase.table("user_subscriptions") \
+                    supabase_admin.table("user_subscriptions") \
                         .update({"active": False}) \
                         .eq("endpoint", sub["endpoint"]).execute()
                     print(f"🧹 Suscripción 410 desactivada en scraper")
