@@ -994,26 +994,38 @@ async def generar_respuesta_gemini(mensaje_cliente: str, historial: list, contex
 REGLA ABSOLUTA: NUNCA termines con una coma o a mitad de oración. Si el mensaje es largo,
 cierra la última idea con punto antes de terminar. Mensaje incompleto = respuesta inválida."""
 
-    try:
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(max_output_tokens=2048, temperature=0.72)
-        )
-        texto = (response.text or "").strip()
-        # Detectar y corregir mensajes cortados a mitad de oración
-        CIERRES_VALIDOS = (".", "!", "?", "…", ")", "*", "🤝", "👋", "💪")
-        if texto and not texto.endswith(CIERRES_VALIDOS) and len(texto) > 80:
-            ultimo_cierre = max(
-                texto.rfind(". "), texto.rfind("? "), texto.rfind("! "),
-                texto.rfind(".\n"), texto.rfind("?\n"), texto.rfind("!\n"),
+    # Retry con backoff para errores 503 (alta demanda de Gemini)
+    import asyncio as _asyncio
+    ultimo_error = None
+    for intento in range(3):  # máximo 3 intentos
+        try:
+            response = gemini_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+                config=types.GenerateContentConfig(max_output_tokens=2048, temperature=0.72)
             )
-            if ultimo_cierre > len(texto) * 0.5:
-                texto = texto[:ultimo_cierre + 1].strip()
-        return texto if texto else "Disculpa, tuve un problema técnico. Escríbeme en un momento."
-    except Exception as e:
-        print(f"[Gemini] Error: {e}")
-        return "Disculpa, tuve un problema técnico. Escríbeme en un momento."
+            texto = (response.text or "").strip()
+            # Detectar y corregir mensajes cortados a mitad de oración
+            CIERRES_VALIDOS = (".", "!", "?", "…", ")", "*", "🤝", "👋", "💪")
+            if texto and not texto.endswith(CIERRES_VALIDOS) and len(texto) > 80:
+                ultimo_cierre = max(
+                    texto.rfind(". "), texto.rfind("? "), texto.rfind("! "),
+                    texto.rfind(".\n"), texto.rfind("?\n"), texto.rfind("!\n"),
+                )
+                if ultimo_cierre > len(texto) * 0.5:
+                    texto = texto[:ultimo_cierre + 1].strip()
+            return texto if texto else "Disculpa, tuve un problema técnico. Escríbeme en un momento."
+        except Exception as e:
+            ultimo_error = e
+            es_503 = "503" in str(e) or "UNAVAILABLE" in str(e) or "high demand" in str(e)
+            if es_503 and intento < 2:
+                espera = (intento + 1) * 4  # 4s, 8s
+                print(f"[Gemini] 503 intento {intento+1}/3 — reintentando en {espera}s...")
+                await _asyncio.sleep(espera)
+                continue
+            break
+    print(f"[Gemini] Error final tras reintentos: {ultimo_error}")
+    return "Disculpa, tuve un problema técnico. Escríbeme en un momento."
 
 
 async def generar_followup_gemini(historial: list, nombre: str, paso: int, estado: str, proceso_codigo: str = None) -> str:
@@ -1038,11 +1050,18 @@ async def generar_followup_gemini(historial: list, nombre: str, paso: int, estad
             proceso_info = f"Proceso: {proceso_codigo} — {proceso.get('titulo', '')} | {f'RD${float(monto):,.0f}' if monto else ''}"
 
     prompt = f"""{SYSTEM_PROMPT}\n═══ CONTEXTO DE FOLLOWUP ═══\n{contextos_paso.get(paso, contextos_paso[3])}\n{proceso_info}\nEstado: {estado}\n═══ HISTORIAL ═══\n{historial_texto}\n- Escríbele a {nombre_corto}\n- Español dominicano natural\n- Máximo 3-4 oraciones\n- Cierra con pregunta\n- Solo texto"""
-    try:
-        response = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.78))
-        return response.text.strip()
-    except Exception:
-        return f"Hola {nombre_corto}, ¿cómo vas con los temas de licitaciones?"
+    import asyncio as _asyncio
+    for intento in range(3):
+        try:
+            response = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt, config=types.GenerateContentConfig(max_output_tokens=400, temperature=0.78))
+            return response.text.strip()
+        except Exception as e:
+            es_503 = "503" in str(e) or "UNAVAILABLE" in str(e) or "high demand" in str(e)
+            if es_503 and intento < 2:
+                await _asyncio.sleep((intento + 1) * 4)
+                continue
+            break
+    return f"Hola {nombre_corto}, ¿cómo vas con los temas de licitaciones?"
 
 
 async def generar_mensaje_alerta_proceso(nombre: str, procesos: list, keywords: list) -> str:
