@@ -942,6 +942,27 @@ body {
 .seg-header > * { position: relative; z-index: 1; }
 .seg-title { font-size: 24px; font-weight: 900; color: var(--text); letter-spacing: -0.5px; }
 .seg-count { background: var(--green-dim); border: 1px solid var(--green-border); border-radius: var(--r-full); padding: 4px 12px; font-size: 12px; font-weight: 800; color: var(--green); }
+.seg-metricas {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  padding: 0 16px 14px; margin-top: 2px;
+}
+.seg-metrica-card {
+  background: var(--bg2); border: 1.5px solid var(--border);
+  border-radius: var(--r-md); padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 3px;
+  transition: border-color .2s;
+}
+.seg-metrica-card.green  { border-color: var(--green-border); background: var(--green-dim); }
+.seg-metrica-card.amber  { border-color: rgba(243,156,18,.25); background: rgba(243,156,18,.06); }
+.seg-metrica-card.blue   { border-color: rgba(93,173,226,.25); background: rgba(93,173,226,.06); }
+.seg-metrica-card.muted  { border-color: var(--border); }
+.seg-metrica-valor { font-size: 26px; font-weight: 900; color: var(--text); letter-spacing: -1px; line-height: 1; }
+.seg-metrica-card.green .seg-metrica-valor  { color: var(--green); }
+.seg-metrica-card.amber .seg-metrica-valor  { color: var(--amber); }
+.seg-metrica-card.blue  .seg-metrica-valor  { color: #5DADE2; }
+.seg-metrica-label { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.seg-metrica-sub   { font-size: 10px; color: var(--text2); margin-top: 2px; }
+.seg-metrica-wide  { grid-column: 1 / -1; }
 .seg-filtros { display: flex; gap: 6px; padding: 0 16px 14px; overflow-x: auto; scrollbar-width: none; }
 .seg-filtros::-webkit-scrollbar { display: none; }
 .seg-filtro-btn { padding: 7px 14px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r-full); color: var(--muted); font-family: var(--font-body); font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: all .2s; }
@@ -1782,6 +1803,30 @@ html { background: #0D1B2A; }
     <div class="seg-header">
       <div class="seg-title">Mis Procesos</div>
       <div class="seg-count" id="seg-count">0 activos</div>
+    </div>
+
+    <!-- Dashboard de métricas personales -->
+    <div class="seg-metricas" id="seg-metricas" style="display:none">
+      <div class="seg-metrica-card green">
+        <div class="seg-metrica-valor" id="met-activos">—</div>
+        <div class="seg-metrica-label">Activos</div>
+        <div class="seg-metrica-sub" id="met-activos-sub">en seguimiento</div>
+      </div>
+      <div class="seg-metrica-card amber">
+        <div class="seg-metrica-valor" id="met-ganados">—</div>
+        <div class="seg-metrica-label">Ganados</div>
+        <div class="seg-metrica-sub" id="met-tasa">tasa de éxito</div>
+      </div>
+      <div class="seg-metrica-card blue">
+        <div class="seg-metrica-valor" id="met-monto">—</div>
+        <div class="seg-metrica-label">Monto ganado</div>
+        <div class="seg-metrica-sub">contratos adjudicados</div>
+      </div>
+      <div class="seg-metrica-card muted">
+        <div class="seg-metrica-valor" id="met-tiempo">—</div>
+        <div class="seg-metrica-label">Días prom.</div>
+        <div class="seg-metrica-sub">preparación por oferta</div>
+      </div>
     </div>
 
     <div class="seg-filtros">
@@ -3707,9 +3752,67 @@ async function cargarSeguimiento() {
   }
 }
 
+// ── DASHBOARD MÉTRICAS PERSONALES ────────────────────────
+function actualizarMetricas() {
+  const panel = document.getElementById('seg-metricas');
+  if (!panel || !seguimientoData.length) {
+    if (panel) panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'grid';
+
+  const todos      = seguimientoData;
+  const activos    = todos.filter(d => !['adjudicado','no-adj'].includes(d.estado || 'analizando'));
+  const ganados    = todos.filter(d => (d.estado || '') === 'adjudicado');
+  const noAdj      = todos.filter(d => (d.estado || '') === 'no-adj');
+  const terminados = ganados.length + noAdj.length;
+  const tasa       = terminados > 0 ? Math.round((ganados.length / terminados) * 100) : null;
+
+  // Monto total de contratos ganados
+  const montoTotal = ganados.reduce((sum, d) => {
+    const m = Number(d.proceso?.monto_estimado || 0);
+    return sum + m;
+  }, 0);
+
+  // Tiempo promedio de preparación (días entre created_at y fecha_fin_recepcion_ofertas)
+  const tiempos = todos
+    .filter(d => d.created_at && d.proceso?.fecha_fin_recepcion_ofertas)
+    .map(d => {
+      const inicio  = new Date(d.created_at);
+      const fin     = new Date(d.proceso.fecha_fin_recepcion_ofertas);
+      const dias    = Math.round((fin - inicio) / (1000 * 60 * 60 * 24));
+      return dias > 0 ? dias : null;
+    })
+    .filter(Boolean);
+  const tiempoProm = tiempos.length
+    ? Math.round(tiempos.reduce((a, b) => a + b, 0) / tiempos.length)
+    : null;
+
+  // Formato monto
+  const fmtMonto = (v) => {
+    if (!v) return '—';
+    if (v >= 1_000_000_000) return `RD$${(v/1_000_000_000).toFixed(1)}B`;
+    if (v >= 1_000_000)     return `RD$${(v/1_000_000).toFixed(1)}M`;
+    if (v >= 1_000)         return `RD$${(v/1_000).toFixed(0)}K`;
+    return `RD$${v.toLocaleString('es-DO')}`;
+  };
+
+  // Actualizar DOM
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  set('met-activos',      activos.length || '0');
+  set('met-activos-sub',  `${todos.length} total seguidos`);
+  set('met-ganados',      ganados.length || '0');
+  set('met-tasa',         tasa !== null ? `${tasa}% tasa de éxito` : 'sin historial aún');
+  set('met-monto',        montoTotal > 0 ? fmtMonto(montoTotal) : '—');
+  set('met-tiempo',       tiempoProm ? `${tiempoProm}d` : '—');
+}
+// ─────────────────────────────────────────────────────────
+
 function renderSeguimiento() {
   const lista = document.getElementById('seg-lista');
   if (!lista) return;
+  // Actualizar dashboard de métricas
+  actualizarMetricas();
   let datos = seguimientoData;
   if (segFiltroActivo !== 'todos') {
     datos = datos.filter(d => (d.estado || 'analizando') === segFiltroActivo);
