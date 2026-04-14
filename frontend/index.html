@@ -5035,44 +5035,44 @@ function renderGraficas() {
     if (!sorted.length) return;
 
     const W    = cv.parentElement.offsetWidth || 300;
-    const H    = Math.max(160, sorted.length * 36 + 20);
+    const rowHi = 44;
+    const H    = sorted.length * rowHi + 10;
     cv.width   = W;
     cv.height  = H;
     const ctx  = cv.getContext('2d');
     ctx.clearRect(0, 0, W, H);
 
     const maxVal = sorted[0][1];
-    const barH   = 22;
-    const gap    = 14;
-    const labelW = 100;
-    const barW   = W - labelW - 20;
+    const barH   = 18;
+    const PADi   = 6;
 
     sorted.forEach(([inst, cnt], i) => {
-      const y = i * (barH + gap) + 10;
-      // Etiqueta
+      const baseY = i * rowHi + 6;
+      // Etiqueta completa arriba a la izquierda
       ctx.fillStyle = MUTED;
       ctx.font = `10px var(--font-body, sans-serif)`;
+      ctx.textAlign = 'left';
+      ctx.fillText(inst, PADi, baseY + 11);
+      // Número a la derecha
       ctx.textAlign = 'right';
-      const label = inst.length > 14 ? inst.slice(0,13)+'…' : inst;
-      ctx.fillText(label, labelW - 6, y + barH/2 + 4);
+      ctx.fillStyle = GREEN;
+      ctx.font = `bold 10px var(--font-body, sans-serif)`;
+      ctx.fillText(cnt, W - PADi, baseY + 11);
       // Barra fondo
+      const barY = baseY + 18;
+      const barW = W - PADi * 2;
       ctx.fillStyle = BG3;
       ctx.beginPath();
-      ctx.roundRect(labelW, y, barW, barH, 4);
+      ctx.roundRect(PADi, barY, barW, barH, 4);
       ctx.fill();
       // Barra valor
-      const w = Math.max(4, (cnt / maxVal) * barW);
+      const w = Math.max(6, (cnt / maxVal) * barW);
       ctx.fillStyle = GREEN;
       ctx.globalAlpha = 0.85;
       ctx.beginPath();
-      ctx.roundRect(labelW, y, w, barH, 4);
+      ctx.roundRect(PADi, barY, w, barH, 4);
       ctx.fill();
       ctx.globalAlpha = 1;
-      // Número
-      ctx.fillStyle = TEXT;
-      ctx.textAlign = 'left';
-      ctx.font = `bold 10px var(--font-body, sans-serif)`;
-      ctx.fillText(cnt, labelW + w + 4, y + barH/2 + 4);
     });
   })();
 
@@ -5183,44 +5183,47 @@ function renderGraficas() {
     }
 
     const W    = cv.parentElement.offsetWidth || 300;
-    const H    = Math.max(120, pares.length * 34 + 20);
+    const rowH2 = 44;
+    const H    = pares.length * rowH2 + 10;
     cv.width   = W; cv.height = H;
     const ctx  = cv.getContext('2d');
     ctx.clearRect(0, 0, W, H);
 
     const maxDias = pares[0].dias;
-    const barH    = 20;
-    const gap     = 14;
-    const labelW  = 110;
-    const barW    = W - labelW - 20;
+    const barH    = 18;
+    const PAD2    = 6;
 
     pares.forEach(({ label, dias }, i) => {
-      const y = i * (barH + gap) + 10;
-      // Etiqueta truncada
+      const baseY = i * rowH2 + 6;
+      // Etiqueta completa arriba
       ctx.fillStyle = MUTED;
-      ctx.font = '9px var(--font-body, sans-serif)';
+      ctx.font = '10px var(--font-body, sans-serif)';
+      ctx.textAlign = 'left';
+      // Truncar solo si es muy largo (nombre completo del proceso)
+      const maxChars = Math.floor((W - 50) / 6);
+      const txt = label.length > maxChars ? label.slice(0, maxChars-1)+'…' : label;
+      ctx.fillText(txt, PAD2, baseY + 11);
+      // Días a la derecha
+      const color = dias <= 7 ? RED : dias <= 14 ? AMBER : BLUE;
       ctx.textAlign = 'right';
-      const txt = label.length > 18 ? label.slice(0,17)+'…' : label;
-      ctx.fillText(txt, labelW - 4, y + barH/2 + 3);
+      ctx.fillStyle = color;
+      ctx.font = 'bold 10px var(--font-body, sans-serif)';
+      ctx.fillText(dias+'d', W - PAD2, baseY + 11);
       // Barra fondo
+      const barY = baseY + 18;
+      const barW = W - PAD2 * 2;
       ctx.fillStyle = BG3;
       ctx.beginPath();
-      ctx.roundRect(labelW, y, barW, barH, 4);
+      ctx.roundRect(PAD2, barY, barW, barH, 4);
       ctx.fill();
-      // Color según urgencia
-      const color = dias <= 7 ? RED : dias <= 14 ? AMBER : BLUE;
-      const w = Math.max(4, (dias / maxDias) * barW);
+      // Barra valor
+      const w = Math.max(6, (dias / maxDias) * barW);
       ctx.fillStyle = color;
       ctx.globalAlpha = 0.8;
       ctx.beginPath();
-      ctx.roundRect(labelW, y, w, barH, 4);
+      ctx.roundRect(PAD2, barY, w, barH, 4);
       ctx.fill();
       ctx.globalAlpha = 1;
-      // Días
-      ctx.fillStyle = TEXT;
-      ctx.textAlign = 'left';
-      ctx.font = 'bold 9px var(--font-body, sans-serif)';
-      ctx.fillText(dias+'d', labelW + w + 4, y + barH/2 + 3);
     });
   })();
 }
