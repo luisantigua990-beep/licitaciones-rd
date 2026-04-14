@@ -999,6 +999,19 @@ body {
 .seg-card-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .seg-card-meta .inst  { color: var(--blue); font-weight: 700; }
 .seg-card-meta .monto { color: var(--green); font-weight: 700; font-family: var(--font-mono); }
+.seg-graficas-panel { background:var(--bg2); border:1px solid var(--border); border-radius:var(--r-md); margin-bottom:12px; overflow:hidden; }
+.seg-graficas-toggle { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; cursor:pointer; user-select:none; }
+.seg-graficas-toggle-label { font-size:12px; font-weight:800; color:var(--text2); letter-spacing:.04em; text-transform:uppercase; }
+.seg-graficas-toggle-chevron { font-size:11px; color:var(--muted); transition:transform .2s; }
+.seg-graficas-toggle-chevron.open { transform:rotate(180deg); }
+.seg-graficas-body { padding:0 16px 16px; display:none; }
+.seg-graficas-body.visible { display:block; }
+.seg-grafica-titulo { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin:14px 0 8px; }
+.seg-canvas-wrap { width:100%; position:relative; }
+.seg-canvas-wrap canvas { width:100% !important; height:auto !important; border-radius:8px; }
+.seg-leyenda { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.seg-ley-item { display:flex; align-items:center; gap:4px; font-size:10px; color:var(--text2); }
+.seg-ley-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
 .seg-enmienda-badge { display:inline-flex; align-items:center; gap:4px; background:rgba(243,156,18,.12); border:1px solid rgba(243,156,18,.35); color:var(--amber); font-size:10px; font-weight:800; padding:3px 8px; border-radius:20px; letter-spacing:.04em; margin-top:6px; }
 .seg-timeline { margin-bottom: 10px; display: flex; flex-direction: column; gap: 3px; }
 .seg-fecha-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
@@ -1856,6 +1869,28 @@ html { background: #0D1B2A; }
         <div class="seg-metrica-valor" id="met-tiempo">—</div>
         <div class="seg-metrica-label">Días prom.</div>
         <div class="seg-metrica-sub">preparación por oferta</div>
+      </div>
+    </div>
+
+    <!-- Panel de gráficas -->
+    <div class="seg-graficas-panel" id="seg-graficas-panel" style="display:none">
+      <div class="seg-graficas-toggle" onclick="toggleGraficas()">
+        <span class="seg-graficas-toggle-label">📊 Estadísticas detalladas</span>
+        <span class="seg-graficas-toggle-chevron" id="seg-graficas-chevron">▼</span>
+      </div>
+      <div class="seg-graficas-body" id="seg-graficas-body">
+        <div class="seg-grafica-titulo">Tasa de éxito</div>
+        <div class="seg-canvas-wrap"><canvas id="chart-tasa" height="160"></canvas></div>
+        <div class="seg-leyenda" id="ley-tasa"></div>
+
+        <div class="seg-grafica-titulo">Procesos por institución</div>
+        <div class="seg-canvas-wrap"><canvas id="chart-inst" height="200"></canvas></div>
+
+        <div class="seg-grafica-titulo">Monto ganado en el tiempo</div>
+        <div class="seg-canvas-wrap"><canvas id="chart-monto" height="160"></canvas></div>
+
+        <div class="seg-grafica-titulo">Tiempo de preparación por proceso</div>
+        <div class="seg-canvas-wrap"><canvas id="chart-tiempo" height="160"></canvas></div>
       </div>
     </div>
 
@@ -3795,9 +3830,14 @@ function actualizarMetricas() {
   const panel = document.getElementById('seg-metricas');
   if (!panel || !seguimientoData.length) {
     if (panel) panel.style.display = 'none';
+    const gp = document.getElementById('seg-graficas-panel');
+    if (gp) gp.style.display = 'none';
     return;
   }
   panel.style.display = 'grid';
+  // Mostrar panel de gráficas
+  const grafPanel = document.getElementById('seg-graficas-panel');
+  if (grafPanel) grafPanel.style.display = 'block';
 
   const todos      = seguimientoData;
   const activos    = todos.filter(d => !['adjudicado','no-adj'].includes(d.estado || 'analizando'));
@@ -4898,6 +4938,293 @@ async function descargarAnalisisPDF(codigo) {
     if (btn) btn.classList.remove('cargando');
   }
 }
+
+// ── GRÁFICAS CON CANVAS ─────────────────────────────────────
+function toggleGraficas() {
+  const body    = document.getElementById('seg-graficas-body');
+  const chevron = document.getElementById('seg-graficas-chevron');
+  if (!body) return;
+  const open = body.classList.toggle('visible');
+  chevron?.classList.toggle('open', open);
+  if (open) renderGraficas();
+}
+
+function renderGraficas() {
+  if (!seguimientoData?.length) return;
+  const todos   = seguimientoData;
+  const ganados = todos.filter(d => d.estado === 'adjudicado');
+  const noAdj   = todos.filter(d => d.estado === 'no-adj');
+  const activos = todos.filter(d => !['adjudicado','no-adj'].includes(d.estado || 'analizando'));
+
+  // Colores CSS var resueltos
+  const getVar = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const GREEN  = '#22c55e';
+  const AMBER  = '#f59e0b';
+  const RED    = '#ef4444';
+  const BLUE   = '#3b82f6';
+  const MUTED  = getVar('--muted') || '#6b7280';
+  const BG3    = getVar('--bg3') || '#1e2a1e';
+  const TEXT   = getVar('--text') || '#f0fdf4';
+
+  // ── 1. DONA: tasa de éxito ──────────────────────────────
+  (function() {
+    const cv = document.getElementById('chart-tasa');
+    if (!cv) return;
+    const W = cv.parentElement.offsetWidth || 300;
+    cv.width  = W;
+    cv.height = 160;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, W, 160);
+
+    const vals  = [ganados.length, noAdj.length, activos.length];
+    const total = vals.reduce((a,b) => a+b, 0) || 1;
+    const colors = [GREEN, RED, AMBER];
+    const labels = ['Ganados','No adj.','Activos'];
+    const cx = W/2, cy = 80, R = 60, r = 38;
+
+    let start = -Math.PI/2;
+    vals.forEach((v, i) => {
+      const angle = (v / total) * 2 * Math.PI;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, R, start, start + angle);
+      ctx.closePath();
+      ctx.fillStyle = colors[i];
+      ctx.fill();
+      start += angle;
+    });
+    // Hueco interior
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, 2*Math.PI);
+    ctx.fillStyle = getVar('--bg2') || '#111a11';
+    ctx.fill();
+    // Texto central
+    const tasa = (ganados.length + noAdj.length) > 0
+      ? Math.round((ganados.length / (ganados.length + noAdj.length)) * 100)
+      : null;
+    ctx.fillStyle = TEXT;
+    ctx.textAlign = 'center';
+    ctx.font = `bold 22px var(--font-body, sans-serif)`;
+    ctx.fillText(tasa !== null ? tasa+'%' : '—', cx, cy + 4);
+    ctx.font = `10px var(--font-body, sans-serif)`;
+    ctx.fillStyle = MUTED;
+    ctx.fillText('win rate', cx, cy + 18);
+
+    // Leyenda
+    const ley = document.getElementById('ley-tasa');
+    if (ley) {
+      ley.innerHTML = labels.map((l,i) => `
+        <div class="seg-ley-item">
+          <div class="seg-ley-dot" style="background:${colors[i]}"></div>
+          <span>${l}: ${vals[i]}</span>
+        </div>`).join('');
+    }
+  })();
+
+  // ── 2. BARRAS: procesos por institución ─────────────────
+  (function() {
+    const cv = document.getElementById('chart-inst');
+    if (!cv) return;
+    // Agrupar por institución
+    const instMap = {};
+    todos.forEach(d => {
+      const inst = (d.proceso?.unidad_compra || 'Desconocido').split(' ').slice(0,2).join(' ');
+      instMap[inst] = (instMap[inst] || 0) + 1;
+    });
+    const sorted = Object.entries(instMap).sort((a,b) => b[1]-a[1]).slice(0, 8);
+    if (!sorted.length) return;
+
+    const W    = cv.parentElement.offsetWidth || 300;
+    const H    = Math.max(160, sorted.length * 36 + 20);
+    cv.width   = W;
+    cv.height  = H;
+    const ctx  = cv.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+
+    const maxVal = sorted[0][1];
+    const barH   = 22;
+    const gap    = 14;
+    const labelW = 100;
+    const barW   = W - labelW - 20;
+
+    sorted.forEach(([inst, cnt], i) => {
+      const y = i * (barH + gap) + 10;
+      // Etiqueta
+      ctx.fillStyle = MUTED;
+      ctx.font = `10px var(--font-body, sans-serif)`;
+      ctx.textAlign = 'right';
+      const label = inst.length > 14 ? inst.slice(0,13)+'…' : inst;
+      ctx.fillText(label, labelW - 6, y + barH/2 + 4);
+      // Barra fondo
+      ctx.fillStyle = BG3;
+      ctx.beginPath();
+      ctx.roundRect(labelW, y, barW, barH, 4);
+      ctx.fill();
+      // Barra valor
+      const w = Math.max(4, (cnt / maxVal) * barW);
+      ctx.fillStyle = GREEN;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.roundRect(labelW, y, w, barH, 4);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      // Número
+      ctx.fillStyle = TEXT;
+      ctx.textAlign = 'left';
+      ctx.font = `bold 10px var(--font-body, sans-serif)`;
+      ctx.fillText(cnt, labelW + w + 4, y + barH/2 + 4);
+    });
+  })();
+
+  // ── 3. LÍNEA: monto ganado en el tiempo ─────────────────
+  (function() {
+    const cv = document.getElementById('chart-monto');
+    if (!cv) return;
+    if (!ganados.length) {
+      const W = cv.parentElement.offsetWidth || 300;
+      cv.width = W; cv.height = 80;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = MUTED;
+      ctx.textAlign = 'center';
+      ctx.font = '12px var(--font-body, sans-serif)';
+      ctx.fillText('Sin contratos adjudicados aún', W/2, 44);
+      return;
+    }
+    // Agrupar por mes
+    const meses = {};
+    ganados.forEach(d => {
+      const fecha = d.proceso?.fecha_fin_recepcion_ofertas || d.created_at;
+      if (!fecha) return;
+      const key = fecha.slice(0, 7); // YYYY-MM
+      meses[key] = (meses[key] || 0) + Number(d.proceso?.monto_estimado || 0);
+    });
+    const keys = Object.keys(meses).sort();
+    if (keys.length < 2) keys.unshift(''); // pad para mostrar algo
+    const vals = keys.map(k => meses[k] || 0);
+    const maxV = Math.max(...vals) || 1;
+
+    const W    = cv.parentElement.offsetWidth || 300;
+    const H    = 160;
+    const PAD  = { t:16, b:28, l:10, r:10 };
+    cv.width   = W; cv.height = H;
+    const ctx  = cv.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+
+    const n   = keys.length;
+    const stepX = (W - PAD.l - PAD.r) / Math.max(n-1, 1);
+    const pts = keys.map((k, i) => ({
+      x: PAD.l + i * stepX,
+      y: PAD.t + (1 - vals[i] / maxV) * (H - PAD.t - PAD.b),
+    }));
+
+    // Área relleno
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, H - PAD.b);
+    pts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(pts[pts.length-1].x, H - PAD.b);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, PAD.t, 0, H - PAD.b);
+    grad.addColorStop(0, 'rgba(34,197,94,0.35)');
+    grad.addColorStop(1, 'rgba(34,197,94,0.02)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Línea
+    ctx.beginPath();
+    pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.strokeStyle = GREEN;
+    ctx.lineWidth   = 2;
+    ctx.stroke();
+
+    // Puntos
+    pts.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, 2*Math.PI);
+      ctx.fillStyle = GREEN;
+      ctx.fill();
+    });
+
+    // Etiquetas eje X
+    ctx.fillStyle = MUTED;
+    ctx.textAlign = 'center';
+    ctx.font = '9px var(--font-body, sans-serif)';
+    keys.forEach((k, i) => {
+      if (!k) return;
+      const [y, m] = k.split('-');
+      ctx.fillText(`${m}/${y.slice(2)}`, pts[i].x, H - 6);
+    });
+  })();
+
+  // ── 4. BARRAS HORIZONTALES: tiempo preparación ──────────
+  (function() {
+    const cv = document.getElementById('chart-tiempo');
+    if (!cv) return;
+    const pares = todos
+      .filter(d => d.created_at && d.proceso?.fecha_fin_recepcion_ofertas && d.proceso?.titulo)
+      .map(d => {
+        const dias = Math.round(
+          (new Date(d.proceso.fecha_fin_recepcion_ofertas) - new Date(d.created_at)) / 86400000
+        );
+        return { label: d.proceso.titulo, dias: dias > 0 ? dias : 0 };
+      })
+      .filter(p => p.dias > 0)
+      .sort((a,b) => b.dias - a.dias)
+      .slice(0, 7);
+
+    if (!pares.length) {
+      const W = cv.parentElement.offsetWidth || 300;
+      cv.width = W; cv.height = 60;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = MUTED;
+      ctx.textAlign = 'center';
+      ctx.font = '12px var(--font-body, sans-serif)';
+      ctx.fillText('Sin datos suficientes', W/2, 36);
+      return;
+    }
+
+    const W    = cv.parentElement.offsetWidth || 300;
+    const H    = Math.max(120, pares.length * 34 + 20);
+    cv.width   = W; cv.height = H;
+    const ctx  = cv.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+
+    const maxDias = pares[0].dias;
+    const barH    = 20;
+    const gap     = 14;
+    const labelW  = 110;
+    const barW    = W - labelW - 20;
+
+    pares.forEach(({ label, dias }, i) => {
+      const y = i * (barH + gap) + 10;
+      // Etiqueta truncada
+      ctx.fillStyle = MUTED;
+      ctx.font = '9px var(--font-body, sans-serif)';
+      ctx.textAlign = 'right';
+      const txt = label.length > 18 ? label.slice(0,17)+'…' : label;
+      ctx.fillText(txt, labelW - 4, y + barH/2 + 3);
+      // Barra fondo
+      ctx.fillStyle = BG3;
+      ctx.beginPath();
+      ctx.roundRect(labelW, y, barW, barH, 4);
+      ctx.fill();
+      // Color según urgencia
+      const color = dias <= 7 ? RED : dias <= 14 ? AMBER : BLUE;
+      const w = Math.max(4, (dias / maxDias) * barW);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.roundRect(labelW, y, w, barH, 4);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      // Días
+      ctx.fillStyle = TEXT;
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 9px var(--font-body, sans-serif)';
+      ctx.fillText(dias+'d', labelW + w + 4, y + barH/2 + 3);
+    });
+  })();
+}
+// ────────────────────────────────────────────────────────────
 
 // ── HISTORIAL DE ANÁLISIS ───────────────────────────────────
 async function cargarHistorialAnalisis() {
