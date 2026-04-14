@@ -13,3 +13,5 @@ playwright==1.44.0
 Pillow==10.3.0
 anthropic
 reportlab>=4.0.0
+
+slowapi
