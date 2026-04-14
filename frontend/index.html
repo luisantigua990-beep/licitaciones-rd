@@ -999,6 +999,7 @@ body {
 .seg-card-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .seg-card-meta .inst  { color: var(--blue); font-weight: 700; }
 .seg-card-meta .monto { color: var(--green); font-weight: 700; font-family: var(--font-mono); }
+.seg-enmienda-badge { display:inline-flex; align-items:center; gap:4px; background:rgba(243,156,18,.12); border:1px solid rgba(243,156,18,.35); color:var(--amber); font-size:10px; font-weight:800; padding:3px 8px; border-radius:20px; letter-spacing:.04em; margin-top:6px; }
 .seg-timeline { margin-bottom: 10px; display: flex; flex-direction: column; gap: 3px; }
 .seg-fecha-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
 .seg-fecha-icon { font-size: 12px; flex-shrink: 0; opacity: .6; }
@@ -1090,6 +1091,17 @@ body {
 /* ── MISC TABS ── */
 #tab-detalle    { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 72px; display: none; }
 #tab-perfil     { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 72px; display: none; }
+.historial-card { background: var(--bg2); border: 1.5px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; margin-bottom: 8px; cursor: pointer; transition: border-color .15s; }
+.historial-card:active { border-color: var(--green-border); }
+.historial-card-titulo { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; margin-bottom: 4px; }
+.historial-card-meta { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+.historial-card-footer { display: flex; align-items: center; justify-content: space-between; }
+.historial-card-estado { font-size: 10px; font-weight: 800; padding: 3px 8px; border-radius: 20px; letter-spacing: .04em; }
+.historial-card-estado.completado { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+.historial-card-estado.procesando, .historial-card-estado.pendiente_analisis { background: rgba(243,156,18,.1); color: var(--amber); border: 1px solid rgba(243,156,18,.3); }
+.historial-card-estado.error { background: rgba(231,76,60,.1); color: var(--red); border: 1px solid rgba(231,76,60,.25); }
+.historial-card-fecha { font-size: 10px; color: var(--muted); }
+.historial-resumen { font-size: 11px; color: var(--text2); margin-top: 6px; line-height: 1.5; border-top: 1px solid var(--border); padding-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 #tab-dashboard  { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 16px; display: none; }
 
 /* ── TOAST ── */
@@ -1389,6 +1401,25 @@ html { background: #0D1B2A; }
         <span style="font-size:11px;color:var(--green);font-weight:600">Respuesta en 15 min</span>
         <span style="margin:0 8px;color:var(--green);opacity:.4;font-size:11px">·</span>
         <span style="font-size:11px;color:var(--green);font-weight:600">Gratis para empezar</span>
+      </div>
+    </div>
+
+    <!-- Prueba social -->
+    <div style="display:flex;gap:10px;margin-bottom:16px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px">
+      <div style="flex-shrink:0;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;min-width:160px">
+        <div style="font-size:18px;font-weight:900;color:var(--green);letter-spacing:-1px">+400</div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">Licitaciones activas</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">DGCP · MOPC · INAPA</div>
+      </div>
+      <div style="flex-shrink:0;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;min-width:160px">
+        <div style="font-size:18px;font-weight:900;color:var(--green);letter-spacing:-1px">IA</div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">Análisis automático</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Checklist + irregularidades</div>
+      </div>
+      <div style="flex-shrink:0;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 14px;min-width:160px">
+        <div style="font-size:18px;font-weight:900;color:var(--green);letter-spacing:-1px">7/3/1</div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-top:2px">Alertas de fechas</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Días antes del cierre</div>
       </div>
     </div>
 
@@ -1782,6 +1813,15 @@ html { background: #0D1B2A; }
       </div>
       <div class="familias-tags" id="familias-seleccionadas"></div>
       <div class="intereses-status" id="intereses-status"></div>
+    </div>
+
+    <!-- Historial de análisis -->
+    <div class="perfil-card">
+      <h2>Historial de análisis</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Análisis de pliegos de los procesos que sigues.</p>
+      <div id="historial-analisis-lista">
+        <div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">Cargando...</div>
+      </div>
     </div>
 
     <!-- Contactar soporte — al final del perfil -->
@@ -2900,11 +2940,11 @@ async function verDetalle(codigo) {
         </div>`).join('')
       : '<div style="padding:20px;color:var(--muted);font-size:13px">Sin artículos registrados</div>'}
     </div>
-    ${(data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') ? `
+    ${(data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente' || data.analisis?.estado === 'pendiente_analisis') ? `
     <div class="analisis-procesando">
       <div class="analisis-procesando-spinner"></div>
-      <div class="analisis-procesando-texto">Analizando el pliego con IA, puede tomar 1-3 minutos. Recibirás una <strong>notificación push</strong> y un <strong>correo</strong> cuando esté listo — puedes cerrar la app.</div>
-    </div>` : (data.analisis?.estado === 'error' || data.analisis?.estado === 'pendiente_analisis') ? `
+      <div class="analisis-procesando-texto">${data.analisis?.estado === 'pendiente_analisis' ? 'En cola para análisis. El sistema procesará el pliego automáticamente en los próximos minutos.' : 'Analizando el pliego con IA, puede tomar 1-3 minutos. Recibirás una <strong>notificación push</strong> y un <strong>correo</strong> cuando esté listo — puedes cerrar la app.'}</div>
+    </div>` : data.analisis?.estado === 'error' ? `
     <div class="analisis-procesando" style="background:rgba(231,76,60,0.08);border-color:rgba(231,76,60,0.2)">
       <div class="analisis-procesando-texto" style="color:var(--red)">Hubo un problema al analizar este proceso. Contacta soporte por WhatsApp.</div>
     </div>` : data.analisis?.estado === 'completado' ? `
@@ -2929,13 +2969,8 @@ async function verDetalle(codigo) {
     await cargarEstadoChecklist(p.codigo_proceso);
   }, 10);
 
-  // Polling automático si el análisis está procesando
-  if (data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') {
-    iniciarPollingAnalisis(p.codigo_proceso);
-  }
-
-  // Polling automático si el análisis está procesando
-  if (data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente') {
+  // Polling automático si el análisis está en progreso o en cola
+  if (['procesando','pendiente','pendiente_analisis'].includes(data.analisis?.estado)) {
     iniciarPollingAnalisis(p.codigo_proceso);
   }
 }
@@ -2963,7 +2998,7 @@ function iniciarPollingAnalisis(codigo) {
         mostrarBannerAnalisisListo(codigo, data.proceso?.titulo || codigo);
         verDetalle(codigo);
         return;
-      } else if (estado === 'error' || estado === 'pendiente_analisis') {
+      } else if (estado === 'error') {
         clearTimeout(_pollingTimer); _pollingTimer = null;
         const spinner = document.querySelector('.analisis-procesando');
         if (spinner) {
@@ -3062,6 +3097,7 @@ function switchTab2(tab) {
   document.getElementById('tab-mercado').style.display     = tab==='mercado'     ? 'block' : 'none';
   if (tab==='seguimiento') cargarSeguimiento();
   if (tab==='mercado') cargarMercado();
+  if (tab==='perfil') cargarHistorialAnalisis();
   document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
   const navMap = {
     'dashboard':'nav-dashboard','perfil':'nav-perfil',
@@ -3627,6 +3663,17 @@ function renderSegCard(item) {
     : '';
   const codigo = p.codigo_proceso || item.proceso_codigo;
 
+  // Badge de enmienda si existe
+  const enmienda = p._plazos_ia?._enmienda;
+  let enmiendaHtml = '';
+  if (enmienda) {
+    const dias_enm = enmienda.detectada_en
+      ? Math.floor((Date.now() - new Date(enmienda.detectada_en)) / 86400000)
+      : null;
+    const cuandoEnm = dias_enm === 0 ? 'Hoy' : dias_enm === 1 ? 'Ayer' : dias_enm !== null ? `Hace ${dias_enm}d` : '';
+    enmiendaHtml = `<div class="seg-enmienda-badge">⚠ Enmienda detectada${cuandoEnm ? ' · '+cuandoEnm : ''}</div>`;
+  }
+
   // Badge de días compacto
   let diasHtml = '';
   if (dias.cls === 'cerrado') {
@@ -3652,6 +3699,7 @@ function renderSegCard(item) {
         <span class="inst">${p.unidad_compra || '—'}</span>
         ${monto ? `<span class="monto">${monto}</span>` : ''}
       </div>
+      ${enmiendaHtml}
       ${fechas.length > 0 ? `
       <button class="seg-toggle-fechas" id="toggle-fechas-${codigo}" onclick="toggleTimelineFechas('${codigo}')">
         <span>Cronograma</span><span class="seg-toggle-chevron">▼</span>
@@ -4860,6 +4908,41 @@ async function descargarAnalisisPDF(codigo) {
     if (btn) btn.classList.remove('cargando');
   }
 }
+
+// ── HISTORIAL DE ANÁLISIS ───────────────────────────────────
+async function cargarHistorialAnalisis() {
+  const lista = document.getElementById('historial-analisis-lista');
+  if (!lista || !currentUser?.id) return;
+  lista.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px"><div class="spinner" style="margin:0 auto 8px"></div>Cargando...</div>';
+  try {
+    const res  = await fetch(`${API}/api/mis-analisis?user_id=${currentUser.id}`);
+    const data = await res.json();
+    const items = data.analisis || [];
+    if (!items.length) {
+      lista.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">Sin análisis aún. Sigue un proceso para que LicitacionLab analice su pliego.</div>';
+      return;
+    }
+    const etiquetas = { completado: 'Completado', procesando: 'Analizando', pendiente_analisis: 'En cola', error: 'Error' };
+    lista.innerHTML = items.map(a => {
+      const fecha = a.actualizado_en ? new Date(a.actualizado_en).toLocaleDateString('es-DO', { day:'2-digit', month:'short', year:'numeric' }) : '—';
+      const monto = a.monto_estimado ? (Number(a.monto_estimado) >= 1_000_000 ? `RD$${(Number(a.monto_estimado)/1_000_000).toFixed(1)}M` : `RD$${(Number(a.monto_estimado)/1_000).toFixed(0)}K`) : '';
+      const estado = a.estado || 'pendiente_analisis';
+      return `
+      <div class="historial-card" onclick="verDetalle('${a.proceso_id}')">
+        <div class="historial-card-titulo">${sanitize(a.titulo)}</div>
+        <div class="historial-card-meta">${sanitize(a.unidad_compra)}${monto ? ' · '+monto : ''}</div>
+        ${a.resumen ? `<div class="historial-resumen">${sanitize(a.resumen)}</div>` : ''}
+        <div class="historial-card-footer" style="margin-top:8px">
+          <span class="historial-card-estado ${estado}">${etiquetas[estado] || estado}</span>
+          <span class="historial-card-fecha">${fecha}</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    lista.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">Error cargando historial.</div>';
+  }
+}
+// ─────────────────────────────────────────────────────────────
 
 // ── MODAL PRICING ─────────────────────────────────────────
 function abrirPricing() {
