@@ -353,11 +353,16 @@ def test_page():
 def service_worker():
     return FileResponse(os.path.join(BASE_DIR, "static", "sw.js"), media_type="application/javascript")
 
+@app.get("/manifest.json")
+def manifest():
+    return FileResponse(os.path.join(BASE_DIR, "static", "manifest.json"), media_type="application/manifest+json")
+
 
 # ============================================
 # ENDPOINTS — PROCESOS
 # ============================================
 
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 app.mount("/frontend", StaticFiles(directory=os.path.join(BASE_DIR, "frontend"), html=True), name="frontend")
 
 @app.get("/")
