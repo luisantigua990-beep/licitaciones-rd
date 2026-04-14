@@ -575,7 +575,28 @@ def plazos_bulk(request: Request, codigos: str):
             .select("proceso_id, plazos_clave") \
             .in_("proceso_id", lista) \
             .execute()
-        return {r["proceso_id"]: r["plazos_clave"] for r in (res.data or []) if r.get("plazos_clave")}
+        resultado = {r["proceso_id"]: r["plazos_clave"] for r in (res.data or []) if r.get("plazos_clave")}
+
+        # Agregar enmiendas detectadas para cada proceso
+        try:
+            enmiendas = supabase_admin.table("enmiendas_detectadas") \
+                .select("codigo_proceso, detectada_en, descripcion") \
+                .in_("codigo_proceso", lista) \
+                .order("detectada_en", desc=True) \
+                .execute()
+            enm_map = {}
+            for e in (enmiendas.data or []):
+                cp = e["codigo_proceso"]
+                if cp not in enm_map:
+                    enm_map[cp] = {"detectada_en": e.get("detectada_en"), "descripcion": e.get("descripcion")}
+            for cp, enm in enm_map.items():
+                if cp not in resultado:
+                    resultado[cp] = {}
+                resultado[cp]["_enmienda"] = enm
+        except Exception:
+            pass  # enmiendas son opcionales
+
+        return resultado
     except Exception as e:
         return {}
 
@@ -1336,6 +1357,73 @@ def estadisticas(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+
+# ============================================
+# ENDPOINT — HISTORIAL DE ANÁLISIS DEL USUARIO
+# ============================================
+
+@app.get("/api/mis-analisis")
+@limiter.limit("30/minute")
+def mis_analisis(request: Request, user_id: str = Query(...)):
+    """
+    Devuelve el historial de análisis de pliegos del usuario,
+    cruzando analisis_pliego con procesos para mostrar título e institución.
+    """
+    try:
+        # 1. Traer seguimientos del usuario
+        segs = supabase_admin.table("seguimiento_procesos") \
+            .select("proceso_codigo") \
+            .eq("user_id", user_id) \
+            .execute()
+        if not segs.data:
+            return {"analisis": []}
+
+        codigos = [s["proceso_codigo"] for s in segs.data]
+
+        # 2. Traer análisis completados para esos procesos
+        analisis = supabase_admin.table("analisis_pliego") \
+            .select("proceso_id,estado,creado_en,actualizado_en,resultado") \
+            .in_("proceso_id", codigos) \
+            .order("actualizado_en", desc=True) \
+            .execute()
+        if not analisis.data:
+            return {"analisis": []}
+
+        # 3. Traer datos básicos de los procesos
+        procesos = supabase_admin.table("procesos") \
+            .select("codigo_proceso,titulo,unidad_compra,monto_estimado") \
+            .in_("codigo_proceso", codigos) \
+            .execute()
+        proc_map = {p["codigo_proceso"]: p for p in (procesos.data or [])}
+
+        # 4. Combinar
+        resultado = []
+        for a in analisis.data:
+            proc = proc_map.get(a["proceso_id"], {})
+            # Extraer resumen del resultado JSON si existe
+            resumen = None
+            if a.get("resultado"):
+                try:
+                    import json as _json
+                    r = _json.loads(a["resultado"]) if isinstance(a["resultado"], str) else a["resultado"]
+                    resumen = r.get("resumen") or r.get("recomendacion") or r.get("conclusion")
+                except Exception:
+                    pass
+            resultado.append({
+                "proceso_id": a["proceso_id"],
+                "titulo": proc.get("titulo", a["proceso_id"]),
+                "unidad_compra": proc.get("unidad_compra", "—"),
+                "monto_estimado": proc.get("monto_estimado"),
+                "estado": a["estado"],
+                "creado_en": a["creado_en"],
+                "actualizado_en": a["actualizado_en"],
+                "resumen": resumen,
+            })
+        return {"analisis": resultado}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================
 # ENDPOINTS — NOTIFICACIONES WEB PUSH
