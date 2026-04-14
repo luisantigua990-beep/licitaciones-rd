@@ -295,8 +295,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://app.licitacionlab.com"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "apikey", "X-Admin-Key"],
 )
 # Comprimir respuestas > 1KB — reduce tráfico de red 60-80% en listas de procesos
 app.add_middleware(GZipMiddleware, minimum_size=1000)
