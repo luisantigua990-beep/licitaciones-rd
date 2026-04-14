@@ -1086,6 +1086,9 @@ async def generar_mensaje_alerta_proceso(nombre: str, procesos: list, keywords: 
 
 @closer_router.post("/webhook")
 async def recibir_mensaje_zapi(request: Request, background_tasks: BackgroundTasks):
+    # Switch de pausa — poner CLOSER_ACTIVO=true en Railway para reactivar
+    if os.environ.get("CLOSER_ACTIVO", "false").lower() != "true":
+        return {"status": "ok", "skipped": "agente_pausado"}
     try:
         body = await request.json()
     except Exception: return {"status": "ok"}
@@ -1410,6 +1413,8 @@ async def procesar_mensaje_bg(phone: str, mensaje: str, nombre: str = ""):
 @closer_router.post("/followup/run")
 async def ejecutar_followups(background_tasks: BackgroundTasks, x_agent_secret: Optional[str] = Header(None)):
     if x_agent_secret != AGENT_SECRET: raise HTTPException(status_code=401)
+    if os.environ.get("CLOSER_ACTIVO", "false").lower() != "true":
+        return {"status": "ok", "skipped": "agente_pausado"}
     background_tasks.add_task(ejecutar_followups_bg)
     return {"status": "iniciado"}
 
@@ -1442,6 +1447,8 @@ async def procesar_followup_individual(conv: dict):
 @closer_router.post("/alertas/run")
 async def ejecutar_alertas(background_tasks: BackgroundTasks, x_agent_secret: Optional[str] = Header(None)):
     if x_agent_secret != AGENT_SECRET: raise HTTPException(status_code=401)
+    if os.environ.get("CLOSER_ACTIVO", "false").lower() != "true":
+        return {"status": "ok", "skipped": "agente_pausado"}
     background_tasks.add_task(ejecutar_alertas_bg)
     return {"status": "iniciado"}
 
