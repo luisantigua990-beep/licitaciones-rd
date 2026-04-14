@@ -547,10 +547,11 @@ body {
 }
 .dash-chip.active { background: var(--green-dim); border-color: var(--green-border); }
 .dash-chip:active { transform: scale(.96); }
-.chip-num { font-size: 20px; font-weight: 900; line-height: 1; color: var(--text); letter-spacing: -1px; }
+.chip-num { font-size: 20px; font-weight: 900; line-height: 1; color: var(--text); letter-spacing: -1px; min-height: 24px; display: flex; align-items: center; justify-content: center; }
 .chip-label { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
 .dash-chip.active .chip-num { color: var(--green); }
 .dash-chip.active .chip-label { color: var(--green); }
+.chip-spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border2); border-top-color: var(--green); border-radius: 50%; animation: spin .7s linear infinite; }
 
 /* ── FILTROS AVANZADOS ── */
 .filtros-avanzados-panel { overflow: hidden; max-height: 0; transition: max-height .35s cubic-bezier(.4,0,.2,1), opacity .25s; opacity: 0; pointer-events: none; padding: 0 16px; }
@@ -1413,6 +1414,9 @@ html { background: #0D1B2A; }
         <input type="password" id="reg-password" placeholder="Mínimo 6 caracteres">
       </div>
       <button class="btn btn-primary" onclick="register()" id="btn-register">Crear cuenta</button>
+      <div style="text-align:center;margin-top:12px">
+        <button onclick="abrirPricing()" style="background:none;border:none;color:var(--green);font-size:12px;cursor:pointer;font-family:var(--font-body);font-weight:600;padding:0;text-decoration:underline;text-underline-offset:3px">Ver planes y precios →</button>
+      </div>
     </div>
 
     <div id="form-recovery" style="display:none">
@@ -1435,6 +1439,83 @@ html { background: #0D1B2A; }
 
   </div><!-- /.auth-card -->
 </div><!-- /#screen-auth -->
+
+<!-- ── MODAL PRICING ─────────────────────────────────────── -->
+<div id="modal-pricing" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);padding:20px;overflow-y:auto;-webkit-overflow-scrolling:touch" onclick="if(event.target===this)cerrarPricing()">
+  <div style="max-width:420px;margin:0 auto;background:var(--surface);border:1px solid var(--border2);border-radius:20px;padding:24px;position:relative">
+    <button onclick="cerrarPricing()" style="position:absolute;top:16px;right:16px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;line-height:1;padding:4px">✕</button>
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:18px;font-weight:800;color:var(--text);letter-spacing:-.4px">Elige tu plan</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">Empieza gratis. Sube cuando estés listo.</div>
+    </div>
+
+    <!-- Plan Explorador -->
+    <div style="background:var(--bg2);border:1.5px solid var(--border);border-radius:14px;padding:16px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <div style="font-size:14px;font-weight:800;color:var(--text)">Explorador</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">Para empezar a monitorear</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:18px;font-weight:800;color:var(--text)">Gratis</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);line-height:1.7">
+        ✓ Ver licitaciones activas del DGCP<br>
+        ✓ Filtros por modalidad e institución<br>
+        ✓ Seguir hasta 3 procesos<br>
+        ✗ Análisis automático de pliegos<br>
+        ✗ Alertas de fechas clave
+      </div>
+      <button onclick="cerrarPricing();switchTab('register')" style="width:100%;margin-top:12px;padding:10px;background:var(--bg);border:1.5px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body)">Empezar gratis</button>
+    </div>
+
+    <!-- Plan Competidor -->
+    <div style="background:var(--bg2);border:1.5px solid var(--green-border);border-radius:14px;padding:16px;margin-bottom:10px;position:relative;overflow:hidden">
+      <div style="position:absolute;top:10px;right:12px;background:var(--green);color:#fff;font-size:9px;font-weight:800;padding:3px 8px;border-radius:20px;letter-spacing:.06em">POPULAR</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <div style="font-size:14px;font-weight:800;color:var(--green)">Competidor</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">Para empresas activas en licitaciones</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:18px;font-weight:800;color:var(--text)">RD$1,500<span style="font-size:11px;font-weight:500;color:var(--text2)">/mes</span></div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);line-height:1.7">
+        ✓ Todo lo de Explorador<br>
+        ✓ Análisis automático de pliegos con IA<br>
+        ✓ Seguimiento ilimitado de procesos<br>
+        ✓ Alertas 7, 3, 1 y 0 días antes<br>
+        ✓ Detección de procesos dirigidos (Ley 47-25)
+      </div>
+      <button onclick="cerrarPricing();switchTab('register')" style="width:100%;margin-top:12px;padding:10px;background:linear-gradient(135deg,var(--green-dark),var(--green));border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body)">Comenzar prueba gratis</button>
+    </div>
+
+    <!-- Plan Ganador -->
+    <div style="background:var(--bg2);border:1.5px solid var(--border);border-radius:14px;padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <div style="font-size:14px;font-weight:800;color:var(--amber)">Ganador</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">Para empresas que quieren ganar más</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:18px;font-weight:800;color:var(--text)">RD$3,500<span style="font-size:11px;font-weight:500;color:var(--text2)">/mes</span></div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2);line-height:1.7">
+        ✓ Todo lo de Competidor<br>
+        ✓ Preparación asistida de propuestas<br>
+        ✓ Análisis de competencia e historial<br>
+        ✓ Soporte prioritario directo con experto<br>
+        ✓ Acceso a Mercado de Proveedores
+      </div>
+      <button onclick="cerrarPricing();switchTab('register')" style="width:100%;margin-top:12px;padding:10px;background:var(--bg);border:1.5px solid var(--amber);border-radius:8px;color:var(--amber);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body)">Contactar para activar</button>
+    </div>
+
+    <div style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted)">Sin compromisos · Cancela cuando quieras</div>
+  </div>
+</div>
 
 <div id="screen-app" class="screen">
 
@@ -1543,19 +1624,19 @@ html { background: #0D1B2A; }
     <!-- Chips de filtro rápido por rubro -->
     <div class="dash-chips">
       <button class="dash-chip active" id="chip-all" onclick="filtrarRubroChip('')">
-        <span class="chip-num" id="chip-count-all">—</span>
+        <span class="chip-num" id="chip-count-all"><span class="chip-spinner"></span></span>
         <span class="chip-label">Todos</span>
       </button>
       <button class="dash-chip" id="chip-obras" onclick="filtrarRubroChip('Obras')">
-        <span class="chip-num" id="chip-count-obras">—</span>
+        <span class="chip-num" id="chip-count-obras"><span class="chip-spinner"></span></span>
         <span class="chip-label">Obras</span>
       </button>
       <button class="dash-chip" id="chip-bienes" onclick="filtrarRubroChip('Bienes')">
-        <span class="chip-num" id="chip-count-bienes">—</span>
+        <span class="chip-num" id="chip-count-bienes"><span class="chip-spinner"></span></span>
         <span class="chip-label">Bienes</span>
       </button>
       <button class="dash-chip" id="chip-servicios" onclick="filtrarRubroChip('Servicios')">
-        <span class="chip-num" id="chip-count-servicios">—</span>
+        <span class="chip-num" id="chip-count-servicios"><span class="chip-spinner"></span></span>
         <span class="chip-label">Servicios</span>
       </button>
     </div>
@@ -2286,7 +2367,10 @@ async function sendRecovery() {
 // ── STATS ──
 async function cargarStats() {
   try {
-    const res = await fetch(`${API}/api/stats`);
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 10000);
+    const res = await fetch(`${API}/api/stats`, { signal: controller.signal });
+    clearTimeout(tid);
     const data = await res.json();
     document.getElementById('stat-total').textContent     = (data.total_procesos||0).toLocaleString();
     document.getElementById('stat-activos').textContent   = (data.procesos_activos||0).toLocaleString();
@@ -2303,7 +2387,11 @@ async function cargarStats() {
     if (cc('chip-count-obras'))    cc('chip-count-obras').textContent    = obras;
     if (cc('chip-count-bienes'))   cc('chip-count-bienes').textContent   = bienes;
     if (cc('chip-count-servicios'))cc('chip-count-servicios').textContent= serv;
-  } catch(e) { /* stats no críticas */ }
+  } catch(e) {
+    // Si falla, mostrar — en lugar de dejar el spinner infinito
+    ['chip-count-all','chip-count-obras','chip-count-bienes','chip-count-servicios']
+      .forEach(id => { const el = document.getElementById(id); if(el) el.textContent = '—'; });
+  }
 }
 
 function filtrarRubro(rubro) {
@@ -2361,17 +2449,21 @@ async function cargarProcesos(page = 1) {
   if (unspscFiltro) url += `&familia_unspsc=${encodeURIComponent(unspscFiltro.codigo)}`;
 
   try {
-    const res  = await fetch(url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const res  = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
     if (!res.ok) throw new Error(`Error del servidor (${res.status})`);
     const data = await res.json();
     renderProcesos(data.procesos || [], data, page);
   } catch(e) {
+    const esTimeout = e.name === 'AbortError';
     // Si es un error de red (no de servidor), intentar de nuevo en 5 segundos
-    const esErrorRed = e.message === 'Load failed' || e.message === 'Failed to fetch' || e.message.includes('NetworkError');
+    const esErrorRed = esTimeout || e.message === 'Load failed' || e.message === 'Failed to fetch' || e.message.includes('NetworkError');
     document.getElementById('procesos-container').innerHTML = `
       <div class="empty">
         <div class="empty-icon" style="font-size:28px;opacity:.4">📡</div>
-        <div class="empty-text">${esErrorRed ? 'Sin conexión al servidor' : 'No se pudieron cargar las licitaciones'}</div>
+        <div class="empty-text">${esTimeout ? 'El servidor tardó demasiado' : esErrorRed ? 'Sin conexión al servidor' : 'No se pudieron cargar las licitaciones'}</div>
         <div style="font-size:12px;color:var(--muted);margin-top:6px">${esErrorRed ? 'Reconectando automáticamente...' : e.message}</div>
         <button onclick="cargarProcesos(${page})" style="margin-top:14px;padding:8px 20px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-body)">Reintentar ahora</button>
       </div>`;
@@ -3582,7 +3674,13 @@ async function cargarSeguimiento() {
     renderSeguimiento();
   } catch(e) {
     console.error('Error cargando seguimiento:', e);
-    if (lista) lista.innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><div class="empty-text">Error cargando. Intenta de nuevo.</div></div>';
+    const esTimeout = e.name === 'AbortError';
+    if (lista) lista.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">⚠️</div>
+        <div class="empty-text">${esTimeout ? 'El servidor tardó demasiado' : 'Error cargando. Intenta de nuevo.'}</div>
+        <button onclick="cargarSeguimiento()" style="margin-top:14px;padding:8px 20px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-body)">Reintentar</button>
+      </div>`;
   }
 }
 
@@ -4634,6 +4732,16 @@ async function descargarAnalisisPDF(codigo) {
   } finally {
     if (btn) btn.classList.remove('cargando');
   }
+}
+
+// ── MODAL PRICING ─────────────────────────────────────────
+function abrirPricing() {
+  const m = document.getElementById('modal-pricing');
+  if (m) { m.style.display = 'block'; document.body.style.overflow = 'hidden'; }
+}
+function cerrarPricing() {
+  const m = document.getElementById('modal-pricing');
+  if (m) { m.style.display = 'none'; document.body.style.overflow = ''; }
 }
 
 // ── BANNER BETA ──────────────────────────────────────────
