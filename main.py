@@ -368,6 +368,7 @@ def inicio():
 @app.get("/api/procesos")
 @limiter.limit("60/minute")
 def listar_procesos(
+    request: Request,
     page: int = Query(1, ge=1, description="Página"),
     limit: int = Query(20, ge=1, le=100, description="Registros por página"),
     objeto: str = Query(None, description="Filtrar por objeto: Obras, Bienes, Servicios, Consultoría"),
@@ -505,7 +506,7 @@ def listar_procesos(
 
 @app.get("/api/procesos/{codigo_proceso}")
 @limiter.limit("60/minute")
-def detalle_proceso(codigo_proceso: str):
+def detalle_proceso(request: Request, codigo_proceso: str):
     """Obtiene el detalle de un proceso con sus artículos."""
     try:
         proc = supabase.table("procesos") \
@@ -561,7 +562,7 @@ def detalle_proceso(codigo_proceso: str):
 
 @app.get("/api/plazos-bulk")
 @limiter.limit("60/minute")
-def plazos_bulk(codigos: str):
+def plazos_bulk(request: Request, codigos: str):
     """
     Devuelve plazos_clave del análisis IA para múltiples procesos en una sola llamada.
     codigos: string separado por comas, ej: INAPA-001,MOPC-002
@@ -1137,7 +1138,7 @@ async def save_checklist_item(codigo_proceso: str, request: Request):
 
 @app.get("/api/catalogo/segmentos")
 @limiter.limit("60/minute")
-def listar_segmentos():
+def listar_segmentos(request: Request):
     try:
         result = supabase.rpc("get_segmentos", {}).execute()
         if not result.data:
@@ -1190,7 +1191,7 @@ def listar_clases(familia: str):
 
 @app.get("/api/unspsc/buscar")
 @limiter.limit("60/minute")
-def buscar_unspsc(q: str = ""):
+def buscar_unspsc(request: Request, q: str = ""):
     if not q or len(q) < 2:
         return []
 
@@ -1287,7 +1288,7 @@ def procesos_por_rubros(
 
 @app.get("/api/stats")
 @limiter.limit("60/minute")
-def estadisticas():
+def estadisticas(request: Request):
     try:
         procesos = supabase.table("procesos").select("id", count="exact").execute()
         
@@ -3540,6 +3541,7 @@ async def webhook_analisis_pliego(request: Request, background_tasks: Background
 @app.get("/api/mercado/proveedores")
 @limiter.limit("60/minute")
 def listar_proveedores(
+    request: Request,
     tipo:      str = Query(None),
     zona:      str = Query(None),
     busqueda:  str = Query(None),
