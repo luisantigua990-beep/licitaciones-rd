@@ -1551,7 +1551,7 @@ html { background: #0D1B2A; }
       <div class="drawer-user-avatar" id="drawer-avatar">LA</div>
       <div class="drawer-user-info">
         <div class="drawer-user-name" id="drawer-name">Ing. Luis Antigua</div>
-        <div class="drawer-user-role">Consultor · LicitacionLab</div>
+        <div class="drawer-user-role" id="drawer-role">LicitacionLab</div>
       </div>
       <div class="drawer-dot"></div>
     </div>
@@ -2129,6 +2129,23 @@ let currentUser = null;
 let searchTimer = null;
 let pushSubscription = null;
 
+// ── SEGURIDAD: sanitize contra XSS ──────────────────────────
+function sanitize(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+function safeUrl(url) {
+  if (!url) return '';
+  const u = String(url).trim();
+  return (u.startsWith('http://') || u.startsWith('https://')) ? u : '';
+}
+// ────────────────────────────────────────────────────────────
+
 // ── AUTH ──
 async function supabaseRequest(endpoint, method, body) {
   const token = localStorage.getItem('sb_token');
@@ -2272,6 +2289,12 @@ function showApp() {
   if (dn) dn.textContent = nombre;
   const da = document.getElementById('drawer-avatar');
   if (da) da.textContent = iniciales;
+  // Rol dinámico desde el email del usuario
+  const dr = document.getElementById('drawer-role');
+  if (dr && currentUser?.email) {
+    const emailLower = currentUser.email.toLowerCase();
+    dr.textContent = emailLower.includes('licitacionlab') ? 'Admin · LicitacionLab' : 'LicitacionLab';
+  }
 
   // Perfil: mostrar nombre + correo
   const perfilEmail = document.getElementById('perfil-email');
@@ -4167,8 +4190,9 @@ function renderProvCard(p) {
 
   // Logo o iniciales
   const iniciales = p.nombre_empresa.trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
-  const logoHtml = p.logo_url
-    ? `<img class="prov-logo" src="${p.logo_url}" alt="${p.nombre_empresa}" onerror="this.style.display='none';this.nextSibling.style.display='flex'">`
+  const _logoSrc = safeUrl(p.logo_url);
+  const logoHtml = _logoSrc
+    ? `<img class="prov-logo" src="${_logoSrc}" alt="${sanitize(p.nombre_empresa)}" onerror="this.style.display='none';this.nextSibling.style.display='flex'">`
     : '';
   const placeholderHtml = `<div class="prov-logo-placeholder" ${p.logo_url ? 'style="display:none"' : ''}>${iniciales}</div>`;
 
@@ -4183,26 +4207,26 @@ function renderProvCard(p) {
 
   // Meta info
   let metaHtml = '';
-  if (p.direccion) metaHtml += `<div class="prov-meta-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>${p.direccion}</span></div>`;
-  if (p.horario) metaHtml += `<div class="prov-meta-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>${p.horario}</span></div>`;
+  if (p.direccion) metaHtml += `<div class="prov-meta-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>${sanitize(p.direccion)}</span></div>`;
+  if (p.horario) metaHtml += `<div class="prov-meta-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>${sanitize(p.horario)}</span></div>`;
   const zonas = (p.zona_geografica||[]).filter(z=>z!=='Todo el país');
   if (zonas.length) metaHtml += `<div class="prov-meta-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg><span>${(p.zona_geografica||[]).join(' · ')}</span></div>`;
 
   // Redes sociales
   let socialHtml = '';
-  if (p.instagram) socialHtml += `<a class="prov-social-btn" href="https://instagram.com/${p.instagram.replace('@','')}" target="_blank" title="Instagram"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></a>`;
-  if (p.facebook) socialHtml += `<a class="prov-social-btn" href="${p.facebook.startsWith('http')?p.facebook:'https://facebook.com/'+p.facebook}" target="_blank" title="Facebook"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>`;
-  if (p.website) socialHtml += `<a class="prov-social-btn" href="${p.website.startsWith('http')?p.website:'https://'+p.website}" target="_blank" title="Sitio web"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></a>`;
+  if (p.instagram) socialHtml += `<a class="prov-social-btn" href="https://instagram.com/${sanitize(p.instagram.replace('@',''))}" target="_blank" title="Instagram"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></a>`;
+  if (p.facebook) socialHtml += `<a class="prov-social-btn" href="${safeUrl(p.facebook.startsWith('http')?p.facebook:'https://facebook.com/'+p.facebook)}" target="_blank" title="Facebook"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>`;
+  if (p.website) socialHtml += `<a class="prov-social-btn" href="${safeUrl(p.website.startsWith('http')?p.website:'https://'+p.website)}" target="_blank" title="Sitio web"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></a>`;
 
   // Acciones
   let accionHtml = '';
   if (tieneAcceso) {
     const mapBtn = (p.latitud && p.longitud)
-      ? `<button class="prov-btn-map" onclick="abrirMapa(${p.latitud},${p.longitud},'${p.nombre_empresa}')" title="Ver en mapa"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></button>`
+      ? `<button class="prov-btn-map" onclick="abrirMapa(${p.latitud},${p.longitud},'${sanitize(p.nombre_empresa)}')" title="Ver en mapa"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></button>`
       : '';
     accionHtml = `
       <button class="prov-btn-wa" onclick="contactarProveedor('${p.id}','whatsapp','${p.whatsapp||p.telefono}')">WhatsApp</button>
-      ${p.telefono ? `<button class="prov-btn-call" onclick="window.location='tel:${p.telefono}'">Llamar</button>` : ''}
+      ${p.telefono ? `<button class="prov-btn-call" onclick="window.location='tel:${sanitize(p.telefono)}'">Llamar</button>` : ''}
       ${mapBtn}
     `;
   } else {
@@ -4214,12 +4238,12 @@ function renderProvCard(p) {
     <div class="prov-card-header">
       ${logoHtml}${placeholderHtml}
       <div class="prov-info">
-        <div class="prov-nombre">${p.nombre_empresa} ${verificadoHtml}</div>
+        <div class="prov-nombre">${sanitize(p.nombre_empresa)} ${verificadoHtml}</div>
         <span class="prov-tipo-badge prov-tipo-${tipo}">${TIPO_LABELS[tipo]||tipo}</span>
       </div>
     </div>
     <div class="prov-card-body">
-      ${p.descripcion ? `<div class="prov-desc">${p.descripcion}</div>` : ''}
+      ${p.descripcion ? `<div class="prov-desc">${sanitize(p.descripcion)}</div>` : ''}
       ${cats.length ? `<div class="prov-cats">${catsHtml}</div>` : ''}
       ${metaHtml ? `<div class="prov-meta">${metaHtml}</div>` : ''}
       ${socialHtml ? `<div class="prov-social">${socialHtml}</div>` : ''}
