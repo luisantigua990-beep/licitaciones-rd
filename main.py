@@ -23,6 +23,9 @@ from fastapi.staticfiles import StaticFiles
 
 from fastapi import FastAPI, Query, HTTPException, BackgroundTasks, Request, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from dotenv import load_dotenv
@@ -280,6 +283,12 @@ async def lifespan(app: FastAPI):
 
 
 # ============================================
+# RATE LIMITING
+# ============================================
+
+limiter = Limiter(key_func=get_remote_address)
+
+# ============================================
 # CREAR APP FASTAPI
 # ============================================
 
@@ -289,6 +298,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Rate limiting — registrar handler de errores
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Permitir conexiones desde cualquier origen (para la PWA)
 app.add_middleware(
@@ -353,6 +366,7 @@ def inicio():
 
 
 @app.get("/api/procesos")
+@limiter.limit("60/minute")
 def listar_procesos(
     page: int = Query(1, ge=1, description="Página"),
     limit: int = Query(20, ge=1, le=100, description="Registros por página"),
@@ -490,6 +504,7 @@ def listar_procesos(
 
 
 @app.get("/api/procesos/{codigo_proceso}")
+@limiter.limit("60/minute")
 def detalle_proceso(codigo_proceso: str):
     """Obtiene el detalle de un proceso con sus artículos."""
     try:
@@ -545,6 +560,7 @@ def detalle_proceso(codigo_proceso: str):
 
 
 @app.get("/api/plazos-bulk")
+@limiter.limit("60/minute")
 def plazos_bulk(codigos: str):
     """
     Devuelve plazos_clave del análisis IA para múltiples procesos en una sola llamada.
@@ -898,6 +914,7 @@ def ejecutar_nurturing():
 
 
 @app.post("/api/bienvenida")
+@limiter.limit("10/minute")
 async def enviar_bienvenida(request: Request):
     """Envía correo de bienvenida al nuevo usuario tras el registro."""
     RESEND_API_KEY = os.getenv("RESEND_API_KEY")
@@ -1009,7 +1026,8 @@ async def enviar_bienvenida(request: Request):
 
 
 @app.post("/api/procesos/{codigo_proceso}/analizar")
-async def solicitar_analisis_proceso(codigo_proceso: str, background_tasks: BackgroundTasks):
+@limiter.limit("10/minute")
+async def solicitar_analisis_proceso(request: Request, codigo_proceso: str, background_tasks: BackgroundTasks):
     """
     Solicita análisis IA de un proceso desde el frontend.
     Verifica que el proceso exista, crea/resetea el registro en analisis_pliego
@@ -1087,6 +1105,7 @@ def get_checklist(codigo_proceso: str, user_id: str):
 
 
 @app.post("/api/checklist/{codigo_proceso}")
+@limiter.limit("20/minute")
 async def save_checklist_item(codigo_proceso: str, request: Request):
     """Guarda/actualiza el estado de un ítem del checklist."""
     try:
@@ -1117,6 +1136,7 @@ async def save_checklist_item(codigo_proceso: str, request: Request):
 # ============================================
 
 @app.get("/api/catalogo/segmentos")
+@limiter.limit("60/minute")
 def listar_segmentos():
     try:
         result = supabase.rpc("get_segmentos", {}).execute()
@@ -1169,6 +1189,7 @@ def listar_clases(familia: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/unspsc/buscar")
+@limiter.limit("60/minute")
 def buscar_unspsc(q: str = ""):
     if not q or len(q) < 2:
         return []
@@ -1265,6 +1286,7 @@ def procesos_por_rubros(
 # ============================================
 
 @app.get("/api/stats")
+@limiter.limit("60/minute")
 def estadisticas():
     try:
         procesos = supabase.table("procesos").select("id", count="exact").execute()
@@ -1324,7 +1346,8 @@ def get_vapid_public_key():
 
 
 @app.post("/api/notificaciones/suscribirse")
-async def suscribirse(payload: dict):
+@limiter.limit("20/minute")
+async def suscribirse(request: Request, payload: dict):
     try:
         data = {
             "user_id": payload.get("user_id", "anonimo"),
@@ -1374,7 +1397,8 @@ async def forzar_monitor(_: None = Depends(verificar_admin)):
 
 
 @app.put("/api/notificaciones/intereses")
-async def actualizar_intereses(payload: dict):
+@limiter.limit("20/minute")
+async def actualizar_intereses(request: Request, payload: dict):
     endpoint = payload.get("endpoint")
     rubros = payload.get("rubros", [])
     supabase_admin.table("user_subscriptions").update({"intereses_rubros": rubros}).eq("endpoint", endpoint).execute()
@@ -3473,6 +3497,7 @@ def debug_html_lista_portal(_: None = Depends(verificar_admin)):
 
 
 @app.post("/api/webhook/analizar-pliego")
+@limiter.limit("10/minute")
 async def webhook_analisis_pliego(request: Request, background_tasks: BackgroundTasks):
     """Endpoint llamado por Supabase (Webhook) al insertar un nuevo seguimiento.
     Solo actua si el endpoint directo /analizar no lo tomo ya (evita email doble)."""
@@ -3513,6 +3538,7 @@ async def webhook_analisis_pliego(request: Request, background_tasks: Background
 # ══════════════════════════════════════════════════
 
 @app.get("/api/mercado/proveedores")
+@limiter.limit("60/minute")
 def listar_proveedores(
     tipo:      str = Query(None),
     zona:      str = Query(None),
@@ -3562,6 +3588,7 @@ def detalle_proveedor(proveedor_id: str):
 
 
 @app.post("/api/mercado/proveedores")
+@limiter.limit("20/minute")
 async def registrar_proveedor(request: Request):
     """Registrar un nuevo proveedor. Público — no requiere autenticación."""
     try:
@@ -3605,6 +3632,7 @@ async def registrar_proveedor(request: Request):
 
 
 @app.post("/api/mercado/contactos")
+@limiter.limit("20/minute")
 async def registrar_contacto(request: Request):
     """Registrar que un usuario contactó a un proveedor (analytics)."""
     try:
@@ -3657,7 +3685,8 @@ class ComparacionSchema(BaseModel):
     encontrados: List[str]
 
 @app.post("/api/v1/generar-oferta")
-async def comparar_documentos(datos: ComparacionSchema):
+@limiter.limit("10/minute")
+async def comparar_documentos(request: Request, datos: ComparacionSchema):
     # Comparamos lo que pide la licitación vs lo que hay en Drive
     faltantes = [doc for doc in datos.requeridos if doc not in datos.encontrados]
     
