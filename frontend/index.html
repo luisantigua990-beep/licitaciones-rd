@@ -140,18 +140,143 @@ body {
 /* ── AUTH SCREEN ── */
 #screen-auth {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
   min-height: 100%;
-  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
   position: relative;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  background:
-    radial-gradient(ellipse 90% 55% at 50% -10%, rgba(46,204,113,0.22) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 40% at 10% 110%, rgba(93,173,226,0.10) 0%, transparent 55%),
-    radial-gradient(ellipse 40% 30% at 90% 90%, rgba(46,204,113,0.06) 0%, transparent 50%),
-    #0D1B2A;
+  background: var(--bg, #0D1B2A);
+}
+/* Split layout — desktop */
+.auth-split {
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
+}
+.auth-split__form {
+  flex: 0 0 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: max(32px, env(safe-area-inset-top)) 40px max(32px, env(safe-area-inset-bottom));
+  background: var(--bg, #0D1B2A);
+  overflow-y: auto;
+}
+.auth-split__showcase {
+  flex: 0 0 50%;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg2, #112236);
+  border-left: 1px solid var(--border, rgba(64,145,108,0.12));
+  display: flex;
+  flex-direction: column;
+}
+/* En móvil: ocultar showcase, form a pantalla completa */
+@media (max-width: 768px) {
+  .auth-split__showcase { display: none; }
+  .auth-split__form {
+    flex: 1;
+    padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  }
+}
+/* Ticker de licitaciones */
+.auth-ticker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: tickerScroll 40s linear infinite;
+}
+.auth-ticker:hover { animation-play-state: paused; }
+@keyframes tickerScroll {
+  0%   { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+.auth-ticker-row {
+  background: var(--surface, #172F46);
+  border: 1px solid var(--border, rgba(64,145,108,0.12));
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color .15s;
+  flex-shrink: 0;
+}
+.auth-ticker-row:hover { border-color: var(--green-border, rgba(46,204,113,0.3)); }
+.auth-ticker-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.auth-ticker-codigo {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--muted, #7f8ea3);
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+.auth-ticker-entidad {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--green, #2ECC71);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.auth-ticker-titulo {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #F0F8FF);
+  line-height: 1.3;
+  margin-bottom: 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.auth-ticker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.auth-ticker-monto {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text, #F0F8FF);
+  letter-spacing: -0.5px;
+}
+.auth-ticker-badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 20px;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.auth-ticker-badge.obras    { background: rgba(93,173,226,0.15); color: #5DADE2; }
+.auth-ticker-badge.bienes   { background: rgba(155,89,182,0.15); color: #A29BFE; }
+.auth-ticker-badge.servicios { background: rgba(46,204,113,0.15); color: #2ECC71; }
+.auth-ticker-badge.nuevo    { background: rgba(46,204,113,0.15); color: #2ECC71; }
+.auth-ticker-badge.enmienda { background: rgba(243,156,18,0.15); color: #F39C12; }
+/* Mask fade top/bottom */
+.auth-showcase-feed {
+  flex: 1;
+  overflow: hidden;
+  padding: 0 20px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+}
+/* Blink dot */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+.auth-live-dot {
+  width: 7px; height: 7px;
+  background: var(--green, #2ECC71);
+  border-radius: 50%;
+  animation: blink 2s ease-in-out infinite;
+  flex-shrink: 0;
 }
 /* Palabras flotantes auth */
 .auth-bg-words {
@@ -1419,6 +1544,150 @@ html { background: #0D1B2A; }
   border-top: 1px solid var(--border);
   padding-bottom: max(16px, env(safe-area-inset-bottom));
 }
+
+/* ── LOGIN SPLIT SHOWCASE ── */
+@media (min-width: 768px) {
+  #screen-auth {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    place-items: unset !important;
+    padding: 0 !important;
+    min-height: 100vh;
+  }
+  .auth-split-form {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 48px 40px;
+    overflow-y: auto;
+  }
+  .auth-split-showcase {
+    display: flex !important;
+    position: relative;
+    overflow: hidden;
+    border-left: 1px solid var(--color-border, var(--border));
+    background: var(--color-surface, var(--surface));
+  }
+}
+@media (max-width: 767px) {
+  #screen-auth {
+    display: grid !important;
+    place-items: center !important;
+    padding: 24px !important;
+    min-height: 100vh;
+  }
+  .auth-split-form { width: 100%; }
+  .auth-split-showcase { display: none !important; }
+}
+
+/* Ticker de licitaciones en vivo */
+.auth-ticker-wrap {
+  position: absolute;
+  inset: 0;
+  padding: 80px 32px 64px;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+  overflow: hidden;
+}
+.auth-ticker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: tickerScroll 40s linear infinite;
+}
+.auth-ticker:hover { animation-play-state: paused; }
+@keyframes tickerScroll {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+.auth-ticker-item {
+  background: var(--color-surface, var(--surface));
+  border: 1px solid var(--color-border, var(--border));
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.auth-ticker-item:hover { border-color: var(--color-brand, var(--green)); }
+.auth-ticker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+.auth-ticker-codigo {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--color-text-subtle, var(--muted));
+  letter-spacing: .04em;
+}
+.auth-ticker-monto {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-brand, var(--green));
+  white-space: nowrap;
+}
+.auth-ticker-titulo {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary, var(--text));
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.auth-ticker-meta {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  align-items: center;
+}
+.auth-ticker-entidad {
+  font-size: 11px;
+  color: var(--color-text-subtle, var(--muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.auth-ticker-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  font-family: var(--font-mono, monospace);
+}
+.auth-ticker-chip.obras { background: rgba(52,152,219,.15); color: #3498db; }
+.auth-ticker-chip.bienes { background: rgba(155,89,182,.15); color: #9b59b6; }
+.auth-ticker-chip.servicios { background: rgba(46,204,113,.15); color: var(--color-brand, var(--green)); }
+.auth-ticker-chip.nuevo { background: rgba(46,204,113,.15); color: var(--color-brand, var(--green)); }
+
+/* Dot grid de fondo */
+.auth-dot-grid {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--color-border, rgba(255,255,255,0.08)) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.5;
+  pointer-events: none;
+}
+/* Live indicator pulse */
+@keyframes pulse-brand {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.auth-live-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--color-brand, var(--green));
+  animation: pulse-brand 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
 </style>
 <!-- Aplicar tema inmediatamente para evitar flash blanco -->
 <script>
@@ -1434,9 +1703,12 @@ html { background: #0D1B2A; }
 </head>
 <body class="ll-app">
 
-<div id="screen-auth" class="screen active" style="background:var(--color-bg);min-height:100vh;display:grid;place-items:center;padding:24px;">
+<div id="screen-auth" class="screen active">
+  <div class="auth-split">
 
-  <div class="ll-card" style="max-width:420px;width:100%;padding:32px;">
+    <!-- IZQUIERDA: Formulario -->
+    <div class="auth-split__form">
+    <div class="ll-card" style="max-width:420px;width:100%;padding:32px;">
 
     <!-- Brand -->
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px;">
@@ -1538,6 +1810,44 @@ html { background: #0D1B2A; }
     <div id="auth-msg" class="auth-msg"></div>
 
   </div><!-- /.ll-card -->
+    </div><!-- /.auth-split__form -->
+
+    <!-- DERECHA: Showcase en vivo -->
+    <div class="auth-split__showcase" id="auth-showcase">
+      <!-- Header del showcase -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 20px 0;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="auth-live-dot"></span>
+          <span style="font-family:var(--font-mono,monospace);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text2,#94a3b8);">Feed en vivo · hoy</span>
+        </div>
+        <span style="font-family:var(--font-mono,monospace);font-size:11px;color:var(--muted,#7f8ea3);" id="auth-showcase-fecha"></span>
+      </div>
+
+      <!-- Feed de licitaciones -->
+      <div class="auth-showcase-feed" style="margin-top:16px;">
+        <div class="auth-ticker" id="auth-ticker">
+          <!-- Se llena con JS -->
+          <div style="text-align:center;padding:40px 20px;color:var(--muted);">
+            <div class="spinner" style="margin:0 auto 12px;"></div>
+            Cargando licitaciones...
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer del showcase -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;flex-shrink:0;">
+        <div style="display:flex;gap:16px;">
+          <span style="font-family:var(--font-mono,monospace);font-size:10px;color:var(--muted,#7f8ea3);letter-spacing:.04em;">DGCP</span>
+          <span style="font-family:var(--font-mono,monospace);font-size:10px;color:var(--muted,#7f8ea3);letter-spacing:.04em;">MOPC</span>
+          <span style="font-family:var(--font-mono,monospace);font-size:10px;color:var(--muted,#7f8ea3);letter-spacing:.04em;">INAPA</span>
+          <span style="font-family:var(--font-mono,monospace);font-size:10px;color:var(--muted,#7f8ea3);letter-spacing:.04em;">CAASD</span>
+          <span style="font-family:var(--font-mono,monospace);font-size:10px;color:var(--muted,#7f8ea3);letter-spacing:.04em;">MINERD</span>
+        </div>
+        <span style="font-family:var(--font-mono,monospace);font-size:10px;color:var(--muted,#7f8ea3);">Actualiza cada 4 min</span>
+      </div>
+    </div><!-- /.auth-split__showcase -->
+
+  </div><!-- /.auth-split -->
 </div><!-- /#screen-auth -->
 
 <!-- ── MODAL PRICING ─────────────────────────────────────── -->
@@ -2368,6 +2678,7 @@ async function login() {
   localStorage.setItem('sb_user', JSON.stringify(user));
   currentUser = user;
   console.log('Login OK, user:', currentUser?.id);
+  stopShowcaseRefresh();
   cargarSeguimiento();
   showApp();
 }
@@ -2567,6 +2878,106 @@ async function cargarStats() {
       .forEach(id => { const el = document.getElementById(id); if(el) el.textContent = '—'; });
   }
 }
+
+// ── SHOWCASE EN VIVO (login) ──────────────────────────────────────────────
+async function iniciarShowcase() {
+  // Actualizar fecha
+  const fechaEl = document.getElementById('auth-showcase-fecha');
+  if (fechaEl) {
+    const ahora = new Date();
+    fechaEl.textContent = ahora.toLocaleDateString('es-DO', { day: '2-digit', month: 'short' }) + ' · ' +
+      ahora.toLocaleTimeString('es-DO', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  const ticker = document.getElementById('auth-ticker');
+  if (!ticker) return;
+
+  try {
+    // Traer 20 procesos recientes activos
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/procesos?select=codigo_proceso,titulo,unidad_compra,monto_estimado,objeto_proceso,modalidad,detectado_en&estado_proceso=eq.Activo&order=detectado_en.desc&limit=20`,
+      { headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' } }
+    );
+    if (!res.ok) throw new Error('fetch failed');
+    const procesos = await res.json();
+    if (!procesos || !procesos.length) return;
+
+    // Duplicar para loop infinito
+    const todos = [...procesos, ...procesos];
+    ticker.innerHTML = todos.map(p => renderTickerRow(p)).join('');
+  } catch(e) {
+    console.warn('Showcase error:', e);
+    // Fallback: mostrar datos de ejemplo
+    ticker.innerHTML = generarTickerFallback();
+  }
+}
+
+function renderTickerRow(p) {
+  const tipo = p.objeto_proceso || '';
+  const badgeClass = tipo.includes('Obra') ? 'obras' : tipo.includes('Bien') ? 'bienes' : 'servicios';
+  const monto = p.monto_estimado
+    ? (Number(p.monto_estimado) >= 1_000_000
+        ? `RD$ ${(Number(p.monto_estimado)/1_000_000).toFixed(1)}M`
+        : `RD$ ${(Number(p.monto_estimado)/1_000).toFixed(0)}K`)
+    : '—';
+
+  // Extraer entidad corta (primera sigla del nombre)
+  const entidad = p.unidad_compra || '—';
+  const entidadCorta = entidad.length > 30 ? entidad.substring(0, 30) + '…' : entidad;
+
+  // Detectar si es nuevo (menos de 24h)
+  const esNuevo = p.detectado_en && (Date.now() - new Date(p.detectado_en)) < 86400000;
+
+  return `
+  <div class="auth-ticker-row" onclick="void(0)">
+    <div class="auth-ticker-meta">
+      <span class="auth-ticker-codigo">${p.codigo_proceso || '—'}</span>
+      <span class="auth-ticker-entidad">${entidadCorta}</span>
+    </div>
+    <div class="auth-ticker-titulo">${p.titulo || 'Sin título'}</div>
+    <div class="auth-ticker-footer">
+      <span class="auth-ticker-monto">${monto}</span>
+      <div style="display:flex;gap:4px;">
+        ${tipo ? `<span class="auth-ticker-badge ${badgeClass}">${tipo}</span>` : ''}
+        ${esNuevo ? '<span class="auth-ticker-badge nuevo">Nuevo</span>' : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function generarTickerFallback() {
+  const ejemplos = [
+    { codigo: 'INAPA-CCC-LPN-2026-0021', titulo: 'Red de agua Bayaguana sector norte', monto: 'RD$ 92.3M', tipo: 'obras', entidad: 'INAPA' },
+    { codigo: 'MOPC-2026-0198', titulo: 'Puente río Iguamo H.Mayor – El Seibo', monto: 'RD$ 556.7M', tipo: 'obras', entidad: 'MOPC' },
+    { codigo: 'MINERD-2026-0087', titulo: 'Construcción Politécnico Bávaro Fase III', monto: 'RD$ 412.1M', tipo: 'obras', entidad: 'DIE' },
+    { codigo: 'CAASD-2026-0033', titulo: 'Alcantarillado Los Alcarrizos T-4', monto: 'RD$ 198.4M', tipo: 'obras', entidad: 'CAASD' },
+    { codigo: 'INAPA-2026-0029', titulo: 'Tanque elevado 1,000 m³ San Pedro', monto: 'RD$ 62.0M', tipo: 'obras', entidad: 'INAPA' },
+  ];
+  const todos = [...ejemplos, ...ejemplos];
+  return todos.map(e => `
+  <div class="auth-ticker-row">
+    <div class="auth-ticker-meta">
+      <span class="auth-ticker-codigo">${e.codigo}</span>
+      <span class="auth-ticker-entidad">${e.entidad}</span>
+    </div>
+    <div class="auth-ticker-titulo">${e.titulo}</div>
+    <div class="auth-ticker-footer">
+      <span class="auth-ticker-monto">${e.monto}</span>
+      <span class="auth-ticker-badge ${e.tipo}">${e.tipo}</span>
+    </div>
+  </div>`).join('');
+}
+
+// Refrescar showcase cada 4 minutos
+let _showcaseTimer = null;
+function startShowcaseRefresh() {
+  iniciarShowcase();
+  _showcaseTimer = setInterval(iniciarShowcase, 4 * 60 * 1000);
+}
+function stopShowcaseRefresh() {
+  if (_showcaseTimer) { clearInterval(_showcaseTimer); _showcaseTimer = null; }
+}
+// ──────────────────────────────────────────────────────────────────────────
 
 function filtrarRubro(rubro) {
   document.getElementById('filtro-objeto').value = rubro;
@@ -3459,7 +3870,11 @@ async function _tryRefreshToken() {
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
   // Acepta si hay al menos el usuario guardado (token puede estar vencido)
-  if (!savedUser) return;
+  if (!savedUser) {
+    // Sin sesión → mostrar showcase en vivo
+    startShowcaseRefresh();
+    return;
+  }
 
   // Restaurar currentUser desde localStorage primero (siempre)
   try {
@@ -3488,6 +3903,7 @@ async function _tryRefreshToken() {
   }
 
   console.log('✅ Sesión restaurada, user:', currentUser?.id);
+  stopShowcaseRefresh();
   showApp();
   cargarSeguimiento();
 })();
