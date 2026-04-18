@@ -141,10 +141,11 @@ body {
 #screen-auth {
   display: flex;
   align-items: stretch;
+  width: 100%;
+  height: 100vh;
   min-height: 100%;
   position: relative;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
   background: var(--bg, #0D1B2A);
 }
 /* Split layout — desktop */
@@ -152,6 +153,8 @@ body {
   display: flex;
   width: 100%;
   min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 .auth-split__form {
   flex: 0 0 50%;
@@ -162,15 +165,17 @@ body {
   padding: max(32px, env(safe-area-inset-top)) 40px max(32px, env(safe-area-inset-bottom));
   background: var(--bg, #0D1B2A);
   overflow-y: auto;
+  height: 100%;
 }
 .auth-split__showcase {
-  flex: 0 0 50%;
+  flex: 1;
   position: relative;
   overflow: hidden;
   background: var(--bg2, #112236);
   border-left: 1px solid var(--border, rgba(64,145,108,0.12));
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
 /* En móvil: ocultar showcase, form a pantalla completa */
 @media (max-width: 768px) {
@@ -2895,7 +2900,7 @@ async function iniciarShowcase() {
   try {
     // Traer 20 procesos recientes activos
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/procesos?select=codigo_proceso,titulo,unidad_compra,monto_estimado,objeto_proceso,modalidad,detectado_en&estado_proceso=eq.Activo&order=detectado_en.desc&limit=20`,
+      `${SUPABASE_URL}/rest/v1/procesos?select=codigo_proceso,titulo,unidad_compra,monto_estimado,objeto_proceso,modalidad,detectado_en&estado_proceso=eq.Proceso%20publicado&order=detectado_en.desc&limit=30`,
       { headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' } }
     );
     if (!res.ok) throw new Error('fetch failed');
