@@ -2541,10 +2541,10 @@ function filtrarRubroChip(rubro) {
   if (sel) sel.value = rubro;
   // Actualizar chip activo visualmente
   ['chip-all','chip-obras','chip-bienes','chip-servicios'].forEach(id => {
-    document.getElementById(id)?.classList.remove('active');
+    document.getElementById(id)?.classList.remove('is-active');
   });
   const chipMap = { '': 'chip-all', 'Obras': 'chip-obras', 'Bienes': 'chip-bienes', 'Servicios': 'chip-servicios' };
-  document.getElementById(chipMap[rubro] || 'chip-all')?.classList.add('active');
+  document.getElementById(chipMap[rubro] || 'chip-all')?.classList.add('is-active');
   cargarProcesos(1);
 }
 
@@ -2634,32 +2634,33 @@ function renderProcesos(procesos, data, page) {
 
   container.innerHTML = procesos.map(p => {
     const tipo = p.objeto_proceso || '';
-    const badgeTipo = tipo === 'Obras'
-      ? 'proceso-badge tipo-obras'
+    const chipTipo = tipo === 'Obras'
+      ? 'll-chip ll-chip--info'
       : tipo === 'Bienes'
-        ? 'proceso-badge tipo-bienes'
+        ? 'll-chip ll-chip--warning'
         : tipo === 'Servicios'
-          ? 'proceso-badge tipo-servicios'
-          : 'proceso-badge tipo-default';
+          ? 'll-chip ll-chip--success'
+          : 'll-chip';
     const cierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO',{day:'2-digit',month:'short'}) : '—';
     return `
       <div class="proceso-swipe-wrap" data-codigo="${p.codigo_proceso}" data-titulo="${(p.titulo||'').replace(/"/g,'&quot;').substring(0,80)}">
         <div class="proceso-swipe-action" id="swipe-action-${p.codigo_proceso}">
           <span class="proceso-swipe-action-label">Quiero ganar</span>
         </div>
-        <div class="proceso-card" data-tipo="${(p.objeto_proceso||'').includes('Obra')?'Obras':(p.objeto_proceso||'').includes('Bien')?'Bienes':(p.objeto_proceso||'').includes('Servicio')?'Servicios':''}" data-codigo="${p.codigo_proceso}">
-          <div class="proceso-card-top">
-            <div class="proceso-titulo">${p.titulo || 'Sin título'}</div>
-            <div class="proceso-monto">${formatMonto(p.monto_estimado)}</div>
+        <div class="ll-card ll-card--hover ll-card--accent" data-tipo="${(p.objeto_proceso||'').includes('Obra')?'Obras':(p.objeto_proceso||'').includes('Bien')?'Bienes':(p.objeto_proceso||'').includes('Servicio')?'Servicios':''}" data-codigo="${p.codigo_proceso}">
+          <div class="ll-card__header">
+            <span class="ll-mono ll-caption">${p.codigo_proceso || '—'}</span>
+            <span class="ll-num">${formatMonto(p.monto_estimado)}</span>
           </div>
-          <div class="proceso-card-bottom">
-            <span class="proceso-entidad">${p.unidad_compra || '—'}</span>
-            <span class="proceso-fecha">${cierre}</span>
+          <h3 class="ll-card__title" style="margin:6px 0;">${p.titulo || 'Sin título'}</h3>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+            <span class="ll-body-sm ll-u-text-subtle">${p.unidad_compra || '—'}</span>
+            <span class="ll-mono ll-caption">${cierre}</span>
           </div>
-          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
-            ${tipo ? `<span class="${badgeTipo}">${tipo}</span>` : ''}
-            ${p.modalidad ? `<span class="proceso-badge tipo-default">${p.modalidad}</span>` : ''}
-            ${p.dirigido_mipymes ? '<span class="proceso-badge" style="background:var(--amber-dim);color:var(--amber)">MIPYMES</span>' : ''}
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;">
+            ${tipo ? `<span class="${chipTipo}">${tipo}</span>` : ''}
+            ${p.modalidad ? `<span class="ll-chip">${p.modalidad}</span>` : ''}
+            ${p.dirigido_mipymes ? '<span class="ll-chip ll-chip--warning">MIPYMES</span>' : ''}
           </div>
         </div>
       </div>`;
@@ -2703,9 +2704,9 @@ function limpiarFiltros() {
   if (sel) sel.value = '';
   // Resetear chip activo a Todos
   ['chip-all','chip-obras','chip-bienes','chip-servicios'].forEach(id => {
-    document.getElementById(id)?.classList.remove('active');
+    document.getElementById(id)?.classList.remove('is-active');
   });
-  document.getElementById('chip-all')?.classList.add('active');
+  document.getElementById('chip-all')?.classList.add('is-active');
   limpiarUnspsc();
   actualizarBadgeFiltros();
   cargarProcesos(1);
