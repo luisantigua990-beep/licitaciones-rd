@@ -2363,12 +2363,12 @@ function logout() {
   localStorage.removeItem('sb_user');
   currentUser = null;
   document.getElementById('screen-app').classList.remove('active');
-  document.getElementById('screen-auth').classList.add('is-active');
+  document.getElementById('screen-auth').classList.add('active');
 }
 
 function showApp() {
   document.getElementById('screen-auth').classList.remove('active');
-  document.getElementById('screen-app').classList.add('is-active');
+  document.getElementById('screen-app').classList.add('active');
 
   // Extraer nombre real del usuario desde user_metadata
   const nombre = currentUser?.user_metadata?.nombre
