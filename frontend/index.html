@@ -1884,32 +1884,36 @@ html { background: #0D1B2A; }
 
   <!-- ══ TAB SEGUIMIENTO ══ -->
   <div id="tab-seguimiento" class="main page-with-nav">
-    <div class="seg-header">
-      <div class="seg-title">Mis Procesos</div>
-      <div class="seg-count" id="seg-count">0 activos</div>
-    </div>
+    <header style="background:var(--color-surface);border-bottom:1px solid var(--color-border);padding:16px 16px 12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h1 class="ll-h2">Mis Procesos</h1>
+        <span class="ll-chip" id="seg-count">0 activos</span>
+      </div>
+    </header>
 
     <!-- Dashboard de métricas personales -->
-    <div class="seg-metricas" id="seg-metricas" style="display:none">
-      <div class="seg-metrica-card green">
-        <div class="seg-metrica-valor" id="met-activos">—</div>
-        <div class="seg-metrica-label">Activos</div>
-        <div class="seg-metrica-sub" id="met-activos-sub">en seguimiento</div>
-      </div>
-      <div class="seg-metrica-card amber">
-        <div class="seg-metrica-valor" id="met-ganados">—</div>
-        <div class="seg-metrica-label">Ganados</div>
-        <div class="seg-metrica-sub" id="met-tasa">tasa de éxito</div>
-      </div>
-      <div class="seg-metrica-card blue">
-        <div class="seg-metrica-valor" id="met-monto">—</div>
-        <div class="seg-metrica-label">Monto ganado</div>
-        <div class="seg-metrica-sub">contratos adjudicados</div>
-      </div>
-      <div class="seg-metrica-card muted">
-        <div class="seg-metrica-valor" id="met-tiempo">—</div>
-        <div class="seg-metrica-label">Días prom.</div>
-        <div class="seg-metrica-sub">preparación por oferta</div>
+    <div id="seg-metricas" style="display:none;padding:12px 16px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="ll-card" style="padding:12px;">
+          <div class="ll-num" style="font-size:20px;color:var(--color-brand);" id="met-activos">—</div>
+          <div class="ll-caption" style="margin-top:2px;">Activos</div>
+          <div class="ll-caption ll-u-text-subtle" id="met-activos-sub">en seguimiento</div>
+        </div>
+        <div class="ll-card" style="padding:12px;">
+          <div class="ll-num" style="font-size:20px;color:var(--color-warning,#f39c12);" id="met-ganados">—</div>
+          <div class="ll-caption" style="margin-top:2px;">Ganados</div>
+          <div class="ll-caption ll-u-text-subtle" id="met-tasa">tasa de éxito</div>
+        </div>
+        <div class="ll-card" style="padding:12px;">
+          <div class="ll-num" style="font-size:20px;color:var(--color-info,#3498db);" id="met-monto">—</div>
+          <div class="ll-caption" style="margin-top:2px;">Monto ganado</div>
+          <div class="ll-caption ll-u-text-subtle">contratos adjudicados</div>
+        </div>
+        <div class="ll-card" style="padding:12px;">
+          <div class="ll-num" style="font-size:20px;" id="met-tiempo">—</div>
+          <div class="ll-caption" style="margin-top:2px;">Días prom.</div>
+          <div class="ll-caption ll-u-text-subtle">preparación por oferta</div>
+        </div>
       </div>
     </div>
 
@@ -1935,13 +1939,13 @@ html { background: #0D1B2A; }
       </div>
     </div>
 
-    <div class="seg-filtros">
-      <button class="seg-filtro-btn active" onclick="filtrarSeguimiento('todos')" id="sfbtn-todos">Todos</button>
-      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('analizando')" id="sfbtn-analizando">Analizando</button>
-      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('preparando')" id="sfbtn-preparando">Preparando</button>
-      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('presentado')" id="sfbtn-presentado">Presentado</button>
-      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('adjudicado')" id="sfbtn-adjudicado">Adjudicado</button>
-      <button class="seg-filtro-btn" onclick="filtrarSeguimiento('no-adj')" id="sfbtn-no-adj">No adj.</button>
+    <div style="display:flex;gap:8px;padding:8px 16px 12px;overflow-x:auto;">
+      <button class="ll-chip ll-chip--interactive is-active" onclick="filtrarSeguimiento('todos')" id="sfbtn-todos">Todos</button>
+      <button class="ll-chip ll-chip--interactive" onclick="filtrarSeguimiento('analizando')" id="sfbtn-analizando">Analizando</button>
+      <button class="ll-chip ll-chip--interactive" onclick="filtrarSeguimiento('preparando')" id="sfbtn-preparando">Preparando</button>
+      <button class="ll-chip ll-chip--interactive" onclick="filtrarSeguimiento('presentado')" id="sfbtn-presentado">Presentado</button>
+      <button class="ll-chip ll-chip--interactive" onclick="filtrarSeguimiento('adjudicado')" id="sfbtn-adjudicado">Adjudicado</button>
+      <button class="ll-chip ll-chip--interactive" onclick="filtrarSeguimiento('no-adj')" id="sfbtn-no-adj">No adj.</button>
     </div>
 
     <div id="seg-lista"></div>
@@ -3749,54 +3753,52 @@ function renderSegCard(item) {
   }
 
   return `
-  <div class="seg-card" id="segcard-${codigo}">
-    <div class="seg-urgencia-bar ${urg}"></div>
-    <div class="seg-card-body">
-      <div class="seg-card-top">
-        <span class="seg-estado-pill ${eCfg.cls}">${eCfg.label}</span>
-        ${diasHtml}
+  <div class="ll-card ll-card--hover" id="segcard-${codigo}" style="margin:0 16px 10px;overflow:hidden;">
+    <div class="seg-urgencia-bar ${urg}" style="height:3px;margin:-12px -12px 12px;"></div>
+    <div class="ll-card__header">
+      <span class="ll-chip ll-chip--${eCfg.cls === 'analizando' ? 'info' : eCfg.cls === 'preparando' ? 'warning' : eCfg.cls === 'presentado' ? 'success' : eCfg.cls === 'adjudicado' ? 'success' : 'error'}">${eCfg.label}</span>
+      ${diasHtml}
+    </div>
+    <h3 class="ll-card__title" onclick="verDetalle('${codigo}')" style="cursor:pointer;margin:8px 0;">${p.titulo || 'Sin título'}</h3>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <span class="ll-body-sm" style="color:var(--blue,#3498db);font-weight:600;">${p.unidad_compra || '—'}</span>
+      ${monto ? `<span class="ll-num ll-body-sm">${monto}</span>` : ''}
+    </div>
+    ${enmiendaHtml}
+    ${fechas.length > 0 ? `
+    <button class="ll-btn ll-btn--ghost" style="width:100%;justify-content:space-between;padding:8px 0;font-size:12px;" id="toggle-fechas-${codigo}" onclick="toggleTimelineFechas('${codigo}')">
+      <span>Cronograma</span><span class="seg-toggle-chevron">▼</span>
+    </button>
+    <div class="seg-timeline-wrap" id="tl-wrap-${codigo}">
+      <div class="seg-timeline">
+        ${fechas.map(f => {
+          const fechaStr = f.valor.toLocaleDateString('es-DO', { day:'2-digit', month:'short', year:'numeric' });
+          const horaStr  = f.valor.toLocaleTimeString('es-DO', { hour:'2-digit', minute:'2-digit' });
+          let diasTxt = '';
+          if (f.estado === 'vencida')      diasTxt = 'Vencida';
+          else if (f.estado === 'hoy')     diasTxt = `HOY · ${horaStr}`;
+          else if (f.estado === 'critico') diasTxt = `${f.dias} día${f.dias !== 1 ? 's' : ''}`;
+          else if (f.estado === 'proximo') diasTxt = `${f.dias} días`;
+          else                              diasTxt = `${f.dias} días`;
+          return `
+          <div class="seg-tl-row">
+            <div class="seg-tl-dot ${f.estado}"></div>
+            <div class="seg-tl-info">
+              <div class="seg-tl-label">${f.label}</div>
+              ${f.sublabel ? `<div class="seg-tl-sub">${f.sublabel}</div>` : ''}
+            </div>
+            <div class="seg-tl-right">
+              <div class="seg-tl-fecha ${f.estado}">${fechaStr}</div>
+              <div class="seg-tl-dias ${f.estado}">${diasTxt}</div>
+            </div>
+          </div>`;
+        }).join('')}
       </div>
-      <div class="seg-card-titulo" onclick="verDetalle('${codigo}')">${p.titulo || 'Sin título'}</div>
-      <div class="seg-card-meta">
-        <span class="inst">${p.unidad_compra || '—'}</span>
-        ${monto ? `<span class="monto">${monto}</span>` : ''}
-      </div>
-      ${enmiendaHtml}
-      ${fechas.length > 0 ? `
-      <button class="seg-toggle-fechas" id="toggle-fechas-${codigo}" onclick="toggleTimelineFechas('${codigo}')">
-        <span>Cronograma</span><span class="seg-toggle-chevron">▼</span>
-      </button>
-      <div class="seg-timeline-wrap" id="tl-wrap-${codigo}">
-        <div class="seg-timeline">
-          ${fechas.map(f => {
-            const fechaStr = f.valor.toLocaleDateString('es-DO', { day:'2-digit', month:'short', year:'numeric' });
-            const horaStr  = f.valor.toLocaleTimeString('es-DO', { hour:'2-digit', minute:'2-digit' });
-            let diasTxt = '';
-            if (f.estado === 'vencida')      diasTxt = 'Vencida';
-            else if (f.estado === 'hoy')     diasTxt = `HOY · ${horaStr}`;
-            else if (f.estado === 'critico') diasTxt = `${f.dias} día${f.dias !== 1 ? 's' : ''}`;
-            else if (f.estado === 'proximo') diasTxt = `${f.dias} días`;
-            else                              diasTxt = `${f.dias} días`;
-            return `
-            <div class="seg-tl-row">
-              <div class="seg-tl-dot ${f.estado}"></div>
-              <div class="seg-tl-info">
-                <div class="seg-tl-label">${f.label}</div>
-                ${f.sublabel ? `<div class="seg-tl-sub">${f.sublabel}</div>` : ''}
-              </div>
-              <div class="seg-tl-right">
-                <div class="seg-tl-fecha ${f.estado}">${fechaStr}</div>
-                <div class="seg-tl-dias ${f.estado}">${diasTxt}</div>
-              </div>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>` : ''}
-      <div class="seg-card-actions" style="margin-top:10px">
-        <button class="seg-btn seg-btn-ver" onclick="verDetalle('${codigo}')">Ver detalle</button>
-        <button class="seg-btn seg-btn-estado" onclick="abrirModalEstado('${codigo}','${estado}')">Estado</button>
-        <button class="seg-btn seg-btn-quitar" onclick="quitarSeguimiento('${codigo}')">✕</button>
-      </div>
+    </div>` : ''}
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="ll-btn ll-btn--secondary" style="flex:1;" onclick="verDetalle('${codigo}')">Ver detalle</button>
+      <button class="ll-btn ll-btn--ghost" onclick="abrirModalEstado('${codigo}','${estado}')">Estado</button>
+      <button class="ll-btn ll-btn--danger-ghost ll-btn--icon" onclick="quitarSeguimiento('${codigo}')">✕</button>
     </div>
   </div>`;
 }
@@ -3937,13 +3939,13 @@ function renderSeguimiento() {
   if (countEl) countEl.textContent = `${activos.length} activo${activos.length !== 1 ? 's' : ''}`;
   if (!datos.length) {
     lista.innerHTML = `
-      <div class="seg-empty">
-        <div class="seg-empty-icon">📋</div>
-        <div class="seg-empty-title">${segFiltroActivo === 'todos' ? 'Aún no sigues ningún proceso' : 'Sin procesos en este estado'}</div>
-        <div class="seg-empty-sub">${segFiltroActivo === 'todos'
-          ? 'Entra al detalle de una licitación y presiona <b>"Seguir proceso"</b> para agregarlo aquí y recibir alertas automáticas.'
-          : 'Cambia el filtro para ver otros estados.'}</div>
-        ${segFiltroActivo === 'todos' ? `<button onclick="navTo('licitaciones')" style="margin-top:16px;padding:10px 20px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body)">Ver licitaciones activas →</button>` : ''}
+            <div style="text-align:center;padding:40px 24px;">
+        <div style="font-size:32px;margin-bottom:12px;">📋</div>
+        <h3 class="ll-h4" style="margin-bottom:8px;">${segFiltroActivo === 'todos' ? 'Aún no sigues ningún proceso' : 'Sin procesos en este estado'}</h3>
+        <p class="ll-body-sm ll-u-text-subtle" style="margin-bottom:16px;">${segFiltroActivo === 'todos'
+          ? 'Entra al detalle de una licitación y presiona <b>\"Seguir proceso\"</b> para agregarlo aquí y recibir alertas automáticas.'
+          : 'Cambia el filtro para ver otros estados.'}</p>
+        ${segFiltroActivo === 'todos' ? `<button class="ll-btn ll-btn--primary" onclick="navTo('licitaciones')">Ver licitaciones activas →</button>` : ''}
       </div>`;
     return;
   }
@@ -3952,7 +3954,7 @@ function renderSeguimiento() {
 
 function filtrarSeguimiento(filtro) {
   segFiltroActivo = filtro;
-  document.querySelectorAll('.seg-filtro-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#sfbtn-todos, #sfbtn-analizando, #sfbtn-preparando, #sfbtn-presentado, #sfbtn-adjudicado, #sfbtn-no-adj').forEach(b => b.classList.remove('is-active'));
   const btn = document.getElementById(`sfbtn-${filtro}`);
   if (btn) btn.classList.add('is-active');
   renderSeguimiento();
