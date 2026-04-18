@@ -1744,13 +1744,13 @@ html { background: #0D1B2A; }
   </div>
 
   <div id="tab-detalle" class="page-with-nav" style="display:none">
-    <div class="detalle-nav">
-      <button class="detalle-back" onclick="mostrarDashboard()">
+    <nav class="ll-navbar">
+      <button class="ll-btn ll-btn--secondary ll-btn--icon" onclick="mostrarDashboard()" aria-label="Volver">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
-      <span class="detalle-nav-title">Detalle</span>
+      <span class="ll-mono ll-caption" style="margin:0 auto;">Detalle</span>
       <div style="width:36px"></div>
-    </div>
+    </nav>
     <div id="detalle-container" style="padding:0 16px 16px"><div class="loading"><div class="spinner"></div></div></div>
   </div>
 
@@ -2922,47 +2922,46 @@ async function verDetalle(codigo) {
   const fCierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO') : '—';
 
   document.getElementById('detalle-container').innerHTML = `
-    <div class="detalle-card">
-      <div class="detalle-header-bar">
-        <div class="detalle-badges">
-          ${p.objeto_proceso ? `<span class="detalle-badge detalle-badge-tipo">${p.objeto_proceso}</span>` : ''}
-          ${p.modalidad      ? `<span class="detalle-badge detalle-badge-modal">${p.modalidad}</span>` : ''}
-          ${p.estado_proceso ? `<span class="detalle-badge detalle-badge-estado">${p.estado_proceso}</span>` : ''}
-        </div>
-        <div class="detalle-titulo">${p.titulo || 'Sin título'}</div>
-        <div class="detalle-monto">${formatMontoFull(p.monto_estimado)}</div>
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+        ${p.objeto_proceso ? `<span class="ll-chip ll-chip--info">${p.objeto_proceso}</span>` : ''}
+        ${p.modalidad      ? `<span class="ll-chip">${p.modalidad}</span>` : ''}
+        ${p.estado_proceso ? `<span class="ll-chip ll-chip--success">${p.estado_proceso}</span>` : ''}
       </div>
-      <div class="detalle-body">
-        <div class="detalle-grid">
-          <div class="detalle-field"><label>Institución</label><span>${p.unidad_compra || '—'}</span></div>
-          <div class="detalle-field"><label>Código</label><span>${p.codigo_proceso}</span></div>
-          <div class="detalle-field"><label>Publicación</label><span>${fPub}</span></div>
-          <div class="detalle-field"><label>Cierre</label><span>${fCierre}</span></div>
-          <div class="detalle-field"><label>Divisa</label><span>${p.divisa || 'DOP'}</span></div>
-          ${p.duracion_contrato ? `<div class="detalle-field"><label>Duración contrato</label><span>${p.duracion_contrato}</span></div>` : ''}
-        </div>
-        ${p.url ? `<a href="${p.url}" target="_blank" class="detalle-link">Ver en portal DGCP</a>` : ''}
-      <button id="btn-seguir-${p.codigo_proceso}" class="btn-seguir no-siguiendo" onclick="toggleSeguimiento('${p.codigo_proceso}')">Seguir proceso</button>
-      </div>
+      <h1 class="ll-h2" style="margin-bottom:8px;">${p.titulo || 'Sin título'}</h1>
+      <div class="ll-num" style="font-size:var(--text-xl);margin-bottom:16px;">${formatMontoFull(p.monto_estimado)}</div>
+      <div class="ll-divider" style="margin:12px 0;"></div>
+      <dl style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div><dt class="ll-caption ll-u-text-subtle">Institución</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.unidad_compra || '—'}</dd></div>
+        <div><dt class="ll-caption ll-u-text-subtle">Código</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${p.codigo_proceso}</dd></div>
+        <div><dt class="ll-caption ll-u-text-subtle">Publicación</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${fPub}</dd></div>
+        <div><dt class="ll-caption ll-u-text-subtle">Cierre</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${fCierre}</dd></div>
+        <div><dt class="ll-caption ll-u-text-subtle">Divisa</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.divisa || 'DOP'}</dd></div>
+        ${p.duracion_contrato ? `<div><dt class="ll-caption ll-u-text-subtle">Duración contrato</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.duracion_contrato}</dd></div>` : ''}
+      </dl>
+      ${p.url ? `<a href="${p.url}" target="_blank" class="ll-btn ll-btn--ghost" style="display:inline-flex;margin-bottom:12px;">Ver en portal DGCP ↗</a>` : ''}
+      <button id="btn-seguir-${p.codigo_proceso}" class="ll-btn ll-btn--primary ll-btn--block btn-seguir no-siguiendo" onclick="toggleSeguimiento('${p.codigo_proceso}')">Seguir proceso</button>
     </div>
 
-    <div class="articulos-card">
-      <div class="articulos-header">
-        <span>Artículos del proceso (${arts.length})</span>
-        ${arts.length ? `<button class="btn-pdf-arts" onclick="descargarArticulosPDF('${p.codigo_proceso}')">
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div class="ll-card__header">
+        <h2 class="ll-card__title">Artículos del proceso <span class="ll-chip" style="margin-left:4px;">${arts.length}</span></h2>
+        ${arts.length ? `<button class="ll-btn ll-btn--ghost ll-btn--sm" onclick="descargarArticulosPDF('${p.codigo_proceso}')">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           PDF
         </button>` : ''}
       </div>
+      <div class="ll-card__body">
       ${arts.length ? arts.map(a => `
-        <div class="articulo-row">
-          <div>
-            <div class="articulo-desc">${a.descripcion_articulo || a.descripcion_usuario || 'Sin descripción'}</div>
-            <div class="articulo-meta">${a.cantidad||'—'} ${a.unidad_medida||''} · UNSPSC: ${a.clase_unspsc||'—'}</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--color-border);">
+          <div style="flex:1;margin-right:12px;">
+            <div class="ll-body-sm">${a.descripcion_articulo || a.descripcion_usuario || 'Sin descripción'}</div>
+            <div class="ll-caption ll-mono ll-u-text-subtle" style="margin-top:3px;">${a.cantidad||'—'} ${a.unidad_medida||''} · UNSPSC: ${a.clase_unspsc||'—'}</div>
           </div>
-          <div class="articulo-precio">${a.precio_total_estimado ? 'RD$'+Number(a.precio_total_estimado).toLocaleString() : '—'}</div>
+          <div class="ll-num ll-body-sm">${a.precio_total_estimado ? 'RD$'+Number(a.precio_total_estimado).toLocaleString() : '—'}</div>
         </div>`).join('')
-      : '<div style="padding:20px;color:var(--muted);font-size:13px">Sin artículos registrados</div>'}
+      : '<div class="ll-body-sm ll-u-text-subtle" style="padding:16px 0;">Sin artículos registrados</div>'}
+      </div>
     </div>
     ${(data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente' || data.analisis?.estado === 'pendiente_analisis') ? `
     <div class="analisis-procesando">
@@ -4002,14 +4001,18 @@ async function actualizarBtnSeguir(codigo) {
         `seguimiento_procesos?user_id=eq.${currentUser.id}&proceso_codigo=eq.${codigo}`
       );
       const siguiendo = Array.isArray(data) && data.length > 0;
-      btn.className = `btn-seguir ${siguiendo ? 'siguiendo' : 'no-siguiendo'}`;
+      btn.className = siguiendo
+        ? 'll-btn ll-btn--secondary ll-btn--block btn-seguir siguiendo'
+        : 'll-btn ll-btn--primary ll-btn--block btn-seguir no-siguiendo';
       btn.innerHTML  = siguiendo ? 'Siguiendo proceso' : 'Seguir proceso';
       return;
     } catch(e) {}
   }
 
   const siguiendo = estaEnSeguimiento(codigo);
-  btn.className = `btn-seguir ${siguiendo ? 'siguiendo' : 'no-siguiendo'}`;
+  btn.className = siguiendo
+    ? 'll-btn ll-btn--secondary ll-btn--block btn-seguir siguiendo'
+    : 'll-btn ll-btn--primary ll-btn--block btn-seguir no-siguiendo';
   btn.innerHTML  = siguiendo ? 'Siguiendo proceso' : 'Seguir proceso';
 }
 
