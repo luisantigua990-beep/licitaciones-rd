@@ -1578,63 +1578,59 @@ html { background: #0D1B2A; }
     Actualizando...
   </div>
 
-  <nav class="navbar">
-    <div class="nav-brand" onclick="navDashboardTap()" style="cursor:pointer;" role="button" aria-label="Ir al inicio">
-      <div class="nav-brand-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v5l-4 8a2 2 0 0 0 1.8 3h8.4a2 2 0 0 0 1.8-3l-4-8V3"/><path d="M8.5 16h7"/></svg></div>
-      <span class="nav-brand-name">Licitaciones Lab</span>
+  <nav class="ll-navbar">
+    <div class="ll-navbar__brand" onclick="navDashboardTap()" style="cursor:pointer;" role="button" aria-label="Ir al inicio">
+      <div class="ll-navbar__brand-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v5l-4 8a2 2 0 0 0 1.8 3h8.4a2 2 0 0 0 1.8-3l-4-8V3"/><path d="M8.5 16h7"/></svg></div>
+      <span class="ll-body" style="font-weight:700;">Licitaciones Lab</span>
     </div>
-    <div class="nav-right">
-      <button class="btn-menu" id="btn-menu" onclick="openDrawer()" aria-label="Menú">
-        <span></span><span></span><span></span>
-      </button>
-    </div>
+    <div class="ll-navbar__spacer"></div>
+    <button class="ll-btn ll-btn--ghost ll-btn--icon" id="btn-menu" onclick="openDrawer()" aria-label="Menú">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
   </nav>
 
   <!-- ── DRAWER ── -->
   <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
-  <div class="drawer" id="drawer">
-    <div class="drawer-header">
-      <div class="drawer-logo">
-        <div class="drawer-logo-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v5l-4 8a2 2 0 0 0 1.8 3h8.4a2 2 0 0 0 1.8-3l-4-8V3"/><path d="M8.5 16h7"/></svg></div>
-        <span class="drawer-logo-name">Licitaciones Lab</span>
+  <div class="ll-drawer" id="drawer">
+    <div class="ll-drawer__header">
+      <div class="ll-navbar__brand">
+        <div class="ll-navbar__brand-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v5l-4 8a2 2 0 0 0 1.8 3h8.4a2 2 0 0 0 1.8-3l-4-8V3"/><path d="M8.5 16h7"/></svg></div>
+        <span class="ll-body" style="font-weight:700;">Licitaciones Lab</span>
       </div>
-      <button class="drawer-close" onclick="closeDrawer()">✕</button>
+      <button class="ll-btn ll-btn--ghost ll-btn--icon" onclick="closeDrawer()" aria-label="Cerrar">✕</button>
     </div>
-    <div class="drawer-user">
-      <div class="drawer-user-avatar" id="drawer-avatar">LA</div>
-      <div class="drawer-user-info">
-        <div class="drawer-user-name" id="drawer-name">Ing. Luis Antigua</div>
-        <div class="drawer-user-role" id="drawer-role">LicitacionLab</div>
+    <div class="ll-drawer__user">
+      <div class="ll-navbar__brand-icon" id="drawer-avatar" style="width:40px;height:40px;font-size:14px;">LA</div>
+      <div style="flex:1;">
+        <div class="ll-body" style="font-weight:600;" id="drawer-name">Ing. Luis Antigua</div>
+        <div class="ll-caption ll-u-text-subtle" id="drawer-role">LicitacionLab</div>
       </div>
       <div class="drawer-dot"></div>
     </div>
-    <div class="drawer-section">
-      <div class="drawer-theme-toggle">
-        <div class="drawer-theme-info">
-          <div class="drawer-item-icon" id="drawer-theme-icon">●</div>
-          <div>
-            <div class="drawer-item-label" id="drawer-theme-label">Modo oscuro</div>
-            <div class="drawer-item-sub">Cambiar apariencia</div>
-          </div>
+    <div class="ll-drawer__section">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;">
+        <div>
+          <div class="ll-body" style="font-weight:600;" id="drawer-theme-label">Modo oscuro</div>
+          <div class="ll-caption ll-u-text-subtle">Cambiar apariencia</div>
         </div>
-        <button class="drawer-theme-track" id="drawer-theme-track" onclick="toggleTheme()"></button>
+        <button class="ll-toggle" id="drawer-theme-track" onclick="toggleTheme()"></button>
       </div>
-      <div class="drawer-divider"></div>
-      <button class="drawer-item" onclick="switchTab2('dashboard');closeDrawer()">
-        <div class="drawer-item-icon">≡</div>
-        <div><div class="drawer-item-label">Licitaciones</div><div class="drawer-item-sub">Ver todos los procesos</div></div>
+      <div class="ll-divider"></div>
+      <button class="ll-btn ll-btn--ghost" style="width:100%;justify-content:flex-start;gap:12px;padding:12px 8px;" onclick="switchTab2('dashboard');closeDrawer()">
+        <span style="font-size:16px;">≡</span>
+        <div style="text-align:left;"><div class="ll-body" style="font-weight:600;">Licitaciones</div><div class="ll-caption ll-u-text-subtle">Ver todos los procesos</div></div>
       </button>
-      <button class="drawer-item" onclick="switchTab2('seguimiento');limpiarBadge();closeDrawer()">
-        <div class="drawer-item-icon">★</div>
-        <div><div class="drawer-item-label">Mis Procesos</div><div class="drawer-item-sub">Procesos seguidos</div></div>
+      <button class="ll-btn ll-btn--ghost" style="width:100%;justify-content:flex-start;gap:12px;padding:12px 8px;" onclick="switchTab2('seguimiento');limpiarBadge();closeDrawer()">
+        <span style="font-size:16px;">★</span>
+        <div style="text-align:left;"><div class="ll-body" style="font-weight:600;">Mis Procesos</div><div class="ll-caption ll-u-text-subtle">Procesos seguidos</div></div>
       </button>
-      <button class="drawer-item" onclick="switchTab2('perfil');closeDrawer()">
-        <div class="drawer-item-icon">○</div>
-        <div><div class="drawer-item-label">Mi Perfil</div><div class="drawer-item-sub">Cuenta y notificaciones</div></div>
+      <button class="ll-btn ll-btn--ghost" style="width:100%;justify-content:flex-start;gap:12px;padding:12px 8px;" onclick="switchTab2('perfil');closeDrawer()">
+        <span style="font-size:16px;">○</span>
+        <div style="text-align:left;"><div class="ll-body" style="font-weight:600;">Mi Perfil</div><div class="ll-caption ll-u-text-subtle">Cuenta y notificaciones</div></div>
       </button>
     </div>
-    <div class="drawer-footer">
-      <button class="drawer-logout" onclick="logout()">
+    <div class="ll-drawer__footer">
+      <button class="ll-btn ll-btn--danger-ghost ll-btn--block" onclick="logout()">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Cerrar sesión
       </button>
@@ -1754,71 +1750,62 @@ html { background: #0D1B2A; }
     <div id="detalle-container" style="padding:0 16px 16px"><div class="loading"><div class="spinner"></div></div></div>
   </div>
 
-  <div id="tab-perfil" class="main page-with-nav" style="display:none;">
+  <div id="tab-perfil" class="main page-with-nav" style="display:none">
 
-    <!-- Mi cuenta -->
-    <div class="ll-card" style="margin:12px 16px;">
-      <h2 class="ll-card__title" style="margin-bottom:16px;">Mi cuenta</h2>
-      <div class="ll-field" style="margin-bottom:12px;">
-        <label class="ll-field__label">Correo electrónico</label>
-        <div class="ll-body-sm" id="perfil-email" style="padding:8px 0;">—</div>
+    <div class="perfil-card">
+      <h2>Mi cuenta</h2>
+      <div class="field-label">Correo electrónico</div>
+      <div class="field-value" id="perfil-email">—</div>
+      <div class="field-label" style="margin-top:4px">Nombre / Empresa</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+        <input class="filter-input" type="text" id="perfil-nombre-input" placeholder="Tu nombre o empresa" style="flex:1;margin:0">
+        <button onclick="guardarNombrePerfil()" style="padding:10px 16px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:13px;cursor:pointer;font-family:var(--font-body);white-space:nowrap;transition:all .2s" onmouseover="this.style.background='var(--green)';this.style.color='#fff'" onmouseout="this.style.background='var(--green-dim)';this.style.color='var(--green)'">Guardar</button>
       </div>
-      <div class="ll-field" style="margin-bottom:12px;">
-        <label class="ll-field__label">Nombre / Empresa</label>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input class="ll-input" type="text" id="perfil-nombre-input" placeholder="Tu nombre o empresa" style="flex:1;">
-          <button class="ll-btn ll-btn--secondary" onclick="guardarNombrePerfil()">Guardar</button>
-        </div>
-      </div>
-      <div id="perfil-nombre-status" class="ll-body-sm" style="color:var(--color-brand);min-height:18px;margin-bottom:12px;"></div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <button class="ll-btn ll-btn--danger-ghost ll-btn--block" onclick="logout()">Cerrar sesión</button>
-        <button class="ll-btn ll-btn--ghost ll-btn--block" onclick="mostrarOnboarding()">Ver tutorial</button>
-      </div>
+      <div id="perfil-nombre-status" style="font-size:12px;color:var(--green);min-height:18px;margin-bottom:12px"></div>
+      <button class="btn-outline" onclick="logout()">Cerrar sesión</button>
+      <button class="btn-outline" style="margin-top:8px;border-color:var(--green-border);color:var(--green)" onclick="mostrarOnboarding()">Ver tutorial</button>
     </div>
 
-    <!-- Notificaciones -->
-    <div class="ll-card" style="margin:0 16px 12px;">
-      <h2 class="ll-card__title" style="margin-bottom:16px;">Notificaciones</h2>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;">
-        <div>
-          <div class="ll-body" style="font-weight:600;">Activar alertas en este dispositivo</div>
-          <div class="ll-body-sm ll-u-text-subtle">Recibe notificaciones cuando haya nuevas licitaciones y fechas próximas</div>
+    <div class="perfil-card">
+      <h2>Notificaciones</h2>
+      <div class="toggle-row">
+        <div class="toggle-info">
+          <div class="toggle-label">Activar alertas en este dispositivo</div>
+          <div class="toggle-desc">Recibe notificaciones cuando haya nuevas licitaciones y fechas próximas</div>
         </div>
-        <div class="ll-toggle" id="toggle-push" onclick="togglePush()"></div>
+        <div class="toggle" id="toggle-push" onclick="togglePush()"></div>
       </div>
-      <div id="push-status" class="ll-chip ll-chip--success" style="display:none;margin-bottom:12px;">
+      <div id="push-status" class="push-status-tag" style="display:none">
         Notificaciones activas en este dispositivo
       </div>
-      <div class="ll-card" style="background:var(--color-surface-subtle,var(--color-surface));padding:10px 12px;">
-        <p class="ll-body-sm ll-u-text-subtle" style="line-height:1.5;">
-          Para recibir notificaciones debes <strong>activar las alertas en este dispositivo</strong> usando el botón de arriba.
-        </p>
+      <div style="margin-top:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r-sm);font-size:12px;color:var(--muted);line-height:1.5;">
+        Para recibir notificaciones de fechas y análisis debes <strong style="color:var(--text2)">activar las alertas en este dispositivo</strong> usando el botón de arriba.
       </div>
     </div>
 
-    <!-- Intereses -->
-    <div class="ll-card" style="margin:0 16px 12px;">
-      <h2 class="ll-card__title" style="margin-bottom:8px;">Mis intereses de notificación</h2>
-      <p class="ll-body-sm ll-u-text-subtle" style="margin-bottom:16px;">Solo recibirás alertas de las categorías que selecciones.</p>
-      <div class="ll-caption ll-u-text-subtle" style="margin-bottom:8px;font-weight:600;">Rubros</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
-        <label class="ll-chip ll-chip--interactive">
-          <input type="checkbox" id="interes-obras" value="Obras" onchange="guardarIntereses()" style="display:none;">
+    <div class="perfil-card">
+      <h2>Mis intereses de notificación</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Solo recibirás alertas de las categorías que selecciones.</p>
+
+      <div class="section-label">Rubros</div>
+      <div class="rubros-grid">
+        <label class="rubro-chip">
+          <input type="checkbox" id="interes-obras" value="Obras" onchange="guardarIntereses()">
           Obras
         </label>
-        <label class="ll-chip ll-chip--interactive">
-          <input type="checkbox" id="interes-bienes" value="Bienes" onchange="guardarIntereses()" style="display:none;">
+        <label class="rubro-chip">
+          <input type="checkbox" id="interes-bienes" value="Bienes" onchange="guardarIntereses()">
           Bienes
         </label>
-        <label class="ll-chip ll-chip--interactive">
-          <input type="checkbox" id="interes-servicios" value="Servicios" onchange="guardarIntereses()" style="display:none;">
+        <label class="rubro-chip">
+          <input type="checkbox" id="interes-servicios" value="Servicios" onchange="guardarIntereses()">
           Servicios
         </label>
       </div>
-      <div class="ll-caption ll-u-text-subtle" style="margin-bottom:8px;font-weight:600;">Familias UNSPSC específicas</div>
-      <div style="position:relative;margin-bottom:4px;">
-        <input class="ll-input" type="text" id="perfil-unspsc-text" placeholder="Buscar por nombre o código (ej: 72 o construcción)..." oninput="buscarUnspscPerfil()" autocomplete="off" style="width:100%;">
+
+      <div class="section-label">Familias UNSPSC específicas</div>
+      <div style="position:relative;margin-bottom:4px">
+        <input class="filter-input" type="text" id="perfil-unspsc-text" placeholder="Buscar por nombre o código (ej: 72 o construcción)..." oninput="buscarUnspscPerfil()" autocomplete="off" style="width:100%">
         <div class="unspsc-dropdown" id="perfil-unspsc-dropdown"></div>
       </div>
       <div class="familias-tags" id="familias-seleccionadas"></div>
@@ -1826,21 +1813,21 @@ html { background: #0D1B2A; }
     </div>
 
     <!-- Historial de análisis -->
-    <div class="ll-card" style="margin:0 16px 12px;">
-      <h2 class="ll-card__title" style="margin-bottom:8px;">Historial de análisis</h2>
-      <p class="ll-body-sm ll-u-text-subtle" style="margin-bottom:14px;">Análisis de pliegos de los procesos que sigues.</p>
+    <div class="perfil-card">
+      <h2>Historial de análisis</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Análisis de pliegos de los procesos que sigues.</p>
       <div id="historial-analisis-lista">
-        <div class="ll-body-sm ll-u-text-subtle" style="text-align:center;padding:20px;">Cargando...</div>
+        <div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">Cargando...</div>
       </div>
     </div>
 
-    <!-- Soporte -->
-    <div class="ll-card" style="margin:0 16px 12px;">
-      <button onclick="window.open('https://wa.me/18098154457?text=Hola,%20necesito%20ayuda%20con%20LicitacionLab','_blank')" style="width:100%;padding:14px;border-radius:var(--radius-md,8px);background:#25D366;border:none;color:#fff;font-family:var(--font-sans);font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+    <!-- Contactar soporte — al final del perfil -->
+    <div class="perfil-card" style="padding:16px 20px">
+      <button onclick="window.open('https://wa.me/18098154457?text=Hola,%20necesito%20ayuda%20con%20LicitacionLab','_blank')" style="width:100%;padding:14px;border-radius:var(--r-md);background:#25D366;border:none;color:#fff;font-family:var(--font-body);font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.122 1.527 5.858L0 24l6.335-1.507A11.955 11.955 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 0 1-5.006-1.371l-.36-.213-3.71.883.936-3.618-.234-.372A9.818 9.818 0 1 1 12 21.818z"/></svg>
         Contactar soporte
       </button>
-      <div class="ll-caption ll-u-text-subtle" style="text-align:center;margin-top:8px;">Respondemos en máximo 15 minutos</div>
+      <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:8px">Respondemos en máximo 15 minutos</div>
     </div>
 
   </div>
@@ -1916,31 +1903,29 @@ html { background: #0D1B2A; }
 
   <!-- ══ TAB MERCADO ══ -->
   <div id="tab-mercado">
-    <div class="mercado-header">
-      <div class="mercado-title">Mercado</div>
-      <div class="mercado-subtitle">Encuentra proveedores para tus licitaciones</div>
+    <header style="background:var(--color-surface);border-bottom:1px solid var(--color-border);padding:16px;">
+      <h1 class="ll-h2">Mercado</h1>
+      <p class="ll-body-sm ll-u-text-subtle">Encuentra proveedores para tus licitaciones</p>
+      <div class="ll-field ll-field--with-icon" style="position:relative;margin-top:12px;">
+        <svg class="ll-field__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="ll-input" id="mercado-busqueda" placeholder="Buscar por nombre o categoría..." oninput="debouncarMercado()" onfocus="mostrarSugerencias()" onblur="setTimeout(()=>ocultarSugerencias(),200)">
+        <div class="mercado-suggestions" id="mercado-suggestions"></div>
+      </div>
+    </header>
+
+    <div style="display:flex;gap:8px;padding:12px 16px;overflow-x:auto;" id="mercado-chips">
+      <button class="ll-chip ll-chip--interactive is-active" onclick="filtrarMercado('')" id="mchip-todos">Todos</button>
+      <button class="ll-chip ll-chip--interactive" onclick="filtrarMercado('materiales')" id="mchip-materiales">Materiales ›</button>
+      <button class="ll-chip ll-chip--interactive" onclick="filtrarMercado('equipos')" id="mchip-equipos">Equipos ›</button>
+      <button class="ll-chip ll-chip--interactive" onclick="filtrarMercado('mano_obra')" id="mchip-mano_obra">Mano de obra ›</button>
+      <button class="ll-chip ll-chip--interactive" onclick="filtrarMercado('servicios')" id="mchip-servicios">Servicios ›</button>
+      <button class="ll-chip ll-chip--interactive" onclick="filtrarMercado('subcontratista')" id="mchip-subcontratista">Subcontratistas ›</button>
     </div>
 
-    <div class="mercado-search-wrap" style="position:relative">
-      <svg class="mercado-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input class="mercado-search-input" id="mercado-busqueda" placeholder="Buscar por nombre o categoría..." oninput="debouncarMercado()" onfocus="mostrarSugerencias()" onblur="setTimeout(()=>ocultarSugerencias(),200)">
-      <div class="mercado-suggestions" id="mercado-suggestions"></div>
-    </div>
-
-    <div class="mercado-chips" id="mercado-chips">
-      <button class="mercado-chip active" onclick="filtrarMercado('')" id="mchip-todos">Todos</button>
-      <button class="mercado-chip" onclick="filtrarMercado('materiales')" id="mchip-materiales">Materiales ›</button>
-      <button class="mercado-chip" onclick="filtrarMercado('equipos')" id="mchip-equipos">Equipos ›</button>
-      <button class="mercado-chip" onclick="filtrarMercado('mano_obra')" id="mchip-mano_obra">Mano de obra ›</button>
-      <button class="mercado-chip" onclick="filtrarMercado('servicios')" id="mchip-servicios">Servicios ›</button>
-      <button class="mercado-chip" onclick="filtrarMercado('subcontratista')" id="mchip-subcontratista">Subcontratistas ›</button>
-    </div>
-
-    <!-- Subcategorías del chip activo -->
     <div class="mercado-subcats" id="mercado-subcats"></div>
 
-    <div class="mercado-zona-wrap">
-      <select class="mercado-zona-select" id="mercado-zona" onchange="cargarMercado()">
+    <div style="padding:0 16px 8px;">
+      <select class="ll-select" id="mercado-zona" onchange="cargarMercado()">
         <option value="">Todas las provincias</option>
         <option>Distrito Nacional</option>
         <option>Santo Domingo</option>
@@ -1981,29 +1966,27 @@ html { background: #0D1B2A; }
       <div class="loading"><div class="spinner"></div></div>
     </div>
 
-    <button class="mercado-registro-btn" onclick="abrirFormProveedor()">
-      + Registrar mi empresa como proveedor
-    </button>
+    <button class="ll-btn ll-btn--primary ll-btn--block" style="margin:16px;" onclick="abrirFormProveedor()">+ Registrar mi empresa como proveedor</button>
   </div><!-- /tab-mercado -->
   </div><!-- /tabs-wrapper -->
-  <nav class="bottom-nav">
-    <button class="bottom-nav-item active" id="nav-dashboard" onclick="navDashboardTap()">
-      <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+  <nav class="ll-bottom-nav">
+    <button class="ll-bottom-nav__item is-active" id="nav-dashboard" onclick="navDashboardTap()">
+      <span class="ll-bottom-nav__icon-wrap"><svg class="ll-bottom-nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
       Licitaciones
     </button>
-    <button class="bottom-nav-item" id="nav-seguimiento" onclick="switchTab2('seguimiento');limpiarBadge()">
-      <div class="nav-icon-wrap" style="position:relative">
-        <svg class="nav-svg" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        <span id="notif-badge" style="display:none;position:absolute;top:-2px;right:-2px;width:9px;height:9px;background:#EF4444;border-radius:50%;border:2px solid var(--bg);"></span>
-      </div>
+    <button class="ll-bottom-nav__item" id="nav-seguimiento" onclick="switchTab2('seguimiento');limpiarBadge()">
+      <span class="ll-bottom-nav__icon-wrap" style="position:relative;">
+        <svg class="ll-bottom-nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span id="notif-badge" style="display:none;position:absolute;top:-2px;right:-2px;width:9px;height:9px;background:#EF4444;border-radius:50%;border:2px solid var(--color-bg);"></span>
+      </span>
       Mis Procesos
     </button>
-    <button class="bottom-nav-item" id="nav-perfil" onclick="switchTab2('perfil')">
-      <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+    <button class="ll-bottom-nav__item" id="nav-perfil" onclick="switchTab2('perfil')">
+      <span class="ll-bottom-nav__icon-wrap"><svg class="ll-bottom-nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
       Mi Perfil
     </button>
-    <button class="bottom-nav-item" id="nav-mercado" onclick="switchTab2('mercado')">
-      <div class="nav-icon-wrap"><svg class="nav-svg" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+    <button class="ll-bottom-nav__item" id="nav-mercado" onclick="switchTab2('mercado')">
+      <span class="ll-bottom-nav__icon-wrap"><svg class="ll-bottom-nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>
       Mercado
     </button>
   </nav>
@@ -2380,12 +2363,12 @@ function logout() {
   localStorage.removeItem('sb_user');
   currentUser = null;
   document.getElementById('screen-app').classList.remove('active');
-  document.getElementById('screen-auth').classList.add('active');
+  document.getElementById('screen-auth').classList.add('is-active');
 }
 
 function showApp() {
   document.getElementById('screen-auth').classList.remove('active');
-  document.getElementById('screen-app').classList.add('active');
+  document.getElementById('screen-app').classList.add('is-active');
 
   // Extraer nombre real del usuario desde user_metadata
   const nombre = currentUser?.user_metadata?.nombre
@@ -3130,12 +3113,12 @@ function switchTab2(tab) {
   if (tab==='seguimiento') cargarSeguimiento();
   if (tab==='mercado') cargarMercado();
   if (tab==='perfil') cargarHistorialAnalisis();
-  document.querySelectorAll('.bottom-nav-item').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.ll-bottom-nav__item').forEach(b => b.classList.remove('is-active'));
   const navMap = {
     'dashboard':'nav-dashboard','perfil':'nav-perfil',
     'seguimiento':'nav-seguimiento','mercado':'nav-mercado'
   };
-  if(navMap[tab]) document.getElementById(navMap[tab])?.classList.add('active');
+  if(navMap[tab]) document.getElementById(navMap[tab])?.classList.add('is-active');
 }
 
 // ── PUSH ──
@@ -3924,7 +3907,7 @@ function filtrarSeguimiento(filtro) {
   segFiltroActivo = filtro;
   document.querySelectorAll('.seg-filtro-btn').forEach(b => b.classList.remove('active'));
   const btn = document.getElementById(`sfbtn-${filtro}`);
-  if (btn) btn.classList.add('active');
+  if (btn) btn.classList.add('is-active');
   renderSeguimiento();
 }
 
@@ -4454,9 +4437,9 @@ function filtrarMercado(tipo) {
   mercadoTipoActivo = tipo;
   mercadoSubcatActiva = '';
 
-  document.querySelectorAll('.mercado-chip').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('.ll-chip--interactive').forEach(c => { if(c.closest('#mercado-chips')) c.classList.remove('is-active'); });
   const id = tipo ? `mchip-${tipo}` : 'mchip-todos';
-  document.getElementById(id)?.classList.add('active');
+  document.getElementById(id)?.classList.add('is-active');
 
   // Mostrar/ocultar subcats
   const subcatsWrap = document.getElementById('mercado-subcats');
@@ -4478,7 +4461,7 @@ function filtrarSubcat(el, subcat) {
   const misma = mercadoSubcatActiva === subcat;
   mercadoSubcatActiva = misma ? '' : subcat;
   document.querySelectorAll('.mercado-subcat').forEach(c => c.classList.remove('active'));
-  if (!misma) el.classList.add('active');
+  if (!misma) el.classList.add('is-active');
   // Buscar por subcategoría directamente en el campo de búsqueda
   const input = document.getElementById('mercado-busqueda');
   input.value = misma ? '' : subcat;
@@ -4544,7 +4527,7 @@ function elegirSugerencia(subcat, tipo) {
   // Marcar el chip de subcategoría si ya se renderizó
   setTimeout(() => {
     document.querySelectorAll('.mercado-subcat').forEach(el => {
-      if (el.dataset.subcat === subcat) el.classList.add('active');
+      if (el.dataset.subcat === subcat) el.classList.add('is-active');
     });
   }, 50);
   cargarMercado();
@@ -5336,7 +5319,7 @@ function renderOnbPaso() {
     if (!d) continue;
     d.classList.remove('active', 'done');
     if (i < onbPaso)        d.classList.add('done');
-    else if (i === onbPaso) d.classList.add('active');
+    else if (i === onbPaso) d.classList.add('is-active');
   }
   const btn  = document.getElementById('onb-btn-next');
   const skip = document.getElementById('onb-btn-skip');
