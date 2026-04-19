@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#1B7444">
-<meta name="description" content="Monitorea licitaciones públicas de la República Dominicana en tiempo real. Análisis IA de pliegos, alertas de fechas y seguimiento de procesos del portal DGCP.">
+<meta name="description" content="Monitorea licitaciones públicas de la República Dominicana en tiempo real. Análisis de pliegos, alertas de fechas y seguimiento de procesos del portal DGCP.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="LicitacionLab">
@@ -728,7 +728,7 @@ body {
 .filtros-badge { display: none; min-width: 17px; height: 17px; padding: 0 5px; background: var(--green); color: #fff; border-radius: 20px; font-size: 10px; font-weight: 800; align-items: center; justify-content: center; line-height: 1; }
 .filtros-badge.visible { display: flex; }
 
-/* ── BOTÓN ANÁLISIS IA ── */
+/* ── BOTÓN ANÁLISIS ── */
 .btn-analizar-pliego {
   width: 100%; padding: 14px;
   background: linear-gradient(135deg, var(--green-dark), var(--green));
@@ -744,7 +744,7 @@ body {
 .btn-analizar-pliego .btn-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; display: none; flex-shrink: 0; }
 .btn-analizar-pliego.cargando .btn-spinner { display: block; }
 .btn-analizar-pliego.cargando .btn-texto::before { content: 'Analizando pliego...'; }
-.btn-analizar-pliego:not(.cargando) .btn-texto::before { content: 'Solicitar análisis IA'; }
+.btn-analizar-pliego:not(.cargando) .btn-texto::before { content: 'Solicitar análisis'; }
 
 /* ── PROCESO CARDS — diseño Ojo Cívico ── */
 .procesos-list { display: flex; flex-direction: column; gap: 0; padding: 0 16px; }
@@ -997,6 +997,184 @@ body {
 .tag-subsanable { background: rgba(46,204,113,.12); color: var(--green); border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: 800; }
 .tag-no-subsanable { background: var(--red-dim); color: var(--red); border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: 800; }
 .checklist-sin-analisis { padding: 14px 16px; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* ── DETALLE TABS ── */
+.detalle-tabs-nav {
+  display: flex; gap: 0; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  border-bottom: 1px solid var(--border); margin: 0 -16px 0; padding: 0 16px;
+  scrollbar-width: none;
+}
+.detalle-tabs-nav::-webkit-scrollbar { display: none; }
+.detalle-tab-btn {
+  flex-shrink: 0; padding: 10px 14px 9px; font-size: 12px; font-weight: 700;
+  color: var(--muted); background: transparent; border: none; border-bottom: 2px solid transparent;
+  cursor: pointer; transition: color .15s, border-color .15s; white-space: nowrap;
+  font-family: var(--font-body); letter-spacing: .02em;
+}
+.detalle-tab-btn.active { color: var(--green); border-bottom-color: var(--green); }
+.detalle-tab-btn .tab-badge {
+  display: inline-block; margin-left: 4px; font-size: 10px; font-weight: 800;
+  color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.detalle-tab-btn.active .tab-badge { color: var(--green); }
+.detalle-tab-panel { display: none; padding-top: 14px; }
+.detalle-tab-panel.active { display: block; }
+
+/* ── GRID MÉTRICAS 4 COLS ── */
+.detalle-metrics-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  overflow: hidden; margin-bottom: 14px; background: var(--surface);
+}
+@media (max-width: 400px) {
+  .detalle-metrics-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.detalle-metric {
+  padding: 12px 14px; border-right: 1px solid var(--border);
+}
+.detalle-metric:last-child { border-right: none; }
+@media (max-width: 400px) {
+  .detalle-metric:nth-child(2) { border-right: none; }
+  .detalle-metric:nth-child(3) { border-right: 1px solid var(--border); border-top: 1px solid var(--border); }
+  .detalle-metric:nth-child(4) { border-top: 1px solid var(--border); }
+}
+.detalle-metric-label {
+  font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 5px;
+}
+.detalle-metric-value {
+  font-size: 18px; font-weight: 800; color: var(--text); line-height: 1.1;
+  font-variant-numeric: tabular-nums; font-family: var(--font-mono);
+}
+.detalle-metric-sub {
+  font-size: 10px; color: var(--muted); margin-top: 2px; font-family: var(--font-mono);
+}
+.detalle-metric-value.urgente { color: var(--amber); }
+.detalle-metric-value.vencido { color: var(--red); }
+
+/* ── SCORE GAUGE ── */
+.score-gauge-card {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--r-lg); padding: 18px 16px 14px; margin-bottom: 12px;
+  box-shadow: var(--shadow-card);
+}
+.score-gauge-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.score-gauge-title {
+  font-size: 11px; font-weight: 800; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted);
+}
+.score-gauge-badge {
+  font-size: 10px; font-weight: 800; padding: 3px 10px; border-radius: var(--r-full);
+}
+.score-badge-alta    { background: rgba(231,76,60,.12); color: var(--red); border: 1px solid rgba(231,76,60,.25); }
+.score-badge-media   { background: rgba(243,156,18,.12); color: var(--amber); border: 1px solid rgba(243,156,18,.3); }
+.score-badge-baja    { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
+.score-gauge-svg-wrap { display: flex; justify-content: center; margin: -4px 0 4px; }
+.score-gauge-rec {
+  font-size: 13px; font-weight: 700; color: var(--text2); text-align: center;
+  padding: 8px 12px; background: var(--bg2); border-radius: var(--r-sm);
+  margin-bottom: 12px; line-height: 1.4;
+}
+.score-gauge-razon {
+  font-size: 12px; color: var(--muted); line-height: 1.6;
+  border-top: 1px solid var(--border); padding-top: 10px;
+}
+.score-no-analisis {
+  text-align: center; padding: 28px 16px; color: var(--muted); font-size: 13px;
+}
+.score-no-analisis .score-no-icon {
+  font-size: 32px; margin-bottom: 10px;
+}
+
+/* ── ALERTAS ── */
+.alertas-card {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden; margin-bottom: 12px;
+  box-shadow: var(--shadow-card);
+}
+.alertas-header {
+  padding: 12px 16px 10px; border-bottom: 1px solid var(--border);
+  font-size: 11px; font-weight: 800; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted);
+}
+.alerta-item {
+  display: flex; gap: 11px; padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.alerta-item:last-child { border-bottom: none; }
+.alerta-icon {
+  width: 30px; height: 30px; border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.alerta-icon.alto   { background: rgba(231,76,60,.12); }
+.alerta-icon.medio  { background: rgba(243,156,18,.12); }
+.alerta-icon.bajo   { background: rgba(52,152,219,.12); }
+.alerta-icon svg { width: 14px; height: 14px; }
+.alerta-icon.alto  svg { stroke: var(--red); }
+.alerta-icon.medio svg { stroke: var(--amber); }
+.alerta-icon.bajo  svg { stroke: var(--blue); }
+.alerta-body { flex: 1; }
+.alerta-titulo { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+.alerta-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.alerta-ley { font-size: 10px; color: var(--muted); margin-top: 4px; font-style: italic; line-height: 1.4; }
+.alerta-riesgo-tag {
+  font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 3px;
+  letter-spacing: .05em; margin-left: 6px; text-transform: uppercase;
+}
+.alerta-riesgo-tag.alto  { background: rgba(231,76,60,.12); color: var(--red); }
+.alerta-riesgo-tag.medio { background: rgba(243,156,18,.12); color: var(--amber); }
+.alerta-riesgo-tag.bajo  { background: rgba(52,152,219,.12); color: var(--blue); }
+
+/* ── PLAZOS TAB ── */
+.plazos-card {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden; margin-bottom: 12px;
+  box-shadow: var(--shadow-card);
+}
+.plazos-header {
+  padding: 12px 16px 10px; border-bottom: 1px solid var(--border);
+  font-size: 11px; font-weight: 800; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted);
+}
+.plazo-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.plazo-item:last-child { border-bottom: none; }
+.plazo-fecha-col {
+  min-width: 68px; text-align: right; flex-shrink: 0;
+}
+.plazo-fecha {
+  font-size: 12px; font-weight: 800; font-family: var(--font-mono);
+  color: var(--text2);
+}
+.plazo-hora {
+  font-size: 10px; color: var(--muted); font-family: var(--font-mono);
+}
+.plazo-dot {
+  width: 8px; height: 8px; border-radius: 50%; margin-top: 4px;
+  flex-shrink: 0; background: var(--border2);
+}
+.plazo-dot.key    { background: var(--green); box-shadow: 0 0 0 3px var(--green-dim); }
+.plazo-dot.urgente { background: var(--amber); box-shadow: 0 0 0 3px rgba(243,156,18,.15); }
+.plazo-nombre {
+  font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.3;
+}
+.plazo-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.plazo-na { padding: 16px; text-align: center; color: var(--muted); font-size: 13px; }
+
+/* ── SCORE EN CARDS DASHBOARD ── */
+.card-score-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 800; padding: 2px 7px;
+  border-radius: var(--r-full); letter-spacing: .03em;
+}
+.card-score-badge.alta  { background: rgba(231,76,60,.1); color: var(--red); border: 1px solid rgba(231,76,60,.2); }
+.card-score-badge.media { background: rgba(243,156,18,.1); color: var(--amber); border: 1px solid rgba(243,156,18,.25); }
+.card-score-badge.baja  { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
 
 /* ── BOTTOM NAV ── */
 .bottom-nav {
@@ -1748,7 +1926,7 @@ html { background: #0D1B2A; }
         <div class="ll-caption ll-mono" style="margin-top:2px;">DGCP·MOPC·INAPA</div>
       </div>
       <div class="ll-card" style="padding:10px;text-align:center;">
-        <div class="ll-num" style="font-size:17px;color:var(--color-brand);">IA</div>
+        <div class="ll-num" style="font-size:17px;color:var(--color-brand);">Score</div>
         <div class="ll-caption" style="margin-top:2px;line-height:1.3;">Análisis automático</div>
         <div class="ll-caption ll-mono" style="margin-top:2px;">Checklist + alertas</div>
       </div>
@@ -1913,7 +2091,7 @@ html { background: #0D1B2A; }
       </div>
       <div style="font-size:11px;color:var(--text2);line-height:1.7">
         ✓ Todo lo de Explorador<br>
-        ✓ Análisis automático de pliegos con IA<br>
+        ✓ Análisis automático de pliegos<br>
         ✓ Seguimiento ilimitado de procesos<br>
         ✓ Alertas 7, 3, 1 y 0 días antes<br>
         ✓ Detección de procesos dirigidos (Ley 47-25)
@@ -2698,6 +2876,7 @@ async function login() {
   currentUser = user;
   console.log('Login OK, user:', currentUser?.id);
   stopShowcaseRefresh();
+  cargarPerfilEmpresa();   // carga perfil para ajuste de score
   cargarSeguimiento();
   showApp();
 }
@@ -3130,14 +3309,50 @@ function renderProcesos(procesos, data, page) {
             <span class="ll-body-sm ll-u-text-subtle">${p.unidad_compra || '—'}</span>
             <span class="ll-mono ll-caption">${cierre}</span>
           </div>
-          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;">
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:8px;">
             ${tipo ? `<span class="${chipTipo}">${tipo}</span>` : ''}
             ${p.modalidad ? `<span class="ll-chip">${p.modalidad}</span>` : ''}
             ${p.dirigido_mipymes ? '<span class="ll-chip ll-chip--warning">MIPYMES</span>' : ''}
+            <span class="card-score-badge" id="score-badge-${p.codigo_proceso}" style="display:none;margin-left:auto;"></span>
           </div>
         </div>
       </div>`;
   }).join('');
+
+  // Fetch batch de scores IA para esta página (silencioso, no bloquea render)
+  if (procesos.length) {
+    const codigos = procesos.map(p => p.codigo_proceso);
+    const inFilter = codigos.map(c => `"${c}"`).join(',');
+    fetch(
+      `${SUPABASE_URL}/rest/v1/analisis_pliego?select=proceso_id,estado,evaluacion_competitividad,alertas_fraude&proceso_id=in.(${inFilter})`,
+      { headers: { 'apikey': SUPABASE_ANON_KEY } }
+    ).then(r => r.ok ? r.json() : []).then(lista => {
+      lista.forEach(a => {
+        if (a.estado !== 'completado' || !a.evaluacion_competitividad) return;
+        const ev = a.evaluacion_competitividad;
+        const alertas = a.alertas_fraude || [];
+        let score;
+        if (ev.score_base != null) {
+          // Score real de Gemini
+          score = Math.max(5, Math.min(100, Number(ev.score_base)));
+        } else {
+          // Fallback estimado para análisis viejos
+          const niveles = { 'Baja': 80, 'Media': 58, 'Alta': 30 };
+          let s = niveles[ev.nivel_dificultad] ?? 50;
+          s -= alertas.filter(x => x.riesgo === 'Alto').length * 15;
+          s -= alertas.filter(x => x.riesgo === 'Medio').length * 7;
+          score = Math.max(5, Math.round(s));
+        }
+        const cls = score >= 70 ? 'baja' : score >= 45 ? 'media' : 'alta';
+        const badge = document.getElementById(`score-badge-${a.proceso_id}`);
+        if (badge) {
+          badge.textContent = `⚡ ${score}`;
+          badge.className = `card-score-badge ${cls}`;
+          badge.style.display = 'inline-flex';
+        }
+      });
+    }).catch(() => {});
+  }
 
   const pages = data.pages || 1;
   if (pages <= 1) { document.getElementById('pagination').innerHTML = ''; return; }
@@ -3208,7 +3423,7 @@ function actualizarBadgeFiltros() {
 }
 
 // ── ANÁLISIS IA — solicitar con estado de carga ──
-async function solicitarAnalisisIA(codigo) {
+async function solicitarAnalisis(codigo) {
   const btn = document.getElementById(`btn-analizar-${codigo}`);
   if (!btn || btn.disabled) return;
   btn.disabled = true;
@@ -3379,94 +3594,625 @@ function cargarInteresesGuardados() {
 }
 
 // ── DETALLE ──
+// ── HELPERS DETALLE ──────────────────────────────────────────────
+function calcularCountdown(fechaStr) {
+  if (!fechaStr) return { texto: '—', sub: '', clase: '' };
+  const ahora = Date.now();
+  const fin   = new Date(fechaStr).getTime();
+  const diff  = fin - ahora;
+  if (diff <= 0) return { texto: 'Vencido', sub: new Date(fechaStr).toLocaleDateString('es-DO'), clase: 'vencido' };
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  let texto = '', clase = '';
+  if (d > 0)      { texto = `${d}d ${h}h`;  clase = d <= 3 ? 'urgente' : ''; }
+  else if (h > 0) { texto = `${h}h ${m}m`;  clase = 'urgente'; }
+  else            { texto = `${m}m`;         clase = 'urgente'; }
+  const sub = new Date(fechaStr).toLocaleDateString('es-DO', {day:'2-digit',month:'short'})
+            + ' · ' + new Date(fechaStr).toLocaleTimeString('es-DO', {hour:'2-digit',minute:'2-digit'});
+  return { texto, sub, clase };
+}
+
+function _scoreFallback(ev, alertas) {
+  // Estimación para análisis viejos sin score_base — se marca como estimado
+  const niveles = { 'Baja': 80, 'Media': 58, 'Alta': 30 };
+  let score = niveles[ev.nivel_dificultad] ?? 50;
+  const altasCount  = alertas.filter(a => a.riesgo === 'Alto').length;
+  const mediosCount = alertas.filter(a => a.riesgo === 'Medio').length;
+  score = Math.max(5, score - altasCount * 15 - mediosCount * 7);
+  return Math.round(score);
+}
+
+function _ajustePerfil(proceso, perfil) {
+  // Retorna { delta, factores } — ajuste del score según compatibilidad con el perfil
+  if (!perfil) return { delta: 0, factores: [] };
+  let delta = 0;
+  const factores = [];
+
+  // Sector / tipo de proceso
+  const sectores = perfil.sectores || [];
+  const tipoProc = (proceso.objeto_proceso || '').toLowerCase();
+  const matchSector = sectores.some(s => tipoProc.includes((s||'').toLowerCase()) || (s||'').toLowerCase().includes(tipoProc));
+  if (sectores.length) {
+    if (matchSector) {
+      delta += 10; factores.push({ texto: `Sector ${proceso.objeto_proceso} dentro de tu perfil`, positivo: true });
+    } else {
+      delta -= 15; factores.push({ texto: `Sector ${proceso.objeto_proceso} fuera de tu perfil`, positivo: false });
+    }
+  }
+
+  // Rango de monto
+  const monto = Number(proceso.monto_estimado) || 0;
+  const montoMin = Number(perfil.monto_minimo) || 0;
+  const montoMax = Number(perfil.monto_maximo) || 0;
+  if (montoMin || montoMax) {
+    const dentroRango = (!montoMin || monto >= montoMin) && (!montoMax || monto <= montoMax);
+    if (dentroRango && monto > 0) {
+      delta += 8; factores.push({ texto: `Monto dentro de tu rango habitual`, positivo: true });
+    } else if (monto > 0) {
+      delta -= 20; factores.push({ texto: `Monto fuera de tu rango (${formatMonto(monto)})`, positivo: false });
+    }
+  }
+
+  // Provincia
+  const provincias = perfil.provincias || [];
+  const provProc = (proceso.provincia || '').toLowerCase();
+  if (provincias.length && provProc) {
+    const matchProv = provincias.some(pv => (pv||'').toLowerCase() === provProc);
+    if (matchProv) {
+      delta += 5; factores.push({ texto: `Provincia ${proceso.provincia} en tu área de operación`, positivo: true });
+    }
+  }
+
+  // Documentación legal
+  if (perfil.tiene_rpe) {
+    delta += 5; factores.push({ texto: 'Tienes RPE/RNCE registrado', positivo: true });
+  }
+  if (perfil.tiene_estados_financieros) {
+    delta += 5; factores.push({ texto: 'Tienes estados financieros disponibles', positivo: true });
+  }
+
+  return { delta: Math.round(delta), factores };
+}
+
+function calcularScoreCompetitividad(analisis, p) {
+  if (!analisis || analisis.estado !== 'completado') return null;
+  const ev = analisis.evaluacion_competitividad;
+  if (!ev) return null;
+
+  const alertas = analisis.alertas_fraude || [];
+
+  // ── Score base: Gemini real si existe, fallback estimado si no ──
+  let scoreBase, esEstimado;
+  if (ev.score_base != null) {
+    scoreBase  = Number(ev.score_base);
+    esEstimado = false;
+  } else {
+    scoreBase  = _scoreFallback(ev, alertas);
+    esEstimado = true;
+  }
+  scoreBase = Math.max(5, Math.min(100, scoreBase));
+
+  // ── Ajuste por perfil del usuario ──
+  const perfil = window._perfilEmpresa || null;
+  const { delta, factores } = _ajustePerfil(p, perfil);
+  const scoreFinal = Math.max(5, Math.min(100, scoreBase + delta));
+
+  return {
+    score:         scoreFinal,
+    scoreBase,
+    delta,
+    esEstimado,
+    tienePerfil:   !!perfil,
+    factoresPerfil: factores,
+    nivel:         ev.nivel_dificultad,
+    recomendacion: ev.recomendacion,
+    razon:         ev.razon,
+    faltasGraves:  ev.faltas_graves || [],
+  };
+}
+
+function renderGaugeScoreSVG(score, nivel) {
+  const ARC = 251;
+  const offset = ARC - (score / 100) * ARC;
+  // Color basado en score numérico, no en nivel_dificultad (más preciso)
+  const color = score >= 70 ? 'var(--green)' : score >= 45 ? 'var(--amber)' : 'var(--red)';
+  const label = score >= 70 ? 'VALE LA PENA' : score >= 45 ? 'EVALUAR CON CUIDADO' : 'NO RECOMENDADO';
+  return `<svg width="200" height="110" viewBox="0 0 200 110" xmlns="http://www.w3.org/2000/svg">
+    <path d="M 18 105 A 82 82 0 0 1 182 105" fill="none" stroke="var(--border2)" stroke-width="11" stroke-linecap="round"/>
+    <path d="M 18 105 A 82 82 0 0 1 182 105" fill="none" stroke="${color}" stroke-width="11" stroke-linecap="round"
+          stroke-dasharray="${ARC}" stroke-dashoffset="${offset.toFixed(1)}" style="transition:stroke-dashoffset .8s cubic-bezier(.4,0,.2,1)"/>
+    <text x="100" y="88" text-anchor="middle" font-family="var(--font-mono)" font-size="36" font-weight="800" fill="var(--text)">${score}</text>
+    <text x="100" y="104" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="var(--muted)" letter-spacing="1">${label}</text>
+  </svg>`;
+}
+
+function renderTabScore(analisis, p) {
+  const scoreData = calcularScoreCompetitividad(analisis, p);
+  if (!scoreData) {
+    const enCola = ['procesando','pendiente','pendiente_analisis'].includes(analisis?.estado);
+    return `<div class="score-gauge-card">
+      <div class="score-no-analisis">
+        <div class="score-no-icon">${enCola ? '⏳' : '📋'}</div>
+        <div style="font-weight:700;margin-bottom:6px;color:var(--text2)">
+          ${enCola ? 'Análisis en proceso…' : 'Sin análisis disponible'}
+        </div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.5;">
+          ${enCola
+            ? 'La puntuación estará disponible cuando termine el análisis del pliego.'
+            : 'Sigue este proceso para que el sistema analice automáticamente el pliego y calcule la puntuación de competitividad.'}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const { score, scoreBase, delta, esEstimado, tienePerfil, factoresPerfil, nivel, recomendacion, razon, faltasGraves } = scoreData;
+  const badgeClass = nivel === 'Baja' ? 'baja' : nivel === 'Media' ? 'media' : 'alta';
+  const alertas = analisis.alertas_fraude || [];
+
+  // ── Bloque de desglose score ──
+  let desgloseHTML = '';
+  if (tienePerfil && delta !== 0) {
+    const signo = delta > 0 ? `+${delta}` : `${delta}`;
+    const colorDelta = delta > 0 ? 'var(--green)' : 'var(--red)';
+    desgloseHTML = `
+    <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin:-4px 0 10px;font-size:12px;color:var(--muted);">
+      <span>Base <strong style="color:var(--text2)">${scoreBase}</strong></span>
+      <span style="color:${colorDelta};font-weight:800;">${signo} perfil</span>
+      <span>= <strong style="color:var(--text)">${score}</strong></span>
+    </div>`;
+  }
+
+  // ── Factores del perfil ──
+  let perfilHTML = '';
+  if (tienePerfil && factoresPerfil.length) {
+    perfilHTML = `
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div class="ll-card__header"><h2 class="ll-card__title">Tu compatibilidad</h2></div>
+      <div class="ll-card__body" style="padding-top:4px;">
+        ${factoresPerfil.map(f => `
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);">
+          <span style="flex-shrink:0;margin-top:1px;">${f.positivo ? '✅' : '⚠️'}</span>
+          <span style="font-size:13px;color:var(--text2);">${f.texto}</span>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  } else if (!tienePerfil) {
+    perfilHTML = `
+    <div style="margin-bottom:12px;padding:12px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r-md);font-size:12px;color:var(--muted);line-height:1.6;">
+      <strong style="color:var(--text2);">💡 Completa tu perfil de empresa</strong><br>
+      La puntuación se ajustará según tu sector, rango de monto y provincia de operación.
+    </div>`;
+  }
+
+  // ── Aviso de estimado ──
+  const estimadoHTML = esEstimado
+    ? `<div style="margin-bottom:10px;padding:8px 12px;background:var(--bg2);border-left:3px solid var(--amber);border-radius:0 var(--r-sm) var(--r-sm) 0;font-size:11px;color:var(--muted);">
+        Puntuación estimada — este análisis fue generado antes de la versión actual. Re-analiza el pliego para obtener la puntuación exacta.
+      </div>` : '';
+
+  // ── Alertas ──
+  const alertasHTML = alertas.length ? `
+    <div class="alertas-card">
+      <div class="alertas-header">🚨 Alertas del análisis <span style="font-size:10px;font-weight:800;margin-left:6px;background:rgba(231,76,60,.12);color:var(--red);padding:2px 7px;border-radius:3px;">${alertas.length}</span></div>
+      ${alertas.map(a => {
+        const r = (a.riesgo||'').toLowerCase();
+        const iconSVG = r === 'alto'
+          ? `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
+          : r === 'bajo'
+          ? `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+          : `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10.29 3.86-8.1 14.06A2 2 0 0 0 4 21h16a2 2 0 0 0 1.81-2.86L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+        return `<div class="alerta-item">
+          <div class="alerta-icon ${r}">${iconSVG}</div>
+          <div class="alerta-body">
+            <div class="alerta-titulo">${a.categoria || 'Alerta'}
+              <span class="alerta-riesgo-tag ${r}">${a.riesgo}</span>
+            </div>
+            <div class="alerta-desc">${a.hallazgo || ''}</div>
+            ${a.articulo_ley ? `<div class="alerta-ley">📋 ${a.articulo_ley}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : '';
+
+  // ── Requisitos ──
+  const req = analisis.requisitos_experiencia;
+  const fin = analisis.requisitos_financieros;
+  const reqRows = [];
+  if (req?.anos_experiencia_empresa && req.anos_experiencia_empresa !== 'N/A')
+    reqRows.push({ label: 'Experiencia empresa', val: req.anos_experiencia_empresa });
+  if (req?.contratos_similares && req.contratos_similares !== 'N/A')
+    reqRows.push({ label: 'Contratos similares', val: req.contratos_similares });
+  if (req?.sector_especialidad && req.sector_especialidad !== 'N/A')
+    reqRows.push({ label: 'Especialidad requerida', val: req.sector_especialidad });
+  if (fin?.patrimonio_minimo && fin.patrimonio_minimo !== 'N/A')
+    reqRows.push({ label: 'Patrimonio mínimo', val: fin.patrimonio_minimo });
+  if (fin?.indice_liquidez && fin.indice_liquidez !== 'N/A')
+    reqRows.push({ label: 'Índice de liquidez', val: fin.indice_liquidez });
+  if (fin?.otros && fin.otros !== 'N/A')
+    reqRows.push({ label: 'Otros requisitos', val: fin.otros });
+
+  const requisitosHTML = reqRows.length ? `
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div class="ll-card__header"><h2 class="ll-card__title">Requisitos para participar</h2></div>
+      <div class="ll-card__body" style="padding-top:4px;">
+        ${reqRows.map(r => `
+        <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+          <div class="ll-caption ll-u-text-subtle" style="margin-bottom:3px;">${r.label}</div>
+          <div class="ll-body-sm">${r.val}</div>
+        </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  return `
+    <div class="score-gauge-card">
+      <div class="score-gauge-header">
+        <div class="score-gauge-title">¿Vale la pena?</div>
+        <span class="score-gauge-badge score-badge-${badgeClass}">Dificultad ${nivel}</span>
+      </div>
+      <div class="score-gauge-svg-wrap">${renderGaugeScoreSVG(score, nivel)}</div>
+      ${desgloseHTML}
+      ${estimadoHTML}
+      ${recomendacion ? `<div class="score-gauge-rec">💬 ${recomendacion}</div>` : ''}
+      ${razon ? `<div class="score-gauge-razon">${razon}</div>` : ''}
+    </div>
+    ${perfilHTML}
+    ${alertasHTML}
+    ${requisitosHTML}`;
+}
+
+
+function renderTabScore(analisis, p) {
+  const scoreData = calcularScoreCompetitividad(analisis, p);
+  if (!scoreData) {
+    const enCola = ['procesando','pendiente','pendiente_analisis'].includes(analisis?.estado);
+    return `<div class="score-gauge-card">
+      <div class="score-no-analisis">
+        <div class="score-no-icon">${enCola ? '⏳' : '🤖'}</div>
+        <div style="font-weight:700;margin-bottom:6px;color:var(--text2)">
+          ${enCola ? 'Análisis en proceso…' : 'Sin análisis disponible'}
+        </div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.5;">
+          ${enCola
+            ? 'El score estará disponible cuando termine el análisis del pliego.'
+            : 'Sigue este proceso para que el sistema analice automáticamente el pliego y calcule el score de competitividad.'}
+        </div>
+      </div>
+    </div>`;
+  }
+  const { score, nivel, recomendacion, razon } = scoreData;
+  const badgeClass = nivel === 'Baja' ? 'baja' : nivel === 'Media' ? 'media' : 'alta';
+  const alertas = analisis.alertas_fraude || [];
+  return `
+    <div class="score-gauge-card">
+      <div class="score-gauge-header">
+        <div class="score-gauge-title">⚡ ¿Vale la pena?</div>
+        <span class="score-gauge-badge score-badge-${badgeClass}">Dificultad ${nivel}</span>
+      </div>
+      <div class="score-gauge-svg-wrap">${renderGaugeScoreSVG(score, nivel)}</div>
+      ${recomendacion ? `<div class="score-gauge-rec">💬 ${recomendacion}</div>` : ''}
+      ${razon ? `<div class="score-gauge-razon">${razon}</div>` : ''}
+    </div>
+    ${alertas.length ? `
+    <div class="alertas-card">
+      <div class="alertas-header">🚨 Alertas del análisis <span style="font-size:10px;font-weight:800;margin-left:6px;background:rgba(231,76,60,.12);color:var(--red);padding:2px 7px;border-radius:3px;">${alertas.length}</span></div>
+      ${alertas.map(a => {
+        const r = (a.riesgo||'').toLowerCase();
+        const iconSVG = r === 'alto'
+          ? `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`
+          : r === 'bajo'
+          ? `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+          : `<svg viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m10.29 3.86-8.1 14.06A2 2 0 0 0 4 21h16a2 2 0 0 0 1.81-2.86L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+        return `<div class="alerta-item">
+          <div class="alerta-icon ${r}">${iconSVG}</div>
+          <div class="alerta-body">
+            <div class="alerta-titulo">${a.categoria || 'Alerta'}
+              <span class="alerta-riesgo-tag ${r}">${a.riesgo}</span>
+            </div>
+            <div class="alerta-desc">${a.hallazgo || ''}</div>
+            ${a.articulo_ley ? `<div class="alerta-ley">📋 ${a.articulo_ley}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : ''}
+    ${analisis.requisitos_experiencia || analisis.requisitos_financieros ? `
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div class="ll-card__header"><h2 class="ll-card__title">Requisitos para participar</h2></div>
+      <div class="ll-card__body" style="padding-top:8px;">
+        ${analisis.requisitos_experiencia && analisis.requisitos_experiencia.anos_experiencia_empresa !== 'N/A' ? `
+        <div style="margin-bottom:10px;">
+          <div class="ll-caption ll-u-text-subtle" style="margin-bottom:4px;">Experiencia empresa</div>
+          <div class="ll-body-sm">${analisis.requisitos_experiencia.anos_experiencia_empresa}</div>
+        </div>` : ''}
+        ${analisis.requisitos_experiencia && analisis.requisitos_experiencia.obras_similares !== 'N/A' ? `
+        <div style="margin-bottom:10px;">
+          <div class="ll-caption ll-u-text-subtle" style="margin-bottom:4px;">Obras similares</div>
+          <div class="ll-body-sm">${analisis.requisitos_experiencia.obras_similares}</div>
+        </div>` : ''}
+        ${analisis.requisitos_financieros && analisis.requisitos_financieros.patrimonio_minimo !== 'N/A' ? `
+        <div style="margin-bottom:10px;">
+          <div class="ll-caption ll-u-text-subtle" style="margin-bottom:4px;">Patrimonio mínimo</div>
+          <div class="ll-body-sm ll-mono">${analisis.requisitos_financieros.patrimonio_minimo}</div>
+        </div>` : ''}
+        ${analisis.requisitos_financieros && analisis.requisitos_financieros.otros && analisis.requisitos_financieros.otros !== 'N/A' ? `
+        <div>
+          <div class="ll-caption ll-u-text-subtle" style="margin-bottom:4px;">Otros financieros</div>
+          <div class="ll-body-sm">${analisis.requisitos_financieros.otros}</div>
+        </div>` : ''}
+      </div>
+    </div>` : ''}`;
+}
+
+function renderTabPlazos(analisis, p) {
+  const plazos = analisis?.plazos_clave;
+  const fCierre = p.fecha_fin_recepcion_ofertas;
+
+  const entradas = [];
+  if (plazos) {
+    if (plazos.consultas && plazos.consultas !== 'N/A')
+      entradas.push({ nombre: 'Último día de consultas', fecha: plazos.consultas, key: false });
+    if (plazos.visita_sitio && plazos.visita_sitio !== 'N/A')
+      entradas.push({ nombre: 'Visita al sitio', fecha: plazos.visita_sitio, key: true });
+    if (plazos.presentacion_ofertas && plazos.presentacion_ofertas !== 'N/A')
+      entradas.push({ nombre: 'Presentación de ofertas', fecha: plazos.presentacion_ofertas, key: true });
+    if (plazos.apertura_ofertas && plazos.apertura_ofertas !== 'N/A')
+      entradas.push({ nombre: 'Apertura de ofertas', fecha: plazos.apertura_ofertas, key: true });
+  }
+  // Siempre agregamos cierre desde el proceso si existe y no está ya
+  if (fCierre) {
+    const yaEsta = entradas.some(e => e.nombre === 'Presentación de ofertas');
+    if (!yaEsta) entradas.push({ nombre: 'Cierre recepción de ofertas', fecha: fCierre, key: true });
+  }
+  if (!entradas.length) {
+    return `<div class="plazos-card"><div class="plazos-header">📅 Plazos del proceso</div><div class="plazo-na">Sin fechas disponibles para este proceso.</div></div>`;
+  }
+
+  // Ordenar por fecha
+  entradas.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
+  const ahora = Date.now();
+  return `<div class="plazos-card">
+    <div class="plazos-header">📅 Plazos del proceso</div>
+    ${entradas.map(e => {
+      let fechaObj;
+      // Intentar parsear fecha en formato DD/MM/YYYY HH:MM o ISO
+      if (/^\d{2}\/\d{2}\/\d{4}/.test(e.fecha)) {
+        const [datePart, timePart] = e.fecha.split(' ');
+        const [d,m,y] = datePart.split('/');
+        fechaObj = new Date(`${y}-${m}-${d}T${timePart||'00:00'}:00`);
+      } else {
+        fechaObj = new Date(e.fecha);
+      }
+      const vencido = fechaObj.getTime() < ahora;
+      const urgente = !vencido && (fechaObj.getTime() - ahora) < 3 * 86400000;
+      const dotClass = vencido ? '' : urgente ? 'urgente' : e.key ? 'key' : '';
+      const fechaLabel = isNaN(fechaObj) ? e.fecha
+        : fechaObj.toLocaleDateString('es-DO', {day:'2-digit',month:'short',year:'numeric'});
+      const horaLabel = isNaN(fechaObj) ? '' : fechaObj.toLocaleTimeString('es-DO', {hour:'2-digit',minute:'2-digit'});
+      return `<div class="plazo-item">
+        <div class="plazo-fecha-col">
+          <div class="plazo-fecha" style="${vencido?'color:var(--muted);':''}${urgente?'color:var(--amber);':''}">${fechaLabel}</div>
+          ${horaLabel ? `<div class="plazo-hora">${horaLabel}</div>` : ''}
+        </div>
+        <div class="plazo-dot ${dotClass}"></div>
+        <div>
+          <div class="plazo-nombre" style="${vencido?'color:var(--muted);text-decoration:line-through;':''}">${e.nombre}</div>
+          ${vencido ? '<div class="plazo-sub" style="color:var(--muted)">Vencido</div>' : urgente ? '<div class="plazo-sub" style="color:var(--amber)">⚡ Próximo</div>' : ''}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+  ${p.duracion_contrato ? `<div class="ll-card" style="margin-bottom:12px;padding:12px 16px;">
+    <div class="ll-caption ll-u-text-subtle" style="margin-bottom:4px;">Duración del contrato</div>
+    <div class="ll-body-sm" style="font-weight:700;">${p.duracion_contrato}</div>
+  </div>` : ''}`;
+}
+
+function cambiarTabDetalle(codigo, tabId) {
+  document.querySelectorAll(`#detalle-container .detalle-tab-btn`).forEach(b => b.classList.remove('active'));
+  document.querySelectorAll(`#detalle-container .detalle-tab-panel`).forEach(p => p.classList.remove('active'));
+  const btn   = document.getElementById(`dtab-btn-${tabId}`);
+  const panel = document.getElementById(`dtab-panel-${tabId}`);
+  if (btn)   btn.classList.add('active');
+  if (panel) panel.classList.add('active');
+}
+
 async function verDetalle(codigo) {
-  // Ocultar TODOS los tabs antes de mostrar el detalle
   ['tab-dashboard','tab-perfil','tab-seguimiento'].forEach(id => {
     document.getElementById(id).style.display = 'none';
   });
   document.getElementById('tab-detalle').style.display = 'block';
   document.getElementById('detalle-container').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
   const res  = await fetch(`${API}/api/procesos/${codigo}`);
   const data = await res.json();
   const p    = data.proceso;
   const arts = data.articulos || [];
+  const analisis = data.analisis;
 
-  const fPub    = p.fecha_publicacion ? new Date(p.fecha_publicacion).toLocaleDateString('es-DO') : '—';
-  const fCierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO') : '—';
+  const fPub = p.fecha_publicacion
+    ? new Date(p.fecha_publicacion).toLocaleDateString('es-DO') : '—';
+
+  // ── GRID MÉTRICAS ──
+  const countdown = calcularCountdown(p.fecha_fin_recepcion_ofertas);
+  const scoreData = calcularScoreCompetitividad(analisis, p);
+
+  // Contar items checklist
+  const checklist = analisis?.checklist_categorizado;
+  const totalItems = checklist
+    ? (checklist.legal||[]).length + (checklist.tecnica||[]).length + (checklist.financiera||[]).length : 0;
+
+  // UNSPSC del primer artículo
+  const unspscCode = arts[0]?.clase_unspsc || p.codigo_proceso?.split('-')[0] || '—';
+
+  // ── ESTADO ANÁLISIS BANNER ──
+  let estadoAnalisisBanner = '';
+  if (['procesando','pendiente','pendiente_analisis'].includes(analisis?.estado)) {
+    estadoAnalisisBanner = `<div class="analisis-procesando">
+      <div class="analisis-procesando-spinner"></div>
+      <div class="analisis-procesando-texto">${analisis?.estado === 'pendiente_analisis'
+        ? 'En cola para análisis. El sistema procesará el pliego en los próximos minutos.'
+        : 'Analizando el pliego … Puedes cerrar la app, te notificamos cuando esté listo.'}</div>
+    </div>`;
+  } else if (analisis?.estado === 'error') {
+    estadoAnalisisBanner = `<div class="analisis-procesando" style="background:rgba(231,76,60,0.08);border-color:rgba(231,76,60,0.2)">
+      <div class="analisis-procesando-texto" style="color:var(--red)">Hubo un problema al analizar este proceso. Contacta soporte por WhatsApp.</div>
+    </div>`;
+  }
+
+  // ── SCORE BADGE para el tab ──
+  const scoreBadge = scoreData
+    ? `<span class="tab-badge" style="color:${scoreData.nivel==='Baja'?'var(--green)':scoreData.nivel==='Media'?'var(--amber)':'var(--red)'}">·${scoreData.score}</span>`
+    : '';
+
+  // ── CHECKLIST BADGE ──
+  const clBadge = totalItems
+    ? `<span class="tab-badge">${totalItems}</span>` : '';
+
+  // ── ARTÍCULOS BADGE ──
+  const artsBadge = arts.length ? `<span class="tab-badge">${arts.length}</span>` : '';
 
   document.getElementById('detalle-container').innerHTML = `
+    <!-- HEADER -->
     <div class="ll-card" style="margin-bottom:12px;">
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
         ${p.objeto_proceso ? `<span class="ll-chip ll-chip--info">${p.objeto_proceso}</span>` : ''}
         ${p.modalidad      ? `<span class="ll-chip">${p.modalidad}</span>` : ''}
         ${p.estado_proceso ? `<span class="ll-chip ll-chip--success">${p.estado_proceso}</span>` : ''}
       </div>
-      <h1 class="ll-h2" style="margin-bottom:8px;">${p.titulo || 'Sin título'}</h1>
-      <div class="ll-num" style="font-size:var(--text-xl);margin-bottom:16px;">${formatMontoFull(p.monto_estimado)}</div>
-      <div class="ll-divider" style="margin:12px 0;"></div>
-      <dl style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-        <div><dt class="ll-caption ll-u-text-subtle">Institución</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.unidad_compra || '—'}</dd></div>
-        <div><dt class="ll-caption ll-u-text-subtle">Código</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${p.codigo_proceso}</dd></div>
-        <div><dt class="ll-caption ll-u-text-subtle">Publicación</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${fPub}</dd></div>
-        <div><dt class="ll-caption ll-u-text-subtle">Cierre</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${fCierre}</dd></div>
-        <div><dt class="ll-caption ll-u-text-subtle">Divisa</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.divisa || 'DOP'}</dd></div>
-        ${p.duracion_contrato ? `<div><dt class="ll-caption ll-u-text-subtle">Duración contrato</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.duracion_contrato}</dd></div>` : ''}
-      </dl>
-      ${p.url ? `<a href="${p.url}" target="_blank" class="ll-btn ll-btn--ghost" style="display:inline-flex;margin-bottom:12px;">Ver en portal DGCP ↗</a>` : ''}
-      <button id="btn-seguir-${p.codigo_proceso}" class="ll-btn ll-btn--primary ll-btn--block btn-seguir no-siguiendo" onclick="toggleSeguimiento('${p.codigo_proceso}')">Seguir proceso</button>
-    </div>
+      <h1 class="ll-h2" style="margin-bottom:6px;line-height:1.3;">${p.titulo || 'Sin título'}</h1>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">${p.unidad_compra || ''} · Publicado ${fPub}</div>
 
-    <div class="ll-card" style="margin-bottom:12px;">
-      <div class="ll-card__header">
-        <h2 class="ll-card__title">Artículos del proceso <span class="ll-chip" style="margin-left:4px;">${arts.length}</span></h2>
-        ${arts.length ? `<button class="ll-btn ll-btn--ghost ll-btn--sm" onclick="descargarArticulosPDF('${p.codigo_proceso}')">
+      <!-- GRID MÉTRICAS 4 COLS -->
+      <div class="detalle-metrics-grid">
+        <div class="detalle-metric">
+          <div class="detalle-metric-label">Monto estimado</div>
+          <div class="detalle-metric-value" style="font-size:15px;">${formatMontoFull(p.monto_estimado)}</div>
+          <div class="detalle-metric-sub">${p.divisa || 'DOP'}</div>
+        </div>
+        <div class="detalle-metric">
+          <div class="detalle-metric-label">Cierre</div>
+          <div class="detalle-metric-value ${countdown.clase}">${countdown.texto}</div>
+          <div class="detalle-metric-sub">${countdown.sub}</div>
+        </div>
+        <div class="detalle-metric">
+          <div class="detalle-metric-label">Provincia</div>
+          <div class="detalle-metric-value" style="font-size:13px;font-family:var(--font-body);">${p.provincia || '—'}</div>
+          <div class="detalle-metric-sub">${p.codigo_proceso}</div>
+        </div>
+        <div class="detalle-metric">
+          <div class="detalle-metric-label">UNSPSC</div>
+          <div class="detalle-metric-value" style="font-size:14px;">${unspscCode}</div>
+          <div class="detalle-metric-sub">${p.objeto_proceso || '—'}</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        ${p.url ? `<a href="${p.url}" target="_blank" class="ll-btn ll-btn--ghost ll-btn--sm" style="display:inline-flex;">Ver en DGCP ↗</a>` : ''}
+        <button id="btn-seguir-${p.codigo_proceso}" class="ll-btn ll-btn--primary ll-btn--sm btn-seguir no-siguiendo" style="flex:1;min-width:120px;" onclick="toggleSeguimiento('${p.codigo_proceso}')">Seguir proceso</button>
+        ${analisis?.estado === 'completado' ? `
+        <button class="ll-btn ll-btn--secondary ll-btn--sm" id="btn-pdf-analisis-${p.codigo_proceso}" onclick="descargarAnalisisPDF('${p.codigo_proceso}')">
+          <div class="btn-pdf-spinner"></div>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           PDF
         </button>` : ''}
       </div>
-      <div class="ll-card__body">
-      ${arts.length ? arts.map(a => `
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--color-border);">
-          <div style="flex:1;margin-right:12px;">
-            <div class="ll-body-sm">${a.descripcion_articulo || a.descripcion_usuario || 'Sin descripción'}</div>
-            <div class="ll-caption ll-mono ll-u-text-subtle" style="margin-top:3px;">${a.cantidad||'—'} ${a.unidad_medida||''} · UNSPSC: ${a.clase_unspsc||'—'}</div>
-          </div>
-          <div class="ll-num ll-body-sm">${a.precio_total_estimado ? 'RD$'+Number(a.precio_total_estimado).toLocaleString() : '—'}</div>
-        </div>`).join('')
-      : '<div class="ll-body-sm ll-u-text-subtle" style="padding:16px 0;">Sin artículos registrados</div>'}
+    </div>
+
+    ${estadoAnalisisBanner}
+
+    <!-- TABS NAV -->
+    <div class="detalle-tabs-nav">
+      <button class="detalle-tab-btn active" id="dtab-btn-resumen"   onclick="cambiarTabDetalle('${codigo}','resumen')">Resumen</button>
+      <button class="detalle-tab-btn"         id="dtab-btn-checklist" onclick="cambiarTabDetalle('${codigo}','checklist')">Checklist${clBadge}</button>
+      <button class="detalle-tab-btn"         id="dtab-btn-plazos"   onclick="cambiarTabDetalle('${codigo}','plazos')">Plazos</button>
+      <button class="detalle-tab-btn"         id="dtab-btn-docs"     onclick="cambiarTabDetalle('${codigo}','docs')">Artículos${artsBadge}</button>
+      <button class="detalle-tab-btn"         id="dtab-btn-score"    onclick="cambiarTabDetalle('${codigo}','score')">⚡ ¿Vale la pena?${scoreBadge}</button>
+    </div>
+
+    <!-- TAB: RESUMEN -->
+    <div class="detalle-tab-panel active" id="dtab-panel-resumen">
+      ${analisis?.resumen_ejecutivo ? `
+      <div class="ll-card" style="margin-bottom:12px;">
+        <div class="ll-card__header"><h2 class="ll-card__title">📄 Resumen ejecutivo</h2></div>
+        <div class="ll-card__body">
+          <p style="font-size:13px;color:var(--text2);line-height:1.7;">${analisis.resumen_ejecutivo}</p>
+        </div>
+      </div>` : `
+      <div class="ll-card" style="margin-bottom:12px;padding:14px 16px;">
+        <div class="ll-body-sm ll-u-text-subtle" style="text-align:center;padding:12px 0;">
+          ${analisis ? 'Sin resumen ejecutivo.' : 'Sigue el proceso para activar el análisis del pliego.'}
+        </div>
+      </div>`}
+      <div class="ll-card" style="margin-bottom:12px;">
+        <div class="ll-card__header"><h2 class="ll-card__title">Datos del proceso</h2></div>
+        <div class="ll-card__body">
+          <dl style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div><dt class="ll-caption ll-u-text-subtle">Institución</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.unidad_compra || '—'}</dd></div>
+            <div><dt class="ll-caption ll-u-text-subtle">Código</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${p.codigo_proceso}</dd></div>
+            <div><dt class="ll-caption ll-u-text-subtle">Publicación</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${fPub}</dd></div>
+            <div><dt class="ll-caption ll-u-text-subtle">Cierre</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${countdown.sub || '—'}</dd></div>
+            <div><dt class="ll-caption ll-u-text-subtle">Divisa</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.divisa || 'DOP'}</dd></div>
+            ${p.duracion_contrato ? `<div><dt class="ll-caption ll-u-text-subtle">Duración contrato</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.duracion_contrato}</dd></div>` : ''}
+          </dl>
+        </div>
       </div>
     </div>
-    ${(data.analisis?.estado === 'procesando' || data.analisis?.estado === 'pendiente' || data.analisis?.estado === 'pendiente_analisis') ? `
-    <div class="analisis-procesando">
-      <div class="analisis-procesando-spinner"></div>
-      <div class="analisis-procesando-texto">${data.analisis?.estado === 'pendiente_analisis' ? 'En cola para análisis. El sistema procesará el pliego automáticamente en los próximos minutos.' : 'Analizando el pliego con IA, puede tomar 1-3 minutos. Recibirás una <strong>notificación push</strong> y un <strong>correo</strong> cuando esté listo — puedes cerrar la app.'}</div>
-    </div>` : data.analisis?.estado === 'error' ? `
-    <div class="analisis-procesando" style="background:rgba(231,76,60,0.08);border-color:rgba(231,76,60,0.2)">
-      <div class="analisis-procesando-texto" style="color:var(--red)">Hubo un problema al analizar este proceso. Contacta soporte por WhatsApp.</div>
-    </div>` : data.analisis?.estado === 'completado' ? `
-    <div style="padding:0 0 4px 0">
-      <button class="btn-pdf-analisis" id="btn-pdf-analisis-${p.codigo_proceso}" onclick="descargarAnalisisPDF('${p.codigo_proceso}')">
-        <div class="btn-pdf-spinner"></div>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Descargar análisis PDF
-      </button>
-    </div>` : ''}
-    ${renderChecklistHTML(data.analisis, p.codigo_proceso)}`;
-  // Actualizar botón seguir DESPUÉS de que el DOM esté listo
+
+    <!-- TAB: CHECKLIST -->
+    <div class="detalle-tab-panel" id="dtab-panel-checklist">
+      <!-- El checklist se inyecta aquí por renderChecklistHTML -->
+    </div>
+
+    <!-- TAB: PLAZOS -->
+    <div class="detalle-tab-panel" id="dtab-panel-plazos">
+      ${renderTabPlazos(analisis, p)}
+    </div>
+
+    <!-- TAB: ARTÍCULOS -->
+    <div class="detalle-tab-panel" id="dtab-panel-docs">
+      <div class="ll-card" style="margin-bottom:12px;">
+        <div class="ll-card__header">
+          <h2 class="ll-card__title">Artículos del proceso <span class="ll-chip" style="margin-left:4px;">${arts.length}</span></h2>
+          ${arts.length ? `<button class="ll-btn ll-btn--ghost ll-btn--sm" onclick="descargarArticulosPDF('${p.codigo_proceso}')">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            PDF
+          </button>` : ''}
+        </div>
+        <div class="ll-card__body">
+        ${arts.length ? arts.map(a => `
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--color-border);">
+            <div style="flex:1;margin-right:12px;">
+              <div class="ll-body-sm">${a.descripcion_articulo || a.descripcion_usuario || 'Sin descripción'}</div>
+              <div class="ll-caption ll-mono ll-u-text-subtle" style="margin-top:3px;">${a.cantidad||'—'} ${a.unidad_medida||''} · UNSPSC: ${a.clase_unspsc||'—'}</div>
+            </div>
+            <div class="ll-num ll-body-sm">${a.precio_total_estimado ? 'RD$'+Number(a.precio_total_estimado).toLocaleString() : '—'}</div>
+          </div>`).join('')
+        : '<div class="ll-body-sm ll-u-text-subtle" style="padding:16px 0;">Sin artículos registrados</div>'}
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: SCORE -->
+    <div class="detalle-tab-panel" id="dtab-panel-score">
+      ${renderTabScore(analisis, p)}
+    </div>`;
+
+  // Post-render: checklist + botón seguir
   setTimeout(async () => {
+    // Inyectar checklist en su tab
+    const clPanel = document.getElementById('dtab-panel-checklist');
+    if (clPanel) clPanel.innerHTML = renderChecklistHTML(analisis, p.codigo_proceso);
+
     actualizarBtnSeguir(p.codigo_proceso);
     ['legal','tecnica','financiera'].forEach(secKey => {
       const sec = document.getElementById(`cl-sec-${p.codigo_proceso}-${secKey}`);
-      if (sec && !sec.classList.contains('abierta')) {
-        sec.classList.add('abierta');
-        return;
-      }
+      if (sec && !sec.classList.contains('abierta')) sec.classList.add('abierta');
     });
     await cargarEstadoChecklist(p.codigo_proceso);
   }, 10);
 
-  // Polling automático si el análisis está en progreso o en cola
-  if (['procesando','pendiente','pendiente_analisis'].includes(data.analisis?.estado)) {
+  if (['procesando','pendiente','pendiente_analisis'].includes(analisis?.estado)) {
     iniciarPollingAnalisis(p.codigo_proceso);
   }
 }
@@ -4050,7 +4796,7 @@ function extraerFechasClaves(p) {
   const ahora = new Date();
   const agregar = (label, valor, destacada = false, sublabel = null) => {
     if (!valor || valor === 'N/A') return;
-    // Soportar formato DD/MM/YYYY HH:MM (del análisis IA) e ISO (de la BD)
+    // Soportar formato DD/MM/YYYY HH:MM (del análisis) e ISO (de la BD)
     let dt;
     if (typeof valor === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(valor)) {
       const [fecha, hora] = valor.split(' ');
@@ -4077,7 +4823,7 @@ function extraerFechasClaves(p) {
   agregar('Cierre de preguntas',     p.fecha_enmienda,              false, 'Último día para preguntas');
   agregar('Suscripción contrato',    p.fecha_suscripcion,           false, 'Firma del contrato');
 
-  // Plazos del análisis IA (más completos — vienen del pliego)
+  // Plazos del análisis (más completos — vienen del pliego)
   const ia = p._plazos_ia || {};
   agregar('Visita al sitio',         ia.visita_sitio,               false, 'Reconocimiento del lugar');
   agregar('Cierre de consultas',     ia.consultas,                  false, 'Último día para preguntas');
@@ -4261,7 +5007,7 @@ async function cargarSeguimiento() {
       `procesos?codigo_proceso=in.(${codigos})&select=codigo_proceso,titulo,unidad_compra,monto_estimado,modalidad,objeto_proceso,url,fecha_publicacion,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda,fecha_suscripcion`
     );
 
-    // 3. Traer plazos_clave del análisis IA — una sola llamada bulk
+    // 3. Traer plazos_clave del análisis — una sola llamada bulk
     const analisisMap = {};
     try {
       const codigos_bulk = segs.map(s => s.proceso_codigo).join(',');
@@ -4426,12 +5172,12 @@ async function agregarSeguimiento(codigo) {
         headers: { 'Content-Type': 'application/json' }
       });
       if (resAnalisis.ok) {
-        console.log(`✅ Análisis IA solicitado para ${codigo}`);
+        console.log(`✅ Análisis solicitado para ${codigo}`);
       } else {
-        console.warn(`⚠️ Análisis IA no iniciado para ${codigo}:`, resAnalisis.status);
+        console.warn(`⚠️ Análisis no iniciado para ${codigo}:`, resAnalisis.status);
       }
     } catch(eAnalisis) {
-      console.warn('⚠️ Error solicitando análisis IA:', eAnalisis);
+      console.warn('⚠️ Error solicitando análisis:', eAnalisis);
       // No mostrar error al usuario — el análisis es en segundo plano
     }
     // ──────────────────────────────────────────────────────────────
@@ -4586,7 +5332,7 @@ function renderChecklistHTML(analisis, codigo) {
   const enSeguimiento = estaEnSeguimiento(codigo);
 
   if (!checklist || (!checklist.legal?.length && !checklist.tecnica?.length && !checklist.financiera?.length)) {
-    const msgTexto = analisis ? 'El análisis no incluye checklist de documentos.' : 'Sin análisis IA para este proceso. El análisis se solicita automáticamente al seguir el proceso.';
+    const msgTexto = analisis ? 'El análisis no incluye checklist de documentos.' : 'Sin análisis para este proceso. El análisis se solicita automáticamente al seguir el proceso.';
     return `<div class="checklist-card">
       <div class="checklist-header"><div class="checklist-titulo">📋 Checklist de documentos</div></div>
       <div class="checklist-sin-analisis">
@@ -5709,6 +6455,19 @@ function renderGraficas() {
 // ────────────────────────────────────────────────────────────
 
 // ── HISTORIAL DE ANÁLISIS ───────────────────────────────────
+async function cargarPerfilEmpresa() {
+  if (!currentUser) return;
+  try {
+    const res = await sbRest(
+      `perfiles_empresa?user_id=eq.${currentUser.id}&select=sectores,modalidades,provincias,monto_minimo,monto_maximo,tiene_rpe,tiene_estados_financieros,anios_experiencia,onboarding_completado&limit=1`
+    );
+    const data = await res.json();
+    window._perfilEmpresa = (data && data[0]?.onboarding_completado) ? data[0] : null;
+  } catch(e) {
+    window._perfilEmpresa = null;
+  }
+}
+
 async function cargarHistorialAnalisis() {
   const lista = document.getElementById('historial-analisis-lista');
   if (!lista || !currentUser?.id) return;
