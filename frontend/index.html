@@ -1552,6 +1552,207 @@ body {
 .card-score-badge.media { background: rgba(243,156,18,.1); color: var(--amber); border: 1px solid rgba(243,156,18,.25); }
 .card-score-badge.baja  { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
 
+/* ── DASHBOARD TOPBAR ── */
+.dash-topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 50;
+}
+.dash-topbar__row1 {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px 8px;
+}
+.dash-topbar__breadcrumb {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--muted);
+}
+.dash-topbar__bc-section { color: var(--muted); }
+.dash-topbar__bc-page { font-weight: 600; color: var(--text); }
+.dash-topbar__bc-count {
+  font-size: 11px; font-weight: 700; font-family: var(--font-mono);
+  background: var(--green-dim); color: var(--green);
+  border: 1px solid var(--green-border);
+  border-radius: var(--r-full); padding: 1px 8px; margin-left: 2px;
+}
+.dash-topbar__actions { display: flex; align-items: center; gap: 8px; }
+.dash-topbar__search-row { padding: 0 20px 8px; }
+.dash-topbar__search-wrap { position: relative; }
+.dash-topbar__search-input {
+  width: 100%; height: 36px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 0 44px 0 36px;
+  font-size: 13px; color: var(--text); font-family: var(--font-body);
+  transition: border-color .15s;
+}
+.dash-topbar__search-input:focus {
+  outline: none; border-color: var(--green);
+  box-shadow: 0 0 0 3px var(--green-dim);
+}
+.dash-topbar__search-input::placeholder { color: var(--muted); }
+.dash-topbar__filter-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px 10px; gap: 12px;
+}
+.dash-topbar__chips {
+  display: flex; align-items: center; gap: 6px;
+  flex-wrap: wrap; flex: 1;
+}
+.dash-topbar__right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.dash-topbar__sort-label {
+  font-size: 12px; color: var(--muted); white-space: nowrap;
+  display: flex; align-items: center; gap: 4px;
+}
+.dash-topbar__sort-select {
+  background: transparent; border: none; color: var(--text);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  font-family: var(--font-body); padding: 0;
+}
+
+/* Chips del topbar */
+.dash-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: var(--r-full);
+  font-size: 12px; font-weight: 600; font-family: var(--font-body);
+  background: var(--bg2); border: 1px solid var(--border);
+  color: var(--text2); cursor: pointer; transition: all .12s;
+  white-space: nowrap;
+}
+.dash-chip:hover { border-color: var(--border2); color: var(--text); }
+.dash-chip.is-active {
+  background: var(--green-dim); border-color: var(--green-border);
+  color: var(--green); font-weight: 700;
+}
+.dash-chip-clear {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  background: none; border: none; cursor: pointer; padding: 2px 6px;
+  font-family: var(--font-body);
+}
+.dash-chip-clear:hover { color: var(--text); }
+.active-filter-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: var(--r-full);
+  font-size: 11px; font-weight: 700;
+  background: var(--bg2); border: 1px solid var(--border2);
+  color: var(--text2);
+}
+.active-filter-chip button {
+  background: none; border: none; color: var(--muted);
+  cursor: pointer; padding: 0; font-size: 13px; line-height: 1;
+}
+
+/* ── CARDS DENSAS (estilo mockup) ── */
+.proceso-dense-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  padding: 14px 16px 12px;
+  margin-bottom: 1px;
+  cursor: pointer;
+  transition: background .12s, border-left-color .12s;
+  position: relative;
+}
+.proceso-dense-card:hover {
+  background: var(--bg2);
+  border-left-color: var(--green);
+}
+.proceso-dense-card:hover .pdc-actions { opacity: 1; }
+.pdc-row1 {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+}
+.pdc-code {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  color: var(--muted); letter-spacing: .03em;
+}
+.pdc-inst-chip {
+  font-size: 10px; font-weight: 800; padding: 2px 7px;
+  border-radius: 4px; letter-spacing: .04em;
+  background: var(--blue-dim); color: var(--blue);
+}
+.pdc-estado-chip {
+  font-size: 10px; font-weight: 700; padding: 2px 7px;
+  border-radius: 4px; display: flex; align-items: center; gap: 4px;
+}
+.pdc-estado-chip.abierto { color: var(--green); background: var(--green-dim); }
+.pdc-estado-chip.analizando { color: var(--blue); background: var(--blue-dim); }
+.pdc-estado-chip::before { content: '●'; font-size: 7px; }
+.pdc-bookmark {
+  margin-left: auto; opacity: 0; transition: opacity .15s;
+  background: none; border: none; cursor: pointer; padding: 2px;
+  color: var(--muted); font-size: 14px;
+}
+.pdc-bookmark.saved { opacity: 1; color: var(--green); }
+.pdc-title {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  line-height: 1.35; margin-bottom: 7px;
+}
+.pdc-meta {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 12px; color: var(--muted); margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.pdc-meta-item { display: flex; align-items: center; gap: 4px; }
+.pdc-meta-item svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pdc-meta-score {
+  margin-left: auto; font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; gap: 4px; color: var(--muted);
+}
+.pdc-meta-score.baja  { color: var(--green); }
+.pdc-meta-score.media { color: var(--amber); }
+.pdc-meta-score.alta  { color: var(--red); }
+.pdc-row3 {
+  display: flex; align-items: center; gap: 12px;
+}
+.pdc-countdown {
+  font-size: 12px; font-weight: 700; color: var(--text2);
+  display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+}
+.pdc-countdown .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+.pdc-countdown.urgente .dot { background: var(--amber); }
+.pdc-countdown.critico .dot { background: var(--red); }
+.pdc-countdown.urgente { color: var(--amber); }
+.pdc-countdown.critico { color: var(--red); }
+.pdc-progress {
+  flex: 1; height: 3px; background: var(--border);
+  border-radius: 2px; overflow: hidden;
+}
+.pdc-progress-fill {
+  height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, var(--green-dark), var(--green));
+  transition: width .4s;
+}
+.pdc-progress-fill.urgente { background: linear-gradient(90deg, #b45309, var(--amber)); }
+.pdc-progress-fill.critico { background: linear-gradient(90deg, #991b1b, var(--red)); }
+.pdc-actions {
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0; opacity: 0; transition: opacity .15s;
+}
+@media (max-width: 899px) {
+  .pdc-actions { opacity: 1; }
+  .pdc-bookmark { opacity: 1; }
+}
+.pdc-btn-save {
+  font-size: 11px; font-weight: 600; padding: 4px 10px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text2); cursor: pointer;
+  font-family: var(--font-body); display: flex; align-items: center; gap: 4px;
+  transition: all .12s;
+}
+.pdc-btn-save:hover { border-color: var(--green-border); color: var(--green); }
+.pdc-btn-analisis {
+  font-size: 11px; font-weight: 700; padding: 4px 12px;
+  background: var(--green); border: none;
+  border-radius: 6px; color: #fff; cursor: pointer;
+  font-family: var(--font-body); display: flex; align-items: center; gap: 5px;
+  transition: filter .12s;
+}
+.pdc-btn-analisis:hover { filter: brightness(1.1); }
+
+/* En desktop las cards no usan el swipe-wrap */
+@media (min-width: 900px) {
+  .proceso-dense-card { margin-bottom: 1px; }
+  #procesos-container { display: block !important; padding: 0 !important; }
+}
+
 /* ── BOTTOM NAV ── */
 .bottom-nav {
   position: relative; flex-shrink: 0; z-index: 100;
@@ -2598,6 +2799,16 @@ html { background: var(--color-bg, #0A0A0A); }
       Mis Procesos
       <span class="dsb-nav-badge" id="dsb-badge-seguimiento"></span>
     </button>
+    <button class="dsb-nav-item" id="dsb-nav-alertas" onclick="switchTab2('alertas')">
+      <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      Alertas
+      <span class="dsb-nav-badge dsb-nav-badge--red" id="dsb-badge-alertas" style="display:none;background:var(--red);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;min-width:18px;text-align:center;"></span>
+    </button>
+    <button class="dsb-nav-item" id="dsb-nav-analisis" onclick="switchTab2('analisis')">
+      <svg viewBox="0 0 24 24"><path d="M9 3h6"/><path d="M10 3v5l-4 8a2 2 0 0 0 1.8 3h8.4a2 2 0 0 0 1.8-3l-4-8V3"/><path d="M8.5 16h7"/></svg>
+      Análisis
+      <span class="dsb-nav-badge" id="dsb-badge-analisis"></span>
+    </button>
 
     <div class="dsb-divider"></div>
 
@@ -2607,17 +2818,29 @@ html { background: var(--color-bg, #0A0A0A); }
       <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       Mercado
     </button>
+    <button class="dsb-nav-item" id="dsb-nav-reportes" onclick="switchTab2('reportes')">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      Reportes
+    </button>
+    <button class="dsb-nav-item" id="dsb-nav-calendario" onclick="switchTab2('calendario')">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Calendario
+    </button>
 
     <div class="dsb-divider"></div>
 
+    <!-- Listas guardadas -->
+    <div class="dsb-section-label">Listas guardadas</div>
+    <div id="dsb-listas-guardadas">
+      <div style="padding:6px 16px 10px;font-size:12px;color:var(--muted);">Sin listas aún</div>
+    </div>
+
     <!-- Footer -->
     <div class="dsb-footer">
-      <!-- Toggle tema -->
       <div class="dsb-theme-row">
         <span class="dsb-theme-label" id="dsb-theme-label">Modo oscuro</span>
         <button class="ll-toggle" id="dsb-theme-track" onclick="toggleTheme()"></button>
       </div>
-      <!-- Perfil -->
       <button class="dsb-nav-item" id="dsb-nav-perfil" onclick="switchTab2('perfil')" style="padding:9px 0;border-radius:6px;">
         <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         Mi Perfil
@@ -2632,75 +2855,88 @@ html { background: var(--color-bg, #0A0A0A); }
   <div id="tabs-wrapper">
   <div id="tab-dashboard" class="page-with-nav">
 
-    <!-- Cabecera saludo -->
-    <header style="background:var(--color-surface);border-bottom:1px solid var(--color-border);padding:16px 16px 12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <h1 class="ll-h2" id="dash-greeting">Hola</h1>
-          <p class="ll-body-sm" id="dash-subtitle">Tus licitaciones activas</p>
+    <!-- ── DASHBOARD HEADER ─────────────────────────────────── -->
+    <header class="dash-topbar">
+      <!-- Fila 1: breadcrumb + acciones -->
+      <div class="dash-topbar__row1">
+        <div class="dash-topbar__breadcrumb">
+          <span class="dash-topbar__bc-section">Trabajo</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <span class="dash-topbar__bc-page">Licitaciones</span>
+          <span class="dash-topbar__bc-count" id="dash-bc-count"></span>
         </div>
-        <button class="ll-btn ll-btn--secondary ll-btn--icon" id="dash-notif-btn" onclick="togglePushDesdeIcono()" aria-label="Notificaciones" style="position:relative;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-          <span class="dash-notif-dot"></span>
-        </button>
+        <div class="dash-topbar__actions">
+          <button class="ll-btn ll-btn--secondary ll-btn--icon" id="dash-notif-btn" onclick="togglePushDesdeIcono()" aria-label="Notificaciones" style="position:relative;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="dash-notif-dot"></span>
+          </button>
+        </div>
+      </div>
+      <!-- Fila 2: búsqueda -->
+      <div class="dash-topbar__search-row">
+        <div class="dash-topbar__search-wrap">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input class="dash-topbar__search-input" type="text" id="busqueda" placeholder="Buscar por número, entidad, UNSPSC..." oninput="debounceSearch();toggleClearBtn()" autocomplete="off">
+          <button class="dash-search-clear" id="btn-clear-busqueda" onclick="limpiarBusqueda()" style="position:absolute;right:42px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px;display:none;">✕</button>
+          <button class="ll-btn ll-btn--ghost ll-btn--icon" id="btn-filtros-avanzados" onclick="toggleFiltrosAvanzados()" aria-label="Filtros" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+            <span class="filtros-badge" id="filtros-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:14px;height:14px;background:var(--green);color:#fff;border-radius:7px;font-size:9px;font-weight:800;align-items:center;justify-content:center;padding:0 3px;">0</span>
+          </button>
+        </div>
+      </div>
+      <!-- Fila 3: chips tipo + filtros activos + ordenar -->
+      <div class="dash-topbar__filter-row">
+        <div class="dash-topbar__chips">
+          <button class="dash-chip is-active" id="chip-all" onclick="filtrarRubroChip('')">
+            <span id="chip-count-all"><span class="chip-spinner"></span></span>&nbsp;Todos
+          </button>
+          <button class="dash-chip" id="chip-obras" onclick="filtrarRubroChip('Obras')">
+            <span id="chip-count-obras"><span class="chip-spinner"></span></span>&nbsp;Obras
+          </button>
+          <button class="dash-chip" id="chip-bienes" onclick="filtrarRubroChip('Bienes')">
+            <span id="chip-count-bienes"><span class="chip-spinner"></span></span>&nbsp;Bienes
+          </button>
+          <button class="dash-chip" id="chip-servicios" onclick="filtrarRubroChip('Servicios')">
+            <span id="chip-count-servicios"><span class="chip-spinner"></span></span>&nbsp;Servicios
+          </button>
+          <!-- Filtros activos como chips removibles -->
+          <div id="active-filter-chips"></div>
+          <button class="dash-chip-clear" id="btn-limpiar-filtros" onclick="limpiarFiltros()" style="display:none;">Limpiar</button>
+        </div>
+        <div class="dash-topbar__right">
+          <span class="dash-topbar__sort-label">Ordenar:
+            <select class="dash-topbar__sort-select" id="filtro-activos-visible" onchange="document.getElementById('filtro-activos').value=this.value;cargarProcesos(1)">
+              <option value="true">Cierra primero</option>
+              <option value="false">Todos</option>
+            </select>
+          </span>
+        </div>
       </div>
     </header>
 
     <!-- Banner Beta -->
-    <div class="ll-card" id="beta-banner" onclick="mostrarOnboarding()" style="margin:12px 16px;border-color:rgba(243,156,18,0.4);background:rgba(243,156,18,0.08);cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px 14px;">
+    <div class="ll-card" id="beta-banner" onclick="mostrarOnboarding()" style="margin:10px 16px 0;border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.07);cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 14px;">
       <span class="ll-chip ll-chip--warning" style="flex-shrink:0;">BETA</span>
       <span class="ll-body-sm" style="flex:1;">Acceso Anticipado — Estás entre los primeros. Toca para conocer todo lo que puedes hacer.</span>
-      <button onclick="event.stopPropagation();cerrarBanner()" aria-label="Cerrar" style="background:none;border:none;color:var(--color-text-subtle);cursor:pointer;font-size:16px;padding:0;line-height:1;">✕</button>
+      <button onclick="event.stopPropagation();cerrarBanner()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:0;line-height:1;">✕</button>
     </div>
 
-    <!-- Barra de búsqueda principal -->
-    <div style="padding:0 16px 8px;">
-      <div class="ll-field ll-field--with-icon" style="position:relative;">
-        <svg class="ll-field__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input class="ll-input" type="text" id="busqueda" placeholder="Título, código proceso o UNSPSC (ej: 7210)..." oninput="debounceSearch();toggleClearBtn()" autocomplete="off" style="padding-right:72px;">
-        <button class="dash-search-clear" id="btn-clear-busqueda" onclick="limpiarBusqueda()" aria-label="Limpiar búsqueda" style="position:absolute;right:40px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--color-text-subtle);cursor:pointer;font-size:14px;padding:4px;">✕</button>
-        <button class="ll-btn ll-btn--ghost ll-btn--icon" id="btn-filtros-avanzados" onclick="toggleFiltrosAvanzados()" aria-label="Filtros" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
-          <span class="filtros-badge" id="filtros-badge" style="display:none;position:absolute;top:-3px;right:-3px;min-width:14px;height:14px;background:var(--color-brand);color:#fff;border-radius:7px;font-size:9px;font-weight:800;align-items:center;justify-content:center;padding:0 3px;">0</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Chips de filtro rápido por rubro -->
-    <div style="display:flex;gap:8px;padding:0 16px 12px;overflow-x:auto;">
-      <button class="ll-chip ll-chip--interactive is-active" id="chip-all" onclick="filtrarRubroChip('')">
-        <span class="ll-num" id="chip-count-all"><span class="chip-spinner"></span></span>&nbsp;Todos
-      </button>
-      <button class="ll-chip ll-chip--interactive" id="chip-obras" onclick="filtrarRubroChip('Obras')">
-        <span class="ll-num" id="chip-count-obras"><span class="chip-spinner"></span></span>&nbsp;Obras
-      </button>
-      <button class="ll-chip ll-chip--interactive" id="chip-bienes" onclick="filtrarRubroChip('Bienes')">
-        <span class="ll-num" id="chip-count-bienes"><span class="chip-spinner"></span></span>&nbsp;Bienes
-      </button>
-      <button class="ll-chip ll-chip--interactive" id="chip-servicios" onclick="filtrarRubroChip('Servicios')">
-        <span class="ll-num" id="chip-count-servicios"><span class="chip-spinner"></span></span>&nbsp;Servicios
-      </button>
-    </div>
-
-    <!-- Panel de filtros avanzados colapsable (institución + montos + UNSPSC) -->
+    <!-- Panel de filtros avanzados colapsable -->
     <div class="filtros-avanzados-panel" id="filtros-avanzados-panel">
       <div class="adv-filter-grid">
         <select class="filter-select" id="filtro-objeto" onchange="rubroActivo=this.value;cargarProcesos(1)" style="display:none">
-          <option value="">Todos</option>
-          <option value="Obras">Obras</option>
-          <option value="Bienes">Bienes</option>
-          <option value="Servicios">Servicios</option>
+          <option value="">Todos</option><option value="Obras">Obras</option>
+          <option value="Bienes">Bienes</option><option value="Servicios">Servicios</option>
           <option value="Consultoría">Consultoría</option>
         </select>
         <select class="filter-select" id="filtro-activos" onchange="cargarProcesos(1)" style="display:none">
-          <option value="true">Solo activos</option>
-          <option value="false">Todos</option>
+          <option value="true">Solo activos</option><option value="false">Todos</option>
         </select>
-        <input class="ll-input" type="text" id="filtro-institucion" placeholder="Institución..." oninput="debounceSearch()">
-        <input class="ll-input" type="number" id="filtro-monto-min" placeholder="Monto mín (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
-        <input class="ll-input" type="number" id="filtro-monto-max" placeholder="Monto máx (RD$)" oninput="debounceSearch();actualizarBadgeFiltros()">
+        <input class="ll-input" type="text" id="filtro-institucion" placeholder="Institución..." oninput="debounceSearch();actualizarFiltrosActivos()">
+        <input class="ll-input" type="number" id="filtro-monto-min" placeholder="Monto mín (RD$)" oninput="debounceSearch();actualizarBadgeFiltros();actualizarFiltrosActivos()">
+        <input class="ll-input" type="number" id="filtro-monto-max" placeholder="Monto máx (RD$)" oninput="debounceSearch();actualizarBadgeFiltros();actualizarFiltrosActivos()">
         <div style="position:relative;grid-column:1/-1">
-          <input class="ll-input" type="text" id="filtro-unspsc-text" placeholder="UNSPSC — nombre o código (ej: 7210, construcción)..." oninput="buscarUnspsc()" autocomplete="off" style="width:100%">
+          <input class="ll-input" type="text" id="filtro-unspsc-text" placeholder="UNSPSC — nombre o código..." oninput="buscarUnspsc()" autocomplete="off" style="width:100%">
           <div class="unspsc-dropdown" id="unspsc-dropdown"></div>
         </div>
         <div class="unspsc-active-tag" id="unspsc-activo" style="grid-column:1/-1">
@@ -2708,27 +2944,24 @@ html { background: var(--color-bg, #0A0A0A); }
           <button onclick="limpiarUnspsc()" style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:15px;padding:0;line-height:1">✕</button>
         </div>
       </div>
-      <div style="display:flex;gap:8px;padding:8px 0 4px">
-        <select class="ll-select" id="filtro-activos-visible" onchange="document.getElementById('filtro-activos').value=this.value;cargarProcesos(1)" style="flex:1">
-          <option value="true">Solo activos</option>
-          <option value="false">Todos</option>
-        </select>
-        <button class="filter-clear" onclick="limpiarFiltros()" style="flex:0 0 auto">Limpiar</button>
+      <div style="display:flex;justify-content:flex-end;padding:8px 0 4px">
+        <button class="filter-clear" onclick="limpiarFiltros()">Limpiar filtros</button>
       </div>
     </div>
 
     <div id="procesos-container" class="procesos-list">
       <div class="loading"><div class="spinner"></div><span>Cargando licitaciones...</span></div>
     </div>
-
     <div class="pagination" id="pagination"></div>
 
-    <!-- Stats ocultas (mantener IDs para el JS) -->
+    <!-- Stats ocultas -->
     <span id="stat-activos" style="display:none"></span>
     <span id="stat-obras" style="display:none"></span>
     <span id="stat-bienes" style="display:none"></span>
     <span id="stat-servicios" style="display:none"></span>
     <span id="stat-total" style="display:none"></span>
+    <span id="dash-greeting" style="display:none"></span>
+    <span id="dash-subtitle" style="display:none"></span>
   </div>
 
   <div id="tab-detalle" class="page-with-nav" style="display:none">
@@ -2964,6 +3197,50 @@ html { background: var(--color-bg, #0A0A0A); }
 
     <button class="ll-btn ll-btn--primary ll-btn--block" style="margin:16px;" onclick="abrirFormProveedor()">+ Registrar mi empresa como proveedor</button>
   </div><!-- /tab-mercado -->
+
+  <!-- ── TAB: ALERTAS ── -->
+  <div id="tab-alertas" style="display:none;padding:20px 24px;overflow-y:auto;position:absolute;inset:0;">
+    <div style="max-width:800px;margin:0 auto;">
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;">Alertas</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Fechas críticas de los procesos que sigues</p>
+      <div id="alertas-lista">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: ANÁLISIS ── -->
+  <div id="tab-analisis" style="display:none;padding:20px 24px;overflow-y:auto;position:absolute;inset:0;">
+    <div style="max-width:900px;margin:0 auto;">
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;">Análisis de pliegos</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Todos tus análisis completados y en proceso</p>
+      <div id="analisis-tab-lista">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: REPORTES ── -->
+  <div id="tab-reportes" style="display:none;padding:20px 24px;overflow-y:auto;position:absolute;inset:0;">
+    <div style="max-width:900px;margin:0 auto;">
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;">Reportes</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Estadísticas de tu actividad en la plataforma</p>
+      <div id="reportes-contenido">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TAB: CALENDARIO ── -->
+  <div id="tab-calendario" style="display:none;padding:20px 24px;overflow-y:auto;position:absolute;inset:0;">
+    <div style="max-width:800px;margin:0 auto;">
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:4px;">Calendario</h2>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:20px;">Fechas de cierre ordenadas cronológicamente</p>
+      <div id="calendario-lista">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+  </div>
   </div><!-- /tabs-wrapper -->
   <nav class="ll-bottom-nav">
     <button class="ll-bottom-nav__item is-active" id="nav-dashboard" onclick="navDashboardTap()">
@@ -3731,42 +4008,106 @@ function renderProcesos(procesos, data, page) {
     return;
   }
 
-  container.innerHTML = procesos.map(p => {
-    const tipo = p.objeto_proceso || '';
-    const chipTipo = tipo === 'Obras'
-      ? 'll-chip ll-chip--info'
-      : tipo === 'Bienes'
-        ? 'll-chip ll-chip--warning'
-        : tipo === 'Servicios'
-          ? 'll-chip ll-chip--success'
-          : 'll-chip';
-    const cierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO',{day:'2-digit',month:'short'}) : '—';
-    return `
-      <div class="proceso-swipe-wrap" data-codigo="${p.codigo_proceso}" data-titulo="${(p.titulo||'').replace(/"/g,'&quot;').substring(0,80)}">
-        <div class="proceso-swipe-action" id="swipe-action-${p.codigo_proceso}">
-          <span class="proceso-swipe-action-label">Quiero ganar</span>
+  // Actualizar el contador del breadcrumb
+  const bcCount = document.getElementById('dash-bc-count');
+  if (bcCount) bcCount.textContent = (data.total || data.procesos?.length || procesos.length) + ' activas';
+
+  // Desktop: cards densas / Móvil: swipe cards
+  const isDesktop = window.innerWidth >= 900;
+
+  if (isDesktop) {
+    container.innerHTML = procesos.map(p => {
+      const inst = (p.unidad_compra||'').split(' ').slice(0,1).join(' ').substring(0,10).toUpperCase() || '—';
+      const monto = formatMonto(p.monto_estimado);
+      const cd = calcularCountdown(p.fecha_fin_recepcion_ofertas);
+      // Barra de progreso: tiempo restante vs total publicado→cierre
+      let pct = 50;
+      if (p.fecha_publicacion && p.fecha_fin_recepcion_ofertas) {
+        const total = new Date(p.fecha_fin_recepcion_ofertas) - new Date(p.fecha_publicacion);
+        const elapsed = Date.now() - new Date(p.fecha_publicacion);
+        pct = Math.max(3, Math.min(97, Math.round((elapsed/total)*100)));
+      }
+      const cdCls = cd.clase || '';
+      const unspsc = (p.codigo_proceso||'').split('-')[0] || '—';
+      const inst2 = (p.unidad_compra||'').substring(0,40);
+      return `<div class="proceso-dense-card" data-codigo="${p.codigo_proceso}" onclick="verDetalle('${p.codigo_proceso}')">
+        <div class="pdc-row1">
+          <span class="pdc-code">${p.codigo_proceso||'—'}</span>
+          <span class="pdc-inst-chip">${inst}</span>
+          <span class="pdc-estado-chip abierto">${p.estado_proceso||'Publicado'}</span>
+          <button class="pdc-bookmark" onclick="event.stopPropagation();toggleSeguimiento('${p.codigo_proceso}')" id="bm-${p.codigo_proceso}">🔖</button>
         </div>
-        <div class="ll-card ll-card--hover ll-card--accent" data-tipo="${(p.objeto_proceso||'').includes('Obra')?'Obras':(p.objeto_proceso||'').includes('Bien')?'Bienes':(p.objeto_proceso||'').includes('Servicio')?'Servicios':''}" data-codigo="${p.codigo_proceso}">
-          <div class="ll-card__header">
-            <span class="ll-mono ll-caption">${p.codigo_proceso || '—'}</span>
-            <span class="ll-num">${formatMonto(p.monto_estimado)}</span>
+        <div class="pdc-title">${p.titulo||'Sin título'}</div>
+        <div class="pdc-meta">
+          <span class="pdc-meta-item">
+            <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            ${monto}
+          </span>
+          ${p.provincia ? `<span class="pdc-meta-item">
+            <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            ${p.provincia}
+          </span>` : ''}
+          <span class="pdc-meta-item">
+            <svg viewBox="0 0 24 24"><polyline points="20.59 13.41 15 19 9 13 14.59 7.41"/><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="20" x2="9" y2="6"/></svg>
+            ${unspsc}${p.objeto_proceso ? ' · '+p.objeto_proceso : ''}
+          </span>
+          <span class="pdc-meta-score" id="score-badge-${p.codigo_proceso}" style="display:none;"></span>
+        </div>
+        <div class="pdc-row3">
+          <span class="pdc-countdown ${cdCls}">
+            <span class="dot"></span>
+            Cierra en ${cd.texto}
+          </span>
+          <div class="pdc-progress">
+            <div class="pdc-progress-fill ${cdCls}" style="width:${pct}%"></div>
           </div>
-          <h3 class="ll-card__title" style="margin:6px 0;">${p.titulo || 'Sin título'}</h3>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-            <span class="ll-body-sm ll-u-text-subtle">${p.unidad_compra || '—'}</span>
-            <span class="ll-mono ll-caption">${cierre}</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:8px;">
-            ${tipo ? `<span class="${chipTipo}">${tipo}</span>` : ''}
-            ${p.modalidad ? `<span class="ll-chip">${p.modalidad}</span>` : ''}
-            ${p.dirigido_mipymes ? '<span class="ll-chip ll-chip--warning">MIPYMES</span>' : ''}
-            <span class="card-score-badge" id="score-badge-${p.codigo_proceso}" style="display:none;margin-left:auto;"></span>
+          <div class="pdc-actions">
+            <button class="pdc-btn-save" onclick="event.stopPropagation();toggleSeguimiento('${p.codigo_proceso}')">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+              Guardar
+            </button>
+            <button class="pdc-btn-analisis" onclick="event.stopPropagation();verDetalle('${p.codigo_proceso}');setTimeout(()=>cambiarTabDetalle('${p.codigo_proceso}','score'),300)">
+              ⚡ Ver análisis
+            </button>
           </div>
         </div>
       </div>`;
-  }).join('');
+    }).join('');
+  } else {
+    // MÓVIL: cards originales con swipe
+    container.innerHTML = procesos.map(p => {
+      const tipo = p.objeto_proceso || '';
+      const chipTipo = tipo === 'Obras' ? 'll-chip ll-chip--info'
+        : tipo === 'Bienes' ? 'll-chip ll-chip--warning'
+        : tipo === 'Servicios' ? 'll-chip ll-chip--success' : 'll-chip';
+      const cierre = p.fecha_fin_recepcion_ofertas ? new Date(p.fecha_fin_recepcion_ofertas).toLocaleDateString('es-DO',{day:'2-digit',month:'short'}) : '—';
+      return `
+        <div class="proceso-swipe-wrap" data-codigo="${p.codigo_proceso}" data-titulo="${(p.titulo||'').replace(/"/g,'&quot;').substring(0,80)}">
+          <div class="proceso-swipe-action" id="swipe-action-${p.codigo_proceso}">
+            <span class="proceso-swipe-action-label">Quiero ganar</span>
+          </div>
+          <div class="ll-card ll-card--hover ll-card--accent" data-codigo="${p.codigo_proceso}">
+            <div class="ll-card__header">
+              <span class="ll-mono ll-caption">${p.codigo_proceso||'—'}</span>
+              <span class="ll-num">${formatMonto(p.monto_estimado)}</span>
+            </div>
+            <h3 class="ll-card__title" style="margin:6px 0;">${p.titulo||'Sin título'}</h3>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+              <span class="ll-body-sm ll-u-text-subtle">${p.unidad_compra||'—'}</span>
+              <span class="ll-mono ll-caption">${cierre}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:8px;">
+              ${tipo ? `<span class="${chipTipo}">${tipo}</span>` : ''}
+              ${p.modalidad ? `<span class="ll-chip">${p.modalidad}</span>` : ''}
+              ${p.dirigido_mipymes ? '<span class="ll-chip ll-chip--warning">MIPYMES</span>' : ''}
+              <span class="card-score-badge" id="score-badge-${p.codigo_proceso}" style="display:none;margin-left:auto;"></span>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  }
 
-  // Fetch batch de scores IA para esta página (silencioso, no bloquea render)
+  // Fetch batch de scores (aplica para móvil y desktop)
   if (procesos.length) {
     const codigos = procesos.map(p => p.codigo_proceso);
     const inFilter = codigos.map(c => `"${c}"`).join(',');
@@ -3778,24 +4119,22 @@ function renderProcesos(procesos, data, page) {
         if (a.estado !== 'completado' || !a.evaluacion_competitividad) return;
         const ev = a.evaluacion_competitividad;
         const alertas = a.alertas_fraude || [];
-        let score;
-        if (ev.score_base != null) {
-          // Score real de Gemini
-          score = Math.max(5, Math.min(100, Number(ev.score_base)));
-        } else {
-          // Fallback estimado para análisis viejos
-          const niveles = { 'Baja': 80, 'Media': 58, 'Alta': 30 };
-          let s = niveles[ev.nivel_dificultad] ?? 50;
-          s -= alertas.filter(x => x.riesgo === 'Alto').length * 15;
-          s -= alertas.filter(x => x.riesgo === 'Medio').length * 7;
-          score = Math.max(5, Math.round(s));
-        }
+        let score = ev.score_base != null ? Math.max(5, Math.min(100, Number(ev.score_base)))
+          : Math.max(5, Math.round((({'Baja':80,'Media':58,'Alta':30}[ev.nivel_dificultad]??50)
+            - alertas.filter(x=>x.riesgo==='Alto').length*15
+            - alertas.filter(x=>x.riesgo==='Medio').length*7)));
         const cls = score >= 70 ? 'baja' : score >= 45 ? 'media' : 'alta';
         const badge = document.getElementById(`score-badge-${a.proceso_id}`);
         if (badge) {
-          badge.textContent = `⚡ ${score}`;
-          badge.className = `card-score-badge ${cls}`;
-          badge.style.display = 'inline-flex';
+          if (isDesktop) {
+            badge.textContent = `⚡ ${score}`;
+            badge.className = `pdc-meta-score ${cls}`;
+            badge.style.display = 'flex';
+          } else {
+            badge.textContent = `⚡ ${score}`;
+            badge.className = `card-score-badge ${cls}`;
+            badge.style.display = 'inline-flex';
+          }
         }
       });
     }).catch(() => {});
@@ -4965,31 +5304,218 @@ function navDashboardTap() {
 // ── NAV ──
 function switchTab2(tab) {
   window._lastActiveTab = tab;
-  document.getElementById('tab-dashboard').style.display   = tab==='dashboard'   ? 'block' : 'none';
-  document.getElementById('tab-detalle').style.display     = 'none';
-  document.getElementById('tab-perfil').style.display      = tab==='perfil'      ? 'block' : 'none';
-  document.getElementById('tab-seguimiento').style.display = tab==='seguimiento' ? 'block' : 'none';
-  document.getElementById('tab-mercado').style.display     = tab==='mercado'     ? 'block' : 'none';
+  const allTabs = ['dashboard','detalle','perfil','seguimiento','mercado','alertas','analisis','reportes','calendario'];
+  allTabs.forEach(t => {
+    const el = document.getElementById(`tab-${t}`);
+    if (el) el.style.display = t === tab ? 'block' : 'none';
+  });
   if (tab==='seguimiento') cargarSeguimiento();
-  if (tab==='mercado') cargarMercado();
-  if (tab==='perfil') cargarHistorialAnalisis();
+  if (tab==='mercado')     cargarMercado();
+  if (tab==='perfil')      cargarHistorialAnalisis();
+  if (tab==='alertas')     cargarAlertas();
+  if (tab==='analisis')    cargarAnalisisTab();
+  if (tab==='reportes')    cargarReportes();
+  if (tab==='calendario')  cargarCalendario();
   // Bottom-nav (móvil)
   document.querySelectorAll('.ll-bottom-nav__item').forEach(b => b.classList.remove('is-active'));
-  const navMap = {
-    'dashboard':'nav-dashboard','perfil':'nav-perfil',
-    'seguimiento':'nav-seguimiento','mercado':'nav-mercado'
-  };
+  const navMap = { 'dashboard':'nav-dashboard','perfil':'nav-perfil','seguimiento':'nav-seguimiento','mercado':'nav-mercado' };
   if(navMap[tab]) document.getElementById(navMap[tab])?.classList.add('is-active');
   // Sidebar desktop
   document.querySelectorAll('.dsb-nav-item').forEach(b => b.classList.remove('active'));
   const dsbMap = {
     'dashboard':'dsb-nav-dashboard','perfil':'dsb-nav-perfil',
-    'seguimiento':'dsb-nav-seguimiento','mercado':'dsb-nav-mercado'
+    'seguimiento':'dsb-nav-seguimiento','mercado':'dsb-nav-mercado',
+    'alertas':'dsb-nav-alertas','analisis':'dsb-nav-analisis',
+    'reportes':'dsb-nav-reportes','calendario':'dsb-nav-calendario'
   };
   if(dsbMap[tab]) document.getElementById(dsbMap[tab])?.classList.add('active');
 }
 
-// ── PUSH ──
+// ── FILTROS ACTIVOS (chips removibles en topbar) ──────────────────────────
+function actualizarFiltrosActivos() {
+  const inst = document.getElementById('filtro-institucion')?.value?.trim() || '';
+  const mMin = document.getElementById('filtro-monto-min')?.value || '';
+  const mMax = document.getElementById('filtro-monto-max')?.value || '';
+  const chips = [];
+  if (inst) chips.push({ label: inst, clear: () => { document.getElementById('filtro-institucion').value=''; debounceSearch(); actualizarFiltrosActivos(); } });
+  if (mMin) chips.push({ label: `Monto > RD$${Number(mMin).toLocaleString()}`, clear: () => { document.getElementById('filtro-monto-min').value=''; debounceSearch(); actualizarFiltrosActivos(); } });
+  if (mMax) chips.push({ label: `Monto < RD$${Number(mMax).toLocaleString()}`, clear: () => { document.getElementById('filtro-monto-max').value=''; debounceSearch(); actualizarFiltrosActivos(); } });
+  const container = document.getElementById('active-filter-chips');
+  const limpiarBtn = document.getElementById('btn-limpiar-filtros');
+  if (!container) return;
+  container.innerHTML = chips.map((c, i) => `
+    <span class="active-filter-chip" id="afc-${i}">${c.label}
+      <button onclick="(${c.clear.toString()})()" style="background:none;border:none;color:var(--muted);cursor:pointer;padding:0;font-size:13px;line-height:1;">✕</button>
+    </span>`).join('');
+  if (limpiarBtn) limpiarBtn.style.display = chips.length ? 'inline-flex' : 'none';
+}
+
+// ── TAB: ALERTAS ─────────────────────────────────────────────────────────
+async function cargarAlertas() {
+  const lista = document.getElementById('alertas-lista');
+  if (!lista || !currentUser?.id) return;
+  lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    // Traer procesos seguidos con fechas próximas
+    const res = await sbRest(`seguimiento_procesos?user_id=eq.${currentUser.id}&select=proceso_id&limit=100`);
+    const seg  = await res.json();
+    if (!seg.length) { lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">No sigues ningún proceso aún.</div>'; return; }
+    const ids = seg.map(s => `"${s.proceso_id}"`).join(',');
+    const resProcesos = await fetch(`${SUPABASE_URL}/rest/v1/procesos?codigo_proceso=in.(${ids})&select=codigo_proceso,titulo,fecha_fin_recepcion_ofertas,unidad_compra&order=fecha_fin_recepcion_ofertas.asc`, { headers: { 'apikey': SUPABASE_ANON_KEY } });
+    const procesos = await resProcesos.json();
+    const ahora = Date.now();
+    const activos = procesos.filter(p => p.fecha_fin_recepcion_ofertas && new Date(p.fecha_fin_recepcion_ofertas) > new Date(ahora));
+    if (!activos.length) { lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">No hay fechas próximas de cierre.</div>'; return; }
+    lista.innerHTML = activos.map(p => {
+      const cd = calcularCountdown(p.fecha_fin_recepcion_ofertas);
+      const urgente = cd.clase === 'urgente' || cd.clase === 'vencido';
+      return `<div class="ll-card ll-card--hover" style="margin-bottom:8px;cursor:pointer;border-left:3px solid ${urgente?'var(--amber)':'var(--border)'};" onclick="verDetalle('${p.codigo_proceso}')">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:3px;">${p.titulo||'Sin título'}</div>
+            <div style="font-size:11px;color:var(--muted);">${p.unidad_compra||''} · ${p.codigo_proceso}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:16px;">
+            <div style="font-size:14px;font-weight:800;color:${urgente?'var(--amber)':'var(--green)'};">${cd.texto}</div>
+            <div style="font-size:11px;color:var(--muted);">${cd.sub}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Error cargando alertas.</div>';
+  }
+}
+
+// ── TAB: ANÁLISIS ────────────────────────────────────────────────────────
+async function cargarAnalisisTab() {
+  const lista = document.getElementById('analisis-tab-lista');
+  if (!lista || !currentUser?.id) return;
+  lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const res  = await fetch(`${API}/api/mis-analisis?user_id=${currentUser.id}`);
+    const data = await res.json();
+    const items = data.analisis || [];
+    if (!items.length) {
+      lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Sin análisis aún. Sigue un proceso para activar el análisis del pliego.</div>'; return;
+    }
+    const etiquetas = { completado:'Completado', procesando:'Analizando…', pendiente_analisis:'En cola', error:'Error' };
+    lista.innerHTML = items.map(a => {
+      const fecha = a.actualizado_en ? new Date(a.actualizado_en).toLocaleDateString('es-DO',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+      const monto = a.monto_estimado ? (Number(a.monto_estimado)>=1e6 ? `RD$${(Number(a.monto_estimado)/1e6).toFixed(1)}M` : `RD$${(Number(a.monto_estimado)/1e3).toFixed(0)}K`) : '';
+      const estado = a.estado || 'pendiente_analisis';
+      const score = a.evaluacion_competitividad?.score_base;
+      const cls = score >= 70 ? 'baja' : score >= 45 ? 'media' : 'alta';
+      return `<div class="ll-card ll-card--hover" style="margin-bottom:8px;cursor:pointer;" onclick="verDetalle('${a.proceso_id}')">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:3px;">${sanitize(a.titulo||'Sin título')}</div>
+            <div style="font-size:12px;color:var(--muted);">${sanitize(a.unidad_compra||'')}${monto?' · '+monto:''}</div>
+          </div>
+          <div style="flex-shrink:0;text-align:right;">
+            ${score != null ? `<div style="font-size:16px;font-weight:800;color:${cls==='baja'?'var(--green)':cls==='media'?'var(--amber)':'var(--red)'}">⚡ ${score}</div>` : ''}
+            <span class="historial-card-estado ${estado}">${etiquetas[estado]||estado}</span>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px;">${fecha}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+    document.getElementById('dsb-badge-analisis').textContent = items.filter(a=>a.estado==='completado').length || '';
+  } catch(e) {
+    lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Error cargando análisis.</div>';
+  }
+}
+
+// ── TAB: REPORTES ────────────────────────────────────────────────────────
+async function cargarReportes() {
+  const cont = document.getElementById('reportes-contenido');
+  if (!cont || !currentUser?.id) return;
+  cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const [resSeg, resAnal] = await Promise.all([
+      sbRest(`seguimiento_procesos?user_id=eq.${currentUser.id}&select=proceso_id,estado,creado_en`),
+      fetch(`${API}/api/mis-analisis?user_id=${currentUser.id}`)
+    ]);
+    const seg   = await resSeg.json();
+    const anal  = (await resAnal.json()).analisis || [];
+    const completados = anal.filter(a => a.estado === 'completado');
+    const estadosCounts = seg.reduce((acc, s) => { acc[s.estado||'pendiente'] = (acc[s.estado||'pendiente']||0)+1; return acc; }, {});
+    cont.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+        <div class="ll-card" style="text-align:center;padding:20px;">
+          <div style="font-size:32px;font-weight:800;color:var(--green);">${seg.length}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Procesos seguidos</div>
+        </div>
+        <div class="ll-card" style="text-align:center;padding:20px;">
+          <div style="font-size:32px;font-weight:800;color:var(--green);">${completados.length}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Análisis completados</div>
+        </div>
+        <div class="ll-card" style="text-align:center;padding:20px;">
+          <div style="font-size:32px;font-weight:800;color:var(--amber);">${anal.filter(a=>['procesando','pendiente_analisis'].includes(a.estado)).length}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px;">En análisis</div>
+        </div>
+      </div>
+      <div class="ll-card" style="margin-bottom:12px;">
+        <div class="ll-card__header"><h2 class="ll-card__title">Estado de mis procesos</h2></div>
+        <div class="ll-card__body" style="padding-top:8px;">
+          ${Object.entries(estadosCounts).map(([estado, count]) => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
+            <span style="font-size:13px;font-weight:600;color:var(--text2);text-transform:capitalize;">${estado}</span>
+            <span style="font-size:14px;font-weight:800;font-family:var(--font-mono);color:var(--text);">${count}</span>
+          </div>`).join('')}
+        </div>
+      </div>`;
+  } catch(e) {
+    cont.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Error cargando reportes.</div>';
+  }
+}
+
+// ── TAB: CALENDARIO ──────────────────────────────────────────────────────
+async function cargarCalendario() {
+  const lista = document.getElementById('calendario-lista');
+  if (!lista || !currentUser?.id) return;
+  lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const res = await sbRest(`seguimiento_procesos?user_id=eq.${currentUser.id}&select=proceso_id&limit=100`);
+    const seg = await res.json();
+    if (!seg.length) { lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Sin procesos seguidos.</div>'; return; }
+    const ids = seg.map(s => `"${s.proceso_id}"`).join(',');
+    const resProcesos = await fetch(`${SUPABASE_URL}/rest/v1/procesos?codigo_proceso=in.(${ids})&select=codigo_proceso,titulo,fecha_fin_recepcion_ofertas,unidad_compra,monto_estimado&order=fecha_fin_recepcion_ofertas.asc`, { headers: { 'apikey': SUPABASE_ANON_KEY } });
+    const procesos = await resProcesos.json();
+    // Agrupar por mes
+    const porMes = {};
+    procesos.forEach(p => {
+      if (!p.fecha_fin_recepcion_ofertas) return;
+      const d = new Date(p.fecha_fin_recepcion_ofertas);
+      const key = d.toLocaleDateString('es-DO', { month:'long', year:'numeric' });
+      if (!porMes[key]) porMes[key] = [];
+      porMes[key].push(p);
+    });
+    if (!Object.keys(porMes).length) { lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Sin fechas de cierre disponibles.</div>'; return; }
+    lista.innerHTML = Object.entries(porMes).map(([mes, items]) => `
+      <div style="margin-bottom:20px;">
+        <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">${mes}</div>
+        ${items.map(p => {
+          const cd = calcularCountdown(p.fecha_fin_recepcion_ofertas);
+          const urgente = cd.clase === 'urgente';
+          return `<div class="ll-card ll-card--hover" style="margin-bottom:6px;cursor:pointer;border-left:3px solid ${urgente?'var(--amber)':'var(--border)'};" onclick="verDetalle('${p.codigo_proceso}')">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;">${p.titulo||'Sin título'}</div>
+                <div style="font-size:11px;color:var(--muted);">${p.unidad_compra||''} · ${formatMonto(p.monto_estimado)}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0;">
+                <div style="font-size:12px;font-weight:800;font-family:var(--font-mono);color:${urgente?'var(--amber)':'var(--text2)'};">${cd.sub.split('·')[0]?.trim()}</div>
+                <div style="font-size:11px;color:var(--muted);">${cd.texto}</div>
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`).join('');
+  } catch(e) {
+    lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Error cargando calendario.</div>';
+  }
+}
 async function checkPushStatus() {
   if (!('serviceWorker' in navigator)) return;
   const reg = await navigator.serviceWorker.getRegistration();
