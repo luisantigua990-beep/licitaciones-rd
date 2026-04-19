@@ -1781,9 +1781,40 @@ Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes
   "evaluacion_competitividad": {
     "nivel_dificultad": "Alta|Media|Baja",
     "razon": "Por qué es difícil o fácil para una empresa mediana del sector",
-    "recomendacion": "Participar solo|Participar en consorcio|Evaluar con cuidado|No recomendado"
+    "recomendacion": "Participar solo|Participar en consorcio|Evaluar con cuidado|No recomendado",
+    "score_base": 75,
+    "faltas_graves": [
+      "Descripción concisa de cada violación a la ley o principio que reduce el score (solo si existen)"
+    ]
   }
 }
+
+CRITERIOS PARA score_base (0-100) — INSTRUCCIÓN OBLIGATORIA:
+El score_base mide qué tan viable y limpio es el proceso para un oferente calificado del sector.
+Empieza en 100 y descuenta según estas reglas:
+
+DESCUENTOS POR IRREGULARIDADES (alertas_fraude):
+  - Cada alerta de riesgo Alto:   -15 puntos
+  - Cada alerta de riesgo Medio:  -7  puntos
+  - Cada alerta de riesgo Bajo:   -3  puntos
+
+DESCUENTOS ADICIONALES POR FACTORES DEL PROCESO:
+  - Plazo de presentación < 5 días hábiles:         -10 puntos
+  - Plazo de presentación entre 5-10 días hábiles:  -5  puntos
+  - Especificaciones dirigidas a marca/proveedor:   -15 puntos (independiente de las alertas)
+  - Criterios de evaluación sin ponderación clara:  -8  puntos
+  - Cronograma incompleto (faltan fechas clave):    -5  puntos
+  - Requisitos financieros desproporcionados al monto: -10 puntos
+
+BONIFICACIONES:
+  - Proceso sin ninguna alerta de fraude:     +5 puntos
+  - Cronograma completo con todas las fechas: +3 puntos
+  - Requisitos claros y proporcionales:       +2 puntos
+
+El score_base NUNCA puede ser mayor a 100 ni menor a 5.
+Redondea al entero más cercano.
+En "faltas_graves" incluye SOLO las irregularidades que descuentan más de 10 puntos en total,
+descritas en una línea corta. Si no hay faltas graves, devuelve un array vacío [].
 """
 
 
@@ -2539,7 +2570,9 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
     dificultad   = eval_comp.get("nivel_dificultad", "")
     recomendacion = eval_comp.get("recomendacion", "")
     razon_dif    = eval_comp.get("razon", "")
+    score_base   = eval_comp.get("score_base")
     color_dif    = {"Alta": "#dc2626", "Media": "#d97706", "Baja": "#16a34a"}.get(dificultad, "#6b7280")
+    color_score  = "#16a34a" if score_base and score_base >= 70 else "#d97706" if score_base and score_base >= 45 else "#dc2626"
 
     # ── Plazos clave ──────────────────────────────────────
     plazos       = analisis.get("plazos_clave") or {}
@@ -2728,7 +2761,7 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
 
   {'<tr><td style="padding:8px 28px;"><div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 14px;border-radius:0 8px 8px 0;"><p style="margin:0;font-size:13px;color:#1e40af;font-weight:bold;">💡 Resumen ejecutivo</p><p style="margin:6px 0 0;font-size:13px;color:#1e3a8a;line-height:1.5;">' + resumen + '</p></div></td></tr>' if resumen else ''}
 
-  {'<tr><td style="padding:8px 28px;"><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><p style="margin:0;font-size:13px;font-weight:bold;color:#1e293b;">📊 Evaluación de competitividad</p><p style="margin:4px 0 0;font-size:12px;color:#64748b;">' + razon_dif + '</p></td><td style="text-align:right;vertical-align:top;"><span style="background:' + color_dif + ';color:white;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:bold;">Dificultad: ' + dificultad + '</span><br><span style="font-size:11px;color:#64748b;display:block;margin-top:4px;">' + recomendacion + '</span></td></tr></table></div></td></tr>' if dificultad else ''}
+  {'<tr><td style="padding:8px 28px;"><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><p style="margin:0;font-size:13px;font-weight:bold;color:#1e293b;">📊 Evaluación de competitividad</p><p style="margin:4px 0 0;font-size:12px;color:#64748b;">' + razon_dif + '</p></td><td style="text-align:right;vertical-align:top;">' + (f'<span style="background:{color_score};color:white;padding:6px 12px;border-radius:20px;font-size:18px;font-weight:900;">{score_base}/100</span><br>' if score_base is not None else '') + '<span style="background:' + color_dif + ';color:white;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:bold;">Dificultad: ' + dificultad + '</span><br><span style="font-size:11px;color:#64748b;display:block;margin-top:4px;">' + recomendacion + '</span></td></tr></table></div></td></tr>' if dificultad or score_base is not None else ''}
 
   {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#dc2626;">🚨 Alertas de posible irregularidad</p><p style="margin:0 0 6px;font-size:11px;color:#9ca3af;">Indicadores identificados según Ley 47-25. No implican irregularidad confirmada.</p><table width="100%" style="border:1px solid #fee2e2;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + alertas_html + '</table></td></tr>' if alertas_html else '<tr><td style="padding:8px 28px;"><div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:10px 14px;border-radius:8px;font-size:13px;color:#166534;">✅ No se detectaron alertas de irregularidad significativas.</div></td></tr>'}
 
@@ -4014,11 +4047,24 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
     if comp:
         _pdf_seccion_bar("📊  EVALUACIÓN DE COMPETITIVIDAD", story, styles, color=HexColor("#1565C0"))
         rows = []
-        if comp.get("nivel"):        rows.append(("NIVEL",         comp["nivel"]))
-        if comp.get("explicacion"):  rows.append(("ANÁLISIS",      comp["explicacion"]))
-        if comp.get("recomendacion"):rows.append(("RECOMENDACIÓN", comp["recomendacion"]))
+        if comp.get("score_base") is not None:
+            rows.append(("PUNTUACIÓN", f"{comp['score_base']}/100"))
+        if comp.get("nivel_dificultad"): rows.append(("DIFICULTAD",    comp["nivel_dificultad"]))
+        if comp.get("razon"):            rows.append(("ANÁLISIS",      comp["razon"]))
+        if comp.get("recomendacion"):    rows.append(("RECOMENDACIÓN", comp["recomendacion"]))
+        # Retrocompatibilidad con campos viejos
+        if not rows:
+            if comp.get("nivel"):        rows.append(("NIVEL",         comp["nivel"]))
+            if comp.get("explicacion"):  rows.append(("ANÁLISIS",      comp["explicacion"]))
+            if comp.get("recomendacion"):rows.append(("RECOMENDACIÓN", comp["recomendacion"]))
         if rows:
             _pdf_tarjeta(rows, story, styles, fondo=HexColor("#E3F2FD"))
+        if comp.get("faltas_graves"):
+            faltas = comp["faltas_graves"]
+            if faltas:
+                _pdf_seccion_bar("⚠️  IRREGULARIDADES DETECTADAS", story, styles, color=HexColor("#C62828"))
+                _pdf_lista([{"hallazgo": f, "riesgo": "Alto", "categoria": "Irregularidad"} for f in faltas],
+                           story, styles, tipo="alerta")
 
     # Restricciones
     if analisis.get("restricciones_participacion"):
