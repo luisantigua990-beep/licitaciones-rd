@@ -1219,8 +1219,9 @@ body {
   .seg-header { padding: 28px 24px 20px; }
 
   /* Perfil */
-  #tab-perfil .perfil-card { padding: 24px; max-width: 700px; margin: 0 auto 16px; }
-  #tab-perfil { padding: 16px 24px; }
+  #tab-perfil { padding: 0; overflow-y: auto; }
+  #tab-perfil .perfil-card { padding: 24px; }
+  #tab-perfil .perfil-card h2 { font-size: 17px; }
 }
 
 /* ── SIDEBAR DESKTOP (hidden en móvil, visible ≥900px) ── */
@@ -3026,7 +3027,19 @@ html { background: var(--color-bg, #0A0A0A); }
     <div id="detalle-container" style="padding:0 16px 16px"><div class="loading"><div class="spinner"></div></div></div>
   </div>
 
-  <div id="tab-perfil" class="main page-with-nav" style="display:none">
+  <div id="tab-perfil" class="page-with-nav" style="display:none">
+
+    <header class="dash-topbar" style="position:sticky;top:0;z-index:50;">
+      <div class="dash-topbar__row1">
+        <div class="dash-topbar__breadcrumb">
+          <span class="dash-topbar__bc-section">Cuenta</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          <span class="dash-topbar__bc-page">Mi Perfil</span>
+        </div>
+      </div>
+    </header>
+
+    <div style="max-width:760px;padding:20px 24px;overflow-y:auto;">
 
     <div class="perfil-card">
       <h2>Mi cuenta</h2>
@@ -3106,6 +3119,7 @@ html { background: var(--color-bg, #0A0A0A); }
       <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:8px">Respondemos en máximo 15 minutos</div>
     </div>
 
+    </div><!-- /perfil-wrapper -->
   </div>
 
 
@@ -5411,10 +5425,10 @@ async function cargarAlertas() {
   lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
     // Traer procesos seguidos con fechas próximas
-    const res = await sbRest(`seguimiento_procesos?user_id=eq.${currentUser.id}&select=proceso_id&limit=100`);
+    const res = await sbRest(`seguimiento_procesos?user_id=eq.${currentUser.id}&select=proceso_codigo&limit=100`);
     const seg  = await res.json();
     if (!seg.length) { lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">No sigues ningún proceso aún.</div>'; return; }
-    const ids = seg.map(s => `"${s.proceso_id}"`).join(',');
+    const ids = seg.map(s => `"${s.proceso_codigo}"`).join(',');
     const resProcesos = await fetch(`${SUPABASE_URL}/rest/v1/procesos?codigo_proceso=in.(${ids})&select=codigo_proceso,titulo,fecha_fin_recepcion_ofertas,unidad_compra&order=fecha_fin_recepcion_ofertas.asc`, { headers: { 'apikey': SUPABASE_ANON_KEY } });
     const procesos = await resProcesos.json();
     const ahora = Date.now();
@@ -5460,7 +5474,7 @@ async function cargarAnalisisTab() {
       const estado = a.estado || 'pendiente_analisis';
       const score = a.evaluacion_competitividad?.score_base;
       const cls = score >= 70 ? 'baja' : score >= 45 ? 'media' : 'alta';
-      return `<div class="ll-card ll-card--hover" style="margin-bottom:8px;cursor:pointer;" onclick="verDetalle('${a.proceso_id}')">
+      return `<div class="ll-card ll-card--hover" style="margin-bottom:8px;cursor:pointer;" onclick="verDetalle('${a.proceso_id || a.proceso_codigo}')">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
           <div style="flex:1;min-width:0;">
             <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:3px;">${sanitize(a.titulo||'Sin título')}</div>
@@ -5487,13 +5501,13 @@ async function cargarReportes() {
   cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
     const [resSeg, resAnal] = await Promise.all([
-      sbRest(`seguimiento_procesos?user_id=eq.${currentUser.id}&select=proceso_id,estado,creado_en`),
+      sbRest(`seguimiento_procesos?user_id=eq.${currentUser.id}&select=proceso_codigo,estado,created_at`),
       fetch(`${API}/api/mis-analisis?user_id=${currentUser.id}`)
     ]);
     const seg   = await resSeg.json();
     const anal  = (await resAnal.json()).analisis || [];
     const completados = anal.filter(a => a.estado === 'completado');
-    const estadosCounts = seg.reduce((acc, s) => { acc[s.estado||'pendiente'] = (acc[s.estado||'pendiente']||0)+1; return acc; }, {});
+    const estadosCounts = seg.reduce((acc, s) => { const k = s.estado||'analizando'; acc[k] = (acc[k]||0)+1; return acc; }, {});
     cont.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
         <div class="ll-card" style="text-align:center;padding:20px;">
@@ -5530,10 +5544,10 @@ async function cargarCalendario() {
   if (!lista || !currentUser?.id) return;
   lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
-    const res = await sbRest(`seguimiento_procesos?user_id=eq.${currentUser.id}&select=proceso_id&limit=100`);
+    const res = await sbRest(`seguimiento_procesos?user_id=eq.${currentUser.id}&select=proceso_codigo&limit=100`);
     const seg = await res.json();
     if (!seg.length) { lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Sin procesos seguidos.</div>'; return; }
-    const ids = seg.map(s => `"${s.proceso_id}"`).join(',');
+    const ids = seg.map(s => `"${s.proceso_codigo}"`).join(',');
     const resProcesos = await fetch(`${SUPABASE_URL}/rest/v1/procesos?codigo_proceso=in.(${ids})&select=codigo_proceso,titulo,fecha_fin_recepcion_ofertas,unidad_compra,monto_estimado&order=fecha_fin_recepcion_ofertas.asc`, { headers: { 'apikey': SUPABASE_ANON_KEY } });
     const procesos = await resProcesos.json();
     // Agrupar por mes
