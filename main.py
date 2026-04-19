@@ -3039,9 +3039,24 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True):
         }
         # Eliminar None para no sobreescribir datos existentes con NULL
         fila_supabase = {k: v for k, v in fila_supabase.items() if v is not None}
-        supabase_admin.table("analisis_pliego").upsert(fila_supabase).execute()
-        
-        print(f"✅ Análisis de {proceso_id} completado y guardado.")
+
+        # UPDATE condicional: solo actualiza si el estado TODAVÍA es 'procesando'
+        # (es decir, nadie más llegó primero). Si otra instancia ya guardó el
+        # resultado, este UPDATE no afecta ninguna fila → fui_yo_quien_completo=False
+        # y NO se envía el email de nuevo.
+        resultado_update = supabase_admin.table("analisis_pliego") \
+            .update(fila_supabase) \
+            .eq("proceso_id", proceso_id) \
+            .eq("estado", "procesando") \
+            .execute()
+
+        fui_yo_quien_completo = bool(resultado_update.data)
+
+        if fui_yo_quien_completo:
+            print(f"✅ Análisis de {proceso_id} completado y guardado.")
+        else:
+            print(f"⚡ {proceso_id} ya fue completado por otra instancia — omitiendo email.")
+            return
 
         # 5. NOTIFICACIÓN PUSH — avisar que el análisis está listo
         try:
@@ -3062,7 +3077,7 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True):
         except Exception as e_push:
             print(f"⚠️ Error enviando push de análisis: {e_push}")
 
-        # 6. ENVIAR EMAIL AL USUARIO
+        # 6. ENVIAR EMAIL AL USUARIO (solo si esta instancia fue quien completó)
         enviar_email_analisis(proceso_id, datos_json)
 
     except Exception as e:
