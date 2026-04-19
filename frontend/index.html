@@ -999,6 +999,119 @@ body {
 .checklist-sin-analisis { padding: 14px 16px; text-align: center; color: var(--muted); font-size: 13px; }
 
 /* ── DETALLE TABS ── */
+
+/* Layout desktop 2 columnas */
+.detalle-layout {
+  display: block;
+}
+/* En móvil el aside se oculta — el score va en su tab */
+.detalle-col-aside { display: none; }
+@media (min-width: 900px) {
+  /* En desktop el detalle-container ocupa todo el ancho disponible */
+  #detalle-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px 24px !important;
+  }
+  .detalle-layout {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 20px;
+    align-items: start;
+  }
+  .detalle-col-main  { min-width: 0; }
+  .detalle-col-aside {
+    display: block;
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .detalle-col-aside::-webkit-scrollbar { width: 4px; }
+  .detalle-col-aside::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  /* Header ocupa ancho completo antes del grid */
+  .detalle-header-full { margin-bottom: 20px; }
+  /* Tabs nav sin margen negativo en desktop */
+  .detalle-tabs-nav { margin: 0 0 0; padding: 0; }
+}
+
+/* Panel aside de análisis */
+.detalle-aside-panel {
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+.detalle-aside-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+}
+.detalle-aside-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.detalle-aside-icon {
+  width: 26px; height: 26px;
+  border-radius: var(--r-sm);
+  background: var(--green-dim);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+}
+.detalle-aside-title {
+  font-size: 12px; font-weight: 800;
+  letter-spacing: .05em; color: var(--text2);
+}
+.detalle-aside-sub {
+  font-size: 10px; color: var(--muted); font-family: var(--font-mono);
+}
+.detalle-aside-body { padding: 14px 16px; }
+
+/* Gauge compacto para el aside */
+.aside-gauge-wrap { display: flex; justify-content: center; margin-bottom: 8px; }
+.aside-score-rec {
+  font-size: 12px; font-weight: 700; color: var(--text2);
+  text-align: center; margin-bottom: 10px;
+  padding: 6px 10px; background: var(--bg2);
+  border-radius: var(--r-sm); line-height: 1.4;
+}
+.aside-factores { margin-bottom: 10px; }
+.aside-factor-item {
+  display: flex; gap: 6px; align-items: flex-start;
+  font-size: 12px; color: var(--text2); padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+.aside-factor-item:last-child { border-bottom: none; }
+
+/* Checklist resumido en aside */
+.aside-checklist-prog {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.aside-cl-label { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.aside-cl-count { font-size: 11px; font-weight: 800; color: var(--green); margin-left: auto; font-family: var(--font-mono); }
+
+/* Alertas compactas en aside */
+.aside-alerta {
+  display: flex; gap: 8px; padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.aside-alerta:last-child { border-bottom: none; }
+.aside-alerta-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  margin-top: 5px; flex-shrink: 0;
+}
+.aside-alerta-dot.alto  { background: var(--red); }
+.aside-alerta-dot.medio { background: var(--amber); }
+.aside-alerta-dot.bajo  { background: var(--blue); }
+.aside-alerta-titulo { font-weight: 700; color: var(--text2); margin-bottom: 2px; }
+.aside-alerta-desc { color: var(--muted); line-height: 1.4; }
 .detalle-tabs-nav {
   display: flex; gap: 0; overflow-x: auto; -webkit-overflow-scrolling: touch;
   border-bottom: 1px solid var(--border); margin: 0 -16px 0; padding: 0 16px;
@@ -3947,18 +4060,48 @@ function renderTabPlazos(analisis, p) {
   const plazos = analisis?.plazos_clave;
   const fCierre = p.fecha_fin_recepcion_ofertas;
 
+  // Helper: parsear fecha del análisis (DD/MM/YYYY HH:MM o ISO)
+  function parseFechaPlazos(str) {
+    if (!str || str === 'N/A') return null;
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(str)) {
+      const [datePart, timePart] = str.split(' ');
+      const [d, m, y] = datePart.split('/');
+      return new Date(`${y}-${m}-${d}T${timePart || '00:00'}:00`);
+    }
+    return new Date(str);
+  }
+
+  // Validar visita_sitio: descartarla si Gemini la inventó
+  // Criterios: hora exactamente 00:00 (sin hora real en pliego)
+  // O fecha posterior al cierre del proceso (imposible lógicamente)
+  function esVisitaValida(fechaStr) {
+    if (!fechaStr || fechaStr === 'N/A') return false;
+    const fecha = parseFechaPlazos(fechaStr);
+    if (!fecha || isNaN(fecha)) return false;
+    // Hora 00:00 = Gemini interpoló sin dato real en el pliego
+    const horas = fecha.getHours();
+    const mins  = fecha.getMinutes();
+    if (horas === 0 && mins === 0) return false;
+    // Posterior al cierre = fecha incoherente
+    if (fCierre) {
+      const cierre = new Date(fCierre);
+      if (!isNaN(cierre) && fecha > cierre) return false;
+    }
+    return true;
+  }
+
   const entradas = [];
   if (plazos) {
     if (plazos.consultas && plazos.consultas !== 'N/A')
       entradas.push({ nombre: 'Último día de consultas', fecha: plazos.consultas, key: false });
-    if (plazos.visita_sitio && plazos.visita_sitio !== 'N/A')
+    if (esVisitaValida(plazos.visita_sitio))
       entradas.push({ nombre: 'Visita al sitio', fecha: plazos.visita_sitio, key: true });
     if (plazos.presentacion_ofertas && plazos.presentacion_ofertas !== 'N/A')
       entradas.push({ nombre: 'Presentación de ofertas', fecha: plazos.presentacion_ofertas, key: true });
     if (plazos.apertura_ofertas && plazos.apertura_ofertas !== 'N/A')
       entradas.push({ nombre: 'Apertura de ofertas', fecha: plazos.apertura_ofertas, key: true });
   }
-  // Siempre agregamos cierre desde el proceso si existe y no está ya
+  // Cierre desde el proceso si no vino del análisis
   if (fCierre) {
     const yaEsta = entradas.some(e => e.nombre === 'Presentación de ofertas');
     if (!yaEsta) entradas.push({ nombre: 'Cierre recepción de ofertas', fecha: fCierre, key: true });
@@ -3968,27 +4111,25 @@ function renderTabPlazos(analisis, p) {
   }
 
   // Ordenar por fecha
-  entradas.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+  entradas.sort((a, b) => {
+    const fa = parseFechaPlazos(a.fecha) || new Date(a.fecha);
+    const fb = parseFechaPlazos(b.fecha) || new Date(b.fecha);
+    return fa - fb;
+  });
 
   const ahora = Date.now();
   return `<div class="plazos-card">
     <div class="plazos-header">📅 Plazos del proceso</div>
     ${entradas.map(e => {
-      let fechaObj;
-      // Intentar parsear fecha en formato DD/MM/YYYY HH:MM o ISO
-      if (/^\d{2}\/\d{2}\/\d{4}/.test(e.fecha)) {
-        const [datePart, timePart] = e.fecha.split(' ');
-        const [d,m,y] = datePart.split('/');
-        fechaObj = new Date(`${y}-${m}-${d}T${timePart||'00:00'}:00`);
-      } else {
-        fechaObj = new Date(e.fecha);
-      }
-      const vencido = fechaObj.getTime() < ahora;
-      const urgente = !vencido && (fechaObj.getTime() - ahora) < 3 * 86400000;
+      const fechaObj = parseFechaPlazos(e.fecha) || new Date(e.fecha);
+      const vencido = !isNaN(fechaObj) && fechaObj.getTime() < ahora;
+      const urgente = !vencido && !isNaN(fechaObj) && (fechaObj.getTime() - ahora) < 3 * 86400000;
       const dotClass = vencido ? '' : urgente ? 'urgente' : e.key ? 'key' : '';
       const fechaLabel = isNaN(fechaObj) ? e.fecha
         : fechaObj.toLocaleDateString('es-DO', {day:'2-digit',month:'short',year:'numeric'});
-      const horaLabel = isNaN(fechaObj) ? '' : fechaObj.toLocaleTimeString('es-DO', {hour:'2-digit',minute:'2-digit'});
+      const horaLabel = isNaN(fechaObj) ? ''
+        : (fechaObj.getHours() || fechaObj.getMinutes())
+          ? fechaObj.toLocaleTimeString('es-DO', {hour:'2-digit',minute:'2-digit'}) : '';
       return `<div class="plazo-item">
         <div class="plazo-fecha-col">
           <div class="plazo-fecha" style="${vencido?'color:var(--muted);':''}${urgente?'color:var(--amber);':''}">${fechaLabel}</div>
@@ -4006,6 +4147,152 @@ function renderTabPlazos(analisis, p) {
     <div class="ll-caption ll-u-text-subtle" style="margin-bottom:4px;">Duración del contrato</div>
     <div class="ll-body-sm" style="font-weight:700;">${p.duracion_contrato}</div>
   </div>` : ''}`;
+}
+
+function renderAsidePanel(analisis, p, scoreData, totalItems) {
+  const ahora = new Date();
+  const horaStr = ahora.toLocaleTimeString('es-DO', {hour:'2-digit', minute:'2-digit'});
+  const estadoLabel = analisis?.estado === 'completado' ? 'Actualizado' : analisis?.estado === 'procesando' ? 'Analizando…' : 'Sin análisis';
+
+  // ── Gauge compacto ──
+  let gaugeHTML = '';
+  if (scoreData) {
+    const { score, nivel, recomendacion, esEstimado, delta, tienePerfil, factoresPerfil } = scoreData;
+    const ARC = 200;
+    const offset = ARC - (score / 100) * ARC;
+    const color = score >= 70 ? 'var(--green)' : score >= 45 ? 'var(--amber)' : 'var(--red)';
+    const label = score >= 70 ? 'VALE LA PENA' : score >= 45 ? 'EVALUAR' : 'NO RECOMENDADO';
+    const badgeCls = nivel === 'Baja' ? 'baja' : nivel === 'Media' ? 'media' : 'alta';
+
+    let desgloseStr = '';
+    if (tienePerfil && delta !== 0) {
+      const signo = delta > 0 ? `+${delta}` : `${delta}`;
+      const colorDelta = delta > 0 ? 'var(--green)' : 'var(--red)';
+      desgloseStr = `<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:-6px;margin-bottom:8px;">
+        <span style="color:${colorDelta};font-weight:800;">${signo} perfil</span> · Total <strong style="color:var(--text)">${score}</strong>
+      </div>`;
+    }
+
+    let factoresHTML = '';
+    if (tienePerfil && factoresPerfil.length) {
+      factoresHTML = `<div class="aside-factores">
+        ${factoresPerfil.map(f => `<div class="aside-factor-item"><span>${f.positivo ? '✅' : '⚠️'}</span><span>${f.texto}</span></div>`).join('')}
+      </div>`;
+    } else if (!tienePerfil) {
+      factoresHTML = `<div style="font-size:11px;color:var(--muted);padding:6px 8px;background:var(--bg2);border-radius:var(--r-sm);margin-bottom:10px;line-height:1.5;">
+        💡 Completa tu perfil para ver compatibilidad personalizada
+      </div>`;
+    }
+
+    gaugeHTML = `
+      <div style="border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);">¿Vale la pena?</div>
+          <span class="score-gauge-badge score-badge-${badgeCls}" style="font-size:9px;">Dificultad ${nivel}</span>
+        </div>
+        <div class="aside-gauge-wrap">
+          <svg width="160" height="88" viewBox="0 0 160 88" xmlns="http://www.w3.org/2000/svg">
+            <path d="M 14 84 A 66 66 0 0 1 146 84" fill="none" stroke="var(--border2)" stroke-width="9" stroke-linecap="round"/>
+            <path d="M 14 84 A 66 66 0 0 1 146 84" fill="none" stroke="${color}" stroke-width="9" stroke-linecap="round"
+                  stroke-dasharray="${ARC}" stroke-dashoffset="${(ARC-(score/100)*ARC).toFixed(1)}"
+                  style="transition:stroke-dashoffset .8s cubic-bezier(.4,0,.2,1)"/>
+            <text x="80" y="72" text-anchor="middle" font-family="var(--font-mono)" font-size="30" font-weight="800" fill="var(--text)">${score}</text>
+            <text x="80" y="84" text-anchor="middle" font-family="var(--font-mono)" font-size="7.5" fill="var(--muted)" letter-spacing="1">${label}</text>
+          </svg>
+        </div>
+        ${desgloseStr}
+        ${recomendacion ? `<div class="aside-score-rec">💬 ${recomendacion}</div>` : ''}
+        ${esEstimado ? `<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:4px;">Puntuación estimada · Re-analiza para exactitud</div>` : ''}
+        ${factoresHTML}
+      </div>`;
+  } else if (analisis?.estado === 'procesando' || analisis?.estado === 'pendiente_analisis') {
+    gaugeHTML = `<div style="text-align:center;padding:16px 0;border-bottom:1px solid var(--border);margin-bottom:14px;">
+      <div style="font-size:20px;margin-bottom:6px;">⏳</div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);">Analizando pliego…</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;">La puntuación estará lista en minutos</div>
+    </div>`;
+  } else {
+    gaugeHTML = `<div style="text-align:center;padding:14px 0;border-bottom:1px solid var(--border);margin-bottom:14px;">
+      <div style="font-size:11px;color:var(--muted);line-height:1.6;">Sin análisis disponible.<br>Sigue el proceso para activarlo.</div>
+    </div>`;
+  }
+
+  // ── Alertas compactas ──
+  const alertas = analisis?.alertas_fraude || [];
+  let alertasHTML = '';
+  if (alertas.length) {
+    alertasHTML = `
+      <div style="border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:12px;">
+        <div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">
+          Alertas <span style="background:rgba(231,76,60,.12);color:var(--red);padding:1px 6px;border-radius:3px;font-size:9px;">${alertas.length}</span>
+        </div>
+        ${alertas.slice(0,4).map(a => {
+          const r = (a.riesgo||'').toLowerCase();
+          return `<div class="aside-alerta">
+            <div class="aside-alerta-dot ${r}"></div>
+            <div>
+              <div class="aside-alerta-titulo">${a.categoria || 'Alerta'} · <span style="font-size:10px;color:var(--muted);font-weight:400;">${a.riesgo}</span></div>
+              <div class="aside-alerta-desc">${(a.hallazgo||'').substring(0,120)}${(a.hallazgo||'').length > 120 ? '…' : ''}</div>
+            </div>
+          </div>`;
+        }).join('')}
+        ${alertas.length > 4 ? `<div style="font-size:11px;color:var(--muted);padding-top:6px;">+${alertas.length-4} más · ver en ¿Vale la pena?</div>` : ''}
+      </div>`;
+  }
+
+  // ── Checklist resumido ──
+  let checklistHTML = '';
+  if (totalItems > 0) {
+    checklistHTML = `
+      <div>
+        <div class="aside-checklist-prog">
+          <span class="aside-cl-label">Checklist</span>
+          <span class="aside-cl-count" id="aside-cl-count-${p.codigo_proceso}">0 / ${totalItems}</span>
+        </div>
+        <div class="checklist-progreso-bar" style="margin-bottom:8px;">
+          <div class="checklist-progreso-fill" id="aside-cl-fill-${p.codigo_proceso}" style="width:0%"></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);">Ver detalle completo en la pestaña Checklist</div>
+      </div>`;
+  }
+
+  return `
+    <div class="detalle-aside-panel">
+      <div class="detalle-aside-header">
+        <div class="detalle-aside-header-left">
+          <div class="detalle-aside-icon">📋</div>
+          <div>
+            <div class="detalle-aside-title">Análisis del pliego</div>
+            <div class="detalle-aside-sub">${horaStr} · ${estadoLabel}</div>
+          </div>
+        </div>
+        ${analisis?.estado === 'completado'
+          ? `<span style="font-size:9px;font-weight:800;padding:3px 8px;border-radius:var(--r-full);background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);">Fresco</span>`
+          : ''}
+      </div>
+      <div class="detalle-aside-body">
+        ${gaugeHTML}
+        ${alertasHTML}
+        ${checklistHTML}
+      </div>
+    </div>`;
+}
+
+function actualizarAsideChecklist(codigo, totalItems) {
+  if (!totalItems) return;
+  // Contar cuántos están marcados en el estado actual
+  let marcados = 0;
+  ['legal','tecnica','financiera'].forEach(sec => {
+    for (let i = 0; i < 100; i++) {
+      if (checklistEstado[`${codigo}-${sec}_${i}`]) marcados++;
+      else if (!document.getElementById(`cli-${codigo}-${sec}_${i}`)) break;
+    }
+  });
+  const pct = totalItems ? Math.round(marcados / totalItems * 100) : 0;
+  const fill  = document.getElementById(`aside-cl-fill-${codigo}`);
+  const count = document.getElementById(`aside-cl-count-${codigo}`);
+  if (fill)  fill.style.width  = `${pct}%`;
+  if (count) count.textContent = `${marcados} / ${totalItems}`;
 }
 
 function cambiarTabDetalle(codigo, tabId) {
@@ -4073,134 +4360,138 @@ async function verDetalle(codigo) {
   const artsBadge = arts.length ? `<span class="tab-badge">${arts.length}</span>` : '';
 
   document.getElementById('detalle-container').innerHTML = `
-    <!-- HEADER -->
-    <div class="ll-card" style="margin-bottom:12px;">
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
-        ${p.objeto_proceso ? `<span class="ll-chip ll-chip--info">${p.objeto_proceso}</span>` : ''}
-        ${p.modalidad      ? `<span class="ll-chip">${p.modalidad}</span>` : ''}
-        ${p.estado_proceso ? `<span class="ll-chip ll-chip--success">${p.estado_proceso}</span>` : ''}
-      </div>
-      <h1 class="ll-h2" style="margin-bottom:6px;line-height:1.3;">${p.titulo || 'Sin título'}</h1>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">${p.unidad_compra || ''} · Publicado ${fPub}</div>
-
-      <!-- GRID MÉTRICAS 4 COLS -->
-      <div class="detalle-metrics-grid">
-        <div class="detalle-metric">
-          <div class="detalle-metric-label">Monto estimado</div>
-          <div class="detalle-metric-value" style="font-size:15px;">${formatMontoFull(p.monto_estimado)}</div>
-          <div class="detalle-metric-sub">${p.divisa || 'DOP'}</div>
-        </div>
-        <div class="detalle-metric">
-          <div class="detalle-metric-label">Cierre</div>
-          <div class="detalle-metric-value ${countdown.clase}">${countdown.texto}</div>
-          <div class="detalle-metric-sub">${countdown.sub}</div>
-        </div>
-        <div class="detalle-metric">
-          <div class="detalle-metric-label">Provincia</div>
-          <div class="detalle-metric-value" style="font-size:13px;font-family:var(--font-body);">${p.provincia || '—'}</div>
-          <div class="detalle-metric-sub">${p.codigo_proceso}</div>
-        </div>
-        <div class="detalle-metric">
-          <div class="detalle-metric-label">UNSPSC</div>
-          <div class="detalle-metric-value" style="font-size:14px;">${unspscCode}</div>
-          <div class="detalle-metric-sub">${p.objeto_proceso || '—'}</div>
-        </div>
-      </div>
-
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-        ${p.url ? `<a href="${p.url}" target="_blank" class="ll-btn ll-btn--ghost ll-btn--sm" style="display:inline-flex;">Ver en DGCP ↗</a>` : ''}
-        <button id="btn-seguir-${p.codigo_proceso}" class="ll-btn ll-btn--primary ll-btn--sm btn-seguir no-siguiendo" style="flex:1;min-width:120px;" onclick="toggleSeguimiento('${p.codigo_proceso}')">Seguir proceso</button>
-        ${analisis?.estado === 'completado' ? `
-        <button class="ll-btn ll-btn--secondary ll-btn--sm" id="btn-pdf-analisis-${p.codigo_proceso}" onclick="descargarAnalisisPDF('${p.codigo_proceso}')">
-          <div class="btn-pdf-spinner"></div>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          PDF
-        </button>` : ''}
-      </div>
-    </div>
-
-    ${estadoAnalisisBanner}
-
-    <!-- TABS NAV -->
-    <div class="detalle-tabs-nav">
-      <button class="detalle-tab-btn active" id="dtab-btn-resumen"   onclick="cambiarTabDetalle('${codigo}','resumen')">Resumen</button>
-      <button class="detalle-tab-btn"         id="dtab-btn-checklist" onclick="cambiarTabDetalle('${codigo}','checklist')">Checklist${clBadge}</button>
-      <button class="detalle-tab-btn"         id="dtab-btn-plazos"   onclick="cambiarTabDetalle('${codigo}','plazos')">Plazos</button>
-      <button class="detalle-tab-btn"         id="dtab-btn-docs"     onclick="cambiarTabDetalle('${codigo}','docs')">Artículos${artsBadge}</button>
-      <button class="detalle-tab-btn"         id="dtab-btn-score"    onclick="cambiarTabDetalle('${codigo}','score')">⚡ ¿Vale la pena?${scoreBadge}</button>
-    </div>
-
-    <!-- TAB: RESUMEN -->
-    <div class="detalle-tab-panel active" id="dtab-panel-resumen">
-      ${analisis?.resumen_ejecutivo ? `
+    <!-- HEADER (ancho completo) -->
+    <div class="detalle-header-full">
       <div class="ll-card" style="margin-bottom:12px;">
-        <div class="ll-card__header"><h2 class="ll-card__title">📄 Resumen ejecutivo</h2></div>
-        <div class="ll-card__body">
-          <p style="font-size:13px;color:var(--text2);line-height:1.7;">${analisis.resumen_ejecutivo}</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+          ${p.objeto_proceso ? `<span class="ll-chip ll-chip--info">${p.objeto_proceso}</span>` : ''}
+          ${p.modalidad      ? `<span class="ll-chip">${p.modalidad}</span>` : ''}
+          ${p.estado_proceso ? `<span class="ll-chip ll-chip--success">${p.estado_proceso}</span>` : ''}
         </div>
-      </div>` : `
-      <div class="ll-card" style="margin-bottom:12px;padding:14px 16px;">
-        <div class="ll-body-sm ll-u-text-subtle" style="text-align:center;padding:12px 0;">
-          ${analisis ? 'Sin resumen ejecutivo.' : 'Sigue el proceso para activar el análisis del pliego.'}
+        <h1 class="ll-h2" style="margin-bottom:6px;line-height:1.3;">${p.titulo || 'Sin título'}</h1>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">${p.unidad_compra || ''} · Publicado ${fPub}</div>
+        <div class="detalle-metrics-grid">
+          <div class="detalle-metric">
+            <div class="detalle-metric-label">Monto estimado</div>
+            <div class="detalle-metric-value" style="font-size:15px;">${formatMontoFull(p.monto_estimado)}</div>
+            <div class="detalle-metric-sub">${p.divisa || 'DOP'}</div>
+          </div>
+          <div class="detalle-metric">
+            <div class="detalle-metric-label">Cierre</div>
+            <div class="detalle-metric-value ${countdown.clase}">${countdown.texto}</div>
+            <div class="detalle-metric-sub">${countdown.sub}</div>
+          </div>
+          <div class="detalle-metric">
+            <div class="detalle-metric-label">Provincia</div>
+            <div class="detalle-metric-value" style="font-size:13px;font-family:var(--font-body);">${p.provincia || '—'}</div>
+            <div class="detalle-metric-sub">${p.codigo_proceso}</div>
+          </div>
+          <div class="detalle-metric">
+            <div class="detalle-metric-label">UNSPSC</div>
+            <div class="detalle-metric-value" style="font-size:14px;">${unspscCode}</div>
+            <div class="detalle-metric-sub">${p.objeto_proceso || '—'}</div>
+          </div>
         </div>
-      </div>`}
-      <div class="ll-card" style="margin-bottom:12px;">
-        <div class="ll-card__header"><h2 class="ll-card__title">Datos del proceso</h2></div>
-        <div class="ll-card__body">
-          <dl style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-            <div><dt class="ll-caption ll-u-text-subtle">Institución</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.unidad_compra || '—'}</dd></div>
-            <div><dt class="ll-caption ll-u-text-subtle">Código</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${p.codigo_proceso}</dd></div>
-            <div><dt class="ll-caption ll-u-text-subtle">Publicación</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${fPub}</dd></div>
-            <div><dt class="ll-caption ll-u-text-subtle">Cierre</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${countdown.sub || '—'}</dd></div>
-            <div><dt class="ll-caption ll-u-text-subtle">Divisa</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.divisa || 'DOP'}</dd></div>
-            ${p.duracion_contrato ? `<div><dt class="ll-caption ll-u-text-subtle">Duración contrato</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.duracion_contrato}</dd></div>` : ''}
-          </dl>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB: CHECKLIST -->
-    <div class="detalle-tab-panel" id="dtab-panel-checklist">
-      <!-- El checklist se inyecta aquí por renderChecklistHTML -->
-    </div>
-
-    <!-- TAB: PLAZOS -->
-    <div class="detalle-tab-panel" id="dtab-panel-plazos">
-      ${renderTabPlazos(analisis, p)}
-    </div>
-
-    <!-- TAB: ARTÍCULOS -->
-    <div class="detalle-tab-panel" id="dtab-panel-docs">
-      <div class="ll-card" style="margin-bottom:12px;">
-        <div class="ll-card__header">
-          <h2 class="ll-card__title">Artículos del proceso <span class="ll-chip" style="margin-left:4px;">${arts.length}</span></h2>
-          ${arts.length ? `<button class="ll-btn ll-btn--ghost ll-btn--sm" onclick="descargarArticulosPDF('${p.codigo_proceso}')">
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          ${p.url ? `<a href="${p.url}" target="_blank" class="ll-btn ll-btn--ghost ll-btn--sm" style="display:inline-flex;">Ver en DGCP ↗</a>` : ''}
+          <button id="btn-seguir-${p.codigo_proceso}" class="ll-btn ll-btn--primary ll-btn--sm btn-seguir no-siguiendo" style="flex:1;min-width:120px;" onclick="toggleSeguimiento('${p.codigo_proceso}')">Seguir proceso</button>
+          ${analisis?.estado === 'completado' ? `
+          <button class="ll-btn ll-btn--secondary ll-btn--sm btn-pdf-analisis" id="btn-pdf-analisis-${p.codigo_proceso}" onclick="descargarAnalisisPDF('${p.codigo_proceso}')">
+            <div class="btn-pdf-spinner"></div>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             PDF
           </button>` : ''}
         </div>
-        <div class="ll-card__body">
-        ${arts.length ? arts.map(a => `
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--color-border);">
-            <div style="flex:1;margin-right:12px;">
-              <div class="ll-body-sm">${a.descripcion_articulo || a.descripcion_usuario || 'Sin descripción'}</div>
-              <div class="ll-caption ll-mono ll-u-text-subtle" style="margin-top:3px;">${a.cantidad||'—'} ${a.unidad_medida||''} · UNSPSC: ${a.clase_unspsc||'—'}</div>
-            </div>
-            <div class="ll-num ll-body-sm">${a.precio_total_estimado ? 'RD$'+Number(a.precio_total_estimado).toLocaleString() : '—'}</div>
-          </div>`).join('')
-        : '<div class="ll-body-sm ll-u-text-subtle" style="padding:16px 0;">Sin artículos registrados</div>'}
-        </div>
       </div>
+      ${estadoAnalisisBanner}
     </div>
 
-    <!-- TAB: SCORE -->
-    <div class="detalle-tab-panel" id="dtab-panel-score">
-      ${renderTabScore(analisis, p)}
+    <!-- LAYOUT 2 COLUMNAS -->
+    <div class="detalle-layout">
+
+      <!-- COLUMNA PRINCIPAL -->
+      <div class="detalle-col-main">
+        <div class="detalle-tabs-nav">
+          <button class="detalle-tab-btn active" id="dtab-btn-resumen"   onclick="cambiarTabDetalle('${codigo}','resumen')">Resumen</button>
+          <button class="detalle-tab-btn"        id="dtab-btn-checklist" onclick="cambiarTabDetalle('${codigo}','checklist')">Checklist${clBadge}</button>
+          <button class="detalle-tab-btn"        id="dtab-btn-plazos"    onclick="cambiarTabDetalle('${codigo}','plazos')">Plazos</button>
+          <button class="detalle-tab-btn"        id="dtab-btn-docs"      onclick="cambiarTabDetalle('${codigo}','docs')">Artículos${artsBadge}</button>
+          <button class="detalle-tab-btn"        id="dtab-btn-score"     onclick="cambiarTabDetalle('${codigo}','score')">¿Vale la pena?${scoreBadge}</button>
+        </div>
+
+        <!-- TAB: RESUMEN -->
+        <div class="detalle-tab-panel active" id="dtab-panel-resumen">
+          ${analisis?.resumen_ejecutivo ? `
+          <div class="ll-card" style="margin-bottom:12px;">
+            <div class="ll-card__header"><h2 class="ll-card__title">Resumen ejecutivo</h2></div>
+            <div class="ll-card__body"><p style="font-size:13px;color:var(--text2);line-height:1.7;">${analisis.resumen_ejecutivo}</p></div>
+          </div>` : `
+          <div class="ll-card" style="margin-bottom:12px;padding:14px 16px;">
+            <div class="ll-body-sm ll-u-text-subtle" style="text-align:center;padding:12px 0;">
+              ${analisis ? 'Sin resumen ejecutivo.' : 'Sigue el proceso para activar el análisis del pliego.'}
+            </div>
+          </div>`}
+          <div class="ll-card" style="margin-bottom:12px;">
+            <div class="ll-card__header"><h2 class="ll-card__title">Datos del proceso</h2></div>
+            <div class="ll-card__body">
+              <dl style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div><dt class="ll-caption ll-u-text-subtle">Institución</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.unidad_compra || '—'}</dd></div>
+                <div><dt class="ll-caption ll-u-text-subtle">Código</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${p.codigo_proceso}</dd></div>
+                <div><dt class="ll-caption ll-u-text-subtle">Publicación</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${fPub}</dd></div>
+                <div><dt class="ll-caption ll-u-text-subtle">Cierre</dt><dd class="ll-mono ll-body-sm" style="margin:2px 0 0;">${countdown.sub || '—'}</dd></div>
+                <div><dt class="ll-caption ll-u-text-subtle">Divisa</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.divisa || 'DOP'}</dd></div>
+                ${p.duracion_contrato ? `<div><dt class="ll-caption ll-u-text-subtle">Duración contrato</dt><dd class="ll-body-sm" style="margin:2px 0 0;">${p.duracion_contrato}</dd></div>` : ''}
+              </dl>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: CHECKLIST -->
+        <div class="detalle-tab-panel" id="dtab-panel-checklist"></div>
+
+        <!-- TAB: PLAZOS -->
+        <div class="detalle-tab-panel" id="dtab-panel-plazos">
+          ${renderTabPlazos(analisis, p)}
+        </div>
+
+        <!-- TAB: ARTÍCULOS -->
+        <div class="detalle-tab-panel" id="dtab-panel-docs">
+          <div class="ll-card" style="margin-bottom:12px;">
+            <div class="ll-card__header">
+              <h2 class="ll-card__title">Artículos del proceso <span class="ll-chip" style="margin-left:4px;">${arts.length}</span></h2>
+              ${arts.length ? `<button class="ll-btn ll-btn--ghost ll-btn--sm" onclick="descargarArticulosPDF('${p.codigo_proceso}')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                PDF
+              </button>` : ''}
+            </div>
+            <div class="ll-card__body">
+              ${arts.length ? arts.map(a => `
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--color-border);">
+                <div style="flex:1;margin-right:12px;">
+                  <div class="ll-body-sm">${a.descripcion_articulo || a.descripcion_usuario || 'Sin descripción'}</div>
+                  <div class="ll-caption ll-mono ll-u-text-subtle" style="margin-top:3px;">${a.cantidad||'—'} ${a.unidad_medida||''} · UNSPSC: ${a.clase_unspsc||'—'}</div>
+                </div>
+                <div class="ll-num ll-body-sm">${a.precio_total_estimado ? 'RD$'+Number(a.precio_total_estimado).toLocaleString() : '—'}</div>
+              </div>`).join('') : '<div class="ll-body-sm ll-u-text-subtle" style="padding:16px 0;">Sin artículos registrados</div>'}
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: SCORE (solo visible en móvil, en desktop se ve en el aside) -->
+        <div class="detalle-tab-panel" id="dtab-panel-score">
+          ${renderTabScore(analisis, p)}
+        </div>
+      </div>
+
+      <!-- ASIDE (desktop) -->
+      <div class="detalle-col-aside" id="detalle-aside-col">
+        ${renderAsidePanel(analisis, p, scoreData, totalItems)}
+      </div>
+
     </div>`;
 
-  // Post-render: checklist + botón seguir
+  // Post-render: checklist + botón seguir + aside
   setTimeout(async () => {
-    // Inyectar checklist en su tab
     const clPanel = document.getElementById('dtab-panel-checklist');
     if (clPanel) clPanel.innerHTML = renderChecklistHTML(analisis, p.codigo_proceso);
 
@@ -4210,6 +4501,9 @@ async function verDetalle(codigo) {
       if (sec && !sec.classList.contains('abierta')) sec.classList.add('abierta');
     });
     await cargarEstadoChecklist(p.codigo_proceso);
+
+    // Sincronizar barra de progreso del aside con el checklist
+    actualizarAsideChecklist(p.codigo_proceso, totalItems);
   }, 10);
 
   if (['procesando','pendiente','pendiente_analisis'].includes(analisis?.estado)) {
