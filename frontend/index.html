@@ -1132,6 +1132,57 @@ body {
   /* Ocultar elementos mobile-only */
   .ll-navbar { display: none !important; }
   #ptr-indicator { display: none !important; }
+
+  /* Navbar propio del detalle (visible en desktop) */
+  .detalle-topbar-nav {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    height: 52px;
+    padding: 0 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+
+  /* Sidebar más ancho y cómodo */
+  #desk-sidebar { width: 220px; }
+  .dsb-nav-item { font-size: 13.5px; padding: 10px 18px; }
+  .dsb-brand-name { font-size: 14.5px; }
+  .dsb-section-label { padding: 16px 18px 7px; font-size: 10.5px; }
+  .dsb-user { padding: 14px 18px; }
+  .dsb-footer { padding: 14px 18px; }
+
+  /* Cards densas más legibles */
+  .proceso-dense-card { padding: 16px 20px 14px; border-bottom: 1px solid var(--border); border-left: 3px solid transparent; margin-bottom: 0; }
+  .proceso-dense-card:hover { border-left-color: var(--green); }
+  .pdc-code { font-size: 11.5px; }
+  .pdc-title { font-size: 15px; margin-bottom: 9px; }
+  .pdc-meta { font-size: 13px; gap: 16px; margin-bottom: 11px; }
+  .pdc-countdown { font-size: 13px; }
+  .pdc-meta-score { font-size: 12px; }
+  .pdc-row1 { margin-bottom: 8px; }
+  .pdc-inst-chip { font-size: 11px; padding: 3px 9px; }
+  .pdc-estado-chip { font-size: 11px; padding: 3px 9px; }
+
+  /* Mis Procesos: quitar max-width estrecho, usar todo el espacio */
+  #tab-seguimiento { padding: 0; }
+  #tab-seguimiento .main,
+  #tab-seguimiento.main { max-width: none !important; padding: 0 !important; }
+  .seg-header { padding: 24px 32px 20px; }
+  .seg-lista { padding: 0 24px; }
+  #seg-lista > .ll-card,
+  #seg-lista .segcard-wrap { max-width: none; }
+
+  /* Cards del seguimiento más anchas */
+  #seg-lista { padding: 0 20px 24px !important; display: flex; flex-direction: column; gap: 10px; }
+  #seg-lista .ll-card { padding: 18px 20px; }
+  .seg-urgencia-bar { height: 3px !important; margin: -18px -20px 14px !important; }
+  .seg-urgencia-bar + .ll-card__header,
+  #seg-lista .ll-card > .ll-card__header { margin-bottom: 8px; }
+  #seg-lista h3.ll-card__title { font-size: 15px; line-height: 1.35; }
   /* Ocultar drawer mobile */
   .drawer-overlay, .ll-drawer { display: none !important; }
 
@@ -2965,11 +3016,11 @@ html { background: var(--color-bg, #0A0A0A); }
   </div>
 
   <div id="tab-detalle" class="page-with-nav" style="display:none">
-    <nav class="ll-navbar">
+    <nav class="detalle-topbar-nav">
       <button class="ll-btn ll-btn--secondary ll-btn--icon" onclick="mostrarDashboard()" aria-label="Volver">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
-      <span class="ll-mono ll-caption" style="margin:0 auto;">Detalle</span>
+      <span class="ll-mono ll-caption" style="margin:0 auto;color:var(--muted);">← Volver</span>
       <div style="width:36px"></div>
     </nav>
     <div id="detalle-container" style="padding:0 16px 16px"><div class="loading"><div class="spinner"></div></div></div>
@@ -3061,36 +3112,51 @@ html { background: var(--color-bg, #0A0A0A); }
 
 
   <!-- ══ TAB SEGUIMIENTO ══ -->
-  <div id="tab-seguimiento" class="main page-with-nav">
-    <header style="background:var(--color-surface);border-bottom:1px solid var(--color-border);padding:16px 16px 12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;">
-        <h1 class="ll-h2">Mis Procesos</h1>
-        <span class="ll-chip" id="seg-count">0 activos</span>
+  <div id="tab-seguimiento" class="page-with-nav">
+    <header class="dash-topbar" style="position:sticky;top:0;z-index:50;">
+      <div class="dash-topbar__row1">
+        <div class="dash-topbar__breadcrumb">
+          <span class="dash-topbar__bc-section">Trabajo</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+          <span class="dash-topbar__bc-page">Mis Procesos</span>
+          <span class="dash-topbar__bc-count" id="seg-count">0 activos</span>
+        </div>
+      </div>
+      <!-- Chips de filtro -->
+      <div class="dash-topbar__filter-row">
+        <div class="dash-topbar__chips">
+          <button class="dash-chip is-active" onclick="filtrarSeguimiento('todos')" id="sfbtn-todos">Todos</button>
+          <button class="dash-chip" onclick="filtrarSeguimiento('analizando')" id="sfbtn-analizando">Analizando</button>
+          <button class="dash-chip" onclick="filtrarSeguimiento('preparando')" id="sfbtn-preparando">Preparando</button>
+          <button class="dash-chip" onclick="filtrarSeguimiento('presentado')" id="sfbtn-presentado">Presentado</button>
+          <button class="dash-chip" onclick="filtrarSeguimiento('adjudicado')" id="sfbtn-adjudicado">Adjudicado</button>
+          <button class="dash-chip" onclick="filtrarSeguimiento('no-adj')" id="sfbtn-no-adj">No adj.</button>
+        </div>
       </div>
     </header>
 
-    <!-- Dashboard de métricas personales -->
-    <div id="seg-metricas" style="display:none;padding:12px 16px;">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div class="ll-card" style="padding:12px;">
-          <div class="ll-num" style="font-size:20px;color:var(--color-brand);" id="met-activos">—</div>
-          <div class="ll-caption" style="margin-top:2px;">Activos</div>
-          <div class="ll-caption ll-u-text-subtle" id="met-activos-sub">en seguimiento</div>
+    <!-- Métricas -->
+    <div id="seg-metricas" style="display:none;padding:16px 20px;">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;max-width:none;">
+        <div class="ll-card" style="padding:16px;">
+          <div class="ll-num" style="font-size:28px;color:var(--green);" id="met-activos">—</div>
+          <div class="ll-caption" style="margin-top:4px;font-size:12px;font-weight:700;">Activos</div>
+          <div class="ll-caption ll-u-text-subtle" id="met-activos-sub" style="font-size:11px;">total seguidos</div>
         </div>
-        <div class="ll-card" style="padding:12px;">
-          <div class="ll-num" style="font-size:20px;color:var(--color-warning,#f39c12);" id="met-ganados">—</div>
-          <div class="ll-caption" style="margin-top:2px;">Ganados</div>
-          <div class="ll-caption ll-u-text-subtle" id="met-tasa">tasa de éxito</div>
+        <div class="ll-card" style="padding:16px;">
+          <div class="ll-num" style="font-size:28px;color:var(--amber);" id="met-ganados">—</div>
+          <div class="ll-caption" style="margin-top:4px;font-size:12px;font-weight:700;">Ganados</div>
+          <div class="ll-caption ll-u-text-subtle" id="met-tasa" style="font-size:11px;">sin historial aún</div>
         </div>
-        <div class="ll-card" style="padding:12px;">
-          <div class="ll-num" style="font-size:20px;color:var(--color-info,#3498db);" id="met-monto">—</div>
-          <div class="ll-caption" style="margin-top:2px;">Monto ganado</div>
-          <div class="ll-caption ll-u-text-subtle">contratos adjudicados</div>
+        <div class="ll-card" style="padding:16px;">
+          <div class="ll-num" style="font-size:28px;color:var(--blue);" id="met-monto">—</div>
+          <div class="ll-caption" style="margin-top:4px;font-size:12px;font-weight:700;">Monto ganado</div>
+          <div class="ll-caption ll-u-text-subtle" style="font-size:11px;">contratos adjudicados</div>
         </div>
-        <div class="ll-card" style="padding:12px;">
-          <div class="ll-num" style="font-size:20px;" id="met-tiempo">—</div>
-          <div class="ll-caption" style="margin-top:2px;">Días prom.</div>
-          <div class="ll-caption ll-u-text-subtle">preparación por oferta</div>
+        <div class="ll-card" style="padding:16px;">
+          <div class="ll-num" style="font-size:28px;" id="met-tiempo">—</div>
+          <div class="ll-caption" style="margin-top:4px;font-size:12px;font-weight:700;">Días prom.</div>
+          <div class="ll-caption ll-u-text-subtle" style="font-size:11px;">preparación por oferta</div>
         </div>
       </div>
     </div>
@@ -3105,28 +3171,16 @@ html { background: var(--color-bg, #0A0A0A); }
         <div class="seg-grafica-titulo">Tasa de éxito</div>
         <div class="seg-canvas-wrap"><canvas id="chart-tasa" height="160"></canvas></div>
         <div class="seg-leyenda" id="ley-tasa"></div>
-
         <div class="seg-grafica-titulo">Procesos por institución</div>
         <div class="seg-canvas-wrap"><canvas id="chart-inst" height="200"></canvas></div>
-
         <div class="seg-grafica-titulo">Monto ganado en el tiempo</div>
         <div class="seg-canvas-wrap"><canvas id="chart-monto" height="160"></canvas></div>
-
         <div class="seg-grafica-titulo">Tiempo de preparación por proceso</div>
         <div class="seg-canvas-wrap"><canvas id="chart-tiempo" height="160"></canvas></div>
       </div>
     </div>
 
-    <div style="display:flex;gap:8px;padding:8px 16px 12px;overflow-x:auto;">
-      <button class="ll-chip ll-chip--interactive is-active" onclick="filtrarSeguimiento('todos')" id="sfbtn-todos">Todos</button>
-      <button class="ll-chip ll-chip--interactive" onclick="filtrarSeguimiento('analizando')" id="sfbtn-analizando">Analizando</button>
-      <button class="ll-chip ll-chip--interactive" onclick="filtrarSeguimiento('preparando')" id="sfbtn-preparando">Preparando</button>
-      <button class="ll-chip ll-chip--interactive" onclick="filtrarSeguimiento('presentado')" id="sfbtn-presentado">Presentado</button>
-      <button class="ll-chip ll-chip--interactive" onclick="filtrarSeguimiento('adjudicado')" id="sfbtn-adjudicado">Adjudicado</button>
-      <button class="ll-chip ll-chip--interactive" onclick="filtrarSeguimiento('no-adj')" id="sfbtn-no-adj">No adj.</button>
-    </div>
-
-    <div id="seg-lista"></div>
+    <div id="seg-lista" style="padding:0 20px 24px;"></div>
   </div>
 
 
