@@ -1034,6 +1034,130 @@ body {
   .detalle-header-full { margin-bottom: 20px; }
   /* Tabs nav sin margen negativo en desktop */
   .detalle-tabs-nav { margin: 0 0 0; padding: 0; }
+
+  /* ── DESKTOP GLOBAL ─────────────────────────────────────────── */
+
+  /* Ocultar bottom-nav, usar sidebar-nav o solo navbar */
+  .bottom-nav, .ll-bottom-nav { display: none !important; }
+
+  /* Sin padding de bottom-nav en todas las páginas */
+  .page-with-nav,
+  #tab-detalle, #tab-perfil, #tab-seguimiento, #tab-mercado, #tab-dashboard {
+    padding-bottom: 0 !important;
+  }
+
+  /* Contenedor general: más padding lateral */
+  .main { max-width: 860px; padding: 24px 32px; }
+
+  /* ── DETALLE DESKTOP — tipografía y espaciado ── */
+
+  /* Título del proceso */
+  #detalle-container .ll-h2 {
+    font-size: 26px !important;
+    line-height: 1.2 !important;
+    letter-spacing: -0.4px !important;
+  }
+
+  /* Subtítulo institución */
+  #detalle-container .detalle-header-full > .ll-card > div[style*="font-size:12px"] {
+    font-size: 14px !important;
+  }
+
+  /* Grid de métricas — valores más grandes */
+  .detalle-metric-label { font-size: 10px; }
+  .detalle-metric-value { font-size: 22px !important; }
+  .detalle-metric-value[style*="font-size:13px"] { font-size: 18px !important; }
+  .detalle-metric-value[style*="font-size:14px"] { font-size: 18px !important; }
+  .detalle-metric-value[style*="font-size:15px"] { font-size: 22px !important; }
+  .detalle-metric-sub   { font-size: 11px; }
+  .detalle-metric       { padding: 16px 20px; }
+
+  /* Chips del header */
+  #detalle-container .ll-chip { font-size: 12px; padding: 3px 10px; }
+
+  /* Tabs nav */
+  .detalle-tab-btn { font-size: 13px; padding: 12px 18px 11px; }
+
+  /* Contenido de tabs */
+  .detalle-tab-panel { padding-top: 20px; }
+
+  /* Cards en los tabs */
+  #detalle-container .ll-card { padding: 20px; }
+  #detalle-container .ll-card__title { font-size: 15px; }
+  #detalle-container .ll-card__body { font-size: 14px; }
+  #detalle-container .ll-body-sm { font-size: 13px; }
+  #detalle-container .ll-caption { font-size: 11px; }
+
+  /* Resumen ejecutivo */
+  #dtab-panel-resumen p { font-size: 14px !important; line-height: 1.75 !important; }
+
+  /* Datos del proceso dl */
+  #dtab-panel-resumen dl { gap: 16px; }
+  #dtab-panel-resumen dd { font-size: 14px !important; }
+
+  /* Plazos */
+  .plazo-nombre { font-size: 14px; }
+  .plazo-fecha  { font-size: 13px; }
+  .plazo-item   { padding: 14px 20px; }
+
+  /* Checklist */
+  .checklist-item-nombre { font-size: 14px; }
+  .checklist-seccion-titulo { font-size: 14px; }
+  .checklist-seccion-header { padding: 15px 20px; }
+  .checklist-item { padding: 12px 20px; }
+
+  /* Alertas */
+  .alerta-titulo { font-size: 14px; }
+  .alerta-desc   { font-size: 13px; }
+
+  /* Botones de acción del header */
+  #detalle-container .ll-btn--sm { height: 34px; font-size: 13px; padding: 0 16px; }
+
+  /* ── DASHBOARD DESKTOP ── */
+  #tab-dashboard { padding: 0; }
+  .proceso-swipe-wrap { margin: 0 0 10px; }
+  .ll-card__title { font-size: 15px; }
+
+  /* ── ASIDE PANEL — tipografía más legible ── */
+  .detalle-aside-title  { font-size: 13px; }
+  .detalle-aside-sub    { font-size: 11px; }
+  .detalle-aside-body   { padding: 16px 18px; }
+  .aside-alerta-titulo  { font-size: 13px; }
+  .aside-alerta-desc    { font-size: 12px; }
+  .aside-score-rec      { font-size: 13px; }
+
+  /* ── TIPOGRAFÍA BASE DESKTOP ── */
+  /* Escalar el body base de 13px (móvil) a 14px (desktop) */
+  body, .ll-app { font-size: 14px; }
+
+  /* Navbar desktop — más alto y con más padding */
+  .ll-navbar { height: 60px; padding: 0 32px; }
+  .ll-navbar__brand { font-size: 15px; gap: 10px; }
+  .ll-navbar__brand-icon { width: 32px; height: 32px; }
+
+  /* Dashboard cards más grandes */
+  #tab-dashboard .ll-card { padding: 16px 18px; }
+  #tab-dashboard .ll-card__header .ll-mono { font-size: 11px; }
+  #tab-dashboard .ll-card__title { font-size: 14px; line-height: 1.4; }
+  #tab-dashboard .ll-body-sm { font-size: 13px; }
+  #tab-dashboard .ll-chip { font-size: 11px; }
+  #tab-dashboard .ll-num { font-size: 13px; }
+  /* Cards del dashboard en 2 columnas mínimo */
+  #procesos-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 0;
+    padding: 0 16px;
+  }
+  #procesos-container .proceso-swipe-wrap { margin: 0 0 10px; }
+
+  /* Seguimiento más legible */
+  #tab-seguimiento .ll-card { padding: 16px 20px; }
+  .seg-header { padding: 28px 24px 20px; }
+
+  /* Perfil */
+  #tab-perfil .perfil-card { padding: 24px; max-width: 700px; margin: 0 auto 16px; }
+  #tab-perfil { padding: 16px 24px; }
 }
 
 /* Panel aside de análisis */
