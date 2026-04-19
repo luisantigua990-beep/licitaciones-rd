@@ -1127,13 +1127,26 @@ body {
   .aside-score-rec      { font-size: 13px; }
 
   /* ── TIPOGRAFÍA BASE DESKTOP ── */
-  /* Escalar el body base de 13px (móvil) a 14px (desktop) */
   body, .ll-app { font-size: 14px; }
 
-  /* Navbar desktop — más alto y con más padding */
-  .ll-navbar { height: 60px; padding: 0 32px; }
-  .ll-navbar__brand { font-size: 15px; gap: 10px; }
-  .ll-navbar__brand-icon { width: 32px; height: 32px; }
+  /* Ocultar elementos mobile-only */
+  .ll-navbar { display: none !important; }
+  #ptr-indicator { display: none !important; }
+  /* Ocultar drawer mobile */
+  .drawer-overlay, .ll-drawer { display: none !important; }
+
+  /* Layout principal: sidebar + contenido */
+  #screen-app {
+    flex-direction: row !important;
+  }
+  #desk-sidebar {
+    display: flex !important;
+  }
+  #tabs-wrapper {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
 
   /* Dashboard cards más grandes */
   #tab-dashboard .ll-card { padding: 16px 18px; }
@@ -1142,7 +1155,6 @@ body {
   #tab-dashboard .ll-body-sm { font-size: 13px; }
   #tab-dashboard .ll-chip { font-size: 11px; }
   #tab-dashboard .ll-num { font-size: 13px; }
-  /* Cards del dashboard en 2 columnas mínimo */
   #procesos-container {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
@@ -1151,13 +1163,140 @@ body {
   }
   #procesos-container .proceso-swipe-wrap { margin: 0 0 10px; }
 
-  /* Seguimiento más legible */
+  /* Seguimiento */
   #tab-seguimiento .ll-card { padding: 16px 20px; }
   .seg-header { padding: 28px 24px 20px; }
 
   /* Perfil */
   #tab-perfil .perfil-card { padding: 24px; max-width: 700px; margin: 0 auto 16px; }
   #tab-perfil { padding: 16px 24px; }
+}
+
+/* ── SIDEBAR DESKTOP (hidden en móvil, visible ≥900px) ── */
+#desk-sidebar {
+  display: none;
+  flex-direction: column;
+  width: 240px;
+  flex-shrink: 0;
+  height: 100%;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.dsb-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.dsb-brand-icon {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: var(--green);
+  display: grid; place-items: center;
+  flex-shrink: 0;
+}
+.dsb-brand-name {
+  font-size: 14px; font-weight: 700;
+  color: var(--text); letter-spacing: -0.3px;
+}
+.dsb-user {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.dsb-avatar {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: var(--green-dim);
+  border: 1.5px solid var(--green-border);
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 800;
+  color: var(--green); flex-shrink: 0;
+}
+.dsb-user-name {
+  font-size: 13px; font-weight: 600;
+  color: var(--text); line-height: 1.2;
+  white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dsb-user-role {
+  font-size: 11px; color: var(--muted);
+}
+.dsb-section-label {
+  font-size: 10px; font-weight: 800;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted);
+  padding: 14px 16px 6px;
+}
+.dsb-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+  font-size: 13px; font-weight: 600;
+  color: var(--text2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 0;
+  width: 100%;
+  text-align: left;
+  transition: background .12s, color .12s;
+  font-family: var(--font-body);
+  position: relative;
+}
+.dsb-nav-item:hover {
+  background: var(--bg2);
+  color: var(--text);
+}
+.dsb-nav-item.active {
+  background: var(--green-dim);
+  color: var(--green);
+  font-weight: 700;
+}
+.dsb-nav-item.active svg { stroke: var(--green); }
+.dsb-nav-item svg {
+  width: 16px; height: 16px;
+  stroke: var(--muted); fill: none;
+  stroke-width: 2; stroke-linecap: round;
+  stroke-linejoin: round; flex-shrink: 0;
+  transition: stroke .12s;
+}
+.dsb-nav-item:hover svg { stroke: var(--text); }
+.dsb-nav-badge {
+  margin-left: auto;
+  font-size: 10px; font-weight: 800;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  min-width: 20px; text-align: right;
+}
+.dsb-nav-item.active .dsb-nav-badge { color: var(--green); }
+.dsb-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 8px 0;
+}
+.dsb-footer {
+  margin-top: auto;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+.dsb-theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  margin-bottom: 8px;
+}
+.dsb-theme-label {
+  font-size: 12px; font-weight: 600;
+  color: var(--text2);
 }
 
 /* Panel aside de análisis */
@@ -2428,6 +2567,68 @@ html { background: var(--color-bg, #0A0A0A); }
     </div>
   </div>
 
+  <!-- ── SIDEBAR DESKTOP (visible ≥900px) ── -->
+  <aside id="desk-sidebar">
+    <!-- Brand -->
+    <div class="dsb-brand" onclick="switchTab2('dashboard')" role="button">
+      <div class="dsb-brand-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v5l-4 8a2 2 0 0 0 1.8 3h8.4a2 2 0 0 0 1.8-3l-4-8V3"/><path d="M8.5 16h7"/></svg>
+      </div>
+      <span class="dsb-brand-name">Licitaciones Lab</span>
+    </div>
+
+    <!-- Usuario -->
+    <div class="dsb-user">
+      <div class="dsb-avatar" id="dsb-avatar">LA</div>
+      <div style="flex:1;min-width:0;">
+        <div class="dsb-user-name" id="dsb-name">Usuario</div>
+        <div class="dsb-user-role" id="dsb-role">LicitacionLab</div>
+      </div>
+    </div>
+
+    <!-- Nav: Trabajo -->
+    <div class="dsb-section-label">Trabajo</div>
+    <button class="dsb-nav-item active" id="dsb-nav-dashboard" onclick="switchTab2('dashboard')">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      Licitaciones
+      <span class="dsb-nav-badge" id="dsb-badge-dashboard"></span>
+    </button>
+    <button class="dsb-nav-item" id="dsb-nav-seguimiento" onclick="switchTab2('seguimiento');limpiarBadge()">
+      <svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      Mis Procesos
+      <span class="dsb-nav-badge" id="dsb-badge-seguimiento"></span>
+    </button>
+
+    <div class="dsb-divider"></div>
+
+    <!-- Nav: Exploración -->
+    <div class="dsb-section-label">Exploración</div>
+    <button class="dsb-nav-item" id="dsb-nav-mercado" onclick="switchTab2('mercado')">
+      <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Mercado
+    </button>
+
+    <div class="dsb-divider"></div>
+
+    <!-- Footer -->
+    <div class="dsb-footer">
+      <!-- Toggle tema -->
+      <div class="dsb-theme-row">
+        <span class="dsb-theme-label" id="dsb-theme-label">Modo oscuro</span>
+        <button class="ll-toggle" id="dsb-theme-track" onclick="toggleTheme()"></button>
+      </div>
+      <!-- Perfil -->
+      <button class="dsb-nav-item" id="dsb-nav-perfil" onclick="switchTab2('perfil')" style="padding:9px 0;border-radius:6px;">
+        <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Mi Perfil
+      </button>
+      <button class="ll-btn ll-btn--danger-ghost" style="width:100%;margin-top:6px;justify-content:flex-start;gap:8px;font-size:12px;" onclick="logout()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Cerrar sesión
+      </button>
+    </div>
+  </aside>
+
   <div id="tabs-wrapper">
   <div id="tab-dashboard" class="page-with-nav">
 
@@ -2992,12 +3193,18 @@ const API = '';
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   const isLight = theme === 'light';
+  // Drawer móvil
   const track = document.getElementById('drawer-theme-track');
   const icon  = document.getElementById('drawer-theme-icon');
   const label = document.getElementById('drawer-theme-label');
   if (track)  track.classList.toggle('on', isLight);
   if (icon)   icon.textContent  = isLight ? '○' : '●';
   if (label)  label.textContent = isLight ? 'Modo claro' : 'Modo oscuro';
+  // Sidebar desktop
+  const dsbTrack = document.getElementById('dsb-theme-track');
+  const dsbLabel = document.getElementById('dsb-theme-label');
+  if (dsbTrack) dsbTrack.classList.toggle('on', isLight);
+  if (dsbLabel) dsbLabel.textContent = isLight ? 'Modo claro' : 'Modo oscuro';
   localStorage.setItem('ll_theme', theme);
 }
 function toggleTheme() {
@@ -3180,17 +3387,20 @@ function showApp() {
     : nombre.substring(0, 2).toUpperCase();
 
   // Actualizar navbar y drawer
-  const emailDisplay = document.getElementById('user-email-display');
-  if (emailDisplay) emailDisplay.textContent = nombre;
-  const dn = document.getElementById('drawer-name');
-  if (dn) dn.textContent = nombre;
-  const da = document.getElementById('drawer-avatar');
-  if (da) da.textContent = iniciales;
-  // Rol dinámico desde el email del usuario
+  const dn = document.getElementById('drawer-name'); if(dn) dn.textContent = nombre;
+  const da = document.getElementById('drawer-avatar'); if(da) da.textContent = iniciales;
+  const emailDisplay = document.getElementById('user-email-display'); if(emailDisplay) emailDisplay.textContent = nombre;
+
+  // Sincronizar sidebar desktop
+  const dsbName   = document.getElementById('dsb-name');    if(dsbName)   dsbName.textContent   = nombre;
+  const dsbAvatar = document.getElementById('dsb-avatar');  if(dsbAvatar) dsbAvatar.textContent  = iniciales;
+
   const dr = document.getElementById('drawer-role');
   if (dr && currentUser?.email) {
     const emailLower = currentUser.email.toLowerCase();
     dr.textContent = emailLower.includes('licitacionlab') ? 'Admin · LicitacionLab' : 'LicitacionLab';
+    const dsbRole = document.getElementById('dsb-role');
+    if (dsbRole) dsbRole.textContent = dr.textContent;
   }
 
   // Perfil: mostrar nombre + correo
@@ -4718,11 +4928,15 @@ function cerrarBannerAnalisis() {
 }
 
 function mostrarDashboard() {
-  // Limpiar polling de análisis si estaba corriendo
   if (_pollingTimer) { clearTimeout(_pollingTimer); _pollingTimer = null; }
   document.getElementById('tab-dashboard').style.display = 'block';
   document.getElementById('tab-detalle').style.display   = 'none';
   document.getElementById('tab-perfil').style.display    = 'none';
+  // Sidebar desktop — restaurar el tab activo previo
+  const prevTab = window._lastActiveTab || 'dashboard';
+  document.querySelectorAll('.dsb-nav-item').forEach(b => b.classList.remove('active'));
+  const dsbId = prevTab === 'seguimiento' ? 'dsb-nav-seguimiento' : 'dsb-nav-dashboard';
+  document.getElementById(dsbId)?.classList.add('active');
 }
 
 // ── NAV DASHBOARD TAP — comportamiento tipo Instagram ──
@@ -4750,6 +4964,7 @@ function navDashboardTap() {
 
 // ── NAV ──
 function switchTab2(tab) {
+  window._lastActiveTab = tab;
   document.getElementById('tab-dashboard').style.display   = tab==='dashboard'   ? 'block' : 'none';
   document.getElementById('tab-detalle').style.display     = 'none';
   document.getElementById('tab-perfil').style.display      = tab==='perfil'      ? 'block' : 'none';
@@ -4758,12 +4973,20 @@ function switchTab2(tab) {
   if (tab==='seguimiento') cargarSeguimiento();
   if (tab==='mercado') cargarMercado();
   if (tab==='perfil') cargarHistorialAnalisis();
+  // Bottom-nav (móvil)
   document.querySelectorAll('.ll-bottom-nav__item').forEach(b => b.classList.remove('is-active'));
   const navMap = {
     'dashboard':'nav-dashboard','perfil':'nav-perfil',
     'seguimiento':'nav-seguimiento','mercado':'nav-mercado'
   };
   if(navMap[tab]) document.getElementById(navMap[tab])?.classList.add('is-active');
+  // Sidebar desktop
+  document.querySelectorAll('.dsb-nav-item').forEach(b => b.classList.remove('active'));
+  const dsbMap = {
+    'dashboard':'dsb-nav-dashboard','perfil':'dsb-nav-perfil',
+    'seguimiento':'dsb-nav-seguimiento','mercado':'dsb-nav-mercado'
+  };
+  if(dsbMap[tab]) document.getElementById(dsbMap[tab])?.classList.add('active');
 }
 
 // ── PUSH ──
