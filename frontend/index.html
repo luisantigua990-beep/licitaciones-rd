@@ -5604,50 +5604,34 @@ async function cargarCalendario() {
       </div>`; return;
     }
 
-    // Traer datos completos de los procesos seguidos
-    const ids = analisis.map(a => a.proceso_id).filter(Boolean);
-    let procesos = [];
-    try {
-      const chunk = ids.slice(0, 50).join(',');
-      const rp = await fetch(`${API}/api/procesos?codigos=${chunk}&limit=50`);
-      const dp = await rp.json();
-      procesos = dp.procesos || [];
-    } catch(e) { procesos = []; }
-
-    // Construir eventos desde analisis + procesos
+    // Construir eventos — las fechas ya vienen en mis-analisis
     const eventos = [];
-    const procMap = Object.fromEntries(procesos.map(p => [p.codigo_proceso, p]));
-
     analisis.forEach(a => {
-      const p = procMap[a.proceso_id] || {};
       const fechas = [
-        { fecha: p.fecha_fin_recepcion_ofertas || null, tipo: 'cierre',      label: '📅 Cierre ofertas',     color: 'var(--red)',   urgClass: 'critico'  },
-        { fecha: p.fecha_apertura_ofertas      || null, tipo: 'apertura',    label: '🔓 Apertura ofertas',   color: 'var(--amber)', urgClass: 'urgente'  },
-        { fecha: p.fecha_estimada_adjudicacion || null, tipo: 'adjudicacion',label: '🏆 Adjudicación',       color: 'var(--purple)',urgClass: ''         },
+        { fecha: a.fecha_fin_recepcion_ofertas,  label: '📅 Cierre ofertas',  color: 'var(--red)'   },
+        { fecha: a.fecha_apertura_ofertas,        label: '🔓 Apertura ofertas',color: 'var(--amber)' },
+        { fecha: a.fecha_estimada_adjudicacion,   label: '🏆 Adjudicación',    color: 'var(--purple)'},
       ];
       fechas.forEach(f => {
         if (!f.fecha) return;
         eventos.push({
-          fecha: new Date(f.fecha),
-          tipo: f.tipo,
-          label: f.label,
-          color: f.color,
-          titulo: a.titulo || a.proceso_id,
-          codigo: a.proceso_id,
+          fecha:   new Date(f.fecha),
+          label:   f.label,
+          color:   f.color,
+          titulo:  a.titulo || a.proceso_id,
+          codigo:  a.proceso_id,
           entidad: a.unidad_compra || '',
-          monto: a.monto_estimado,
+          monto:   a.monto_estimado,
         });
       });
     });
 
     if (!eventos.length) {
-      lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Sin fechas registradas.</div>'; return;
+      lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Sin fechas registradas en los procesos seguidos.</div>'; return;
     }
 
-    // Ordenar ascendente
     eventos.sort((a, b) => a.fecha - b.fecha);
 
-    // Agrupar por mes
     const porMes = {};
     const ahora = new Date();
     eventos.forEach(ev => {
@@ -5671,14 +5655,11 @@ async function cargarCalendario() {
           const hora   = ev.fecha.toLocaleTimeString('es-DO', { hour:'2-digit', minute:'2-digit' });
           const montoFmt = ev.monto ? (Number(ev.monto)>=1e6 ? `RD$${(Number(ev.monto)/1e6).toFixed(1)}M` : `RD$${(Number(ev.monto)/1e3).toFixed(0)}K`) : '';
           return `<div style="display:flex;gap:14px;margin-bottom:8px;cursor:pointer;" onclick="verDetalle('${ev.codigo}')">
-            <!-- Día -->
             <div style="flex-shrink:0;width:44px;text-align:center;padding:8px 0;">
               <div style="font-size:22px;font-weight:800;line-height:1;color:${esProximo?ev.color:'var(--muted)'};">${diaNum}</div>
               <div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;">${diaNom}</div>
             </div>
-            <!-- Línea vertical -->
             <div style="width:2px;background:${esProximo?ev.color:'var(--border)'};border-radius:1px;flex-shrink:0;margin:8px 0;"></div>
-            <!-- Contenido -->
             <div class="ll-card" style="flex:1;padding:12px 14px;margin-bottom:0;border-left:3px solid ${esProximo?ev.color:'var(--border)'};">
               <div style="font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:${esProximo?ev.color:'var(--muted)'};margin-bottom:4px;">${ev.label} · ${hora}</div>
               <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;margin-bottom:3px;">${sanitize(ev.titulo)}</div>
