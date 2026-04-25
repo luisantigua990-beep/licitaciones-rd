@@ -5052,8 +5052,10 @@ function cambiarTabDetalle(codigo, tabId) {
 }
 
 async function verDetalle(codigo) {
-  ['tab-dashboard','tab-perfil','tab-seguimiento'].forEach(id => {
-    document.getElementById(id).style.display = 'none';
+  // Ocultar TODOS los tabs antes de mostrar el detalle
+  ['tab-dashboard','tab-perfil','tab-seguimiento','tab-mercado','tab-alertas','tab-analisis','tab-reportes','tab-calendario'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
   });
   document.getElementById('tab-detalle').style.display = 'block';
   document.getElementById('detalle-container').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
@@ -5342,9 +5344,12 @@ function cerrarBannerAnalisis() {
 
 function mostrarDashboard() {
   if (_pollingTimer) { clearTimeout(_pollingTimer); _pollingTimer = null; }
+  // Ocultar TODOS los tabs y mostrar dashboard
+  ['tab-detalle','tab-perfil','tab-seguimiento','tab-mercado','tab-alertas','tab-analisis','tab-reportes','tab-calendario'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
   document.getElementById('tab-dashboard').style.display = 'block';
-  document.getElementById('tab-detalle').style.display   = 'none';
-  document.getElementById('tab-perfil').style.display    = 'none';
   // Sidebar desktop — restaurar el tab activo previo
   const prevTab = window._lastActiveTab || 'dashboard';
   document.querySelectorAll('.dsb-nav-item').forEach(b => b.classList.remove('active'));
