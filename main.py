@@ -3872,18 +3872,22 @@ async def webhook_analisis_pliego(request: Request, background_tasks: Background
 @limiter.limit("60/minute")
 def listar_proveedores(
     request: Request,
-    tipo:      str = Query(None),
-    zona:      str = Query(None),
-    busqueda:  str = Query(None),
-    page:      int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=50),
+    tipo:        str = Query(None),
+    zona:        str = Query(None),
+    busqueda:    str = Query(None),
+    verificado:  str = Query(None),   # "true" = solo verificados
+    rating_min:  float = Query(None), # ej: 4.0
+    categoria:   str = Query(None),   # nombre de categoría específica
+    page:        int = Query(1, ge=1),
+    page_size:   int = Query(20, ge=1, le=50),
 ):
-    """Listar proveedores activos con filtros. Contacto de mano_obra/servicios/subcontratista
-    se devuelve siempre — el control de acceso lo hace el frontend según suscripción."""
+    """Listar proveedores activos con filtros."""
     try:
         q = supabase_admin.table("proveedores").select(
             "id, nombre_empresa, tipo, descripcion, zona_geografica, "
             "telefono, whatsapp, email_contacto, verificado, created_at, "
+            "rating_promedio, num_resenas, logo_url, website, instagram, "
+            "facebook, latitud, longitud, horario, direccion, fuente, "
             "proveedor_categorias(categoria_nombre, unspsc_codigo)"
         ).eq("activo", True)
 
@@ -3893,12 +3897,25 @@ def listar_proveedores(
             q = q.contains("zona_geografica", [zona])
         if busqueda:
             q = q.ilike("nombre_empresa", f"%{busqueda}%")
+        if verificado == "true":
+            q = q.eq("verificado", True)
+        if rating_min is not None:
+            q = q.gte("rating_promedio", rating_min)
 
         offset = (page - 1) * page_size
-        q = q.order("created_at", desc=True).range(offset, offset + page_size - 1)
+        q = q.order("rating_promedio", desc=True).order("created_at", desc=True).range(offset, offset + page_size - 1)
 
         res = q.execute()
-        return {"proveedores": res.data, "page": page, "page_size": page_size}
+
+        # Filtro por categoría si se especifica (post-query porque es relación)
+        provs = res.data or []
+        if categoria:
+            provs = [p for p in provs if any(
+                categoria.lower() in (c.get("categoria_nombre") or "").lower()
+                for c in (p.get("proveedor_categorias") or [])
+            )]
+
+        return {"proveedores": provs, "total": len(provs), "page": page, "page_size": page_size}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -3947,6 +3964,18 @@ async def registrar_proveedor(request: Request):
             "telefono":        data.get("telefono"),
             "whatsapp":        data.get("whatsapp") or data.get("telefono"),
             "email_contacto":  data.get("email_contacto"),
+            # Campos enriquecidos (vía scraper o registro manual extendido)
+            "logo_url":        data.get("logo_url"),
+            "website":         data.get("website"),
+            "instagram":       data.get("instagram"),
+            "facebook":        data.get("facebook"),
+            "direccion":       data.get("direccion"),
+            "latitud":         data.get("latitud"),
+            "longitud":        data.get("longitud"),
+            "horario":         data.get("horario"),
+            "rating_promedio": data.get("rating_promedio"),
+            "num_resenas":     data.get("num_resenas"),
+            "fuente":          data.get("fuente", "registro_manual"),  # "google_maps", "dgcp", etc
         }
 
         res = supabase_admin.table("proveedores").insert(proveedor_data).execute()
