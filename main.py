@@ -565,137 +565,6 @@ def detalle_proceso(request: Request, codigo_proceso: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/procesos/{codigo_proceso}/historial")
-@limiter.limit("60/minute")
-def historial_proceso(request: Request, codigo_proceso: str, user_id: str = Query(None)):
-    """
-    Devuelve la línea de tiempo unificada de un proceso:
-    - Cambios del proceso (fechas clave, enmiendas detectadas)
-    - Análisis IA solicitados por el usuario (si user_id se provee)
-    """
-    try:
-        eventos = []
-
-        # 1. Datos base del proceso (fechas clave como eventos)
-        proc = supabase.table("procesos") \
-            .select("codigo_proceso,titulo,fecha_publicacion,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda,fecha_suscripcion,estado_proceso,creado_en") \
-            .eq("codigo_proceso", codigo_proceso) \
-            .execute()
-
-        if not proc.data:
-            raise HTTPException(status_code=404, detail="Proceso no encontrado")
-
-        p = proc.data[0]
-
-        # Mapear fechas del proceso como eventos de tipo "proceso"
-        fechas_mapa = [
-            ("fecha_publicacion",            "publicacion",      "📋 Proceso publicado",                   "info"),
-            ("fecha_enmienda",               "enmienda",         "⚠️ Enmienda / cierre de preguntas",      "warning"),
-            ("fecha_fin_recepcion_ofertas",  "cierre_ofertas",   "📅 Cierre recepción de ofertas",         "deadline"),
-            ("fecha_apertura_ofertas",       "apertura",         "🔓 Apertura de ofertas",                 "milestone"),
-            ("fecha_estimada_adjudicacion",  "adjudicacion",     "🏆 Adjudicación estimada",              "milestone"),
-            ("fecha_suscripcion",            "suscripcion",      "✍️ Suscripción del contrato",           "success"),
-        ]
-        for campo, tipo, label, cat in fechas_mapa:
-            val = p.get(campo)
-            if val:
-                eventos.append({
-                    "tipo":     "proceso",
-                    "subtipo":  tipo,
-                    "categoria": cat,
-                    "fecha":    val,
-                    "titulo":   label,
-                    "detalle":  None,
-                    "score":    None,
-                })
-
-        # 2. Enmiendas detectadas por el scraper
-        try:
-            enm = supabase_admin.table("enmiendas_detectadas") \
-                .select("detectada_en,descripcion,url_enmienda") \
-                .eq("codigo_proceso", codigo_proceso) \
-                .order("detectada_en", desc=False) \
-                .execute()
-            for e in (enm.data or []):
-                eventos.append({
-                    "tipo":      "enmienda",
-                    "subtipo":   "enmienda_detectada",
-                    "categoria": "warning",
-                    "fecha":     e.get("detectada_en"),
-                    "titulo":    "⚠️ Enmienda detectada por LicitacionLab",
-                    "detalle":   e.get("descripcion"),
-                    "url":       e.get("url_enmienda"),
-                    "score":     None,
-                })
-        except Exception:
-            pass
-
-        # 3. Análisis IA solicitados por este usuario para este proceso
-        if user_id:
-            try:
-                analisis = supabase_admin.table("analisis_pliego") \
-                    .select("estado,creado_en,actualizado_en,evaluacion_competitividad") \
-                    .eq("proceso_id", codigo_proceso) \
-                    .order("creado_en", desc=False) \
-                    .execute()
-
-                for a in (analisis.data or []):
-                    # Calcular score desde evaluacion_competitividad
-                    score_val = None
-                    nivel_val = None
-                    try:
-                        ev = a.get("evaluacion_competitividad") or {}
-                        if isinstance(ev, str):
-                            import json as _j
-                            ev = _j.loads(ev)
-                        nivel_raw = (ev.get("nivel_dificultad") or "").lower()
-                        niveles = {"baja": 75, "media": 50, "alta": 25}
-                        score_val = niveles.get(nivel_raw)
-                        nivel_val = nivel_raw.capitalize() if nivel_raw else None
-                    except Exception:
-                        pass
-
-                    estado = a.get("estado", "pendiente_analisis")
-                    estado_labels = {
-                        "completado":        "✅ Análisis completado",
-                        "procesando":        "⏳ Análisis en proceso",
-                        "pendiente_analisis":"🕐 Análisis en cola",
-                        "error":             "❌ Error en análisis",
-                    }
-                    cat_map = {
-                        "completado": "success",
-                        "procesando": "info",
-                        "pendiente_analisis": "info",
-                        "error": "danger",
-                    }
-                    eventos.append({
-                        "tipo":      "analisis",
-                        "subtipo":   estado,
-                        "categoria": cat_map.get(estado, "info"),
-                        "fecha":     a.get("actualizado_en") or a.get("creado_en"),
-                        "titulo":    estado_labels.get(estado, "Análisis IA"),
-                        "detalle":   f"Score: {score_val}/100 · Dificultad {nivel_val}" if score_val else None,
-                        "score":     score_val,
-                        "nivel":     nivel_val,
-                    })
-            except Exception:
-                pass
-
-        # 4. Ordenar todo por fecha ascendente
-        def sort_key(e):
-            f = e.get("fecha") or ""
-            return f if f else "0000"
-
-        eventos.sort(key=sort_key)
-
-        return {"codigo_proceso": codigo_proceso, "eventos": eventos}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.get("/api/plazos-bulk")
 @limiter.limit("60/minute")
 def plazos_bulk(request: Request, codigos: str):
@@ -1504,8 +1373,9 @@ def estadisticas(request: Request):
 @limiter.limit("30/minute")
 def mis_analisis(request: Request, user_id: str = Query(...)):
     """
-    Devuelve el historial de análisis de pliegos del usuario,
-    cruzando analisis_pliego con procesos para mostrar título e institución.
+    Devuelve el historial de análisis de pliegos del usuario.
+    Cruza seguimiento_procesos → analisis_pliego → procesos.
+    Incluye evaluacion_competitividad y fechas clave del proceso.
     """
     try:
         # 1. Traer seguimientos del usuario
@@ -1518,18 +1388,18 @@ def mis_analisis(request: Request, user_id: str = Query(...)):
 
         codigos = [s["proceso_codigo"] for s in segs.data]
 
-        # 2. Traer análisis completados para esos procesos
+        # 2. Traer análisis para esos procesos (incluir evaluacion_competitividad)
         analisis = supabase_admin.table("analisis_pliego") \
-            .select("proceso_id,estado,creado_en,actualizado_en,resultado") \
+            .select("proceso_id,estado,creado_en,actualizado_en,evaluacion_competitividad,resumen_ejecutivo") \
             .in_("proceso_id", codigos) \
             .order("actualizado_en", desc=True) \
             .execute()
         if not analisis.data:
             return {"analisis": []}
 
-        # 3. Traer datos básicos de los procesos
+        # 3. Traer datos completos de los procesos (incluyendo fechas para el calendario)
         procesos = supabase_admin.table("procesos") \
-            .select("codigo_proceso,titulo,unidad_compra,monto_estimado") \
+            .select("codigo_proceso,titulo,unidad_compra,monto_estimado,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_publicacion") \
             .in_("codigo_proceso", codigos) \
             .execute()
         proc_map = {p["codigo_proceso"]: p for p in (procesos.data or [])}
@@ -1538,24 +1408,20 @@ def mis_analisis(request: Request, user_id: str = Query(...)):
         resultado = []
         for a in analisis.data:
             proc = proc_map.get(a["proceso_id"], {})
-            # Extraer resumen del resultado JSON si existe
-            resumen = None
-            if a.get("resultado"):
-                try:
-                    import json as _json
-                    r = _json.loads(a["resultado"]) if isinstance(a["resultado"], str) else a["resultado"]
-                    resumen = r.get("resumen") or r.get("recomendacion") or r.get("conclusion")
-                except Exception:
-                    pass
             resultado.append({
-                "proceso_id": a["proceso_id"],
-                "titulo": proc.get("titulo", a["proceso_id"]),
-                "unidad_compra": proc.get("unidad_compra", "—"),
-                "monto_estimado": proc.get("monto_estimado"),
-                "estado": a["estado"],
-                "creado_en": a["creado_en"],
-                "actualizado_en": a["actualizado_en"],
-                "resumen": resumen,
+                "proceso_id":                    a["proceso_id"],
+                "titulo":                        proc.get("titulo", a["proceso_id"]),
+                "unidad_compra":                 proc.get("unidad_compra", "—"),
+                "monto_estimado":                proc.get("monto_estimado"),
+                "estado":                        a["estado"],
+                "creado_en":                     a["creado_en"],
+                "actualizado_en":                a["actualizado_en"],
+                "evaluacion_competitividad":      a.get("evaluacion_competitividad"),
+                "resumen":                       a.get("resumen_ejecutivo"),
+                # Fechas para el calendario
+                "fecha_fin_recepcion_ofertas":   proc.get("fecha_fin_recepcion_ofertas"),
+                "fecha_apertura_ofertas":        proc.get("fecha_apertura_ofertas"),
+                "fecha_estimada_adjudicacion":   proc.get("fecha_estimada_adjudicacion"),
             })
         return {"analisis": resultado}
     except Exception as e:
