@@ -5060,11 +5060,22 @@ async function verDetalle(codigo) {
   document.getElementById('tab-detalle').style.display = 'block';
   document.getElementById('detalle-container').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
-  const res  = await fetch(`${API}/api/procesos/${codigo}`);
+  const [res, resEnm] = await Promise.all([
+    fetch(`${API}/api/procesos/${codigo}`),
+    fetch(`${API}/api/procesos/${codigo}/historial`).catch(() => null)
+  ]);
   const data = await res.json();
   const p    = data.proceso;
   const arts = data.articulos || [];
   const analisis = data.analisis;
+
+  // Extraer enmiendas del historial
+  let enmiendas = [];
+  try {
+    const dataEnm = await resEnm?.json();
+    enmiendas = (dataEnm?.eventos || []).filter(e => e.tipo === 'enmienda');
+  } catch(e) {}
+  const ultimaEnmienda = enmiendas[enmiendas.length - 1] || null;
 
   const fPub = p.fecha_publicacion
     ? new Date(p.fecha_publicacion).toLocaleDateString('es-DO') : '—';
@@ -5149,6 +5160,14 @@ async function verDetalle(codigo) {
             <div class="btn-pdf-spinner"></div>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             PDF
+          </button>` : ''}
+          ${ultimaEnmienda ? `
+          <button id="btn-reanalizar-${p.codigo_proceso}"
+            class="ll-btn ll-btn--sm"
+            style="background:rgba(245,158,11,.15);border:1.5px solid rgba(245,158,11,.4);color:var(--amber);font-weight:700;gap:6px;"
+            onclick="solicitarReanalisis('${p.codigo_proceso}')">
+            ⚠ Re-analizar con enmienda
+            <span style="background:rgba(245,158,11,.25);padding:1px 6px;border-radius:10px;font-size:10px;font-weight:800;">#${enmiendas.length}</span>
           </button>` : ''}
         </div>
       </div>
@@ -7796,6 +7815,32 @@ async function cargarPerfilEmpresa() {
     window._perfilEmpresa = (data && data[0]?.onboarding_completado) ? data[0] : null;
   } catch(e) {
     window._perfilEmpresa = null;
+  }
+}
+
+// ── RE-ANALIZAR CON ENMIENDA ─────────────────────────────────────────────
+async function solicitarReanalisis(codigo) {
+  const btn = document.getElementById(`btn-reanalizar-${codigo}`);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Iniciando…'; }
+
+  try {
+    const res = await fetch(`${API}/api/procesos/${codigo}/reanalizar`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.status === 'ya_procesando') {
+      mostrarToast('⏳ El análisis ya está en proceso', 'info');
+      if (btn) { btn.disabled = false; btn.innerHTML = '⚠ Re-analizar con enmienda'; }
+      return;
+    }
+    if (!res.ok) throw new Error(data.detail || 'Error');
+
+    mostrarToast(`⚡ Re-análisis iniciado · Enmienda #${data.enmienda_numero}`, 'success');
+    if (btn) btn.style.display = 'none';
+    iniciarPollingAnalisis(codigo);
+
+  } catch(e) {
+    mostrarToast('Error iniciando re-análisis. Intenta de nuevo.', 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '⚠ Re-analizar con enmienda'; }
   }
 }
 
