@@ -2210,7 +2210,18 @@ body {
 .mercado-chip.active { background: var(--green-dim); border-color: var(--green); color: var(--green); }
 .mercado-zona-wrap { padding: 0 16px 14px; }
 .mercado-zona-select { width: 100%; padding: 10px 12px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r-md); color: var(--text); font-family: var(--font-body); font-size: 13px; outline: none; box-sizing: border-box; }
-.mercado-lista { padding: 0 16px; }
+.mercado-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.mercado-grid.list-view { grid-template-columns: 1fr; }
+.mercado-grid.list-view .prov-card { display: flex; gap: 16px; align-items: flex-start; }
+.mercado-grid.list-view .prov-card-header { flex-shrink: 0; }
+.mercado-grid.list-view .prov-card-body { flex: 1; min-width: 0; }
+.mercado-grid.list-view .prov-actions { flex-direction: column; min-width: 140px; }
+@media (min-width: 1280px) {
+  .mercado-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 900px) {
+  #mercado-sidebar { display: none !important; }
+}
 .prov-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r-lg); margin-bottom: 12px; overflow: hidden; transition: border-color .15s; box-shadow: var(--shadow-card); }
 .prov-card:active { border-color: var(--green-border); }
 .prov-card-header { display: flex; gap: 12px; padding: 14px 14px 10px; }
@@ -3208,70 +3219,144 @@ html { background: var(--color-bg, #0A0A0A); }
 
   <!-- ══ TAB MERCADO ══ -->
   <div id="tab-mercado">
-    <header style="background:var(--color-surface);border-bottom:1px solid var(--color-border);padding:16px;">
-      <h1 class="ll-h2">Mercado</h1>
-      <p class="ll-body-sm ll-u-text-subtle">Encuentra proveedores para tus licitaciones</p>
-      <div class="ll-field ll-field--with-icon" style="position:relative;margin-top:12px;">
-        <svg class="ll-field__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input class="ll-input" id="mercado-busqueda" placeholder="Buscar por nombre o categoría..." oninput="debouncarMercado()" onfocus="mostrarSugerencias()" onblur="setTimeout(()=>ocultarSugerencias(),200)">
-        <div class="mercado-suggestions" id="mercado-suggestions"></div>
+
+    <!-- TOPBAR -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:30;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:12px;color:var(--muted);">Exploración</span>
+        <span style="color:var(--muted);">›</span>
+        <span style="font-size:14px;font-weight:700;">Mercado</span>
+        <span id="mercado-total-badge" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:800;font-family:var(--font-mono);">—</span>
       </div>
-    </header>
-
-    <div style="display:flex;gap:8px;padding:12px 16px;overflow-x:auto;" id="mercado-chips">
-      <button class="ll-chip ll-chip--interactive is-active" onclick="filtrarMercado('')" id="mchip-todos">Todos</button>
-      <button class="ll-chip ll-chip--interactive" onclick="filtrarMercado('materiales')" id="mchip-materiales">Materiales ›</button>
-      <button class="ll-chip ll-chip--interactive" onclick="filtrarMercado('equipos')" id="mchip-equipos">Equipos ›</button>
-      <button class="ll-chip ll-chip--interactive" onclick="filtrarMercado('mano_obra')" id="mchip-mano_obra">Mano de obra ›</button>
-      <button class="ll-chip ll-chip--interactive" onclick="filtrarMercado('servicios')" id="mchip-servicios">Servicios ›</button>
-      <button class="ll-chip ll-chip--interactive" onclick="filtrarMercado('subcontratista')" id="mchip-subcontratista">Subcontratistas ›</button>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="position:relative;">
+          <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="mercado-busqueda" class="ll-input" placeholder="Buscar proveedor, categoría…" style="padding-left:32px;width:260px;height:36px;font-size:13px;" oninput="debouncarMercado()" onfocus="mostrarSugerencias()" onblur="setTimeout(()=>ocultarSugerencias(),200)">
+          <div class="mercado-suggestions" id="mercado-suggestions"></div>
+        </div>
+        <button class="ll-btn ll-btn--primary ll-btn--sm" onclick="abrirFormProveedor()" style="white-space:nowrap;gap:5px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Invitar proveedor
+        </button>
+      </div>
     </div>
 
-    <div class="mercado-subcats" id="mercado-subcats"></div>
+    <!-- LAYOUT: sidebar + contenido -->
+    <div style="display:flex;height:calc(100% - 57px);overflow:hidden;">
 
-    <div style="padding:0 16px 8px;">
-      <select class="ll-select" id="mercado-zona" onchange="cargarMercado()">
-        <option value="">Todas las provincias</option>
-        <option>Distrito Nacional</option>
-        <option>Santo Domingo</option>
-        <option>Santiago</option>
-        <option>La Vega</option>
-        <option>San Pedro de Macorís</option>
-        <option>La Romana</option>
-        <option>San Cristóbal</option>
-        <option>Puerto Plata</option>
-        <option>Duarte</option>
-        <option>Espaillat</option>
-        <option>Barahona</option>
-        <option>San Juan</option>
-        <option>Azua</option>
-        <option>Peravia</option>
-        <option>Monseñor Nouel</option>
-        <option>Sánchez Ramírez</option>
-        <option>Hato Mayor</option>
-        <option>El Seibo</option>
-        <option>La Altagracia</option>
-        <option>Monte Plata</option>
-        <option>Valverde</option>
-        <option>María Trinidad Sánchez</option>
-        <option>Samaná</option>
-        <option>Monte Cristi</option>
-        <option>Dajabón</option>
-        <option>Santiago Rodríguez</option>
-        <option>Elías Piña</option>
-        <option>San José de Ocoa</option>
-        <option>Independencia</option>
-        <option>Baoruco</option>
-        <option>Pedernales</option>
-        <option>Hermanas Mirabal</option>
-      </select>
-    </div>
+      <!-- SIDEBAR FILTROS -->
+      <div id="mercado-sidebar" style="width:240px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;padding:20px 0;background:var(--surface);">
 
-    <div class="mercado-lista" id="mercado-lista">
-      <div class="loading"><div class="spinner"></div></div>
-    </div>
+        <!-- CATEGORÍA -->
+        <div style="padding:0 20px 16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">Categoría</div>
+            <button onclick="limpiarFiltrosMercado()" style="background:none;border:none;color:var(--green);font-size:11px;font-weight:700;cursor:pointer;padding:0;font-family:var(--font-body);">Limpiar</button>
+          </div>
+          <div id="mercado-cats-sidebar" style="display:flex;flex-direction:column;gap:6px;">
+            ${[
+              ['materiales','Materiales de construcción',184],
+              ['equipos','Equipos y maquinaria',96],
+              ['mano_obra','Mano de obra especializada',71],
+              ['servicios','Servicios técnicos',54],
+              ['subcontratista','Subcontratistas',48],
+            ].map(([val,label,count]) => `
+            <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:8px;padding:3px 0;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" class="mercado-cat-check" value="${val}" onchange="aplicarFiltrosMercado()" style="accent-color:var(--green);width:14px;height:14px;cursor:pointer;">
+                <span style="font-size:13px;color:var(--text2);">${label}</span>
+              </div>
+              <span style="font-size:11px;color:var(--muted);font-family:var(--font-mono);">${count}</span>
+            </label>`).join('')}
+          </div>
+          <button id="mercado-ver-mas-cats" onclick="toggleVerMasCats()" style="background:none;border:none;color:var(--green);font-size:12px;font-weight:600;cursor:pointer;padding:6px 0 0;font-family:var(--font-body);">+ Ver las 14 categorías</button>
+        </div>
 
-    <button class="ll-btn ll-btn--primary ll-btn--block" style="margin:16px;" onclick="abrirFormProveedor()">+ Registrar mi empresa como proveedor</button>
+        <div style="height:1px;background:var(--border);margin:4px 0 16px;"></div>
+
+        <!-- PROVINCIA -->
+        <div style="padding:0 20px 16px;">
+          <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Provincia</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${[
+              ['Distrito Nacional',312],
+              ['Santo Domingo',218],
+              ['Santiago',142],
+              ['La Altagracia',89],
+              ['Monte Plata',47],
+            ].map(([prov,count]) => `
+            <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:8px;padding:3px 0;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" class="mercado-zona-check" value="${prov}" onchange="aplicarFiltrosMercado()" style="accent-color:var(--green);width:14px;height:14px;cursor:pointer;">
+                <span style="font-size:13px;color:var(--text2);">${prov}</span>
+              </div>
+              <span style="font-size:11px;color:var(--muted);font-family:var(--font-mono);">${count}</span>
+            </label>`).join('')}
+          </div>
+        </div>
+
+        <div style="height:1px;background:var(--border);margin:4px 0 16px;"></div>
+
+        <!-- VERIFICACIÓN -->
+        <div style="padding:0 20px 16px;">
+          <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Verificación</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${[['','Todos'],['false','Sin filtro'],['true','Verificados']].map(([val,label],i) => `
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:3px 0;">
+              <input type="radio" name="mercado-verificado" value="${val}" ${i===0?'checked':''} onchange="aplicarFiltrosMercado()" style="accent-color:var(--green);width:14px;height:14px;cursor:pointer;">
+              <span style="font-size:13px;color:var(--text2);">${label}</span>
+            </label>`).join('')}
+          </div>
+        </div>
+
+        <div style="height:1px;background:var(--border);margin:4px 0 16px;"></div>
+
+        <!-- RATING -->
+        <div style="padding:0 20px 16px;">
+          <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">Rating</div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="mercado-rating-check" onchange="aplicarFiltrosMercado()" style="accent-color:var(--green);width:14px;height:14px;cursor:pointer;">
+            <span style="color:var(--amber);font-size:14px;">★★★★</span>
+            <span style="font-size:13px;color:var(--text2);">4+ estrellas</span>
+          </label>
+        </div>
+
+      </div><!-- /sidebar -->
+
+      <!-- CONTENIDO PRINCIPAL -->
+      <div style="flex:1;overflow-y:auto;padding:20px 24px;">
+
+        <!-- Barra de resultados -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div id="mercado-resultados-label" style="font-size:13px;color:var(--muted);"></div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:12px;color:var(--muted);">Ordenar:</span>
+            <select id="mercado-orden" onchange="aplicarFiltrosMercado()" style="background:none;border:none;color:var(--text);font-size:12px;font-weight:700;font-family:var(--font-body);cursor:pointer;outline:none;">
+              <option value="rating">Más valorados</option>
+              <option value="recientes">Más recientes</option>
+              <option value="nombre">A-Z</option>
+            </select>
+            <div style="display:flex;gap:4px;">
+              <button id="mercado-view-grid" onclick="setMercadoView('grid')" style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:4px;padding:5px;cursor:pointer;color:var(--green);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              </button>
+              <button id="mercado-view-list" onclick="setMercadoView('list')" style="background:none;border:1px solid var(--border);border-radius:4px;padding:5px;cursor:pointer;color:var(--muted);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Grid de proveedores -->
+        <div id="mercado-lista" class="mercado-grid">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+
+        <div class="mercado-subcats" id="mercado-subcats" style="margin-bottom:12px;"></div>
+
+      </div><!-- /contenido -->
+    </div><!-- /layout -->
+
   </div><!-- /tab-mercado -->
 
   <!-- ── TAB: ALERTAS ── -->
@@ -6899,6 +6984,93 @@ function esSuscriptor() {
   return true;
 }
 
+let _mercadoView = 'grid';
+
+function setMercadoView(v) {
+  _mercadoView = v;
+  const lista = document.getElementById('mercado-lista');
+  if (lista) { lista.classList.toggle('list-view', v === 'list'); }
+  document.getElementById('mercado-view-grid').style.background = v==='grid' ? 'var(--green-dim)' : 'none';
+  document.getElementById('mercado-view-grid').style.color = v==='grid' ? 'var(--green)' : 'var(--muted)';
+  document.getElementById('mercado-view-list').style.background = v==='list' ? 'var(--green-dim)' : 'none';
+  document.getElementById('mercado-view-list').style.color = v==='list' ? 'var(--green)' : 'var(--muted)';
+}
+
+function aplicarFiltrosMercado() { cargarMercado(); }
+
+function limpiarFiltrosMercado() {
+  document.querySelectorAll('.mercado-cat-check').forEach(c => c.checked = false);
+  document.querySelectorAll('.mercado-zona-check').forEach(c => c.checked = false);
+  const radios = document.querySelectorAll('input[name="mercado-verificado"]');
+  if (radios[0]) radios[0].checked = true;
+  const rc = document.getElementById('mercado-rating-check');
+  if (rc) rc.checked = false;
+  document.getElementById('mercado-busqueda').value = '';
+  cargarMercado();
+}
+
+async function cargarMercado() {
+  const lista = document.getElementById('mercado-lista');
+  if (!lista) return;
+  lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+  try {
+    const busqueda = document.getElementById('mercado-busqueda')?.value.trim() || '';
+    const orden    = document.getElementById('mercado-orden')?.value || 'rating';
+
+    // Recoger filtros del sidebar
+    const catChecks  = [...document.querySelectorAll('.mercado-cat-check:checked')].map(c => c.value);
+    const zonaChecks = [...document.querySelectorAll('.mercado-zona-check:checked')].map(c => c.value);
+    const verificado = document.querySelector('input[name="mercado-verificado"]:checked')?.value || '';
+    const ratingMin  = document.getElementById('mercado-rating-check')?.checked ? '4' : '';
+
+    const params = new URLSearchParams({ page_size: '60' });
+    if (busqueda)       params.set('busqueda', busqueda);
+    if (catChecks[0])   params.set('tipo', catChecks[0]);   // primer tipo seleccionado
+    if (zonaChecks[0])  params.set('zona', zonaChecks[0]);  // primera zona seleccionada
+    if (verificado === 'true') params.set('verificado', 'true');
+    if (ratingMin)      params.set('rating_min', ratingMin);
+
+    const res  = await fetch(`${API}/api/mercado/proveedores?${params}`);
+    const data = await res.json();
+    let provs  = data.proveedores || [];
+
+    // Filtrar por zonas adicionales si hay más de una marcada
+    if (zonaChecks.length > 1) {
+      provs = provs.filter(p =>
+        zonaChecks.some(z => (p.zona_geografica || []).includes(z))
+      );
+    }
+    // Filtrar por categorías adicionales si hay más de una marcada
+    if (catChecks.length > 1) {
+      provs = provs.filter(p =>
+        catChecks.some(cat => p.tipo === cat)
+      );
+    }
+
+    // Ordenar localmente
+    if (orden === 'nombre') provs.sort((a,b) => (a.nombre_empresa||'').localeCompare(b.nombre_empresa||''));
+    else if (orden === 'recientes') provs.sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    // rating ya viene ordenado desde el backend
+
+    // Actualizar contadores
+    const badge = document.getElementById('mercado-total-badge');
+    const label = document.getElementById('mercado-resultados-label');
+    const filtrosActivos = [...catChecks, ...zonaChecks, busqueda].filter(Boolean);
+    if (badge) badge.textContent = `${provs.length} proveedores`;
+    if (label) {
+      label.textContent = provs.length
+        ? `${provs.length} proveedores${filtrosActivos.length ? ' · filtrado por ' + filtrosActivos.join(', ') : ''}`
+        : '';
+    }
+
+    lista.classList.toggle('list-view', _mercadoView === 'list');
+    renderProveedores(provs);
+  } catch(e) {
+    lista.innerHTML = '<div class="mercado-empty">Error al cargar proveedores</div>';
+  }
+}
+
 async function cargarMercado() {
   const lista = document.getElementById('mercado-lista');
   lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
@@ -6944,66 +7116,71 @@ function renderProvCard(p) {
   const esManoObra = TIPOS_MANO_OBRA.includes(tipo);
   const tieneAcceso = !esManoObra || esSuscriptor();
 
-  // Logo o iniciales
+  // Logo o iniciales con color basado en nombre
   const iniciales = p.nombre_empresa.trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+  const colors = ['#16A34A','#3B82F6','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#84CC16'];
+  const colorIdx = p.nombre_empresa.charCodeAt(0) % colors.length;
   const _logoSrc = safeUrl(p.logo_url);
   const logoHtml = _logoSrc
     ? `<img class="prov-logo" src="${_logoSrc}" alt="${sanitize(p.nombre_empresa)}" onerror="this.style.display='none';this.nextSibling.style.display='flex'">`
     : '';
-  const placeholderHtml = `<div class="prov-logo-placeholder" ${p.logo_url ? 'style="display:none"' : ''}>${iniciales}</div>`;
+  const placeholderHtml = `<div class="prov-logo-placeholder" style="background:${colors[colorIdx]}20;color:${colors[colorIdx]};${p.logo_url?'display:none':''}">${iniciales}</div>`;
 
   // Verificado badge
   const verificadoHtml = p.verificado
-    ? `<span class="prov-verificado"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>Verificado</span>`
+    ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="${colors[0]}" stroke="none"><path d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>`
     : '';
 
+  // Rating estrellas
+  let ratingHtml = '';
+  if (p.rating_promedio) {
+    const r = Number(p.rating_promedio);
+    const stars = '★'.repeat(Math.round(r)) + '☆'.repeat(5 - Math.round(r));
+    ratingHtml = `<span style="color:var(--amber);font-size:12px;">${stars}</span>
+      <span style="font-size:12px;font-weight:700;color:var(--text2);">${r.toFixed(1)}</span>
+      ${p.num_resenas ? `<span style="font-size:11px;color:var(--muted);">(${p.num_resenas})</span>` : ''}`;
+  }
+
+  // Zona
+  const zonas = (p.zona_geografica||[]).slice(0,2).join(' · ');
+
   // Categorías chips
-  const catsHtml = cats.slice(0,4).map(c=>`<span class="prov-cat-chip">${c}</span>`).join('')
-    + (cats.length>4 ? `<span class="prov-cat-chip">+${cats.length-4}</span>` : '');
-
-  // Meta info
-  let metaHtml = '';
-  if (p.direccion) metaHtml += `<div class="prov-meta-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span>${sanitize(p.direccion)}</span></div>`;
-  if (p.horario) metaHtml += `<div class="prov-meta-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>${sanitize(p.horario)}</span></div>`;
-  const zonas = (p.zona_geografica||[]).filter(z=>z!=='Todo el país');
-  if (zonas.length) metaHtml += `<div class="prov-meta-row"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg><span>${(p.zona_geografica||[]).join(' · ')}</span></div>`;
-
-  // Redes sociales
-  let socialHtml = '';
-  if (p.instagram) socialHtml += `<a class="prov-social-btn" href="https://instagram.com/${sanitize(p.instagram.replace('@',''))}" target="_blank" title="Instagram"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></a>`;
-  if (p.facebook) socialHtml += `<a class="prov-social-btn" href="${safeUrl(p.facebook.startsWith('http')?p.facebook:'https://facebook.com/'+p.facebook)}" target="_blank" title="Facebook"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>`;
-  if (p.website) socialHtml += `<a class="prov-social-btn" href="${safeUrl(p.website.startsWith('http')?p.website:'https://'+p.website)}" target="_blank" title="Sitio web"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></a>`;
+  const catsHtml = cats.slice(0,3).map(c=>`<span class="prov-cat-chip">${c}</span>`).join('')
+    + (cats.length>3 ? `<span class="prov-cat-chip">+${cats.length-3}</span>` : '');
 
   // Acciones
   let accionHtml = '';
   if (tieneAcceso) {
-    const mapBtn = (p.latitud && p.longitud)
-      ? `<button class="prov-btn-map" onclick="abrirMapa(${p.latitud},${p.longitud},'${sanitize(p.nombre_empresa)}')" title="Ver en mapa"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></button>`
-      : '';
     accionHtml = `
-      <button class="prov-btn-wa" onclick="contactarProveedor('${p.id}','whatsapp','${p.whatsapp||p.telefono}')">WhatsApp</button>
-      ${p.telefono ? `<button class="prov-btn-call" onclick="window.location='tel:${sanitize(p.telefono)}'">Llamar</button>` : ''}
-      ${mapBtn}
-    `;
+      <button class="prov-btn-wa" onclick="contactarProveedor('${p.id}','whatsapp','${p.whatsapp||p.telefono}')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.122 1.527 5.858L0 24l6.335-1.507A11.955 11.955 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 0 1-5.006-1.371l-.36-.213-3.71.883.936-3.618-.234-.372A9.818 9.818 0 1 1 12 21.818z"/></svg>
+        WhatsApp
+      </button>
+      ${p.telefono ? `<button class="prov-btn-call" onclick="window.location='tel:${sanitize(p.telefono)}'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.27h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.74a16 16 0 0 0 7.35 7.35l.98-.98a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 17.29z"/></svg>
+        Llamar
+      </button>` : ''}`;
   } else {
-    accionHtml = `<button class="prov-btn-lock" onclick="mostrarToast('Activa tu suscripción para ver contactos de mano de obra')">Solo suscriptores</button>`;
+    accionHtml = `<button class="prov-btn-lock" onclick="mostrarToast('Activa tu suscripción para ver contactos')">Solo suscriptores</button>`;
   }
 
   return `
   <div class="prov-card">
     <div class="prov-card-header">
       ${logoHtml}${placeholderHtml}
-      <div class="prov-info">
-        <div class="prov-nombre">${sanitize(p.nombre_empresa)} ${verificadoHtml}</div>
-        <span class="prov-tipo-badge prov-tipo-${tipo}">${TIPO_LABELS[tipo]||tipo}</span>
+      <div class="prov-info" style="min-width:0;flex:1;">
+        <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px;">
+          <span class="prov-nombre">${sanitize(p.nombre_empresa)}</span>
+          ${verificadoHtml}
+        </div>
+        ${zonas ? `<div style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          ${sanitize(zonas)}
+        </div>` : ''}
+        ${ratingHtml ? `<div style="display:flex;align-items:center;gap:4px;margin-top:3px;">${ratingHtml}</div>` : ''}
       </div>
     </div>
-    <div class="prov-card-body">
-      ${p.descripcion ? `<div class="prov-desc">${sanitize(p.descripcion)}</div>` : ''}
-      ${cats.length ? `<div class="prov-cats">${catsHtml}</div>` : ''}
-      ${metaHtml ? `<div class="prov-meta">${metaHtml}</div>` : ''}
-      ${socialHtml ? `<div class="prov-social">${socialHtml}</div>` : ''}
-    </div>
+    ${cats.length ? `<div class="prov-cats" style="margin:8px 0;">${catsHtml}</div>` : ''}
     <div class="prov-actions">${accionHtml}</div>
   </div>`;
 }
