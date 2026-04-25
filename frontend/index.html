@@ -2864,11 +2864,6 @@ html { background: var(--color-bg, #0A0A0A); }
       Mis Procesos
       <span class="dsb-nav-badge" id="dsb-badge-seguimiento"></span>
     </button>
-    <button class="dsb-nav-item" id="dsb-nav-alertas" onclick="switchTab2('alertas')">
-      <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-      Alertas
-      <span class="dsb-nav-badge dsb-nav-badge--red" id="dsb-badge-alertas" style="display:none;background:var(--red);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;min-width:18px;text-align:center;"></span>
-    </button>
     <button class="dsb-nav-item" id="dsb-nav-analisis" onclick="switchTab2('analisis')">
       <svg viewBox="0 0 24 24"><path d="M9 3h6"/><path d="M10 3v5l-4 8a2 2 0 0 0 1.8 3h8.4a2 2 0 0 0 1.8-3l-4-8V3"/><path d="M8.5 16h7"/></svg>
       Análisis
@@ -5404,7 +5399,7 @@ function switchTab2(tab) {
   const dsbMap = {
     'dashboard':'dsb-nav-dashboard','perfil':'dsb-nav-perfil',
     'seguimiento':'dsb-nav-seguimiento','mercado':'dsb-nav-mercado',
-    'alertas':'dsb-nav-alertas','analisis':'dsb-nav-analisis',
+    'analisis':'dsb-nav-analisis',
     'reportes':'dsb-nav-reportes','calendario':'dsb-nav-calendario'
   };
   if(dsbMap[tab]) document.getElementById(dsbMap[tab])?.classList.add('active');
@@ -5476,30 +5471,47 @@ async function cargarAnalisisTab() {
     const data = await res.json();
     const items = data.analisis || [];
     if (!items.length) {
-      lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Sin análisis aún. Sigue un proceso para activar el análisis del pliego.</div>'; return;
+      lista.innerHTML = `<div style="text-align:center;padding:60px 20px;">
+        <div style="font-size:40px;margin-bottom:12px;">🤖</div>
+        <div style="font-weight:700;color:var(--text2);margin-bottom:6px;">Sin análisis aún</div>
+        <div style="font-size:13px;color:var(--muted);">Sigue un proceso para que LicitacionLab analice su pliego automáticamente.</div>
+      </div>`; return;
     }
     const etiquetas = { completado:'Completado', procesando:'Analizando…', pendiente_analisis:'En cola', error:'Error' };
+    const badgesCls = { completado:'completado', procesando:'procesando', pendiente_analisis:'pendiente_analisis', error:'error' };
+
     lista.innerHTML = items.map(a => {
       const fecha = a.actualizado_en ? new Date(a.actualizado_en).toLocaleDateString('es-DO',{day:'2-digit',month:'short',year:'numeric'}) : '—';
       const monto = a.monto_estimado ? (Number(a.monto_estimado)>=1e6 ? `RD$${(Number(a.monto_estimado)/1e6).toFixed(1)}M` : `RD$${(Number(a.monto_estimado)/1e3).toFixed(0)}K`) : '';
       const estado = a.estado || 'pendiente_analisis';
-      const score = a.evaluacion_competitividad?.score_base;
-      const cls = score >= 70 ? 'baja' : score >= 45 ? 'media' : 'alta';
+      // Score desde evaluacion_competitividad (objeto JSON)
+      let score = null;
+      try {
+        const ev = a.evaluacion_competitividad || {};
+        const nivel = (ev.nivel_dificultad || '').toLowerCase();
+        const nivMap = { baja: 75, media: 50, alta: 25 };
+        score = nivMap[nivel] ?? null;
+      } catch(e) {}
+      const scoreCls = score >= 65 ? 'baja' : score >= 40 ? 'media' : 'alta';
+      const scoreColor = score >= 65 ? 'var(--green)' : score >= 40 ? 'var(--amber)' : 'var(--red)';
+
       return `<div class="ll-card ll-card--hover" style="margin-bottom:8px;cursor:pointer;" onclick="verDetalle('${a.proceso_id || a.proceso_codigo}')">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
           <div style="flex:1;min-width:0;">
-            <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:3px;">${sanitize(a.titulo||'Sin título')}</div>
+            <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px;line-height:1.3;">${sanitize(a.titulo||'Sin título')}</div>
             <div style="font-size:12px;color:var(--muted);">${sanitize(a.unidad_compra||'')}${monto?' · '+monto:''}</div>
           </div>
-          <div style="flex-shrink:0;text-align:right;">
-            ${score != null ? `<div style="font-size:16px;font-weight:800;color:${cls==='baja'?'var(--green)':cls==='media'?'var(--amber)':'var(--red)'}">⚡ ${score}</div>` : ''}
-            <span class="historial-card-estado ${estado}">${etiquetas[estado]||estado}</span>
+          <div style="flex-shrink:0;text-align:right;min-width:80px;">
+            ${score != null ? `<div style="font-size:20px;font-weight:800;color:${scoreColor};line-height:1;">⚡ ${score}</div>` : ''}
+            <span class="historial-card-estado ${badgesCls[estado]||estado}" style="display:inline-block;margin-top:4px;">${etiquetas[estado]||estado}</span>
             <div style="font-size:11px;color:var(--muted);margin-top:3px;">${fecha}</div>
           </div>
         </div>
       </div>`;
     }).join('');
-    document.getElementById('dsb-badge-analisis').textContent = items.filter(a=>a.estado==='completado').length || '';
+
+    const badge = document.getElementById('dsb-badge-analisis');
+    if (badge) badge.textContent = items.filter(a=>a.estado==='completado').length || '';
   } catch(e) {
     lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Error cargando análisis.</div>';
   }
@@ -5512,38 +5524,63 @@ async function cargarReportes() {
   cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
     const [resSeg, resAnal] = await Promise.all([
-      sbRest(`seguimiento_procesos?user_id=eq.${currentUser.id}&select=proceso_codigo,estado,created_at`),
+      fetch(`${API}/api/seguimiento?user_id=${currentUser.id}`).catch(() => null),
       fetch(`${API}/api/mis-analisis?user_id=${currentUser.id}`)
     ]);
-    const seg   = await resSeg.json();
     const anal  = (await resAnal.json()).analisis || [];
+    // Usar mis-analisis para contar procesos si el endpoint de seguimiento no existe
     const completados = anal.filter(a => a.estado === 'completado');
-    const estadosCounts = seg.reduce((acc, s) => { const k = s.estado||'analizando'; acc[k] = (acc[k]||0)+1; return acc; }, {});
+    const enCola = anal.filter(a => ['procesando','pendiente_analisis'].includes(a.estado));
+    const conError = anal.filter(a => a.estado === 'error');
+
+    // Distribución por institución
+    const instMap = {};
+    anal.forEach(a => {
+      const inst = (a.unidad_compra || 'Otras').split(' ').slice(0,3).join(' ');
+      instMap[inst] = (instMap[inst] || 0) + 1;
+    });
+    const topInst = Object.entries(instMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
     cont.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
-        <div class="ll-card" style="text-align:center;padding:20px;">
-          <div style="font-size:32px;font-weight:800;color:var(--green);">${seg.length}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Procesos seguidos</div>
+        <div class="ll-card" style="text-align:center;padding:24px 16px;">
+          <div style="font-size:36px;font-weight:800;color:var(--green);line-height:1;">${anal.length}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;">Análisis totales</div>
         </div>
-        <div class="ll-card" style="text-align:center;padding:20px;">
-          <div style="font-size:32px;font-weight:800;color:var(--green);">${completados.length}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:4px;">Análisis completados</div>
+        <div class="ll-card" style="text-align:center;padding:24px 16px;">
+          <div style="font-size:36px;font-weight:800;color:var(--green);line-height:1;">${completados.length}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;">Completados</div>
         </div>
-        <div class="ll-card" style="text-align:center;padding:20px;">
-          <div style="font-size:32px;font-weight:800;color:var(--amber);">${anal.filter(a=>['procesando','pendiente_analisis'].includes(a.estado)).length}</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:4px;">En análisis</div>
+        <div class="ll-card" style="text-align:center;padding:24px 16px;">
+          <div style="font-size:36px;font-weight:800;color:var(--amber);line-height:1;">${enCola.length}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;">En proceso</div>
         </div>
       </div>
-      <div class="ll-card" style="margin-bottom:12px;">
-        <div class="ll-card__header"><h2 class="ll-card__title">Estado de mis procesos</h2></div>
+      ${topInst.length ? `
+      <div class="ll-card">
+        <div class="ll-card__header"><h2 class="ll-card__title">Análisis por institución</h2></div>
         <div class="ll-card__body" style="padding-top:8px;">
-          ${Object.entries(estadosCounts).map(([estado, count]) => `
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
-            <span style="font-size:13px;font-weight:600;color:var(--text2);text-transform:capitalize;">${estado}</span>
-            <span style="font-size:14px;font-weight:800;font-family:var(--font-mono);color:var(--text);">${count}</span>
-          </div>`).join('')}
+          ${topInst.map(([inst, cnt]) => {
+            const pct = Math.round((cnt / anal.length) * 100);
+            return `<div style="margin-bottom:12px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+                <span style="font-size:13px;color:var(--text2);font-weight:600;">${sanitize(inst)}</span>
+                <span style="font-size:12px;font-weight:800;font-family:var(--font-mono);color:var(--text);">${cnt}</span>
+              </div>
+              <div style="height:4px;background:var(--border);border-radius:2px;">
+                <div style="height:100%;width:${pct}%;background:var(--green);border-radius:2px;transition:width .4s;"></div>
+              </div>
+            </div>`;
+          }).join('')}
         </div>
-      </div>`;
+      </div>` : ''}
+      ${conError.length ? `
+      <div class="ll-card" style="margin-top:12px;border-color:var(--red-dim);">
+        <div class="ll-card__header"><h2 class="ll-card__title" style="color:var(--red);">⚠ Análisis con error (${conError.length})</h2></div>
+        <div class="ll-card__body" style="padding-top:8px;">
+          ${conError.map(a=>`<div style="font-size:13px;color:var(--text2);padding:6px 0;border-bottom:1px solid var(--border);cursor:pointer;" onclick="verDetalle('${a.proceso_id}')">${sanitize(a.titulo||a.proceso_id)}</div>`).join('')}
+        </div>
+      </div>` : ''}`;
   } catch(e) {
     cont.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Error cargando reportes.</div>';
   }
@@ -5555,42 +5592,104 @@ async function cargarCalendario() {
   if (!lista || !currentUser?.id) return;
   lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
-    const res = await sbRest(`seguimiento_procesos?user_id=eq.${currentUser.id}&select=proceso_codigo&limit=100`);
-    const seg = await res.json();
-    if (!seg.length) { lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Sin procesos seguidos.</div>'; return; }
-    const ids = seg.map(s => `"${s.proceso_codigo}"`).join(',');
-    const resProcesos = await fetch(`${SUPABASE_URL}/rest/v1/procesos?codigo_proceso=in.(${ids})&select=codigo_proceso,titulo,fecha_fin_recepcion_ofertas,unidad_compra,monto_estimado&order=fecha_fin_recepcion_ofertas.asc`, { headers: { 'apikey': SUPABASE_ANON_KEY } });
-    const procesos = await resProcesos.json();
+    const res = await fetch(`${API}/api/mis-analisis?user_id=${currentUser.id}`);
+    const data = await res.json();
+    const analisis = data.analisis || [];
+
+    if (!analisis.length) {
+      lista.innerHTML = `<div style="text-align:center;padding:60px 20px;">
+        <div style="font-size:40px;margin-bottom:12px;">📅</div>
+        <div style="font-weight:700;color:var(--text2);margin-bottom:6px;">Sin fechas aún</div>
+        <div style="font-size:13px;color:var(--muted);">Sigue procesos para ver sus fechas aquí.</div>
+      </div>`; return;
+    }
+
+    // Traer datos completos de los procesos seguidos
+    const ids = analisis.map(a => a.proceso_id).filter(Boolean);
+    let procesos = [];
+    try {
+      const chunk = ids.slice(0, 50).join(',');
+      const rp = await fetch(`${API}/api/procesos?codigos=${chunk}&limit=50`);
+      const dp = await rp.json();
+      procesos = dp.procesos || [];
+    } catch(e) { procesos = []; }
+
+    // Construir eventos desde analisis + procesos
+    const eventos = [];
+    const procMap = Object.fromEntries(procesos.map(p => [p.codigo_proceso, p]));
+
+    analisis.forEach(a => {
+      const p = procMap[a.proceso_id] || {};
+      const fechas = [
+        { fecha: p.fecha_fin_recepcion_ofertas || null, tipo: 'cierre',      label: '📅 Cierre ofertas',     color: 'var(--red)',   urgClass: 'critico'  },
+        { fecha: p.fecha_apertura_ofertas      || null, tipo: 'apertura',    label: '🔓 Apertura ofertas',   color: 'var(--amber)', urgClass: 'urgente'  },
+        { fecha: p.fecha_estimada_adjudicacion || null, tipo: 'adjudicacion',label: '🏆 Adjudicación',       color: 'var(--purple)',urgClass: ''         },
+      ];
+      fechas.forEach(f => {
+        if (!f.fecha) return;
+        eventos.push({
+          fecha: new Date(f.fecha),
+          tipo: f.tipo,
+          label: f.label,
+          color: f.color,
+          titulo: a.titulo || a.proceso_id,
+          codigo: a.proceso_id,
+          entidad: a.unidad_compra || '',
+          monto: a.monto_estimado,
+        });
+      });
+    });
+
+    if (!eventos.length) {
+      lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Sin fechas registradas.</div>'; return;
+    }
+
+    // Ordenar ascendente
+    eventos.sort((a, b) => a.fecha - b.fecha);
+
     // Agrupar por mes
     const porMes = {};
-    procesos.forEach(p => {
-      if (!p.fecha_fin_recepcion_ofertas) return;
-      const d = new Date(p.fecha_fin_recepcion_ofertas);
-      const key = d.toLocaleDateString('es-DO', { month:'long', year:'numeric' });
+    const ahora = new Date();
+    eventos.forEach(ev => {
+      const key = ev.fecha.toLocaleDateString('es-DO', { month:'long', year:'numeric' });
       if (!porMes[key]) porMes[key] = [];
-      porMes[key].push(p);
+      porMes[key].push(ev);
     });
-    if (!Object.keys(porMes).length) { lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Sin fechas de cierre disponibles.</div>'; return; }
-    lista.innerHTML = Object.entries(porMes).map(([mes, items]) => `
-      <div style="margin-bottom:20px;">
-        <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:10px;">${mes}</div>
-        ${items.map(p => {
-          const cd = calcularCountdown(p.fecha_fin_recepcion_ofertas);
-          const urgente = cd.clase === 'urgente';
-          return `<div class="ll-card ll-card--hover" style="margin-bottom:6px;cursor:pointer;border-left:3px solid ${urgente?'var(--amber)':'var(--border)'};" onclick="verDetalle('${p.codigo_proceso}')">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;">${p.titulo||'Sin título'}</div>
-                <div style="font-size:11px;color:var(--muted);">${p.unidad_compra||''} · ${formatMonto(p.monto_estimado)}</div>
-              </div>
-              <div style="text-align:right;flex-shrink:0;">
-                <div style="font-size:12px;font-weight:800;font-family:var(--font-mono);color:${urgente?'var(--amber)':'var(--text2)'};">${cd.sub.split('·')[0]?.trim()}</div>
-                <div style="font-size:11px;color:var(--muted);">${cd.texto}</div>
-              </div>
+
+    lista.innerHTML = Object.entries(porMes).map(([mes, evs]) => {
+      const esPasado = evs.every(e => e.fecha < ahora);
+      return `<div style="margin-bottom:28px;${esPasado?'opacity:.5':''}">
+        <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:0 0 10px;display:flex;align-items:center;gap:8px;">
+          ${mes}
+          ${esPasado ? '<span style="font-size:9px;background:var(--border);padding:2px 6px;border-radius:3px;">Pasado</span>' : ''}
+        </div>
+        ${evs.map(ev => {
+          const cd = calcularCountdown(ev.fecha.toISOString());
+          const esProximo = !esPasado && cd.clase !== 'vencido';
+          const diaNum = ev.fecha.getDate();
+          const diaNom = ev.fecha.toLocaleDateString('es-DO', { weekday:'short' });
+          const hora   = ev.fecha.toLocaleTimeString('es-DO', { hour:'2-digit', minute:'2-digit' });
+          const montoFmt = ev.monto ? (Number(ev.monto)>=1e6 ? `RD$${(Number(ev.monto)/1e6).toFixed(1)}M` : `RD$${(Number(ev.monto)/1e3).toFixed(0)}K`) : '';
+          return `<div style="display:flex;gap:14px;margin-bottom:8px;cursor:pointer;" onclick="verDetalle('${ev.codigo}')">
+            <!-- Día -->
+            <div style="flex-shrink:0;width:44px;text-align:center;padding:8px 0;">
+              <div style="font-size:22px;font-weight:800;line-height:1;color:${esProximo?ev.color:'var(--muted)'};">${diaNum}</div>
+              <div style="font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;">${diaNom}</div>
+            </div>
+            <!-- Línea vertical -->
+            <div style="width:2px;background:${esProximo?ev.color:'var(--border)'};border-radius:1px;flex-shrink:0;margin:8px 0;"></div>
+            <!-- Contenido -->
+            <div class="ll-card" style="flex:1;padding:12px 14px;margin-bottom:0;border-left:3px solid ${esProximo?ev.color:'var(--border)'};">
+              <div style="font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:${esProximo?ev.color:'var(--muted)'};margin-bottom:4px;">${ev.label} · ${hora}</div>
+              <div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.3;margin-bottom:3px;">${sanitize(ev.titulo)}</div>
+              <div style="font-size:11px;color:var(--muted);">${sanitize(ev.entidad)}${montoFmt?' · '+montoFmt:''}</div>
+              ${esProximo && cd.texto ? `<div style="font-size:11px;font-weight:700;color:${ev.color};margin-top:5px;">⏱ ${cd.texto}</div>` : ''}
             </div>
           </div>`;
         }).join('')}
-      </div>`).join('');
+      </div>`;
+    }).join('');
+
   } catch(e) {
     lista.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Error cargando calendario.</div>';
   }
