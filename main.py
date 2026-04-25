@@ -3868,7 +3868,43 @@ async def webhook_analisis_pliego(request: Request, background_tasks: Background
 # MERCADO DE PROVEEDORES
 # ══════════════════════════════════════════════════
 
-@app.get("/api/mercado/proveedores")
+@app.post("/api/perfil/empresa")
+@limiter.limit("20/minute")
+async def guardar_perfil_empresa(request: Request):
+    """Upsert del perfil de empresa del usuario — usado por el onboarding wizard."""
+    try:
+        data = await request.json()
+        user_id = data.get("user_id")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="user_id requerido")
+
+        # Verificar si ya existe
+        existente = supabase_admin.table("perfiles_empresa") \
+            .select("id").eq("user_id", user_id).execute()
+
+        if existente.data:
+            supabase_admin.table("perfiles_empresa") \
+                .update(data).eq("user_id", user_id).execute()
+        else:
+            supabase_admin.table("perfiles_empresa").insert(data).execute()
+
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/perfil/empresa")
+@limiter.limit("30/minute")
+def get_perfil_empresa(request: Request, user_id: str = Query(...)):
+    """Obtener el perfil de empresa del usuario."""
+    try:
+        res = supabase_admin.table("perfiles_empresa") \
+            .select("*").eq("user_id", user_id).execute()
+        return {"perfil": res.data[0] if res.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 @limiter.limit("60/minute")
 def listar_proveedores(
     request: Request,
