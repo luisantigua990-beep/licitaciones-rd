@@ -1111,6 +1111,71 @@ async def solicitar_analisis_proceso(request: Request, codigo_proceso: str, back
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/procesos/{codigo_proceso}/reanalizar")
+@limiter.limit("5/minute")
+async def reanalizar_proceso(request: Request, codigo_proceso: str, background_tasks: BackgroundTasks):
+    """
+    Re-analiza un proceso con enmienda. Solo funciona si hay una enmienda detectada
+    posterior al último análisis completado. Resetea el estado y vuelve a correr Gemini.
+    """
+    try:
+        # 1. Verificar que existe al menos una enmienda para este proceso
+        enmiendas = supabase_admin.table("enmiendas_detectadas") \
+            .select("id, detectada_en, descripcion") \
+            .eq("codigo_proceso", codigo_proceso) \
+            .order("detectada_en", desc=True) \
+            .execute()
+
+        if not enmiendas.data:
+            raise HTTPException(status_code=400, detail="No hay enmiendas registradas para este proceso.")
+
+        ultima_enmienda = enmiendas.data[0]
+        total_enmiendas = len(enmiendas.data)
+
+        # 2. Verificar análisis actual
+        analisis_actual = supabase_admin.table("analisis_pliego") \
+            .select("estado, actualizado_en") \
+            .eq("proceso_id", codigo_proceso) \
+            .execute()
+
+        # Si está procesando, no encolar de nuevo
+        if analisis_actual.data:
+            estado_actual = analisis_actual.data[0].get("estado", "")
+            if estado_actual == "procesando":
+                return {"status": "ya_procesando", "mensaje": "El análisis ya está en proceso."}
+
+        # 3. Resetear estado a pendiente_analisis para forzar re-análisis
+        supabase_admin.table("analisis_pliego").update({
+            "estado": "pendiente_analisis",
+            "actualizado_en": datetime.now().isoformat()
+        }).eq("proceso_id", codigo_proceso).execute()
+
+        # 4. Disparar análisis en background (igual que el endpoint /analizar)
+        async def _reanalizar_con_semaforo():
+            async with _semaforo_analisis:
+                loop = asyncio.get_event_loop()
+                await asyncio.wait_for(
+                    loop.run_in_executor(_executor_gemini, ejecutar_analisis_gemini_sin_email, codigo_proceso),
+                    timeout=600
+                )
+
+        background_tasks.add_task(_reanalizar_con_semaforo)
+
+        return {
+            "status": "encolado",
+            "proceso_id": codigo_proceso,
+            "enmienda_numero": total_enmiendas,
+            "enmienda_fecha": ultima_enmienda.get("detectada_en"),
+            "enmienda_descripcion": ultima_enmienda.get("descripcion"),
+            "mensaje": f"Re-análisis iniciado con enmienda #{total_enmiendas}"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 # ============================================
 # ENDPOINTS — CHECKLIST DE DOCUMENTOS
@@ -4198,3 +4263,4 @@ async def descargar_pdf_analisis(proceso_id: str):
             "Content-Length": str(len(pdf_bytes)),
         }
     )
+    
