@@ -7834,7 +7834,7 @@ async function solicitarReanalisis(codigo) {
     }
     if (!res.ok) throw new Error(data.detail || 'Error');
 
-    mostrarToast(`⚡ Re-análisis iniciado · Enmienda #${data.enmienda_numero}`, 'success');
+    mostrarToast(`⚡ Re-análisis iniciado · Enmienda #${data.enmienda_numero}${data.enmienda_nombre ? ' · ' + data.enmienda_nombre.substring(0, 30) : ''}`, 'success');
     if (btn) btn.style.display = 'none';
     iniciarPollingAnalisis(codigo);
 
