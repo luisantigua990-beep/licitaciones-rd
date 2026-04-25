@@ -3999,7 +3999,6 @@ async function cargarStats() {
 
 // ── SHOWCASE EN VIVO (login) ──────────────────────────────────────────────
 async function iniciarShowcase() {
-  // Actualizar fecha
   const fechaEl = document.getElementById('auth-showcase-fecha');
   if (fechaEl) {
     const ahora = new Date();
@@ -4011,19 +4010,24 @@ async function iniciarShowcase() {
   if (!ticker) return;
 
   try {
-    // Usar el endpoint del backend en vez de Supabase directo
-    const res = await fetch(`${API}/api/procesos?page=1&limit=20`);
+    // Timeout de 8 segundos para no dejar el spinner infinito
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    const res = await fetch(`${API}/api/procesos?page=1&limit=20&order=detectado_en.desc`, {
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
     if (!res.ok) throw new Error('fetch failed ' + res.status);
     const data = await res.json();
-    // El endpoint puede devolver { procesos: [...] } o un array directo
     const procesos = Array.isArray(data) ? data : (data.procesos || data.items || []);
     if (!procesos.length) throw new Error('sin procesos');
 
-    // Duplicar para loop infinito suave
     const todos = [...procesos, ...procesos];
     ticker.innerHTML = todos.map(p => renderTickerRow(p)).join('');
   } catch(e) {
-    console.warn('Showcase error, usando fallback:', e);
+    console.warn('Showcase error, usando fallback:', e.message);
     ticker.innerHTML = generarTickerFallback();
   }
 }
@@ -6133,7 +6137,13 @@ async function _tryRefreshToken() {
   if (tokenVencido) {
     const ok = await _tryRefreshToken();
     if (!ok) {
-      console.warn('⚠️ Token vencido y refresh falló — sesión degradada, re-auth al hacer requests');
+      console.warn('⚠️ Token vencido y refresh falló — limpiando sesión');
+      localStorage.removeItem('sb_token');
+      localStorage.removeItem('sb_refresh_token');
+      localStorage.removeItem('sb_user');
+      currentUser = null;
+      startShowcaseRefresh();
+      return;
     }
   }
 
@@ -8020,11 +8030,9 @@ function renderGraficas() {
 async function cargarPerfilEmpresa() {
   if (!currentUser) return;
   try {
-    const res = await sbRest(
-      `perfiles_empresa?user_id=eq.${currentUser.id}&select=sectores,modalidades,provincias,monto_minimo,monto_maximo,tiene_rpe,tiene_estados_financieros,anios_experiencia,onboarding_completado&limit=1`
-    );
+    const res = await fetch(`${API}/api/perfil/empresa?user_id=${currentUser.id}`);
     const data = await res.json();
-    window._perfilEmpresa = (data && data[0]?.onboarding_completado) ? data[0] : null;
+    window._perfilEmpresa = data.perfil?.onboarding_completado ? data.perfil : null;
   } catch(e) {
     window._perfilEmpresa = null;
   }
