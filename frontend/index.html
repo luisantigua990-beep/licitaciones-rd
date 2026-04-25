@@ -2370,8 +2370,43 @@ body {
 /* ── Forzar dark por defecto en html antes de JS ── */
 html { background: var(--color-bg, #0A0A0A); }
 
-/* ── BANNER BETA ── */
-.beta-banner {
+/* ── ONBOARDING WIZARD ─────────────────────────────── */
+.onb-overlay { position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:center;justify-content:center; }
+.onb-overlay.oculto { display:none; }
+.onb-wizard { display:flex;width:100%;max-width:960px;height:90vh;max-height:680px;background:var(--bg);border-radius:var(--r-xl);overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.5); }
+.onb-sidebar { width:280px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:28px 24px;display:flex;flex-direction:column;overflow-y:auto; }
+.onb-content { flex:1;display:flex;flex-direction:column;overflow:hidden; }
+.onb-paso-nav { display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:var(--r-md);cursor:pointer;transition:background .15s; }
+.onb-paso-nav:hover { background:var(--bg2); }
+.onb-paso-nav.active { background:var(--green-dim); }
+.onb-paso-num { width:24px;height:24px;border-radius:50%;background:var(--border);color:var(--muted);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;transition:all .2s; }
+.onb-paso-nav.active .onb-paso-num { background:var(--green);color:#fff; }
+.onb-paso-nav.done .onb-paso-num { background:var(--green-dim);color:var(--green); }
+.onb-step { flex:1;overflow-y:auto;padding:32px 36px; }
+.onb-step-header { margin-bottom:28px; }
+.onb-step-label { font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px; }
+.onb-step-titulo { font-size:28px;font-weight:900;color:var(--text);letter-spacing:-.5px;margin-bottom:8px;line-height:1.1; }
+.onb-step-desc { font-size:14px;color:var(--muted);line-height:1.6; }
+.onb-fields { display:flex;flex-direction:column;gap:18px; }
+.onb-chips-wrap { display:flex;flex-wrap:wrap;gap:8px;margin-top:6px; }
+.onb-chip { padding:7px 14px;border-radius:var(--r-full);border:1.5px solid var(--border);background:var(--surface);color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;font-family:var(--font-body); }
+.onb-chip.active { background:var(--green-dim);border-color:var(--green);color:var(--green); }
+.onb-check-card { display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 12px;border-radius:var(--r-md);border:1.5px solid var(--border);cursor:pointer;transition:all .15s;text-align:center; }
+.onb-check-card input { display:none; }
+.onb-check-card.active { border-color:var(--green);background:var(--green-dim); }
+.onb-check-icon { font-size:22px; }
+.onb-check-label { font-size:12px;font-weight:700;color:var(--text2); }
+.onb-btn-añadir { display:flex;align-items:center;gap:8px;padding:10px 16px;border:1.5px dashed var(--border);border-radius:var(--r-md);background:none;color:var(--green);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body);transition:all .15s;width:100%;justify-content:center; }
+.onb-btn-añadir:hover { border-color:var(--green);background:var(--green-dim); }
+.onb-obra-item { display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md); }
+.onb-actions-bar { display:flex;justify-content:space-between;align-items:center;padding:16px 36px;border-top:1px solid var(--border);flex-shrink:0;background:var(--bg); }
+@media (max-width:768px) {
+  .onb-wizard { flex-direction:column;height:100vh;max-height:none;border-radius:0; }
+  .onb-sidebar { width:100%;height:auto;flex-direction:row;flex-wrap:wrap;gap:8px;padding:16px; }
+  .onb-sidebar > div:first-child, .onb-sidebar > div:nth-child(2), .onb-sidebar > div:nth-child(3) { display:none; }
+  .onb-step { padding:20px; }
+  .onb-actions-bar { padding:12px 20px; }
+}
   display: flex; align-items: center; gap: 10px;
   background: rgba(243,156,18,0.08);
   border: 1px solid rgba(243,156,18,0.22);
@@ -8082,6 +8117,14 @@ function initBanner() {
 let onbPaso = 0;
 const ONB_TOTAL = 6;
 
+// ── ONBOARDING WIZARD ────────────────────────────────────────────────────
+let onbPaso = 0;
+const ONB_TOTAL = 5;
+let onbEspecialidades = [];
+let onbModalidades = [];
+let onbProvincias = [];
+let onbObras = [];
+
 function mostrarOnboarding() {
   onbPaso = 0;
   document.getElementById('onb-overlay').classList.remove('oculto');
@@ -8090,15 +8133,158 @@ function mostrarOnboarding() {
 
 function cerrarOnboarding() {
   document.getElementById('onb-overlay').classList.add('oculto');
+}
+
+function saltarOnboarding() {
+  cerrarOnboarding();
   localStorage.setItem('onb_completado', '1');
 }
 
-function onbSiguiente() {
+function irAPaso(n) {
+  if (n < onbPaso) { onbPaso = n; renderOnbPaso(); }
+}
+
+function actualizarSidebarEmpresa() {
+  const rs = document.getElementById('onb-razon-social')?.value.trim();
+  const el = document.getElementById('onb-sidebar-empresa');
+  if (el && rs) el.textContent = `Cuéntanos sobre ${rs}.`;
+}
+
+function toggleCheckCard(cardId, checkbox) {
+  document.getElementById(cardId)?.classList.toggle('active', checkbox.checked);
+}
+
+function toggleEspecialidad(btn, val) {
+  if (btn.classList.contains('active')) {
+    btn.classList.remove('active');
+    onbEspecialidades = onbEspecialidades.filter(e => e !== val);
+  } else {
+    if (onbEspecialidades.length >= 5) { mostrarToast('Máximo 5 especialidades', 'warning'); return; }
+    btn.classList.add('active');
+    onbEspecialidades.push(val);
+  }
+}
+
+function toggleModalidad(btn, val) {
+  btn.classList.toggle('active');
+  if (btn.classList.contains('active')) onbModalidades.push(val);
+  else onbModalidades = onbModalidades.filter(m => m !== val);
+}
+
+function toggleProvincia(btn, val) {
+  btn.classList.toggle('active');
+  if (btn.classList.contains('active')) onbProvincias.push(val);
+  else onbProvincias = onbProvincias.filter(p => p !== val);
+}
+
+function toggleTodasProvincias() {
+  const chips = document.querySelectorAll('#onb-provincias-chips .onb-chip');
+  const todas = [...chips].every(c => c.classList.contains('active'));
+  onbProvincias = [];
+  chips.forEach(c => {
+    c.classList.toggle('active', !todas);
+    if (!todas) onbProvincias.push(c.textContent);
+  });
+}
+
+function abrirModalObra() {
+  document.getElementById('onb-obra-modal').style.display = 'flex';
+}
+
+function cerrarModalObra() {
+  document.getElementById('onb-obra-modal').style.display = 'none';
+  ['obra-nombre','obra-institucion','obra-monto','obra-meses','obra-anio'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+}
+
+function guardarObra() {
+  const nombre = document.getElementById('obra-nombre')?.value.trim();
+  const inst   = document.getElementById('obra-institucion')?.value.trim();
+  const monto  = Number(document.getElementById('obra-monto')?.value);
+  const meses  = Number(document.getElementById('obra-meses')?.value);
+  const anio   = document.getElementById('obra-anio')?.value;
+  if (!nombre) { mostrarToast('Ingresa el nombre del proyecto', 'warning'); return; }
+  const obra = { nombre, institucion: inst, monto, meses, anio };
+  onbObras.push(obra);
+  renderObras();
+  cerrarModalObra();
+}
+
+function renderObras() {
+  const lista = document.getElementById('onb-obras-lista');
+  if (!lista) return;
+  lista.innerHTML = onbObras.map((o, i) => {
+    const montoFmt = o.monto >= 1e6 ? `RD$${(o.monto/1e6).toFixed(0)}M` : o.monto ? `RD$${o.monto.toLocaleString()}` : '';
+    return `<div class="onb-obra-item">
+      <div>
+        <div style="font-size:13px;font-weight:700;">${sanitize(o.nombre)}${o.institucion ? ' · ' + sanitize(o.institucion) : ''}</div>
+        <div style="font-size:11px;color:var(--muted);">${montoFmt}${o.meses ? ' · ' + o.meses + ' meses' : ''}${o.anio ? ' · ' + o.anio : ''}</div>
+      </div>
+      <button onclick="eliminarObra(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;font-family:var(--font-body);">Eliminar</button>
+    </div>`;
+  }).join('');
+}
+
+function eliminarObra(i) {
+  onbObras.splice(i, 1);
+  renderObras();
+}
+
+function renderOnbPaso() {
+  // Mostrar step correcto
+  for (let i = 0; i < ONB_TOTAL; i++) {
+    const s = document.getElementById(`onb-step-${i}`);
+    if (s) s.style.display = i === onbPaso ? 'block' : 'none';
+  }
+  // Actualizar nav sidebar
+  for (let i = 0; i < ONB_TOTAL; i++) {
+    const nav = document.getElementById(`onb-nav-${i}`);
+    const num = document.getElementById(`onb-num-${i}`);
+    if (!nav || !num) continue;
+    nav.classList.remove('active','done');
+    if (i < onbPaso) { nav.classList.add('done'); num.textContent = '✓'; }
+    else if (i === onbPaso) { nav.classList.add('active'); num.textContent = i+1; }
+    else { num.textContent = i+1; }
+  }
+  // Progreso
+  const pct = Math.round((onbPaso / ONB_TOTAL) * 100);
+  const bar = document.getElementById('onb-progreso-bar');
+  const pctEl = document.getElementById('onb-progreso-pct');
+  if (bar) bar.style.width = pct + '%';
+  if (pctEl) pctEl.textContent = pct + '%';
+  // Botones
+  const siguiente = document.getElementById('onb-btn-siguiente');
+  const atras = document.getElementById('onb-btn-atras');
+  const saltar = document.getElementById('onb-btn-saltar');
+  if (siguiente) siguiente.textContent = onbPaso === ONB_TOTAL - 1 ? '✅ Guardar perfil' : 'Siguiente →';
+  if (atras) atras.style.display = onbPaso > 0 ? 'block' : 'none';
+  if (saltar) saltar.style.visibility = onbPaso === ONB_TOTAL - 1 ? 'hidden' : 'visible';
+  // Resumen en último paso
+  if (onbPaso === ONB_TOTAL - 1) mostrarResumenOnb();
+}
+
+function mostrarResumenOnb() {
+  const razon = document.getElementById('onb-razon-social')?.value || '—';
+  const cat = document.getElementById('onb-categoria-mopc')?.value || '—';
+  const resumen = document.getElementById('onb-resumen');
+  const cont = document.getElementById('onb-resumen-contenido');
+  if (resumen) resumen.style.display = 'block';
+  if (cont) cont.innerHTML = `
+    <b>Empresa:</b> ${sanitize(razon)}<br>
+    <b>Categoría:</b> ${sanitize(cat)}<br>
+    <b>Especialidades:</b> ${onbEspecialidades.join(', ') || '—'}<br>
+    <b>Provincias:</b> ${onbProvincias.length ? onbProvincias.slice(0,3).join(', ') + (onbProvincias.length > 3 ? ` +${onbProvincias.length-3}` : '') : '—'}<br>
+    <b>Obras:</b> ${onbObras.length} registradas
+  `;
+}
+
+async function onbSiguiente() {
   if (onbPaso < ONB_TOTAL - 1) {
     onbPaso++;
     renderOnbPaso();
   } else {
-    cerrarOnboarding();
+    await guardarPerfilOnboarding();
   }
 }
 
@@ -8106,124 +8292,379 @@ function onbAnterior() {
   if (onbPaso > 0) { onbPaso--; renderOnbPaso(); }
 }
 
-function renderOnbPaso() {
-  for (let i = 0; i < ONB_TOTAL; i++) {
-    const s = document.getElementById(`onb-slide-${i}`);
-    if (s) s.classList.toggle('visible', i === onbPaso);
+async function guardarPerfilOnboarding() {
+  if (!currentUser?.id) { mostrarToast('Error: no hay sesión activa', 'error'); return; }
+  const btn = document.getElementById('onb-btn-siguiente');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+
+  // Parsear montos
+  const parseMonto = (v) => {
+    if (!v) return null;
+    const n = v.replace(/[^\d.]/g, '');
+    const mult = v.toUpperCase().includes('M') ? 1e6 : v.toUpperCase().includes('K') ? 1e3 : 1;
+    return parseFloat(n) * mult || null;
+  };
+
+  const datos = {
+    user_id:                currentUser.id,
+    razon_social:           document.getElementById('onb-razon-social')?.value.trim() || null,
+    rnc:                    document.getElementById('onb-rnc')?.value.trim() || null,
+    domicilio:              document.getElementById('onb-domicilio')?.value.trim() || null,
+    anios_experiencia:      parseInt(document.getElementById('onb-anios')?.value) || null,
+    tiene_rpe:              document.getElementById('onb-rpe')?.checked || false,
+    tiene_rnc:              document.getElementById('onb-tiene-rnc')?.checked || false,
+    tiene_estados_financieros: document.getElementById('onb-estados')?.checked || false,
+    categoria_mopc:         document.getElementById('onb-categoria-mopc')?.value || null,
+    especialidades:         onbEspecialidades,
+    modalidades:            onbModalidades,
+    sectores:               onbEspecialidades,
+    provincias:             onbProvincias,
+    monto_minimo:           parseMonto(document.getElementById('onb-monto-min')?.value),
+    monto_maximo:           parseMonto(document.getElementById('onb-monto-max')?.value),
+    plazo_maximo_dias:      parseInt(document.getElementById('onb-plazo')?.value) || null,
+    obras_representativas:  onbObras,
+    patrimonio_neto:        parseFloat(document.getElementById('onb-patrimonio')?.value) || null,
+    alertas_push:           document.getElementById('onb-push')?.checked || false,
+    alertas_email:          document.getElementById('onb-email-alerta')?.checked || false,
+    alertas_whatsapp:       document.getElementById('onb-whatsapp-alerta')?.checked || false,
+    umbral_monto_min:       parseFloat(document.getElementById('onb-umbral-min')?.value) || null,
+    onboarding_completado:  true,
+    onboarding_paso_actual: 5,
+    actualizado_en:         new Date().toISOString(),
+  };
+
+  try {
+    const res = await fetch(`${API}/api/perfil/empresa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    });
+    if (!res.ok) throw new Error('Error guardando');
+    window._perfilEmpresa = datos;
+    localStorage.setItem('onb_completado', '1');
+    cerrarOnboarding();
+    mostrarToast('✅ Perfil guardado — el Score IA ahora es personalizado', 'success');
+  } catch(e) {
+    mostrarToast('Error guardando perfil. Intenta de nuevo.', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Guardar perfil'; }
   }
-  for (let i = 0; i < ONB_TOTAL; i++) {
-    const d = document.getElementById(`onbdot-${i}`);
-    if (!d) continue;
-    d.classList.remove('active', 'done');
-    if (i < onbPaso)        d.classList.add('done');
-    else if (i === onbPaso) d.classList.add('is-active');
-  }
-  const btn  = document.getElementById('onb-btn-next');
-  const skip = document.getElementById('onb-btn-skip');
-  const back = document.getElementById('onb-btn-back');
-  if (btn)  btn.textContent = onbPaso === ONB_TOTAL - 1 ? '¡Empezar!' : 'Siguiente →';
-  // Saltar: visible solo si no es el último paso
-  if (skip) skip.style.visibility = onbPaso === ONB_TOTAL - 1 ? 'hidden' : 'visible';
-  // Atrás: visible solo desde el paso 2 en adelante
-  if (back) back.style.display = onbPaso > 0 ? 'block' : 'none';
 }
 
 function initOnboarding() {
-  if (!localStorage.getItem('onb_completado')) {
-    setTimeout(mostrarOnboarding, 900);
+  if (!localStorage.getItem('onb_completado') && currentUser?.id) {
+    setTimeout(mostrarOnboarding, 1200);
   }
 }
 
 </script>
-<!-- ── ONBOARDING ── -->
+<!-- ── ONBOARDING WIZARD ── -->
 <div class="onb-overlay oculto" id="onb-overlay">
-  <div class="onb-sheet">
-    <div class="onb-progress">
-      <div class="onb-prog-dot is-active" id="onbdot-0"></div>
-      <div class="onb-prog-dot" id="onbdot-1"></div>
-      <div class="onb-prog-dot" id="onbdot-2"></div>
-      <div class="onb-prog-dot" id="onbdot-3"></div>
-      <div class="onb-prog-dot" id="onbdot-4"></div>
-      <div class="onb-prog-dot" id="onbdot-5"></div>
+  <div class="onb-wizard">
+
+    <!-- SIDEBAR -->
+    <div class="onb-sidebar">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:32px;">
+        <div style="width:32px;height:32px;background:var(--green);border-radius:8px;display:flex;align-items:center;justify-content:center;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M9 3h6"/><path d="M10 3v5l-4 8a2 2 0 0 0 1.8 3h8.4a2 2 0 0 0 1.8-3l-4-8V3"/><path d="M8.5 16h7"/></svg>
+        </div>
+        <span style="font-weight:800;font-size:15px;">LicitacionLab</span>
+      </div>
+
+      <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Perfilamiento</div>
+      <div id="onb-sidebar-empresa" style="font-size:20px;font-weight:900;color:var(--text);line-height:1.2;margin-bottom:8px;">Cuéntanos sobre tu empresa.</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:32px;">Nuestro matching de licitaciones usa estos datos. Tardas ~6 min.</div>
+
+      <!-- Pasos -->
+      <div style="display:flex;flex-direction:column;gap:2px;" id="onb-pasos-nav">
+        ${[
+          ['Identidad legal','RNC · razón social · domicilio'],
+          ['Clasificación MOPC','Categoría · especialidades'],
+          ['Experiencia y capacidad','Obras ejecutadas · rango de montos'],
+          ['Alcance geográfico','Provincias donde operas'],
+          ['Preferencias de alertas','Canales · umbrales'],
+        ].map(([titulo, sub], i) => `
+        <div class="onb-paso-nav" id="onb-nav-${i}" onclick="irAPaso(${i})">
+          <div class="onb-paso-num" id="onb-num-${i}">${i+1}</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;">${titulo}</div>
+            <div style="font-size:11px;color:var(--muted);">${sub}</div>
+          </div>
+        </div>`).join('')}
+      </div>
+
+      <!-- Progreso -->
+      <div style="margin-top:auto;padding-top:32px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:6px;">
+          <span>PROGRESO</span>
+          <span id="onb-progreso-pct">0%</span>
+        </div>
+        <div style="height:4px;background:var(--border);border-radius:2px;">
+          <div id="onb-progreso-bar" style="height:100%;width:0%;background:var(--green);border-radius:2px;transition:width .4s;"></div>
+        </div>
+      </div>
     </div>
 
-    <!-- Paso 1: Qué es LicitacionLab -->
-    <div class="onb-slide visible" id="onb-slide-0">
-      <div class="onb-icon-wrap">
-        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      </div>
-      <div class="onb-titulo">Bienvenido a LicitacionLab</div>
-      <div class="onb-desc">Tu plataforma para <strong>monitorear licitaciones públicas</strong> de República Dominicana en tiempo real.<br><br>Más de <strong>400 procesos activos</strong> del portal DGCP, actualizados automáticamente.</div>
-      <div class="onb-tip"><b>Acceso Anticipado:</b> Estás entre los primeros en usar LicitacionLab. Tu feedback directo moldea el producto — escríbenos por WhatsApp cuando quieras.</div>
-    </div>
+    <!-- CONTENIDO -->
+    <div class="onb-content">
 
-    <!-- Paso 2: Cómo buscar -->
-    <div class="onb-slide" id="onb-slide-1">
-      <div class="onb-icon-wrap">
-        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <!-- PASO 1: Identidad legal -->
+      <div class="onb-step" id="onb-step-0">
+        <div class="onb-step-header">
+          <div class="onb-step-label">PASO 1 DE 5</div>
+          <h2 class="onb-step-titulo">Identidad legal.</h2>
+          <p class="onb-step-desc">Esta información aparecerá en tu perfil y la usamos para verificar tu empresa en el RPE.</p>
+        </div>
+        <div class="onb-fields">
+          <div class="ll-field">
+            <label class="ll-field__label">Razón social</label>
+            <input class="ll-input" id="onb-razon-social" placeholder="Ej: Constructora Hoya SRL" oninput="actualizarSidebarEmpresa()">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <div class="ll-field">
+              <label class="ll-field__label">RNC</label>
+              <input class="ll-input" id="onb-rnc" placeholder="000-00000-0" maxlength="11">
+            </div>
+            <div class="ll-field">
+              <label class="ll-field__label">Años de experiencia</label>
+              <input class="ll-input" type="number" id="onb-anios" placeholder="Ej: 15" min="0" max="100">
+            </div>
+          </div>
+          <div class="ll-field">
+            <label class="ll-field__label">Domicilio principal</label>
+            <input class="ll-input" id="onb-domicilio" placeholder="Ej: Av. Abraham Lincoln #302, Santo Domingo">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:4px;">
+            <label class="onb-check-card" id="card-rpe">
+              <input type="checkbox" id="onb-rpe" onchange="toggleCheckCard('card-rpe',this)">
+              <div class="onb-check-icon">📋</div>
+              <div class="onb-check-label">Tengo RPE</div>
+            </label>
+            <label class="onb-check-card" id="card-rnc">
+              <input type="checkbox" id="onb-tiene-rnc" onchange="toggleCheckCard('card-rnc',this)">
+              <div class="onb-check-icon">📄</div>
+              <div class="onb-check-label">RNC activo</div>
+            </label>
+            <label class="onb-check-card" id="card-estados">
+              <input type="checkbox" id="onb-estados" onchange="toggleCheckCard('card-estados',this)">
+              <div class="onb-check-icon">📊</div>
+              <div class="onb-check-label">Estados financieros</div>
+            </label>
+          </div>
+        </div>
       </div>
-      <div class="onb-titulo">Busca lo que te interesa</div>
-      <div class="onb-desc">Usa la barra de búsqueda para encontrar licitaciones por <strong>título, código o categoría UNSPSC</strong>.<br><br>Filtra por <strong>Obras, Bienes o Servicios</strong> con los chips de la parte superior, o usa los filtros avanzados por institución y monto.</div>
-      <div class="onb-tip"><b>Tip:</b> Escribe "72" en el buscador para ver todos los procesos de construcción e ingeniería.</div>
-    </div>
 
-    <!-- Paso 3: Seguir un proceso -->
-    <div class="onb-slide" id="onb-slide-2">
-      <div class="onb-icon-wrap">
-        <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <!-- PASO 2: Clasificación MOPC -->
+      <div class="onb-step" id="onb-step-1" style="display:none;">
+        <div class="onb-step-header">
+          <div class="onb-step-label">PASO 2 DE 5</div>
+          <h2 class="onb-step-titulo">Clasificación MOPC.</h2>
+          <p class="onb-step-desc">Selecciona tu categoría y especialidades principales. Máximo 5 especialidades.</p>
+        </div>
+        <div class="onb-fields">
+          <div class="ll-field">
+            <label class="ll-field__label">Categoría MOPC</label>
+            <select class="ll-input" id="onb-categoria-mopc">
+              <option value="">Selecciona una categoría</option>
+              <option>A — Obras de infraestructura vial</option>
+              <option>B — Obras de acueductos y alcantarillados</option>
+              <option>C — Obras de edificación</option>
+              <option>D — Obras eléctricas e instrumentación</option>
+              <option>E — Obras de saneamiento ambiental</option>
+              <option>F — Obras hidráulicas</option>
+              <option>G — Obras de telecomunicaciones</option>
+            </select>
+          </div>
+          <div class="ll-field">
+            <label class="ll-field__label">Especialidades (máximo 5)</label>
+            <div class="onb-chips-wrap" id="onb-especialidades-chips">
+              ${['Acueductos','Alcantarillado','Edificación','Carreteras','Puentes',
+                 'Electromecánica','Rehabilitación urbana','Drenaje pluvial',
+                 'Movimiento de tierra','Pavimentación','Obras marítimas',
+                 'Instalaciones eléctricas','Plantas de tratamiento'].map(e =>
+                `<button type="button" class="onb-chip" onclick="toggleEspecialidad(this,'${e}')">${e}</button>`
+              ).join('')}
+            </div>
+          </div>
+          <div class="ll-field">
+            <label class="ll-field__label">Modalidades de contratación</label>
+            <div class="onb-chips-wrap">
+              ${['Licitación Pública Nacional','Compra Menor','Comparación de Precios',
+                 'Contratación Directa','Subasta Inversa'].map(m =>
+                `<button type="button" class="onb-chip" onclick="toggleModalidad(this,'${m}')">${m}</button>`
+              ).join('')}
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="onb-titulo">Dale seguimiento</div>
-      <div class="onb-desc">Entra al detalle de cualquier proceso y presiona <strong>Seguir proceso</strong> para agregarlo a <strong>Mis Procesos</strong>.<br><br>Desde ahí verás el <strong>cronograma completo de fechas</strong> y recibirás alertas automáticas cuando se acerque una fecha clave.</div>
-      <div class="onb-tip"><b>Tip:</b> En la lista principal, desliza una tarjeta hacia la izquierda para ir directo a contactar un experto.</div>
-    </div>
 
-    <!-- Paso 4: Análisis del pliego -->
-    <div class="onb-slide" id="onb-slide-3">
-      <div class="onb-icon-wrap">
-        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      </div>
-      <div class="onb-titulo">Análisis automático del pliego</div>
-      <div class="onb-desc">Al seguir un proceso, LicitacionLab analiza el pliego automáticamente y te entrega:<br><br>
-        <strong>· Checklist de documentos</strong> requeridos por categoría<br>
-        <strong>· Alertas de irregularidades</strong> — detecta si el proceso presenta indicios de estar dirigido o amarrado según la Ley 47-25<br>
-        <strong>· Evaluación de competitividad</strong> y recomendación<br>
-        <strong>· Requisitos de experiencia</strong> y financieros
-      </div>
-      <div class="onb-tip"><b>📧 Correo:</b> El análisis completo te llegará al correo registrado. Si no aparece en tu bandeja, revisa la carpeta de <strong>correos no deseados o spam</strong>.</div>
-    </div>
+      <!-- PASO 3: Experiencia y capacidad -->
+      <div class="onb-step" id="onb-step-2" style="display:none;">
+        <div class="onb-step-header">
+          <div class="onb-step-label">PASO 3 DE 5</div>
+          <h2 class="onb-step-titulo">Experiencia y capacidad de ejecución.</h2>
+          <p class="onb-step-desc">Esto determina qué licitaciones ves primero y qué marcamos como "fuerte match".</p>
+        </div>
+        <div class="onb-fields">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+            <div class="ll-field">
+              <label class="ll-field__label">Rango típico de monto</label>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-size:12px;color:var(--muted);white-space:nowrap;">RD$</span>
+                <input class="ll-input" type="text" id="onb-monto-min" placeholder="50M" style="flex:1;">
+                <span style="color:var(--muted);">—</span>
+                <input class="ll-input" type="text" id="onb-monto-max" placeholder="350M" style="flex:1;">
+              </div>
+            </div>
+            <div class="ll-field">
+              <label class="ll-field__label">Plazo máximo cómodo</label>
+              <select class="ll-input" id="onb-plazo">
+                <option value="">Seleccionar</option>
+                <option value="30">30 días</option>
+                <option value="60">60 días</option>
+                <option value="90">90 días</option>
+                <option value="180">180 días</option>
+                <option value="365">1 año</option>
+                <option value="730">2 años</option>
+                <option value="1095">3 años o más</option>
+              </select>
+            </div>
+          </div>
 
-    <!-- Paso 5: Notificaciones -->
-    <div class="onb-slide" id="onb-slide-4">
-      <div class="onb-icon-wrap">
-        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-      </div>
-      <div class="onb-titulo">Activa las notificaciones</div>
-      <div class="onb-desc">Toca la <strong>campanita</strong> en la pantalla principal para activar las alertas en tu dispositivo.<br><br>Cuando esté activa verás la campanita en <strong>verde con un punto</strong> — eso significa que estás suscrito.<br><br>Recibirás alertas automáticas <strong>7, 3, 1 y 0 días antes</strong> de cada fecha clave del proceso.</div>
-      <div class="onb-tip"><b>Tip:</b> También puedes activarlas desde Mi Perfil → Notificaciones. Configura tus intereses para recibir solo lo que te importa.</div>
-    </div>
+          <div class="ll-field">
+            <label class="ll-field__label">Obras representativas (mínimo 1)</label>
+            <div id="onb-obras-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;"></div>
+            <button type="button" class="onb-btn-añadir" onclick="abrirModalObra()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Añadir obra
+            </button>
+          </div>
 
-    <!-- Paso 6: Listo -->
-    <div class="onb-slide" id="onb-slide-5">
-      <div class="onb-icon-wrap" style="background:var(--green-dim)">
-        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          <div class="ll-field">
+            <label class="ll-field__label">Patrimonio neto estimado (RD$)</label>
+            <div style="position:relative;">
+              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--muted);">RD$</span>
+              <input class="ll-input" type="number" id="onb-patrimonio" placeholder="132000000" style="padding-left:40px;">
+            </div>
+            <div id="onb-patrimonio-alerta" style="display:none;margin-top:6px;font-size:12px;color:var(--amber);display:flex;align-items:center;gap:6px;">
+              ⚠ Menor al requerido en algunas licitaciones que tienes guardadas. Considera registrar un consorcio.
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="onb-titulo">¡Ya estás listo!</div>
-      <div class="onb-desc">Configura tus <strong>intereses de notificación</strong> en Mi Perfil para recibir solo las licitaciones que te importan.<br><br>¿Tienes preguntas? Contáctanos — respondemos en <strong>máximo 15 minutos</strong>.</div>
-      <div style="margin-top:16px">
-        <button onclick="window.open('https://wa.me/18098154457?text=Hola,%20tengo%20una%20pregunta%20sobre%20LicitacionLab','_blank')" style="width:100%;padding:14px;border-radius:var(--r-md);background:#25D366;border:none;color:#fff;font-family:var(--font-body);font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.123.554 4.122 1.527 5.858L0 24l6.335-1.507A11.955 11.955 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 0 1-5.006-1.371l-.36-.213-3.71.883.936-3.618-.234-.372A9.818 9.818 0 1 1 12 21.818z"/></svg>
-          Contactar por WhatsApp
-        </button>
-      </div>
-      <div class="onb-tip" style="margin-top:12px"><b>Tip:</b> Puedes volver a ver este tutorial desde Mi Perfil → Ver tutorial.</div>
-    </div>
 
-    <div class="onb-actions" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-top:1px solid var(--color-border,var(--border));">
-      <button class="ll-btn ll-btn--ghost" id="onb-btn-skip" onclick="cerrarOnboarding()">Saltar</button>
-      <div style="display:flex;gap:8px;">
-        <button class="ll-btn ll-btn--secondary" id="onb-btn-back" onclick="onbAnterior()" style="display:none;">← Atrás</button>
-        <button class="ll-btn ll-btn--primary" id="onb-btn-next" onclick="onbSiguiente()">Siguiente →</button>
+      <!-- PASO 4: Alcance geográfico -->
+      <div class="onb-step" id="onb-step-3" style="display:none;">
+        <div class="onb-step-header">
+          <div class="onb-step-label">PASO 4 DE 5</div>
+          <h2 class="onb-step-titulo">Alcance geográfico.</h2>
+          <p class="onb-step-desc">¿En qué provincias puedes ejecutar proyectos? Selecciona todas las que aplican.</p>
+        </div>
+        <div class="onb-fields">
+          <button type="button" onclick="toggleTodasProvincias()" style="background:none;border:1px solid var(--border);border-radius:var(--r-md);padding:8px 14px;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:12px;font-family:var(--font-body);">
+            ✓ Todo el país
+          </button>
+          <div class="onb-chips-wrap" id="onb-provincias-chips">
+            ${['Distrito Nacional','Santo Domingo','Santiago','La Vega','San Pedro de Macorís',
+               'La Romana','San Cristóbal','Puerto Plata','Duarte','La Altagracia',
+               'Monte Plata','Espaillat','Barahona','San Juan','Azua','Peravia',
+               'Monseñor Nouel','Sánchez Ramírez','Hato Mayor','El Seibo','Valverde',
+               'María Trinidad Sánchez','Samaná','Monte Cristi','Dajabón',
+               'Santiago Rodríguez','Elías Piña','San José de Ocoa','Independencia',
+               'Baoruco','Pedernales','Hermanas Mirabal'].map(p =>
+              `<button type="button" class="onb-chip" onclick="toggleProvincia(this,'${p}')">${p}</button>`
+            ).join('')}
+          </div>
+        </div>
       </div>
+
+      <!-- PASO 5: Preferencias de alertas -->
+      <div class="onb-step" id="onb-step-4" style="display:none;">
+        <div class="onb-step-header">
+          <div class="onb-step-label">PASO 5 DE 5</div>
+          <h2 class="onb-step-titulo">Preferencias de alertas.</h2>
+          <p class="onb-step-desc">¿Cómo y cuándo quieres recibir notificaciones de licitaciones nuevas y fechas clave?</p>
+        </div>
+        <div class="onb-fields">
+          <div class="ll-field">
+            <label class="ll-field__label">Canales de notificación</label>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px;">
+              <label class="onb-check-card" id="card-push" style="flex-direction:row;align-items:center;gap:14px;padding:14px 16px;">
+                <input type="checkbox" id="onb-push" checked onchange="toggleCheckCard('card-push',this)">
+                <div>
+                  <div style="font-weight:700;font-size:14px;">🔔 Notificaciones push</div>
+                  <div style="font-size:12px;color:var(--muted);">En el navegador y app móvil</div>
+                </div>
+              </label>
+              <label class="onb-check-card" id="card-email-alerta" style="flex-direction:row;align-items:center;gap:14px;padding:14px 16px;">
+                <input type="checkbox" id="onb-email-alerta" checked onchange="toggleCheckCard('card-email-alerta',this)">
+                <div>
+                  <div style="font-weight:700;font-size:14px;">📧 Correo electrónico</div>
+                  <div style="font-size:12px;color:var(--muted);">Resumen diario + análisis completo</div>
+                </div>
+              </label>
+              <label class="onb-check-card" id="card-whatsapp-alerta" style="flex-direction:row;align-items:center;gap:14px;padding:14px 16px;">
+                <input type="checkbox" id="onb-whatsapp-alerta" onchange="toggleCheckCard('card-whatsapp-alerta',this)">
+                <div>
+                  <div style="font-weight:700;font-size:14px;">💬 WhatsApp</div>
+                  <div style="font-size:12px;color:var(--muted);">Alertas urgentes de cierre</div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="ll-field" style="margin-top:20px;">
+            <label class="ll-field__label">Umbral de monto mínimo para alertas (RD$)</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span style="font-size:12px;color:var(--muted);">RD$</span>
+              <input class="ll-input" type="number" id="onb-umbral-min" placeholder="5000000" style="flex:1;">
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px;">Solo recibirás alertas de procesos por encima de este monto</div>
+          </div>
+
+          <!-- Resumen final -->
+          <div id="onb-resumen" style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-md);padding:16px;margin-top:8px;display:none;">
+            <div style="font-size:12px;font-weight:800;color:var(--green);margin-bottom:8px;">✅ Tu perfil queda así</div>
+            <div id="onb-resumen-contenido" style="font-size:13px;color:var(--text2);line-height:1.7;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACCIONES -->
+      <div class="onb-actions-bar">
+        <button class="ll-btn ll-btn--ghost" id="onb-btn-saltar" onclick="saltarOnboarding()">Saltar por ahora</button>
+        <div style="display:flex;gap:10px;">
+          <button class="ll-btn ll-btn--secondary" id="onb-btn-atras" onclick="onbAnterior()" style="display:none;">← Atrás</button>
+          <button class="ll-btn ll-btn--primary" id="onb-btn-siguiente" onclick="onbSiguiente()" style="min-width:140px;">Siguiente →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal añadir obra -->
+<div id="onb-obra-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:600;display:none;align-items:center;justify-content:center;">
+  <div style="background:var(--surface2);border-radius:var(--r-lg);padding:24px;width:100%;max-width:480px;margin:20px;">
+    <h3 style="font-size:16px;font-weight:800;margin-bottom:16px;">Añadir obra representativa</h3>
+    <div class="ll-field"><label class="ll-field__label">Nombre del proyecto</label>
+      <input class="ll-input" id="obra-nombre" placeholder="Ej: Acueducto Sabana Grande">
+    </div>
+    <div class="ll-field"><label class="ll-field__label">Institución contratante</label>
+      <input class="ll-input" id="obra-institucion" placeholder="Ej: INAPA">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="ll-field"><label class="ll-field__label">Monto (RD$)</label>
+        <input class="ll-input" type="number" id="obra-monto" placeholder="187000000">
+      </div>
+      <div class="ll-field"><label class="ll-field__label">Duración (meses)</label>
+        <input class="ll-input" type="number" id="obra-meses" placeholder="14">
+      </div>
+    </div>
+    <div class="ll-field"><label class="ll-field__label">Año</label>
+      <input class="ll-input" type="number" id="obra-anio" placeholder="2024" min="1990" max="2025">
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+      <button class="ll-btn ll-btn--secondary" onclick="cerrarModalObra()">Cancelar</button>
+      <button class="ll-btn ll-btn--primary" onclick="guardarObra()">Añadir obra</button>
     </div>
   </div>
 </div>
