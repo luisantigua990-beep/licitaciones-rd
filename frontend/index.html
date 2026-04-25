@@ -1048,7 +1048,7 @@ body {
   }
 
   /* Contenedor general: más padding lateral */
-  .main { max-width: 860px; padding: 24px 32px; }
+  .main { max-width: 960px; padding: 24px 32px; }
 
   /* ── DETALLE DESKTOP — tipografía y espaciado ── */
 
@@ -1223,6 +1223,97 @@ body {
   #tab-perfil { padding: 0; overflow-y: auto; }
   #tab-perfil .perfil-card { padding: 24px; }
   #tab-perfil .perfil-card h2 { font-size: 17px; }
+}
+
+/* ══════════════════════════════════════════════════════
+   BREAKPOINT GRANDE ≥1280px — aprovechar pantallas anchas
+══════════════════════════════════════════════════════ */
+@media (min-width: 1280px) {
+
+  /* Sidebar más ancho */
+  #desk-sidebar { width: 260px !important; }
+  .dsb-nav-item { font-size: 14px !important; padding: 11px 22px !important; }
+  .dsb-brand-name { font-size: 15px !important; }
+  .dsb-section-label { font-size: 11px !important; padding: 18px 22px 8px !important; }
+  .dsb-user { padding: 16px 22px !important; }
+  .dsb-footer { padding: 16px 22px !important; }
+
+  /* Topbar dashboard */
+  .dash-topbar__row1 { padding: 0 28px; height: 56px; }
+  .dash-topbar__search-row { padding: 0 28px 10px; }
+  .dash-topbar__filter-row { padding: 0 28px 10px; }
+  .dash-topbar__bc-page { font-size: 17px !important; }
+
+  /* Tipografía base más grande */
+  body, .ll-app { font-size: 15px !important; }
+
+  /* Lista de procesos — cards más amplias, 1 columna sin límite */
+  #procesos-container {
+    grid-template-columns: 1fr !important;
+    padding: 0 28px !important;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .proceso-dense-card { padding: 20px 28px 16px !important; }
+  .pdc-title  { font-size: 16px !important; }
+  .pdc-code   { font-size: 12px !important; }
+  .pdc-meta   { font-size: 14px !important; gap: 20px !important; }
+  .pdc-countdown { font-size: 14px !important; }
+  .pdc-inst-chip, .pdc-estado-chip { font-size: 12px !important; padding: 3px 10px !important; }
+
+  /* Detalle — columna principal más ancha, aside más generoso */
+  #detalle-container {
+    max-width: 1400px !important;
+    padding: 0 32px 32px !important;
+  }
+  .detalle-layout {
+    grid-template-columns: 1fr 420px !important;
+    gap: 28px !important;
+  }
+
+  /* Encabezado del detalle */
+  #detalle-container .ll-h2 { font-size: 30px !important; }
+  .detalle-metric-value { font-size: 26px !important; }
+  .detalle-metric-label { font-size: 11px !important; }
+  .detalle-metric { padding: 20px 24px !important; }
+
+  /* Tabs nav del detalle */
+  .detalle-tab-btn { font-size: 14px !important; padding: 14px 22px 13px !important; }
+  .detalle-tab-panel { padding-top: 24px !important; }
+  #detalle-container .ll-card { padding: 24px !important; }
+  #detalle-container .ll-card__title { font-size: 16px !important; }
+  #detalle-container .ll-card__body { font-size: 14px !important; line-height: 1.7 !important; }
+  #dtab-panel-resumen p { font-size: 15px !important; line-height: 1.8 !important; }
+
+  /* Checklist */
+  .checklist-item-nombre { font-size: 15px !important; }
+  .checklist-seccion-titulo { font-size: 15px !important; }
+  .checklist-item { padding: 14px 24px !important; }
+  .checklist-seccion-header { padding: 18px 24px !important; }
+
+  /* Plazos */
+  .plazo-nombre { font-size: 15px !important; }
+  .plazo-fecha  { font-size: 14px !important; }
+  .plazo-item   { padding: 16px 24px !important; }
+
+  /* Alertas aside */
+  .aside-alerta-titulo { font-size: 14px !important; }
+  .aside-alerta-desc   { font-size: 13px !important; }
+  .aside-score-rec     { font-size: 14px !important; }
+  .detalle-aside-body  { padding: 20px 22px !important; }
+
+  /* Seguimiento */
+  .seg-header { padding: 32px 32px 24px !important; }
+  #seg-lista { padding: 0 28px 32px !important; gap: 12px !important; }
+  #seg-lista .ll-card { padding: 22px 24px !important; }
+  #seg-lista h3.ll-card__title { font-size: 16px !important; }
+
+  /* Perfil */
+  #tab-perfil .perfil-card { padding: 32px !important; }
+  #tab-perfil .perfil-card h2 { font-size: 19px !important; }
+
+  /* Mercado */
+  #tab-mercado .main { max-width: 1100px !important; padding: 28px 32px !important; }
 }
 
 /* ── SIDEBAR DESKTOP (hidden en móvil, visible ≥900px) ── */
