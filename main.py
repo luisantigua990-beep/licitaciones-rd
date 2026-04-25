@@ -582,18 +582,21 @@ def plazos_bulk(request: Request, codigos: str):
             .execute()
         resultado = {r["proceso_id"]: r["plazos_clave"] for r in (res.data or []) if r.get("plazos_clave")}
 
-        # Agregar enmiendas detectadas para cada proceso
+        # Agregar enmiendas detectadas para cada proceso (campos reales de la tabla)
         try:
             enmiendas = supabase_admin.table("enmiendas_detectadas") \
-                .select("codigo_proceso, detectada_en, descripcion") \
+                .select("codigo_proceso, fecha_deteccion, nombre_documento, resumen_gemini") \
                 .in_("codigo_proceso", lista) \
-                .order("detectada_en", desc=True) \
+                .order("fecha_deteccion", desc=True) \
                 .execute()
             enm_map = {}
             for e in (enmiendas.data or []):
                 cp = e["codigo_proceso"]
                 if cp not in enm_map:
-                    enm_map[cp] = {"detectada_en": e.get("detectada_en"), "descripcion": e.get("descripcion")}
+                    enm_map[cp] = {
+                        "detectada_en": e.get("fecha_deteccion"),
+                        "descripcion":  e.get("resumen_gemini") or e.get("nombre_documento")
+                    }
             for cp, enm in enm_map.items():
                 if cp not in resultado:
                     resultado[cp] = {}
@@ -604,6 +607,104 @@ def plazos_bulk(request: Request, codigos: str):
         return resultado
     except Exception as e:
         return {}
+
+
+@app.get("/api/procesos/{codigo_proceso}/historial")
+@limiter.limit("60/minute")
+def historial_proceso(request: Request, codigo_proceso: str, user_id: str = Query(None)):
+    """
+    Línea de tiempo unificada: fechas clave del proceso + enmiendas + análisis IA del usuario.
+    """
+    try:
+        eventos = []
+
+        # 1. Fechas clave del proceso
+        proc = supabase.table("procesos") \
+            .select("codigo_proceso,titulo,fecha_publicacion,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda,fecha_suscripcion,estado_proceso") \
+            .eq("codigo_proceso", codigo_proceso) \
+            .execute()
+
+        if not proc.data:
+            raise HTTPException(status_code=404, detail="Proceso no encontrado")
+
+        p = proc.data[0]
+        fechas_mapa = [
+            ("fecha_publicacion",           "publicacion",     "📋 Proceso publicado",              "info"),
+            ("fecha_enmienda",              "enmienda",        "⚠️ Cierre de preguntas",            "warning"),
+            ("fecha_fin_recepcion_ofertas", "cierre_ofertas",  "📅 Cierre recepción de ofertas",    "deadline"),
+            ("fecha_apertura_ofertas",      "apertura",        "🔓 Apertura de ofertas",            "milestone"),
+            ("fecha_estimada_adjudicacion", "adjudicacion",    "🏆 Adjudicación estimada",          "milestone"),
+            ("fecha_suscripcion",           "suscripcion",     "✍️ Suscripción del contrato",       "success"),
+        ]
+        for campo, tipo, label, cat in fechas_mapa:
+            val = p.get(campo)
+            if val:
+                eventos.append({"tipo": "proceso", "subtipo": tipo, "categoria": cat,
+                                 "fecha": val, "titulo": label, "detalle": None, "score": None})
+
+        # 2. Enmiendas reales (campos correctos de la tabla)
+        try:
+            enm = supabase_admin.table("enmiendas_detectadas") \
+                .select("fecha_deteccion, nombre_documento, url_documento, resumen_gemini") \
+                .eq("codigo_proceso", codigo_proceso) \
+                .order("fecha_deteccion", desc=False) \
+                .execute()
+            for e in (enm.data or []):
+                eventos.append({
+                    "tipo":      "enmienda",
+                    "subtipo":   "enmienda_detectada",
+                    "categoria": "warning",
+                    "fecha":     e.get("fecha_deteccion"),
+                    "titulo":    f"⚠️ Enmienda: {e.get('nombre_documento', 'Documento nuevo')}",
+                    "detalle":   e.get("resumen_gemini"),
+                    "url":       e.get("url_documento"),
+                    "score":     None,
+                })
+        except Exception:
+            pass
+
+        # 3. Análisis IA del usuario
+        if user_id:
+            try:
+                analisis = supabase_admin.table("analisis_pliego") \
+                    .select("estado,creado_en,actualizado_en,evaluacion_competitividad") \
+                    .eq("proceso_id", codigo_proceso) \
+                    .order("creado_en", desc=False) \
+                    .execute()
+                for a in (analisis.data or []):
+                    score_val = None
+                    nivel_val = None
+                    try:
+                        ev = a.get("evaluacion_competitividad") or {}
+                        if isinstance(ev, str):
+                            import json as _j; ev = _j.loads(ev)
+                        nivel_raw = (ev.get("nivel_dificultad") or "").lower()
+                        niveles = {"baja": 75, "media": 50, "alta": 25}
+                        score_val = niveles.get(nivel_raw)
+                        nivel_val = nivel_raw.capitalize() if nivel_raw else None
+                    except Exception:
+                        pass
+                    estado = a.get("estado", "pendiente_analisis")
+                    estado_labels = {"completado": "✅ Análisis completado", "procesando": "⏳ Análisis en proceso",
+                                     "pendiente_analisis": "🕐 En cola", "error": "❌ Error en análisis"}
+                    cat_map = {"completado": "success", "procesando": "info", "pendiente_analisis": "info", "error": "danger"}
+                    eventos.append({
+                        "tipo": "analisis", "subtipo": estado, "categoria": cat_map.get(estado, "info"),
+                        "fecha": a.get("actualizado_en") or a.get("creado_en"),
+                        "titulo": estado_labels.get(estado, "Análisis IA"),
+                        "detalle": f"Score: {score_val}/100 · Dificultad {nivel_val}" if score_val else None,
+                        "score": score_val, "nivel": nivel_val,
+                    })
+            except Exception:
+                pass
+
+        eventos.sort(key=lambda e: e.get("fecha") or "0000")
+        return {"codigo_proceso": codigo_proceso, "eventos": eventos}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1115,15 +1216,16 @@ async def solicitar_analisis_proceso(request: Request, codigo_proceso: str, back
 @limiter.limit("5/minute")
 async def reanalizar_proceso(request: Request, codigo_proceso: str, background_tasks: BackgroundTasks):
     """
-    Re-analiza un proceso con enmienda. Solo funciona si hay una enmienda detectada
-    posterior al último análisis completado. Resetea el estado y vuelve a correr Gemini.
+    Re-analiza un proceso usando la última enmienda detectada.
+    Usa url_documento de la enmienda directamente como fuente para Gemini.
+    Ignora el cache de 'completado' via forzar=True.
     """
     try:
-        # 1. Verificar que existe al menos una enmienda para este proceso
+        # 1. Buscar enmiendas con los campos reales de la tabla
         enmiendas = supabase_admin.table("enmiendas_detectadas") \
-            .select("id, detectada_en, descripcion") \
+            .select("id, fecha_deteccion, nombre_documento, url_documento, resumen_gemini") \
             .eq("codigo_proceso", codigo_proceso) \
-            .order("detectada_en", desc=True) \
+            .order("fecha_deteccion", desc=True) \
             .execute()
 
         if not enmiendas.data:
@@ -1131,50 +1233,51 @@ async def reanalizar_proceso(request: Request, codigo_proceso: str, background_t
 
         ultima_enmienda = enmiendas.data[0]
         total_enmiendas = len(enmiendas.data)
+        url_enmienda = ultima_enmienda.get("url_documento")
 
-        # 2. Verificar análisis actual
+        if not url_enmienda:
+            raise HTTPException(status_code=400, detail="La enmienda no tiene URL de documento disponible.")
+
+        # 2. Verificar si ya está procesando
         analisis_actual = supabase_admin.table("analisis_pliego") \
-            .select("estado, actualizado_en") \
+            .select("estado") \
             .eq("proceso_id", codigo_proceso) \
             .execute()
 
-        # Si está procesando, no encolar de nuevo
-        if analisis_actual.data:
-            estado_actual = analisis_actual.data[0].get("estado", "")
-            if estado_actual == "procesando":
-                return {"status": "ya_procesando", "mensaje": "El análisis ya está en proceso."}
+        if analisis_actual.data and analisis_actual.data[0].get("estado") == "procesando":
+            return {"status": "ya_procesando", "mensaje": "El análisis ya está en proceso."}
 
-        # 3. Resetear estado a pendiente_analisis para forzar re-análisis
+        # 3. Resetear estado para que el frontend vea el cambio inmediatamente
         supabase_admin.table("analisis_pliego").update({
             "estado": "pendiente_analisis",
             "actualizado_en": datetime.now().isoformat()
         }).eq("proceso_id", codigo_proceso).execute()
 
-        # 4. Disparar análisis en background (igual que el endpoint /analizar)
-        async def _reanalizar_con_semaforo():
-            async with _semaforo_analisis:
-                loop = asyncio.get_event_loop()
-                await asyncio.wait_for(
-                    loop.run_in_executor(_executor_gemini, ejecutar_analisis_gemini_sin_email, codigo_proceso),
-                    timeout=600
-                )
+        # 4. Disparar re-análisis: URL de enmienda + forzar=True para saltar cache
+        def _reanalizar():
+            ejecutar_analisis_gemini(
+                proceso_id=codigo_proceso,
+                enviar_email=False,
+                url_override=url_enmienda,
+                forzar=True
+            )
 
-        background_tasks.add_task(_reanalizar_con_semaforo)
+        background_tasks.add_task(_reanalizar)
 
         return {
             "status": "encolado",
             "proceso_id": codigo_proceso,
             "enmienda_numero": total_enmiendas,
-            "enmienda_fecha": ultima_enmienda.get("detectada_en"),
-            "enmienda_descripcion": ultima_enmienda.get("descripcion"),
-            "mensaje": f"Re-análisis iniciado con enmienda #{total_enmiendas}"
+            "enmienda_nombre": ultima_enmienda.get("nombre_documento"),
+            "enmienda_fecha": ultima_enmienda.get("fecha_deteccion"),
+            "enmienda_resumen": ultima_enmienda.get("resumen_gemini"),
+            "mensaje": f"Re-análisis iniciado con enmienda #{total_enmiendas}: {ultima_enmienda.get('nombre_documento', '')}"
         }
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 # ============================================
@@ -1438,9 +1541,8 @@ def estadisticas(request: Request):
 @limiter.limit("30/minute")
 def mis_analisis(request: Request, user_id: str = Query(...)):
     """
-    Devuelve el historial de análisis de pliegos del usuario.
-    Cruza seguimiento_procesos → analisis_pliego → procesos.
-    Incluye evaluacion_competitividad y fechas clave del proceso.
+    Devuelve el historial de análisis de pliegos del usuario,
+    cruzando analisis_pliego con procesos para mostrar título e institución.
     """
     try:
         # 1. Traer seguimientos del usuario
@@ -1453,18 +1555,18 @@ def mis_analisis(request: Request, user_id: str = Query(...)):
 
         codigos = [s["proceso_codigo"] for s in segs.data]
 
-        # 2. Traer análisis para esos procesos (incluir evaluacion_competitividad)
+        # 2. Traer análisis completados para esos procesos
         analisis = supabase_admin.table("analisis_pliego") \
-            .select("proceso_id,estado,creado_en,actualizado_en,evaluacion_competitividad,resumen_ejecutivo") \
+            .select("proceso_id,estado,creado_en,actualizado_en,resultado") \
             .in_("proceso_id", codigos) \
             .order("actualizado_en", desc=True) \
             .execute()
         if not analisis.data:
             return {"analisis": []}
 
-        # 3. Traer datos completos de los procesos (incluyendo fechas para el calendario)
+        # 3. Traer datos básicos de los procesos
         procesos = supabase_admin.table("procesos") \
-            .select("codigo_proceso,titulo,unidad_compra,monto_estimado,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_publicacion") \
+            .select("codigo_proceso,titulo,unidad_compra,monto_estimado") \
             .in_("codigo_proceso", codigos) \
             .execute()
         proc_map = {p["codigo_proceso"]: p for p in (procesos.data or [])}
@@ -1473,20 +1575,24 @@ def mis_analisis(request: Request, user_id: str = Query(...)):
         resultado = []
         for a in analisis.data:
             proc = proc_map.get(a["proceso_id"], {})
+            # Extraer resumen del resultado JSON si existe
+            resumen = None
+            if a.get("resultado"):
+                try:
+                    import json as _json
+                    r = _json.loads(a["resultado"]) if isinstance(a["resultado"], str) else a["resultado"]
+                    resumen = r.get("resumen") or r.get("recomendacion") or r.get("conclusion")
+                except Exception:
+                    pass
             resultado.append({
-                "proceso_id":                    a["proceso_id"],
-                "titulo":                        proc.get("titulo", a["proceso_id"]),
-                "unidad_compra":                 proc.get("unidad_compra", "—"),
-                "monto_estimado":                proc.get("monto_estimado"),
-                "estado":                        a["estado"],
-                "creado_en":                     a["creado_en"],
-                "actualizado_en":                a["actualizado_en"],
-                "evaluacion_competitividad":      a.get("evaluacion_competitividad"),
-                "resumen":                       a.get("resumen_ejecutivo"),
-                # Fechas para el calendario
-                "fecha_fin_recepcion_ofertas":   proc.get("fecha_fin_recepcion_ofertas"),
-                "fecha_apertura_ofertas":        proc.get("fecha_apertura_ofertas"),
-                "fecha_estimada_adjudicacion":   proc.get("fecha_estimada_adjudicacion"),
+                "proceso_id": a["proceso_id"],
+                "titulo": proc.get("titulo", a["proceso_id"]),
+                "unidad_compra": proc.get("unidad_compra", "—"),
+                "monto_estimado": proc.get("monto_estimado"),
+                "estado": a["estado"],
+                "creado_en": a["creado_en"],
+                "actualizado_en": a["actualizado_en"],
+                "resumen": resumen,
             })
         return {"analisis": resultado}
     except Exception as e:
@@ -2865,36 +2971,40 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
 </html>"""
 
 
-def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True):
+def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_override: str = None, forzar: bool = False):
     """Descarga el pliego, lo lee y guarda el JSON en Supabase en segundo plano.
 
     Args:
         enviar_email: Si True (default), envía el email al completar.
                       Pasar False en reproceso automático para evitar spam.
+        url_override: URL directa del documento a analizar (ej: URL de enmienda).
+                      Si se pasa, omite la búsqueda del pliego original.
+        forzar: Si True, ignora el cache y re-analiza aunque ya esté completado.
     """
     try:
-        print(f"🚀 Iniciando IA para: {proceso_id}")
+        print(f"🚀 Iniciando IA para: {proceso_id}{' [FORZADO]' if forzar else ''}{' [URL override]' if url_override else ''}")
 
-        # ── CACHE: si ya está completado ──────
-        existente = supabase_admin.table("analisis_pliego")\
-            .select("estado")\
-            .eq("proceso_id", proceso_id)\
-            .eq("estado", "completado")\
-            .execute()
-        if existente.data:
-            if enviar_email:
-                print(f"⚡ Cache hit — {proceso_id} ya analizado, enviando email.")
-                full = supabase_admin.table("analisis_pliego")\
-                    .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, tipo_proceso")\
-                    .eq("proceso_id", proceso_id)\
-                    .execute()
-                analisis_cacheado = full.data[0] if full.data else {}
-                if analisis_cacheado.get("checklist_categorizado") and not analisis_cacheado.get("checklist_documentos"):
-                    analisis_cacheado["checklist_documentos"] = analisis_cacheado["checklist_categorizado"]
-                enviar_email_analisis(proceso_id, analisis_cacheado)
-            else:
-                print(f"⚡ Cache hit — {proceso_id} ya completado, saltando (reproceso automático).")
-            return
+        # ── CACHE: si ya está completado (saltar si forzar=True) ──────
+        if not forzar:
+            existente = supabase_admin.table("analisis_pliego")\
+                .select("estado")\
+                .eq("proceso_id", proceso_id)\
+                .eq("estado", "completado")\
+                .execute()
+            if existente.data:
+                if enviar_email:
+                    print(f"⚡ Cache hit — {proceso_id} ya analizado, enviando email.")
+                    full = supabase_admin.table("analisis_pliego")\
+                        .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, tipo_proceso")\
+                        .eq("proceso_id", proceso_id)\
+                        .execute()
+                    analisis_cacheado = full.data[0] if full.data else {}
+                    if analisis_cacheado.get("checklist_categorizado") and not analisis_cacheado.get("checklist_documentos"):
+                        analisis_cacheado["checklist_documentos"] = analisis_cacheado["checklist_categorizado"]
+                    enviar_email_analisis(proceso_id, analisis_cacheado)
+                else:
+                    print(f"⚡ Cache hit — {proceso_id} ya completado, saltando (reproceso automático).")
+                return
         
         # 1. TOMAR EL LOCK ATÓMICO — solo UNA instancia puede pasar
         #
@@ -2936,34 +3046,51 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True):
         else:
             _estado_previo = _fila_existente.data[0].get("estado", "")
             if _estado_previo in ("procesando", "completado"):
-                if _estado_previo == "completado" and enviar_email:
-                    print(f"⚡ Cache hit tardío — {proceso_id} ya completado, enviando email.")
-                    _full = supabase_admin.table("analisis_pliego") \
-                        .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, tipo_proceso") \
-                        .eq("proceso_id", proceso_id) \
-                        .execute()
-                    _analisis_cacheado = _full.data[0] if _full.data else {}
-                    if _analisis_cacheado.get("checklist_categorizado") and not _analisis_cacheado.get("checklist_documentos"):
-                        _analisis_cacheado["checklist_documentos"] = _analisis_cacheado["checklist_categorizado"]
-                    enviar_email_analisis(proceso_id, _analisis_cacheado)
+                # Si es forzar, ignorar cache y tomar el lock directamente
+                if forzar and _estado_previo == "completado":
+                    print(f"🔄 Forzando re-análisis de {proceso_id} (estado previo: completado)")
+                    supabase_admin.table("analisis_pliego").update({
+                        "estado": "procesando"
+                    }).eq("proceso_id", proceso_id).execute()
+                elif _estado_previo == "procesando":
+                    print(f"🔒 {proceso_id} ya procesando — saliendo para evitar duplicado")
+                    return
                 else:
-                    print(f"🔒 {proceso_id} ya en estado {_estado_previo!r} — saliendo para evitar duplicado")
-                return
-            # Tomar el lock: UPDATE solo si nadie más lo tomó en el microsegundo entre el SELECT y aquí
-            _lock2 = supabase_admin.table("analisis_pliego").update({
-                "estado": "procesando"
-            }).eq("proceso_id", proceso_id).not_.in_("estado", ["procesando", "completado"]).execute()
-            if not _lock2.data:
-                print(f"🔒 Race condition — {proceso_id} tomado por otra instancia, saliendo")
-                return
+                    if _estado_previo == "completado" and enviar_email:
+                        print(f"⚡ Cache hit tardío — {proceso_id} ya completado, enviando email.")
+                        _full = supabase_admin.table("analisis_pliego") \
+                            .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, tipo_proceso") \
+                            .eq("proceso_id", proceso_id) \
+                            .execute()
+                        _analisis_cacheado = _full.data[0] if _full.data else {}
+                        if _analisis_cacheado.get("checklist_categorizado") and not _analisis_cacheado.get("checklist_documentos"):
+                            _analisis_cacheado["checklist_documentos"] = _analisis_cacheado["checklist_categorizado"]
+                        enviar_email_analisis(proceso_id, _analisis_cacheado)
+                    else:
+                        print(f"🔒 {proceso_id} ya en estado {_estado_previo!r} — saliendo para evitar duplicado")
+                    return
+            else:
+                # Tomar el lock: UPDATE solo si nadie más lo tomó
+                _lock2 = supabase_admin.table("analisis_pliego").update({
+                    "estado": "procesando"
+                }).eq("proceso_id", proceso_id).not_.in_("estado", ["procesando", "completado"]).execute()
+                if not _lock2.data:
+                    print(f"🔒 Race condition — {proceso_id} tomado por otra instancia, saliendo")
+                    return
 
         # 2. SCRAPING Y EXTRACCIÓN DEL PDF
-        # VÍA 1: URL con noticeUID guardada por el scraper en tiempo real
-        proc_data = supabase.table("procesos").select("url").eq("codigo_proceso", proceso_id).execute()
-        url_portal = proc_data.data[0].get("url", "") if proc_data.data else ""
+        # Si hay url_override (enmienda), usarla directamente sin buscar el pliego
+        if url_override:
+            print(f"🔗 Usando URL de enmienda: {url_override}")
+            url_portal = url_override
+        else:
+            # VÍA 1: URL con noticeUID guardada por el scraper en tiempo real
+            proc_data = supabase.table("procesos").select("url").eq("codigo_proceso", proceso_id).execute()
+            url_portal = proc_data.data[0].get("url", "") if proc_data.data else ""
 
         # VÍA 2 (fallback): si no hay noticeUID en la URL, buscar en /procesos/documentos de la API
-        if not url_portal or "noticeUID" not in url_portal:
+        # Solo aplica si no hay url_override (enmienda directa)
+        if not url_override and (not url_portal or "noticeUID" not in url_portal):
             print(f"⚠️ Sin noticeUID para {proceso_id} — buscando en API de documentos (fallback)...")
             try:
                 import requests as _req
@@ -4263,4 +4390,3 @@ async def descargar_pdf_analisis(proceso_id: str):
             "Content-Length": str(len(pdf_bytes)),
         }
     )
-    
