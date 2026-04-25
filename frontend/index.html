@@ -204,8 +204,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  animation: tickerScroll 60s linear infinite;
+  animation: tickerScroll 40s linear infinite;
 }
+.auth-ticker:hover { animation-play-state: paused; }
 /* ticker no se pausa al hover */
 @keyframes tickerScroll {
   0%   { transform: translateY(0); }
@@ -2068,53 +2069,6 @@ body {
 .historial-card-estado.error { background: rgba(231,76,60,.1); color: var(--red); border: 1px solid rgba(231,76,60,.25); }
 .historial-card-fecha { font-size: 10px; color: var(--muted); }
 .historial-resumen { font-size: 11px; color: var(--text2); margin-top: 6px; line-height: 1.5; border-top: 1px solid var(--border); padding-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-
-/* ── TIMELINE HISTORIAL PROCESO ── */
-.htl-container { padding: 4px 0 16px; }
-.htl-evento {
-  display: flex; gap: 12px; padding: 0 0 20px; position: relative;
-}
-.htl-evento:last-child { padding-bottom: 0; }
-.htl-evento:last-child .htl-linea { display: none; }
-.htl-icono-col { display: flex; flex-direction: column; align-items: center; flex-shrink: 0; }
-.htl-dot {
-  width: 30px; height: 30px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; flex-shrink: 0; border: 1.5px solid transparent;
-}
-.htl-dot.info     { background: var(--blue-dim);   border-color: rgba(59,130,246,.3);   }
-.htl-dot.warning  { background: var(--amber-dim);  border-color: rgba(245,158,11,.3);   }
-.htl-dot.deadline { background: var(--red-dim);    border-color: rgba(239,68,68,.3);    }
-.htl-dot.milestone{ background: var(--purple-dim); border-color: rgba(167,139,250,.3);  }
-.htl-dot.success  { background: var(--green-dim);  border-color: var(--green-border);   }
-.htl-dot.danger   { background: var(--red-dim);    border-color: rgba(239,68,68,.3);    }
-.htl-linea {
-  width: 1.5px; flex: 1; min-height: 12px; margin: 4px 0;
-  background: var(--border);
-}
-.htl-body { flex: 1; padding-top: 4px; padding-bottom: 4px; min-width: 0; }
-.htl-titulo { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
-.htl-fecha  { font-size: 10.5px; color: var(--muted); font-family: var(--font-mono); margin-top: 2px; }
-.htl-detalle { font-size: 12px; color: var(--text2); margin-top: 5px; line-height: 1.5; }
-.htl-score-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 20px;
-  margin-top: 5px; font-family: var(--font-mono);
-}
-.htl-score-badge.baja  { background: var(--green-dim); color: var(--green); border: 1px solid var(--green-border); }
-.htl-score-badge.media { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(245,158,11,.3); }
-.htl-score-badge.alta  { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(239,68,68,.3); }
-.htl-url-link { font-size: 11px; color: var(--green); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; }
-.htl-url-link:hover { text-decoration: underline; }
-.htl-tipo-chip {
-  display: inline-block; font-size: 9px; font-weight: 800; letter-spacing: .06em;
-  text-transform: uppercase; padding: 1px 6px; border-radius: 3px; margin-left: 6px;
-  vertical-align: middle;
-}
-.htl-tipo-chip.proceso  { background: var(--blue-dim); color: var(--blue); }
-.htl-tipo-chip.enmienda { background: var(--amber-dim); color: var(--amber); }
-.htl-tipo-chip.analisis { background: var(--green-dim); color: var(--green); }
-.htl-empty { text-align:center; padding: 40px 20px; color: var(--muted); font-size: 13px; }
 #tab-dashboard  { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 16px; display: none; }
 
 /* ── TOAST ── */
@@ -2455,85 +2409,6 @@ html { background: var(--color-bg, #0A0A0A); }
 }
 
 /* Ticker de licitaciones en vivo */
-.auth-ticker-wrap {
-  position: absolute;
-  inset: 0;
-  padding: 80px 32px 64px;
-  mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
-  overflow: hidden;
-}
-.auth-ticker {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  animation: tickerScroll 40s linear infinite;
-}
-.auth-ticker:hover { animation-play-state: paused; }
-@keyframes tickerScroll {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(-50%); }
-}
-.auth-ticker-item {
-  background: var(--color-surface, var(--surface));
-  border: 1px solid var(--color-border, var(--border));
-  border-radius: 10px;
-  padding: 12px 14px;
-  cursor: pointer;
-  transition: border-color .15s;
-}
-.auth-ticker-item:hover { border-color: var(--color-brand, var(--green)); }
-.auth-ticker-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-  gap: 8px;
-}
-.auth-ticker-codigo {
-  font-family: var(--font-mono, monospace);
-  font-size: 10px;
-  color: var(--color-text-subtle, var(--muted));
-  letter-spacing: .04em;
-}
-.auth-ticker-monto {
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-brand, var(--green));
-  white-space: nowrap;
-}
-.auth-ticker-titulo {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary, var(--text));
-  line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.auth-ticker-meta {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-  align-items: center;
-}
-.auth-ticker-entidad {
-  font-size: 11px;
-  color: var(--color-text-subtle, var(--muted));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.auth-ticker-chip {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
-  flex-shrink: 0;
-  font-family: var(--font-mono, monospace);
-}
 .auth-ticker-chip.obras { background: rgba(52,152,219,.15); color: #3498db; }
 .auth-ticker-chip.bienes { background: rgba(155,89,182,.15); color: #9b59b6; }
 .auth-ticker-chip.servicios { background: rgba(22,163,74,.10); color: var(--green); }
@@ -3930,21 +3805,19 @@ async function iniciarShowcase() {
   if (!ticker) return;
 
   try {
-    // Traer 20 procesos recientes activos
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/procesos?select=codigo_proceso,titulo,unidad_compra,monto_estimado,objeto_proceso,modalidad,detectado_en&estado_proceso=eq.Proceso%20publicado&order=detectado_en.desc&limit=30`,
-      { headers: { 'apikey': SUPABASE_ANON_KEY, 'Content-Type': 'application/json' } }
-    );
-    if (!res.ok) throw new Error('fetch failed');
-    const procesos = await res.json();
-    if (!procesos || !procesos.length) return;
+    // Usar el endpoint del backend en vez de Supabase directo
+    const res = await fetch(`${API}/api/procesos?page=1&limit=20`);
+    if (!res.ok) throw new Error('fetch failed ' + res.status);
+    const data = await res.json();
+    // El endpoint puede devolver { procesos: [...] } o un array directo
+    const procesos = Array.isArray(data) ? data : (data.procesos || data.items || []);
+    if (!procesos.length) throw new Error('sin procesos');
 
-    // Duplicar para loop infinito
+    // Duplicar para loop infinito suave
     const todos = [...procesos, ...procesos];
     ticker.innerHTML = todos.map(p => renderTickerRow(p)).join('');
   } catch(e) {
-    console.warn('Showcase error:', e);
-    // Fallback: mostrar datos de ejemplo
+    console.warn('Showcase error, usando fallback:', e);
     ticker.innerHTML = generarTickerFallback();
   }
 }
@@ -5090,8 +4963,6 @@ function cambiarTabDetalle(codigo, tabId) {
   const panel = document.getElementById(`dtab-panel-${tabId}`);
   if (btn)   btn.classList.add('active');
   if (panel) panel.classList.add('active');
-  // Carga lazy del historial al activar el tab
-  if (tabId === 'historial' && codigo) cargarHistorialProceso(codigo);
 }
 
 async function verDetalle(codigo) {
@@ -5207,7 +5078,6 @@ async function verDetalle(codigo) {
           <button class="detalle-tab-btn"        id="dtab-btn-plazos"    onclick="cambiarTabDetalle('${codigo}','plazos')">Plazos</button>
           <button class="detalle-tab-btn"        id="dtab-btn-docs"      onclick="cambiarTabDetalle('${codigo}','docs')">Artículos${artsBadge}</button>
           <button class="detalle-tab-btn"        id="dtab-btn-score"     onclick="cambiarTabDetalle('${codigo}','score')">¿Vale la pena?${scoreBadge}</button>
-          <button class="detalle-tab-btn"        id="dtab-btn-historial" onclick="cambiarTabDetalle('${codigo}','historial');cargarHistorialProceso('${codigo}')">Historial</button>
         </div>
 
         <!-- TAB: RESUMEN -->
@@ -5271,15 +5141,6 @@ async function verDetalle(codigo) {
         <!-- TAB: SCORE (solo visible en móvil, en desktop se ve en el aside) -->
         <div class="detalle-tab-panel" id="dtab-panel-score">
           ${renderTabScore(analisis, p)}
-        </div>
-
-        <!-- TAB: HISTORIAL -->
-        <div class="detalle-tab-panel" id="dtab-panel-historial">
-          <div id="historial-proceso-lista">
-            <div style="text-align:center;padding:32px;color:var(--muted);font-size:13px;">
-              <div class="spinner" style="margin:0 auto 10px;"></div>Cargando historial…
-            </div>
-          </div>
         </div>
       </div>
 
@@ -7759,102 +7620,6 @@ async function cargarPerfilEmpresa() {
     window._perfilEmpresa = (data && data[0]?.onboarding_completado) ? data[0] : null;
   } catch(e) {
     window._perfilEmpresa = null;
-  }
-}
-
-// ── HISTORIAL DEL PROCESO (línea de tiempo unificada) ────────────────────────
-async function cargarHistorialProceso(codigo) {
-  const lista = document.getElementById('historial-proceso-lista');
-  if (!lista) return;
-  lista.innerHTML = `<div style="text-align:center;padding:32px;color:var(--muted);font-size:13px;"><div class="spinner" style="margin:0 auto 10px;"></div>Cargando historial…</div>`;
-
-  try {
-    const uid = currentUser?.id ? `&user_id=${currentUser.id}` : '';
-    const res  = await fetch(`${API}/api/procesos/${codigo}/historial?_=${Date.now()}${uid}`);
-    if (!res.ok) throw new Error('Error ' + res.status);
-    const data = await res.json();
-    const eventos = data.eventos || [];
-
-    if (!eventos.length) {
-      lista.innerHTML = `<div class="htl-empty">Sin eventos registrados para este proceso.</div>`;
-      return;
-    }
-
-    const hoy = new Date();
-
-    const iconoMap = {
-      publicacion:       '📋',
-      enmienda:          '⚠️',
-      enmienda_detectada:'⚠️',
-      cierre_ofertas:    '📅',
-      apertura:          '🔓',
-      adjudicacion:      '🏆',
-      suscripcion:       '✍️',
-      completado:        '✅',
-      procesando:        '⏳',
-      pendiente_analisis:'🕐',
-      error:             '❌',
-    };
-
-    const chips = { proceso: 'proceso', enmienda: 'enmienda', analisis: 'IA' };
-
-    const html = `<div class="htl-container">` + eventos.map((ev, idx) => {
-      const fechaISO = ev.fecha || '';
-      const fechaObj = fechaISO ? new Date(fechaISO) : null;
-      const esFutura = fechaObj && fechaObj > hoy;
-
-      let fechaLabel = '—';
-      if (fechaObj) {
-        fechaLabel = fechaObj.toLocaleDateString('es-DO', { day:'2-digit', month:'short', year:'numeric' });
-        // Si tiene hora relevante (no medianoche)
-        const h = fechaObj.getHours(), m = fechaObj.getMinutes();
-        if (h || m) fechaLabel += ' · ' + fechaObj.toLocaleTimeString('es-DO', { hour:'2-digit', minute:'2-digit' });
-      }
-
-      const icono   = iconoMap[ev.subtipo] || '📌';
-      const cat     = ev.categoria || 'info';
-      const tipoKey = ev.tipo === 'analisis' ? 'analisis' : ev.tipo === 'enmienda' ? 'enmienda' : 'proceso';
-      const chipLabel = chips[tipoKey] || tipoKey;
-
-      // Score badge si aplica
-      let scoreBadge = '';
-      if (ev.score != null) {
-        const lvl = ev.score >= 65 ? 'baja' : ev.score >= 40 ? 'media' : 'alta';
-        scoreBadge = `<span class="htl-score-badge ${lvl}">Score ${ev.score}/100${ev.nivel ? ' · ' + ev.nivel : ''}</span>`;
-      }
-
-      // URL de enmienda si aplica
-      let urlHtml = '';
-      if (ev.url) {
-        urlHtml = `<a href="${ev.url}" target="_blank" rel="noopener" class="htl-url-link">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-          Ver documento</a>`;
-      }
-
-      const opacidad = esFutura ? 'opacity:.55;' : '';
-
-      return `<div class="htl-evento" style="${opacidad}">
-        <div class="htl-icono-col">
-          <div class="htl-dot ${cat}">${icono}</div>
-          <div class="htl-linea"></div>
-        </div>
-        <div class="htl-body">
-          <div class="htl-titulo">
-            ${sanitize(ev.titulo)}
-            <span class="htl-tipo-chip ${tipoKey}">${chipLabel}</span>
-            ${esFutura ? '<span style="font-size:9px;color:var(--muted);font-weight:600;margin-left:4px;">próximo</span>' : ''}
-          </div>
-          <div class="htl-fecha">${fechaLabel}</div>
-          ${ev.detalle ? `<div class="htl-detalle">${sanitize(ev.detalle)}</div>` : ''}
-          ${scoreBadge}
-          ${urlHtml}
-        </div>
-      </div>`;
-    }).join('') + `</div>`;
-
-    lista.innerHTML = html;
-  } catch(e) {
-    lista.innerHTML = `<div class="htl-empty">Error cargando historial. Intenta de nuevo.</div>`;
   }
 }
 
