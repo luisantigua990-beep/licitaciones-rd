@@ -8133,6 +8133,8 @@ let onbEspecialidades = [];
 let onbModalidades = [];
 let onbProvincias = [];
 let onbObras = [];
+let onbRubros = [];
+let onbCategorias = [];
 
 // ── SHEET TUTORIAL (onboarding anterior — 6 slides) ──────────────────────
 let tutorialPaso = 0;
@@ -8233,6 +8235,21 @@ function toggleModalidad(btn, val) {
   else onbModalidades = onbModalidades.filter(m => m !== val);
 }
 
+function toggleRubro(btn, val) {
+  btn.classList.toggle('active');
+  if (btn.classList.contains('active')) onbRubros.push(val);
+  else onbRubros = onbRubros.filter(r => r !== val);
+}
+
+function toggleCategoria(btn, codigo, nombre) {
+  btn.classList.toggle('active');
+  if (btn.classList.contains('active')) {
+    onbCategorias.push({ codigo, nombre });
+  } else {
+    onbCategorias = onbCategorias.filter(c => c.codigo !== codigo);
+  }
+}
+
 function toggleProvincia(btn, val) {
   btn.classList.toggle('active');
   if (btn.classList.contains('active')) onbProvincias.push(val);
@@ -8245,8 +8262,14 @@ function toggleTodasProvincias() {
   onbProvincias = [];
   chips.forEach(c => {
     c.classList.toggle('active', !todas);
-    if (!todas) onbProvincias.push(c.textContent);
+    if (!todas) onbProvincias.push(c.textContent.trim());
   });
+  const btn = document.getElementById('onb-btn-todas-provincias');
+  if (btn) {
+    btn.textContent = todas ? 'Seleccionar todo el país' : 'Deseleccionar todo';
+    btn.style.borderColor = todas ? 'var(--border)' : 'var(--green)';
+    btn.style.color = todas ? 'var(--text2)' : 'var(--green)';
+  }
 }
 
 function abrirModalObra() {
@@ -8328,16 +8351,19 @@ function renderOnbPaso() {
 
 function mostrarResumenOnb() {
   const razon = document.getElementById('onb-razon-social')?.value || '—';
-  const cat = document.getElementById('onb-categoria-mopc')?.value || '—';
   const resumen = document.getElementById('onb-resumen');
   const cont = document.getElementById('onb-resumen-contenido');
   if (resumen) resumen.style.display = 'block';
+  const rubrosStr = onbRubros.length ? onbRubros.join(', ') : '—';
+  const catStr = onbCategorias.length ? onbCategorias.slice(0,3).map(c => c.nombre.split(' ')[0]).join(', ') + (onbCategorias.length > 3 ? ` +${onbCategorias.length-3}` : '') : '—';
+  const provStr = onbProvincias.length === 32 ? 'Todo el país' : onbProvincias.length ? onbProvincias.slice(0,3).join(', ') + (onbProvincias.length > 3 ? ` +${onbProvincias.length-3}` : '') : '—';
   if (cont) cont.innerHTML = `
     <b>Empresa:</b> ${sanitize(razon)}<br>
-    <b>Categoría:</b> ${sanitize(cat)}<br>
-    <b>Especialidades:</b> ${onbEspecialidades.join(', ') || '—'}<br>
-    <b>Provincias:</b> ${onbProvincias.length ? onbProvincias.slice(0,3).join(', ') + (onbProvincias.length > 3 ? ` +${onbProvincias.length-3}` : '') : '—'}<br>
-    <b>Obras:</b> ${onbObras.length} registradas
+    <b>Rubros:</b> ${rubrosStr}<br>
+    <b>Categorías de interés:</b> ${catStr}<br>
+    <b>Provincias:</b> ${provStr}<br>
+    <b>Obras:</b> ${onbObras.length} registradas<br>
+    <b>Modalidades:</b> ${onbModalidades.length ? onbModalidades.join(', ') : '—'}
   `;
 }
 
@@ -8376,19 +8402,16 @@ async function guardarPerfilOnboarding() {
     tiene_rpe:              document.getElementById('onb-rpe')?.checked || false,
     tiene_rnc:              document.getElementById('onb-tiene-rnc')?.checked || false,
     tiene_estados_financieros: document.getElementById('onb-estados')?.checked || false,
-    categoria_mopc:         document.getElementById('onb-categoria-mopc')?.value || null,
-    especialidades:         onbEspecialidades,
+    rubros:                 onbRubros,
+    categorias_unspsc:      onbCategorias,
     modalidades:            onbModalidades,
-    sectores:               onbEspecialidades,
     provincias:             onbProvincias,
     monto_minimo:           parseMonto(document.getElementById('onb-monto-min')?.value),
     monto_maximo:           parseMonto(document.getElementById('onb-monto-max')?.value),
     plazo_maximo_dias:      parseInt(document.getElementById('onb-plazo')?.value) || null,
     obras_representativas:  onbObras,
-    patrimonio_neto:        parseFloat(document.getElementById('onb-patrimonio')?.value) || null,
     alertas_push:           document.getElementById('onb-push')?.checked || false,
     alertas_email:          document.getElementById('onb-email-alerta')?.checked || false,
-    alertas_whatsapp:       document.getElementById('onb-whatsapp-alerta')?.checked || false,
     umbral_monto_min:       parseFloat(document.getElementById('onb-umbral-min')?.value) || null,
     onboarding_completado:  true,
     onboarding_paso_actual: 5,
@@ -8524,7 +8547,7 @@ function initOnboarding() {
         <span style="font-weight:800;font-size:15px;">LicitacionLab</span>
       </div>
 
-      <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Perfilamiento</div>
+      <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Perfil de la empresa</div>
       <div id="onb-sidebar-empresa" style="font-size:20px;font-weight:900;color:var(--text);line-height:1.2;margin-bottom:8px;">Cuéntanos sobre tu empresa.</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:32px;">Nuestro matching de licitaciones usa estos datos. Tardas ~6 min.</div>
 
@@ -8540,7 +8563,7 @@ function initOnboarding() {
         <div class="onb-paso-nav" id="onb-nav-1" onclick="irAPaso(1)">
           <div class="onb-paso-num" id="onb-num-1">2</div>
           <div>
-            <div style="font-size:13px;font-weight:700;">Clasificación MOPC</div>
+            <div style="font-size:13px;font-weight:700;">Procesos de interés</div>
             <div style="font-size:11px;color:var(--muted);">Categoría · especialidades</div>
           </div>
         </div>
@@ -8608,65 +8631,83 @@ function initOnboarding() {
             <label class="ll-field__label">Domicilio principal</label>
             <input class="ll-input" id="onb-domicilio" placeholder="Ej: Av. Abraham Lincoln #302, Santo Domingo">
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:4px;">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:8px;margin-top:4px;">Selecciona los documentos que tienes disponibles</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
             <label class="onb-check-card" id="card-rpe">
               <input type="checkbox" id="onb-rpe" onchange="toggleCheckCard('card-rpe',this)">
-              <div class="onb-check-icon">📋</div>
+              <div class="onb-check-icon">RPE</div>
               <div class="onb-check-label">Tengo RPE</div>
             </label>
             <label class="onb-check-card" id="card-rnc">
               <input type="checkbox" id="onb-tiene-rnc" onchange="toggleCheckCard('card-rnc',this)">
-              <div class="onb-check-icon">📄</div>
+              <div class="onb-check-icon">RNC</div>
               <div class="onb-check-label">RNC activo</div>
             </label>
             <label class="onb-check-card" id="card-estados">
               <input type="checkbox" id="onb-estados" onchange="toggleCheckCard('card-estados',this)">
-              <div class="onb-check-icon">📊</div>
-              <div class="onb-check-label">Estados financieros</div>
+              <div class="onb-check-icon">EF</div>
+              <div class="onb-check-label">Estados financieros de los últimos 2 años</div>
             </label>
           </div>
         </div>
       </div>
 
-      <!-- PASO 2: Clasificación MOPC -->
+      <!-- PASO 2: Procesos de interés -->
       <div class="onb-step" id="onb-step-1" style="display:none;">
         <div class="onb-step-header">
           <div class="onb-step-label">PASO 2 DE 5</div>
-          <h2 class="onb-step-titulo">Clasificación MOPC.</h2>
-          <p class="onb-step-desc">Selecciona tu categoría y especialidades principales. Máximo 5 especialidades.</p>
+          <h2 class="onb-step-titulo">Procesos de interés.</h2>
+          <p class="onb-step-desc">¿En qué tipo de procesos participa tu empresa? Selecciona todas las categorías que aplican.</p>
         </div>
         <div class="onb-fields">
           <div class="ll-field">
-            <label class="ll-field__label">Categoría MOPC</label>
-            <select class="ll-input" id="onb-categoria-mopc">
-              <option value="">Selecciona una categoría</option>
-              <option>A — Obras de infraestructura vial</option>
-              <option>B — Obras de acueductos y alcantarillados</option>
-              <option>C — Obras de edificación</option>
-              <option>D — Obras eléctricas e instrumentación</option>
-              <option>E — Obras de saneamiento ambiental</option>
-              <option>F — Obras hidráulicas</option>
-              <option>G — Obras de telecomunicaciones</option>
-            </select>
-          </div>
-          <div class="ll-field">
-            <label class="ll-field__label">Especialidades (máximo 5)</label>
-            <div class="onb-chips-wrap" id="onb-especialidades-chips">
-              ${['Acueductos','Alcantarillado','Edificación','Carreteras','Puentes',
-                 'Electromecánica','Rehabilitación urbana','Drenaje pluvial',
-                 'Movimiento de tierra','Pavimentación','Obras marítimas',
-                 'Instalaciones eléctricas','Plantas de tratamiento'].map(e =>
-                `<button type="button" class="onb-chip" onclick="toggleEspecialidad(this,'${e}')">${e}</button>`
-              ).join('')}
+            <label class="ll-field__label">Rubro principal</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+              <button type="button" class="onb-chip" id="onb-rubro-obras" onclick="toggleRubro(this,'Obras')">Obras</button>
+              <button type="button" class="onb-chip" id="onb-rubro-bienes" onclick="toggleRubro(this,'Bienes')">Bienes</button>
+              <button type="button" class="onb-chip" id="onb-rubro-servicios" onclick="toggleRubro(this,'Servicios')">Servicios</button>
             </div>
           </div>
+
           <div class="ll-field">
-            <label class="ll-field__label">Modalidades de contratación</label>
+            <label class="ll-field__label">Categorías UNSPSC de interés</label>
+            <p style="font-size:12px;color:var(--muted);margin:4px 0 10px;">Selecciona todas las que aplican a tu empresa</p>
+            <div class="onb-chips-wrap" id="onb-categorias-chips">
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'72','Construcción, mantenimiento y reparación de instalaciones')">72 · Construcción e infraestructura</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'43','Componentes y suministros de tecnología')">43 · Tecnología e informática</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'80','Servicios de gestión y negocio')">80 · Servicios de gestión</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'81','Servicios de ingeniería')">81 · Ingeniería y consultoría</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'71','Servicios de agricultura, pesca, silvicultura')">71 · Agricultura y pesca</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'85','Servicios de salud')">85 · Salud y servicios médicos</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'78','Servicios de transporte')">78 · Transporte y logística</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'73','Servicios de producción industrial')">73 · Manufactura e industria</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'76','Limpieza y mantenimiento')">76 · Limpieza y mantenimiento</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'92','Defensa y seguridad pública')">92 · Defensa y seguridad</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'77','Servicios ambientales')">77 · Medio ambiente</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'84','Servicios financieros')">84 · Servicios financieros</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'86','Educación y formación')">86 · Educación y formación</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'93','Política y asuntos públicos')">93 · Servicios públicos</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'45','Impresión, publicación y artes gráficas')">45 · Imprenta y publicaciones</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'60','Artes musicales y escénicas')">60 · Artes y cultura</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'40','Distribución y acondicionamiento de gases')">40 · Gases y energía</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'39','Electricidad, electricidad, materiales')">39 · Electricidad y materiales</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'25','Vehículos y sus piezas')">25 · Vehículos y piezas</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'44','Equipos y suministros de oficina')">44 · Equipos de oficina</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'47','Materiales de limpieza y mantenimiento')">47 · Materiales de limpieza</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'50','Alimentos, bebidas y tabaco')">50 · Alimentos y bebidas</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'51','Medicamentos y productos farmacéuticos')">51 · Farmacéuticos</button>
+              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'56','Mobiliario')">56 · Mobiliario y muebles</button>
+            </div>
+          </div>
+
+          <div class="ll-field">
+            <label class="ll-field__label">Modalidades de contratación en que participa</label>
             <div class="onb-chips-wrap">
-              ${['Licitación Pública Nacional','Compra Menor','Comparación de Precios',
-                 'Contratación Directa','Subasta Inversa'].map(m =>
-                `<button type="button" class="onb-chip" onclick="toggleModalidad(this,'${m}')">${m}</button>`
-              ).join('')}
+              <button type="button" class="onb-chip" onclick="toggleModalidad(this,'Licitación Pública Nacional')">Licitación Pública Nacional</button>
+              <button type="button" class="onb-chip" onclick="toggleModalidad(this,'Compra Menor')">Compra Menor</button>
+              <button type="button" class="onb-chip" onclick="toggleModalidad(this,'Comparación de Precios')">Comparación de Precios</button>
+              <button type="button" class="onb-chip" onclick="toggleModalidad(this,'Contratación Directa')">Contratación Directa</button>
+              <button type="button" class="onb-chip" onclick="toggleModalidad(this,'Subasta Inversa')">Subasta Inversa</button>
             </div>
           </div>
         </div>
@@ -8706,23 +8747,13 @@ function initOnboarding() {
           </div>
 
           <div class="ll-field">
-            <label class="ll-field__label">Obras representativas (mínimo 1)</label>
+            <label class="ll-field__label">Obras representativas</label>
+            <p style="font-size:12px;color:var(--muted);margin:4px 0 10px;">Agrega cada proyecto con su descripción, monto y duración. Sin límite.</p>
             <div id="onb-obras-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;"></div>
             <button type="button" class="onb-btn-añadir" onclick="abrirModalObra()">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Añadir obra
+              Agregar obra
             </button>
-          </div>
-
-          <div class="ll-field">
-            <label class="ll-field__label">Patrimonio neto estimado (RD$)</label>
-            <div style="position:relative;">
-              <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--muted);">RD$</span>
-              <input class="ll-input" type="number" id="onb-patrimonio" placeholder="132000000" style="padding-left:40px;">
-            </div>
-            <div id="onb-patrimonio-alerta" style="display:none;margin-top:6px;font-size:12px;color:var(--amber);display:flex;align-items:center;gap:6px;">
-              ⚠ Menor al requerido en algunas licitaciones que tienes guardadas. Considera registrar un consorcio.
-            </div>
           </div>
         </div>
       </div>
@@ -8735,19 +8766,42 @@ function initOnboarding() {
           <p class="onb-step-desc">¿En qué provincias puedes ejecutar proyectos? Selecciona todas las que aplican.</p>
         </div>
         <div class="onb-fields">
-          <button type="button" onclick="toggleTodasProvincias()" style="background:none;border:1px solid var(--border);border-radius:var(--r-md);padding:8px 14px;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:12px;font-family:var(--font-body);">
-            ✓ Todo el país
+          <button type="button" id="onb-btn-todas-provincias" onclick="toggleTodasProvincias()" style="background:none;border:1.5px solid var(--border);border-radius:var(--r-md);padding:8px 16px;color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;margin-bottom:12px;font-family:var(--font-body);transition:all .15s;">
+            Seleccionar todo el país
           </button>
           <div class="onb-chips-wrap" id="onb-provincias-chips">
-            ${['Distrito Nacional','Santo Domingo','Santiago','La Vega','San Pedro de Macorís',
-               'La Romana','San Cristóbal','Puerto Plata','Duarte','La Altagracia',
-               'Monte Plata','Espaillat','Barahona','San Juan','Azua','Peravia',
-               'Monseñor Nouel','Sánchez Ramírez','Hato Mayor','El Seibo','Valverde',
-               'María Trinidad Sánchez','Samaná','Monte Cristi','Dajabón',
-               'Santiago Rodríguez','Elías Piña','San José de Ocoa','Independencia',
-               'Baoruco','Pedernales','Hermanas Mirabal'].map(p =>
-              `<button type="button" class="onb-chip" onclick="toggleProvincia(this,'${p}')">${p}</button>`
-            ).join('')}
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Distrito Nacional')">Distrito Nacional</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Santo Domingo')">Santo Domingo</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Santiago')">Santiago</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'La Vega')">La Vega</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'San Pedro de Macorís')">San Pedro de Macorís</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'La Romana')">La Romana</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'San Cristóbal')">San Cristóbal</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Puerto Plata')">Puerto Plata</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Duarte')">Duarte</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'La Altagracia')">La Altagracia</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Monte Plata')">Monte Plata</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Espaillat')">Espaillat</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Barahona')">Barahona</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'San Juan')">San Juan</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Azua')">Azua</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Peravia')">Peravia</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Monseñor Nouel')">Monseñor Nouel</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Sánchez Ramírez')">Sánchez Ramírez</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Hato Mayor')">Hato Mayor</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'El Seibo')">El Seibo</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Valverde')">Valverde</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'María Trinidad Sánchez')">María Trinidad Sánchez</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Samaná')">Samaná</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Monte Cristi')">Monte Cristi</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Dajabón')">Dajabón</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Santiago Rodríguez')">Santiago Rodríguez</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Elías Piña')">Elías Piña</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'San José de Ocoa')">San José de Ocoa</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Independencia')">Independencia</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Baoruco')">Baoruco</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Pedernales')">Pedernales</button>
+            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Hermanas Mirabal')">Hermanas Mirabal</button>
           </div>
         </div>
       </div>
@@ -8761,27 +8815,20 @@ function initOnboarding() {
         </div>
         <div class="onb-fields">
           <div class="ll-field">
-            <label class="ll-field__label">Canales de notificación</label>
+            <label class="ll-field__label">Activar notificaciones</label>
             <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px;">
               <label class="onb-check-card" id="card-push" style="flex-direction:row;align-items:center;gap:14px;padding:14px 16px;">
                 <input type="checkbox" id="onb-push" checked onchange="toggleCheckCard('card-push',this)">
                 <div>
-                  <div style="font-weight:700;font-size:14px;">🔔 Notificaciones push</div>
-                  <div style="font-size:12px;color:var(--muted);">En el navegador y app móvil</div>
+                  <div style="font-weight:700;font-size:14px;">Notificaciones push</div>
+                  <div style="font-size:12px;color:var(--muted);">En el navegador y app móvil, alertas en tiempo real</div>
                 </div>
               </label>
               <label class="onb-check-card" id="card-email-alerta" style="flex-direction:row;align-items:center;gap:14px;padding:14px 16px;">
                 <input type="checkbox" id="onb-email-alerta" checked onchange="toggleCheckCard('card-email-alerta',this)">
                 <div>
-                  <div style="font-weight:700;font-size:14px;">📧 Correo electrónico</div>
-                  <div style="font-size:12px;color:var(--muted);">Resumen diario + análisis completo</div>
-                </div>
-              </label>
-              <label class="onb-check-card" id="card-whatsapp-alerta" style="flex-direction:row;align-items:center;gap:14px;padding:14px 16px;">
-                <input type="checkbox" id="onb-whatsapp-alerta" onchange="toggleCheckCard('card-whatsapp-alerta',this)">
-                <div>
-                  <div style="font-weight:700;font-size:14px;">💬 WhatsApp</div>
-                  <div style="font-size:12px;color:var(--muted);">Alertas urgentes de cierre</div>
+                  <div style="font-weight:700;font-size:14px;">Correo electrónico</div>
+                  <div style="font-size:12px;color:var(--muted);">Resumen diario y análisis completo del pliego</div>
                 </div>
               </label>
             </div>
@@ -8817,29 +8864,29 @@ function initOnboarding() {
 </div>
 
 <!-- Modal añadir obra -->
-<div id="onb-obra-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:600;display:none;align-items:center;justify-content:center;">
-  <div style="background:var(--surface2);border-radius:var(--r-lg);padding:24px;width:100%;max-width:480px;margin:20px;">
-    <h3 style="font-size:16px;font-weight:800;margin-bottom:16px;">Añadir obra representativa</h3>
-    <div class="ll-field"><label class="ll-field__label">Nombre del proyecto</label>
-      <input class="ll-input" id="obra-nombre" placeholder="Ej: Acueducto Sabana Grande">
+<div id="onb-obra-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:600;align-items:center;justify-content:center;">
+  <div style="background:var(--surface2);border-radius:var(--r-lg);padding:24px;width:100%;max-width:500px;margin:20px;">
+    <h3 style="font-size:16px;font-weight:800;margin-bottom:16px;">Agregar obra representativa</h3>
+    <div class="ll-field"><label class="ll-field__label">Nombre / descripción de la obra</label>
+      <input class="ll-input" id="obra-nombre" placeholder="Ej: Rehabilitación red de acueducto Sabana Grande de Boyá">
     </div>
     <div class="ll-field"><label class="ll-field__label">Institución contratante</label>
       <input class="ll-input" id="obra-institucion" placeholder="Ej: INAPA">
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
       <div class="ll-field"><label class="ll-field__label">Monto (RD$)</label>
         <input class="ll-input" type="number" id="obra-monto" placeholder="187000000">
       </div>
       <div class="ll-field"><label class="ll-field__label">Duración (meses)</label>
         <input class="ll-input" type="number" id="obra-meses" placeholder="14">
       </div>
+      <div class="ll-field"><label class="ll-field__label">Año fin</label>
+        <input class="ll-input" type="number" id="obra-anio" placeholder="2024" min="1990" max="2030">
+      </div>
     </div>
-    <div class="ll-field"><label class="ll-field__label">Año</label>
-      <input class="ll-input" type="number" id="obra-anio" placeholder="2024" min="1990" max="2025">
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
       <button class="ll-btn ll-btn--secondary" onclick="cerrarModalObra()">Cancelar</button>
-      <button class="ll-btn ll-btn--primary" onclick="guardarObra()">Añadir obra</button>
+      <button class="ll-btn ll-btn--primary" onclick="guardarObra()">Agregar obra</button>
     </div>
   </div>
 </div>
