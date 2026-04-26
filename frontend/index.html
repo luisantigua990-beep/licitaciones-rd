@@ -8499,10 +8499,12 @@ function mostrarResumenOnb() {
   const resumen = document.getElementById('onb-resumen');
   const cont = document.getElementById('onb-resumen-contenido');
   if (resumen) resumen.style.display = 'block';
+  const rubrosStr = onbRubros.length ? onbRubros.join(', ') : '—';
   const catStr = onbCategorias.length ? `${onbCategorias.length} categorías seleccionadas` : '—';
   const provStr = onbProvincias.length === 32 ? 'Todo el país' : onbProvincias.length ? `${onbProvincias.length} provincias` : '—';
   if (cont) cont.innerHTML = `
     <b>Empresa:</b> ${sanitize(razon)}<br>
+    <b>Rubros:</b> ${rubrosStr}<br>
     <b>Categorías UNSPSC:</b> ${catStr}<br>
     <b>Provincias:</b> ${provStr}<br>
     <b>Obras:</b> ${onbObras.length} registradas
@@ -8934,6 +8936,28 @@ function initOnboarding() {
           <p class="onb-step-desc">Selecciona tus categorías de interés y activa las alertas para recibir procesos que coincidan con tu perfil.</p>
         </div>
         <div class="onb-fields">
+
+          <!-- Rubros -->
+          <div class="ll-field">
+            <label class="ll-field__label">Rubro principal</label>
+            <p style="font-size:12px;color:var(--muted);margin:4px 0 10px;">Selecciona uno o varios rubros en los que opera tu empresa</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button type="button" class="onb-chip" id="onb-rubro-obras" onclick="toggleRubro(this,'Obras')" style="padding:10px 18px;font-size:13px;">
+                <span style="margin-right:4px;">🏗</span> Obras
+              </button>
+              <button type="button" class="onb-chip" id="onb-rubro-bienes" onclick="toggleRubro(this,'Bienes')" style="padding:10px 18px;font-size:13px;">
+                <span style="margin-right:4px;">📦</span> Bienes
+              </button>
+              <button type="button" class="onb-chip" id="onb-rubro-servicios" onclick="toggleRubro(this,'Servicios')" style="padding:10px 18px;font-size:13px;">
+                <span style="margin-right:4px;">⚙️</span> Servicios
+              </button>
+              <button type="button" class="onb-chip" id="onb-rubro-consultoria" onclick="toggleRubro(this,'Consultoría')" style="padding:10px 18px;font-size:13px;">
+                <span style="margin-right:4px;">📋</span> Consultoría
+              </button>
+            </div>
+          </div>
+
+          <div style="height:1px;background:var(--border);margin:4px 0 16px;"></div>
 
           <!-- Categorías UNSPSC -->
           <div class="ll-field">
