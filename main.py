@@ -3163,19 +3163,53 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
 
         print("🤖 Pasando el texto del pliego a Gemini...")
 
+        # Intentar obtener perfil del usuario que siguió este proceso
+        contexto_empresa = ""
+        try:
+            seg_user = supabase_admin.table("seguimiento_procesos") \
+                .select("user_id").eq("proceso_codigo", proceso_id).limit(1).execute()
+            if seg_user.data:
+                uid_analisis = seg_user.data[0]["user_id"]
+                perfil_res = supabase_admin.table("perfiles_empresa") \
+                    .select("*").eq("user_id", uid_analisis).execute()
+                if perfil_res.data:
+                    p = perfil_res.data[0]
+                    partes = []
+                    if p.get("razon_social"): partes.append(f"Empresa: {p['razon_social']}")
+                    if p.get("anios_experiencia"): partes.append(f"Años de experiencia: {p['anios_experiencia']}")
+                    if p.get("rubros"): partes.append(f"Rubros: {', '.join(p['rubros'])}")
+                    if p.get("categorias_unspsc"): partes.append(f"Categorías de interés: {', '.join([c.get('nombre','') for c in p['categorias_unspsc']])}")
+                    if p.get("modalidades"): partes.append(f"Modalidades en que participa: {', '.join(p['modalidades'])}")
+                    if p.get("provincias"): partes.append(f"Cobertura geográfica: {', '.join(p['provincias'])}")
+                    if p.get("monto_minimo") or p.get("monto_maximo"):
+                        rango = f"RD${p['monto_minimo']:,.0f}" if p.get("monto_minimo") else "sin límite inferior"
+                        rango += f" — RD${p['monto_maximo']:,.0f}" if p.get("monto_maximo") else " — sin límite superior"
+                        partes.append(f"Rango de montos típico: {rango}")
+                    if p.get("obras_representativas"):
+                        obras_str = "; ".join([
+                            f"{o.get('nombre','?')} (RD${o.get('monto',0):,.0f}, {o.get('meses','?')} meses)"
+                            for o in p["obras_representativas"][:5]
+                        ])
+                        partes.append(f"Obras representativas: {obras_str}")
+                    if p.get("tiene_rpe"): partes.append("Tiene RPE: Sí")
+                    if partes:
+                        contexto_empresa = "\n\nCONTEXTO DE LA EMPRESA OFERENTE:\n" + "\n".join(partes) + "\n\nUsa este contexto para personalizar la evaluación: indica si la empresa cumple los requisitos principales, si el proceso está dentro de su rango de montos y experiencia, y añade una recomendación específica al final del resumen_ejecutivo."        except Exception as e_perfil:
+            print(f"⚠️ No se pudo obtener perfil para personalizar análisis: {e_perfil}")
+
         MODELO = "gemini-2.5-flash"
         MAX_REINTENTOS = 3
         datos_json = None
         for intento in range(MAX_REINTENTOS):
             try:
+                prompt_con_contexto = PROMPT_MAESTRO + contexto_empresa
                 if usar_vision:
                     # PDF escaneado: enviar bytes crudos para OCR nativo de Gemini
                     contents = [
-                        PROMPT_MAESTRO,
+                        prompt_con_contexto,
                         {"inline_data": {"mime_type": "application/pdf", "data": _b64.b64encode(pdf_bytes).decode()}}
                     ]
                 else:
-                    contents = [PROMPT_MAESTRO, texto_pliego]
+                    contents = [prompt_con_contexto, texto_pliego]
 
                 respuesta = cliente_gemini.models.generate_content(
                     model=MODELO,
@@ -3888,10 +3922,12 @@ async def guardar_perfil_empresa(request: Request):
         else:
             supabase_admin.table("perfiles_empresa").insert(data).execute()
 
+        print(f"✅ Perfil empresa guardado para user_id: {user_id}")
         return {"ok": True}
     except HTTPException:
         raise
     except Exception as e:
+        print(f"❌ Error guardando perfil empresa: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
