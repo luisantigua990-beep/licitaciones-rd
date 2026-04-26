@@ -2268,8 +2268,8 @@ body {
 
 /* ── FORM SHEETS ── */
 .mercado-form-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 400; backdrop-filter: blur(4px); }
-.mercado-form-sheet { position: fixed; bottom: 0; left: 0; right: 0; z-index: 401; background: var(--surface2); border-radius: var(--r-xl) var(--r-xl) 0 0; padding: 20px 20px 40px; max-height: 90vh; overflow-y: auto; transform: translateY(100%); transition: transform .35s cubic-bezier(.16,1,.3,1); }
-.mercado-form-sheet.visible { transform: translateY(0); }
+.mercado-form-sheet { position: fixed; top: 0; right: 0; bottom: 0; z-index: 401; background: var(--surface2); border-radius: var(--r-xl) 0 0 var(--r-xl); padding: 0; width: 100%; max-width: 480px; overflow-y: auto; transform: translateX(100%); transition: transform .35s cubic-bezier(.16,1,.3,1); box-shadow: -8px 0 40px rgba(0,0,0,.4); }
+.mercado-form-sheet.visible { transform: translateX(0); }
 .form-sheet-handle { width: 36px; height: 4px; background: var(--border2); border-radius: 2px; margin: 0 auto 16px; }
 .form-sheet-title { font-size: 17px; font-weight: 900; color: var(--text); margin-bottom: 16px; letter-spacing: -0.3px; }
 .form-field { margin-bottom: 14px; }
@@ -3275,7 +3275,7 @@ html { background: var(--color-bg, #0A0A0A); }
         </div>
         <button class="ll-btn ll-btn--primary ll-btn--sm" onclick="abrirFormProveedor()" style="white-space:nowrap;gap:5px;">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Invitar proveedor
+          Agregar proveedor
         </button>
       </div>
     </div>
@@ -3534,14 +3534,13 @@ html { background: var(--color-bg, #0A0A0A); }
 
 <div class="mercado-form-overlay" id="mercado-form-overlay" onclick="cerrarFormProveedor()"></div>
   <div class="mercado-form-sheet" id="mercado-form-sheet">
-    <div class="form-sheet-handle"></div>
-
-    <div class="form-sheet-header">
-      <button class="form-back-btn" onclick="cerrarFormProveedor()">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    <div style="padding:18px 24px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface2);z-index:10;display:flex;align-items:center;justify-content:space-between;">
+      <div class="form-sheet-title" style="margin-bottom:0;">Agregar proveedor</div>
+      <button onclick="cerrarFormProveedor()" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:4px;border-radius:6px;display:flex;align-items:center;" title="Cerrar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
-      <div class="form-sheet-title">Registrar proveedor</div>
     </div>
+    <div style="padding:20px 24px 40px;">
 
     <!-- Nombre -->
     <div class="form-field">
@@ -3697,8 +3696,8 @@ html { background: var(--color-bg, #0A0A0A); }
     </div>
 
     <div id="pf-msg" style="display:none;padding:10px 12px;border-radius:8px;font-size:13px;font-weight:600;margin-bottom:12px;text-align:center"></div>
-    <button class="form-submit-btn" id="pf-submit-btn" onclick="enviarRegistroProveedor()">Registrar proveedor</button>
-  
+    <button class="form-submit-btn" id="pf-submit-btn" onclick="enviarRegistroProveedor()">Agregar proveedor</button>
+    </div><!-- /body -->
 </div>
 
 <script>
@@ -8301,7 +8300,7 @@ function renderOnbPaso() {
     else { num.textContent = i+1; }
   }
   // Progreso
-  const pct = Math.round((onbPaso / ONB_TOTAL) * 100);
+  const pct = Math.round(((onbPaso + 1) / ONB_TOTAL) * 100);
   const bar = document.getElementById('onb-progreso-bar');
   const pctEl = document.getElementById('onb-progreso-pct');
   if (bar) bar.style.width = pct + '%';
