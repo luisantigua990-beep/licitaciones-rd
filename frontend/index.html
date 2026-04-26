@@ -2926,7 +2926,7 @@ html { background: var(--color-bg, #0A0A0A); }
     </button>
     <button class="dsb-nav-item" id="dsb-nav-perfilamiento" onclick="mostrarWizardPerfil()">
       <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      Perfilamiento
+      Perfil empresa
     </button>
     <button class="dsb-nav-item" id="dsb-nav-reportes" onclick="switchTab2('reportes')">
       <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
@@ -8205,7 +8205,8 @@ function saltarOnboarding() {
 }
 
 function irAPaso(n) {
-  if (n < onbPaso) { onbPaso = n; renderOnbPaso(); }
+  onbPaso = n;
+  renderOnbPaso();
 }
 
 function actualizarSidebarEmpresa() {
@@ -8242,38 +8243,102 @@ function toggleRubro(btn, val) {
 }
 
 function toggleCategoria(btn, codigo, nombre) {
-  btn.classList.toggle('active');
-  if (btn.classList.contains('active')) {
+  // mantenemos por compatibilidad aunque ya no se usa con chips
+  if (!onbCategorias.find(c => c.codigo === codigo)) {
     onbCategorias.push({ codigo, nombre });
-  } else {
-    onbCategorias = onbCategorias.filter(c => c.codigo !== codigo);
+    renderCategoriaTags();
   }
 }
 
+// Nueva: agrega categoría desde el <select>
+function agregarCategoriaSelect(sel) {
+  const val = sel.value;
+  if (!val) return;
+  const [codigo, nombre] = val.split('|');
+  if (!onbCategorias.find(c => c.codigo === codigo)) {
+    onbCategorias.push({ codigo, nombre });
+    renderCategoriaTags();
+  }
+  sel.value = ''; // reset select
+}
+
+function renderCategoriaTags() {
+  const cont = document.getElementById('onb-categorias-tags');
+  if (!cont) return;
+  cont.innerHTML = onbCategorias.map((c, i) =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-full);padding:4px 10px;font-size:12px;font-weight:600;color:var(--green);">
+      ${c.codigo.substring(0,2)} · ${c.nombre.split(',')[0].substring(0,28)}
+      <button type="button" onclick="quitarCategoria(${i})" style="background:none;border:none;cursor:pointer;color:var(--green);font-size:14px;line-height:1;padding:0 2px;">×</button>
+    </span>`
+  ).join('');
+}
+
+function quitarCategoria(i) {
+  onbCategorias.splice(i, 1);
+  renderCategoriaTags();
+}
+
+// Nueva: agrega provincia desde el <select>
+function agregarProvinciaSelect(sel) {
+  const val = sel.value;
+  if (!val) return;
+  if (!onbProvincias.includes(val)) {
+    onbProvincias.push(val);
+    renderProvinciasTags();
+  }
+  sel.value = '';
+}
+
+function seleccionarTodasProvincias() {
+  const todas = ['Distrito Nacional','Santo Domingo','Santiago','La Vega','San Pedro de Macorís',
+    'La Romana','San Cristóbal','Puerto Plata','Duarte','La Altagracia','Monte Plata','Espaillat',
+    'Barahona','San Juan','Azua','Peravia','Monseñor Nouel','Sánchez Ramírez','Hato Mayor',
+    'El Seibo','Valverde','María Trinidad Sánchez','Samaná','Monte Cristi','Dajabón',
+    'Santiago Rodríguez','Elías Piña','San José de Ocoa','Independencia','Baoruco',
+    'Pedernales','Hermanas Mirabal'];
+  onbProvincias = [...todas];
+  renderProvinciasTags();
+}
+
+function renderProvinciasTags() {
+  const cont = document.getElementById('onb-provincias-tags');
+  if (!cont) return;
+  if (onbProvincias.length === 32) {
+    cont.innerHTML = `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-full);padding:4px 12px;font-size:12px;font-weight:700;color:var(--green);">
+      Todo el país ✓ <button type="button" onclick="onbProvincias=[];renderProvinciasTags();" style="background:none;border:none;cursor:pointer;color:var(--green);font-size:14px;padding:0 2px;">×</button>
+    </span>`;
+    return;
+  }
+  cont.innerHTML = onbProvincias.map((p, i) =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-full);padding:4px 10px;font-size:12px;font-weight:600;color:var(--text2);">
+      ${p}
+      <button type="button" onclick="quitarProvincia(${i})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;line-height:1;padding:0 2px;">×</button>
+    </span>`
+  ).join('');
+}
+
+function quitarProvincia(i) {
+  onbProvincias.splice(i, 1);
+  renderProvinciasTags();
+}
+
+// Compatibilidad legacy (chips)
 function toggleProvincia(btn, val) {
-  btn.classList.toggle('active');
-  if (btn.classList.contains('active')) onbProvincias.push(val);
-  else onbProvincias = onbProvincias.filter(p => p !== val);
+  if (!onbProvincias.includes(val)) onbProvincias.push(val);
+  renderProvinciasTags();
 }
 
-function toggleTodasProvincias() {
-  const chips = document.querySelectorAll('#onb-provincias-chips .onb-chip');
-  const todas = [...chips].every(c => c.classList.contains('active'));
-  onbProvincias = [];
-  chips.forEach(c => {
-    c.classList.toggle('active', !todas);
-    if (!todas) onbProvincias.push(c.textContent.trim());
-  });
-  const btn = document.getElementById('onb-btn-todas-provincias');
-  if (btn) {
-    btn.textContent = todas ? 'Seleccionar todo el país' : 'Deseleccionar todo';
-    btn.style.borderColor = todas ? 'var(--border)' : 'var(--green)';
-    btn.style.color = todas ? 'var(--text2)' : 'var(--green)';
-  }
-}
+function toggleTodasProvincias() { seleccionarTodasProvincias(); }
 
 function abrirModalObra() {
-  document.getElementById('onb-obra-modal').style.display = 'flex';
+  const m = document.getElementById('onb-obra-modal');
+  m.style.display = 'flex';
+  m.style.alignItems = 'center';
+  m.style.justifyContent = 'center';
+  // limpiar campos
+  ['obra-nombre','obra-institucion','obra-monto','obra-meses','obra-anio'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
 }
 
 function cerrarModalObra() {
@@ -8355,8 +8420,8 @@ function mostrarResumenOnb() {
   const cont = document.getElementById('onb-resumen-contenido');
   if (resumen) resumen.style.display = 'block';
   const rubrosStr = onbRubros.length ? onbRubros.join(', ') : '—';
-  const catStr = onbCategorias.length ? onbCategorias.slice(0,3).map(c => c.nombre.split(' ')[0]).join(', ') + (onbCategorias.length > 3 ? ` +${onbCategorias.length-3}` : '') : '—';
-  const provStr = onbProvincias.length === 32 ? 'Todo el país' : onbProvincias.length ? onbProvincias.slice(0,3).join(', ') + (onbProvincias.length > 3 ? ` +${onbProvincias.length-3}` : '') : '—';
+  const catStr = onbCategorias.length ? `${onbCategorias.length} categorías seleccionadas` : '—';
+  const provStr = onbProvincias.length === 32 ? 'Todo el país' : onbProvincias.length ? `${onbProvincias.length} provincias` : '—';
   if (cont) cont.innerHTML = `
     <b>Empresa:</b> ${sanitize(razon)}<br>
     <b>Rubros:</b> ${rubrosStr}<br>
@@ -8396,6 +8461,7 @@ async function guardarPerfilOnboarding() {
   const datos = {
     user_id:                currentUser.id,
     razon_social:           document.getElementById('onb-razon-social')?.value.trim() || null,
+    email_empresa:          document.getElementById('onb-email-empresa')?.value.trim() || null,
     rnc:                    document.getElementById('onb-rnc')?.value.trim() || null,
     domicilio:              document.getElementById('onb-domicilio')?.value.trim() || null,
     anios_experiencia:      parseInt(document.getElementById('onb-anios')?.value) || null,
@@ -8631,6 +8697,10 @@ function initOnboarding() {
             <label class="ll-field__label">Domicilio principal</label>
             <input class="ll-input" id="onb-domicilio" placeholder="Ej: Av. Abraham Lincoln #302, Santo Domingo">
           </div>
+          <div class="ll-field">
+            <label class="ll-field__label">Correo de contacto de la empresa</label>
+            <input class="ll-input" type="email" id="onb-email-empresa" placeholder="Ej: licitaciones@constructora.com">
+          </div>
           <div style="font-size:11px;color:var(--muted);margin-bottom:8px;margin-top:4px;">Selecciona los documentos que tienes disponibles</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
             <label class="onb-check-card" id="card-rpe">
@@ -8671,33 +8741,187 @@ function initOnboarding() {
 
           <div class="ll-field">
             <label class="ll-field__label">Categorías UNSPSC de interés</label>
-            <p style="font-size:12px;color:var(--muted);margin:4px 0 10px;">Selecciona todas las que aplican a tu empresa</p>
-            <div class="onb-chips-wrap" id="onb-categorias-chips">
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'72','Construcción, mantenimiento y reparación de instalaciones')">72 · Construcción e infraestructura</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'43','Componentes y suministros de tecnología')">43 · Tecnología e informática</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'80','Servicios de gestión y negocio')">80 · Servicios de gestión</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'81','Servicios de ingeniería')">81 · Ingeniería y consultoría</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'71','Servicios de agricultura, pesca, silvicultura')">71 · Agricultura y pesca</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'85','Servicios de salud')">85 · Salud y servicios médicos</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'78','Servicios de transporte')">78 · Transporte y logística</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'73','Servicios de producción industrial')">73 · Manufactura e industria</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'76','Limpieza y mantenimiento')">76 · Limpieza y mantenimiento</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'92','Defensa y seguridad pública')">92 · Defensa y seguridad</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'77','Servicios ambientales')">77 · Medio ambiente</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'84','Servicios financieros')">84 · Servicios financieros</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'86','Educación y formación')">86 · Educación y formación</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'93','Política y asuntos públicos')">93 · Servicios públicos</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'45','Impresión, publicación y artes gráficas')">45 · Imprenta y publicaciones</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'60','Artes musicales y escénicas')">60 · Artes y cultura</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'40','Distribución y acondicionamiento de gases')">40 · Gases y energía</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'39','Electricidad, electricidad, materiales')">39 · Electricidad y materiales</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'25','Vehículos y sus piezas')">25 · Vehículos y piezas</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'44','Equipos y suministros de oficina')">44 · Equipos de oficina</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'47','Materiales de limpieza y mantenimiento')">47 · Materiales de limpieza</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'50','Alimentos, bebidas y tabaco')">50 · Alimentos y bebidas</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'51','Medicamentos y productos farmacéuticos')">51 · Farmacéuticos</button>
-              <button type="button" class="onb-chip" onclick="toggleCategoria(this,'56','Mobiliario')">56 · Mobiliario y muebles</button>
+            <p style="font-size:12px;color:var(--muted);margin:4px 0 10px;">Selecciona categorías del catálogo y agrégalas a tu perfil</p>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+              <div style="position:relative;flex:1;">
+                <select class="ll-input" id="onb-cat-select" style="appearance:none;padding-right:32px;" onchange="agregarCategoriaSelect(this)">
+                  <option value="">— Selecciona una categoría para agregar —</option>
+                  <option value="10100000|Animales vivos">10100000 · Animales vivos</option>
+                  <option value="10150000|Semillas, bulbos, plantulas y esquejes">10150000 · Semillas y plantulas</option>
+                  <option value="10170000|Fertilizantes y nutrientes">10170000 · Fertilizantes y herbicidas</option>
+                  <option value="11100000|Minerales y metales">11100000 · Minerales y metales</option>
+                  <option value="11110000|Tierra y piedra">11110000 · Tierra y piedra</option>
+                  <option value="14100000|Materiales de papel">14100000 · Materiales de papel</option>
+                  <option value="15100000|Combustibles">15100000 · Combustibles</option>
+                  <option value="15120000|Lubricantes y aceites">15120000 · Lubricantes y aceites</option>
+                  <option value="20100000|Maquinaria de minería">20100000 · Maquinaria de minería</option>
+                  <option value="21100000|Maquinaria agrícola">21100000 · Maquinaria agrícola</option>
+                  <option value="22100000|Maquinaria pesada de construcción">22100000 · Maquinaria pesada de construcción</option>
+                  <option value="23150000|Maquinaria y equipos industriales">23150000 · Maquinaria y equipos industriales</option>
+                  <option value="24100000|Manejo de materiales">24100000 · Manejo de materiales</option>
+                  <option value="25100000|Vehículos de motor">25100000 · Vehículos de motor</option>
+                  <option value="25110000|Transporte marítimo">25110000 · Transporte marítimo</option>
+                  <option value="26100000|Fuentes de energía">26100000 · Fuentes de energía</option>
+                  <option value="26120000|Alambres y cables">26120000 · Alambres y cables</option>
+                  <option value="26130000|Generación de energía">26130000 · Generación de energía</option>
+                  <option value="27110000|Herramientas de mano">27110000 · Herramientas de mano</option>
+                  <option value="30100000|Componentes estructurales">30100000 · Componentes estructurales</option>
+                  <option value="30110000|Hormigón, cemento y yeso">30110000 · Hormigón, cemento y yeso</option>
+                  <option value="30120000|Carreteras y paisaje">30120000 · Carreteras y paisaje</option>
+                  <option value="30130000|Productos de construcción estructurales">30130000 · Productos estructurales</option>
+                  <option value="30140000|Aislamiento">30140000 · Aislamiento</option>
+                  <option value="30150000|Materiales de acabado exterior">30150000 · Acabados exteriores</option>
+                  <option value="30160000|Materiales de acabado interior">30160000 · Acabados interiores</option>
+                  <option value="30170000|Puertas, ventanas y vidrio">30170000 · Puertas, ventanas y vidrio</option>
+                  <option value="30180000|Instalaciones de plomería">30180000 · Plomería</option>
+                  <option value="30190000|Equipo de apoyo construcción">30190000 · Apoyo para construcción</option>
+                  <option value="30200000|Estructuras prefabricadas">30200000 · Estructuras prefabricadas</option>
+                  <option value="30220000|Estructuras permanentes">30220000 · Estructuras permanentes</option>
+                  <option value="31160000|Ferretería">31160000 · Ferretería</option>
+                  <option value="31200000|Adhesivos y selladores">31200000 · Adhesivos y selladores</option>
+                  <option value="31210000|Pinturas y acabados">31210000 · Pinturas y acabados</option>
+                  <option value="32100000|Circuitos y microensamblajes">32100000 · Circuitos electrónicos</option>
+                  <option value="39100000|Lámparas y bombillas">39100000 · Lámparas y bombillas</option>
+                  <option value="39110000|Iluminación y artefactos">39110000 · Iluminación</option>
+                  <option value="39120000|Equipos eléctricos">39120000 · Equipos eléctricos</option>
+                  <option value="40100000|Calefacción y ventilación">40100000 · HVAC</option>
+                  <option value="40140000|Distribución de fluidos y gas">40140000 · Distribución de gas</option>
+                  <option value="40150000|Bombas y compresores">40150000 · Bombas y compresores</option>
+                  <option value="40160000|Filtrado y purificación">40160000 · Filtrado industrial</option>
+                  <option value="41100000|Equipo de laboratorio">41100000 · Equipo de laboratorio</option>
+                  <option value="41110000|Instrumentos de medición">41110000 · Instrumentos de medición</option>
+                  <option value="42120000|Equipos veterinarios">42120000 · Equipos veterinarios</option>
+                  <option value="42130000|Telas y vestidos médicos">42130000 · Vestuario médico</option>
+                  <option value="42140000|Suministros de tratamiento médico">42140000 · Suministros médicos</option>
+                  <option value="42150000|Equipos dentales">42150000 · Equipos dentales</option>
+                  <option value="42180000|Examen y control del paciente">42180000 · Control de pacientes</option>
+                  <option value="42200000|Imágenes diagnósticas médicas">42200000 · Imágenes diagnósticas</option>
+                  <option value="42290000|Productos quirúrgicos">42290000 · Productos quirúrgicos</option>
+                  <option value="43190000|Dispositivos de comunicaciones">43190000 · Telecomunicaciones</option>
+                  <option value="43200000|Componentes de TI">43200000 · Componentes de TI</option>
+                  <option value="43210000|Equipo informático">43210000 · Equipo informático</option>
+                  <option value="43220000|Equipos de redes">43220000 · Redes y comunicaciones</option>
+                  <option value="43230000|Software">43230000 · Software</option>
+                  <option value="44100000|Maquinaria de oficina">44100000 · Maquinaria de oficina</option>
+                  <option value="44110000|Accesorios de oficina">44110000 · Accesorios de oficina</option>
+                  <option value="44120000|Suministros de oficina">44120000 · Suministros de oficina</option>
+                  <option value="45100000|Equipo de imprenta">45100000 · Equipo de imprenta</option>
+                  <option value="45110000|Equipos de audio y video">45110000 · Audio y video</option>
+                  <option value="46100000|Armas ligeras y munición">46100000 · Armas y munición</option>
+                  <option value="46150000|Protección del orden público">46150000 · Orden público</option>
+                  <option value="46160000|Seguridad y control público">46160000 · Seguridad pública</option>
+                  <option value="46170000|Seguridad y vigilancia">46170000 · Seguridad y vigilancia</option>
+                  <option value="46190000|Protección contra incendios">46190000 · Protección contra incendios</option>
+                  <option value="47100000|Tratamiento de aguas residuales">47100000 · Tratamiento de agua</option>
+                  <option value="47130000|Suministros de aseo y limpieza">47130000 · Suministros de limpieza</option>
+                  <option value="48100000|Equipos de servicios de alimentación">48100000 · Servicios de alimentación</option>
+                  <option value="49160000|Equipos deportivos">49160000 · Equipos deportivos</option>
+                  <option value="50100000|Frutos secos">50100000 · Frutos secos</option>
+                  <option value="50110000|Carne y aves de corral">50110000 · Carne y aves</option>
+                  <option value="50130000|Lácteos y huevos">50130000 · Lácteos y huevos</option>
+                  <option value="50190000|Alimentos preparados">50190000 · Alimentos preparados</option>
+                  <option value="50200000|Bebidas">50200000 · Bebidas</option>
+                  <option value="50220000|Cereales y legumbres">50220000 · Cereales y legumbres</option>
+                  <option value="51100000|Medicamentos antiinfecciosos">51100000 · Medicamentos antiinfecciosos</option>
+                  <option value="51120000|Medicamentos cardiovasculares">51120000 · Medicamentos cardiovasculares</option>
+                  <option value="51140000|Medicamentos del sistema nervioso">51140000 · Sistema nervioso central</option>
+                  <option value="51200000|Medicamentos inmunomoduladores">51200000 · Inmunomoduladores</option>
+                  <option value="51210000|Categorías de medicamentos varios">51210000 · Medicamentos varios</option>
+                  <option value="52100000|Revestimientos de suelos">52100000 · Revestimientos de suelos</option>
+                  <option value="52140000|Aparatos electrodomésticos">52140000 · Electrodomésticos</option>
+                  <option value="52160000|Electrónica de consumo">52160000 · Electrónica de consumo</option>
+                  <option value="53100000|Ropa">53100000 · Ropa</option>
+                  <option value="53110000|Calzado">53110000 · Calzado</option>
+                  <option value="53130000|Artículos de tocador">53130000 · Artículos de tocador</option>
+                  <option value="55100000|Medios impresos">55100000 · Medios impresos</option>
+                  <option value="56100000|Muebles de alojamiento">56100000 · Muebles de alojamiento</option>
+                  <option value="56110000|Muebles comerciales e industriales">56110000 · Muebles comerciales</option>
+                  <option value="56120000|Mobiliario escolar y educativo">56120000 · Mobiliario educativo</option>
+                  <option value="60100000|Materiales didácticos">60100000 · Materiales didácticos</option>
+                  <option value="60130000|Instrumentos musicales">60130000 · Instrumentos musicales</option>
+                  <option value="60140000|Juguetes y juegos">60140000 · Juguetes y juegos</option>
+                  <option value="70100000|Pesquerías y acuicultura">70100000 · Pesca y acuicultura</option>
+                  <option value="70110000|Horticultura">70110000 · Horticultura</option>
+                  <option value="70130000|Gestión del terreno">70130000 · Gestión del suelo</option>
+                  <option value="70140000|Producción de cultivos">70140000 · Cultivos</option>
+                  <option value="70150000|Silvicultura">70150000 · Silvicultura</option>
+                  <option value="70170000|Recursos hidráulicos">70170000 · Recursos hidráulicos</option>
+                  <option value="71100000|Servicios de minería">71100000 · Servicios de minería</option>
+                  <option value="71110000|Perforación de petróleo y gas">71110000 · Perforación petrolífera</option>
+                  <option value="71120000|Construcción de pozos">71120000 · Construcción de pozos</option>
+                  <option value="72100000|Mantenimiento y reparación de instalaciones">72100000 · Mantenimiento de instalaciones</option>
+                  <option value="72130000|Construcción general de edificios">72130000 · Construcción de edificios</option>
+                  <option value="72140000|Construcción pesada">72140000 · Construcción pesada</option>
+                  <option value="73100000|Industrias de plásticos y químicos">73100000 · Plásticos y químicos</option>
+                  <option value="73110000|Industrias de madera y papel">73110000 · Madera y papel</option>
+                  <option value="73120000|Industrias del metal">73120000 · Industrias del metal</option>
+                  <option value="73130000|Industrias de alimentos">73130000 · Industrias alimenticias</option>
+                  <option value="73150000|Servicios de apoyo a fabricación">73150000 · Apoyo a fabricación</option>
+                  <option value="73160000|Fabricación de maquinaria">73160000 · Fabricación de maquinaria</option>
+                  <option value="73180000|Servicios de maquinado">73180000 · Maquinado y procesado</option>
+                  <option value="76100000|Servicios de descontaminación">76100000 · Descontaminación</option>
+                  <option value="76110000|Servicios de aseo y limpieza">76110000 · Aseo y limpieza</option>
+                  <option value="76120000|Eliminación de desechos">76120000 · Gestión de desechos</option>
+                  <option value="76130000|Limpieza de residuos peligrosos">76130000 · Residuos peligrosos</option>
+                  <option value="77100000|Gestión medioambiental">77100000 · Gestión ambiental</option>
+                  <option value="77110000|Protección medioambiental">77110000 · Protección ambiental</option>
+                  <option value="77120000|Control de contaminación">77120000 · Control de contaminación</option>
+                  <option value="78100000|Transporte de correo y carga">78100000 · Transporte de carga</option>
+                  <option value="78110000|Transporte de pasajeros">78110000 · Transporte de pasajeros</option>
+                  <option value="78130000|Almacenaje">78130000 · Almacenaje</option>
+                  <option value="78140000|Servicios de transporte">78140000 · Servicios de transporte</option>
+                  <option value="78180000|Mantenimiento de transportes">78180000 · Mantenimiento de vehículos</option>
+                  <option value="80100000|Servicios de asesoría de gestión">80100000 · Asesoría de gestión</option>
+                  <option value="80110000|Servicios de recursos humanos">80110000 · Recursos humanos</option>
+                  <option value="80120000|Servicios legales">80120000 · Servicios legales</option>
+                  <option value="80130000|Servicios inmobiliarios">80130000 · Servicios inmobiliarios</option>
+                  <option value="80140000|Mercadeo y distribución">80140000 · Mercadeo y distribución</option>
+                  <option value="80160000|Administración de empresas">80160000 · Administración empresarial</option>
+                  <option value="81100000|Ingeniería profesional">81100000 · Ingeniería profesional</option>
+                  <option value="81110000|Servicios informáticos">81110000 · Servicios de TI</option>
+                  <option value="81120000|Economía">81120000 · Economía</option>
+                  <option value="81130000|Estadística">81130000 · Estadística</option>
+                  <option value="82100000|Publicidad">82100000 · Publicidad</option>
+                  <option value="82110000|Escritura y traducciones">82110000 · Escritura y traducciones</option>
+                  <option value="82120000|Servicios de reproducción">82120000 · Reproducción</option>
+                  <option value="82130000|Servicios fotográficos">82130000 · Fotografía</option>
+                  <option value="82140000|Diseño gráfico">82140000 · Diseño gráfico</option>
+                  <option value="83100000|Servicios públicos">83100000 · Servicios públicos</option>
+                  <option value="83110000|Telecomunicaciones">83110000 · Telecomunicaciones</option>
+                  <option value="84100000|Finanzas de desarrollo">84100000 · Finanzas</option>
+                  <option value="84110000|Contabilidad y auditorías">84110000 · Contabilidad</option>
+                  <option value="84120000|Banca e inversiones">84120000 · Banca</option>
+                  <option value="84130000|Seguros y pensiones">84130000 · Seguros</option>
+                  <option value="85100000|Servicios integrales de salud">85100000 · Salud integral</option>
+                  <option value="85110000|Prevención de enfermedades">85110000 · Prevención</option>
+                  <option value="85120000|Práctica médica">85120000 · Práctica médica</option>
+                  <option value="85130000|Investigación médica">85130000 · Investigación médica</option>
+                  <option value="85150000|Nutrición">85150000 · Nutrición</option>
+                  <option value="86100000|Formación profesional">86100000 · Formación profesional</option>
+                  <option value="86110000|Educación alternativa">86110000 · Educación alternativa</option>
+                  <option value="86120000|Instituciones educativas">86120000 · Instituciones educativas</option>
+                  <option value="86130000|Servicios educativos especializados">86130000 · Educación especializada</option>
+                  <option value="86140000|Instalaciones educativas">86140000 · Instalaciones educativas</option>
+                  <option value="90100000|Restaurantes y catering">90100000 · Catering</option>
+                  <option value="90110000|Hoteles y alojamientos">90110000 · Hoteles y alojamientos</option>
+                  <option value="90130000|Artes interpretativas">90130000 · Artes</option>
+                  <option value="90150000|Entretenimiento">90150000 · Entretenimiento</option>
+                  <option value="92100000|Orden público y seguridad">92100000 · Seguridad pública</option>
+                  <option value="92110000|Defensa nacional">92110000 · Defensa nacional</option>
+                  <option value="92120000|Seguridad y protección personal">92120000 · Seguridad privada</option>
+                  <option value="93100000|Instituciones políticas">93100000 · Instituciones políticas</option>
+                  <option value="93130000|Ayuda humanitaria">93130000 · Ayuda humanitaria</option>
+                  <option value="93140000|Servicios comunitarios">93140000 · Servicios comunitarios</option>
+                  <option value="93150000|Administración pública">93150000 · Administración pública</option>
+                  <option value="93160000|Tributación">93160000 · Tributación</option>
+                  <option value="94100000|Organizaciones laborales">94100000 · Organizaciones laborales</option>
+                  <option value="94130000|Organizaciones cívicas">94130000 · Organizaciones cívicas</option>
+                </select>
+                <svg style="position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
             </div>
+            <!-- Tags seleccionados -->
+            <div id="onb-categorias-tags" style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px;"></div>
           </div>
 
           <div class="ll-field">
@@ -8763,45 +8987,55 @@ function initOnboarding() {
         <div class="onb-step-header">
           <div class="onb-step-label">PASO 4 DE 5</div>
           <h2 class="onb-step-titulo">Alcance geográfico.</h2>
-          <p class="onb-step-desc">¿En qué provincias puedes ejecutar proyectos? Selecciona todas las que aplican.</p>
+          <p class="onb-step-desc">¿En qué provincias puedes ejecutar proyectos?</p>
         </div>
         <div class="onb-fields">
-          <button type="button" id="onb-btn-todas-provincias" onclick="toggleTodasProvincias()" style="background:none;border:1.5px solid var(--border);border-radius:var(--r-md);padding:8px 16px;color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;margin-bottom:12px;font-family:var(--font-body);transition:all .15s;">
-            Seleccionar todo el país
-          </button>
-          <div class="onb-chips-wrap" id="onb-provincias-chips">
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Distrito Nacional')">Distrito Nacional</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Santo Domingo')">Santo Domingo</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Santiago')">Santiago</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'La Vega')">La Vega</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'San Pedro de Macorís')">San Pedro de Macorís</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'La Romana')">La Romana</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'San Cristóbal')">San Cristóbal</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Puerto Plata')">Puerto Plata</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Duarte')">Duarte</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'La Altagracia')">La Altagracia</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Monte Plata')">Monte Plata</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Espaillat')">Espaillat</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Barahona')">Barahona</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'San Juan')">San Juan</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Azua')">Azua</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Peravia')">Peravia</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Monseñor Nouel')">Monseñor Nouel</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Sánchez Ramírez')">Sánchez Ramírez</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Hato Mayor')">Hato Mayor</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'El Seibo')">El Seibo</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Valverde')">Valverde</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'María Trinidad Sánchez')">María Trinidad Sánchez</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Samaná')">Samaná</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Monte Cristi')">Monte Cristi</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Dajabón')">Dajabón</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Santiago Rodríguez')">Santiago Rodríguez</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Elías Piña')">Elías Piña</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'San José de Ocoa')">San José de Ocoa</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Independencia')">Independencia</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Baoruco')">Baoruco</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Pedernales')">Pedernales</button>
-            <button type="button" class="onb-chip" onclick="toggleProvincia(this,'Hermanas Mirabal')">Hermanas Mirabal</button>
+          <div class="ll-field">
+            <label class="ll-field__label">Selecciona las provincias donde operas</label>
+            <div style="display:flex;gap:8px;margin-bottom:10px;">
+              <div style="position:relative;flex:1;">
+                <select class="ll-input" id="onb-prov-select" style="appearance:none;padding-right:32px;" onchange="agregarProvinciaSelect(this)">
+                  <option value="">— Selecciona una provincia —</option>
+                  <option>Distrito Nacional</option>
+                  <option>Santo Domingo</option>
+                  <option>Santiago</option>
+                  <option>La Vega</option>
+                  <option>San Pedro de Macorís</option>
+                  <option>La Romana</option>
+                  <option>San Cristóbal</option>
+                  <option>Puerto Plata</option>
+                  <option>Duarte</option>
+                  <option>La Altagracia</option>
+                  <option>Monte Plata</option>
+                  <option>Espaillat</option>
+                  <option>Barahona</option>
+                  <option>San Juan</option>
+                  <option>Azua</option>
+                  <option>Peravia</option>
+                  <option>Monseñor Nouel</option>
+                  <option>Sánchez Ramírez</option>
+                  <option>Hato Mayor</option>
+                  <option>El Seibo</option>
+                  <option>Valverde</option>
+                  <option>María Trinidad Sánchez</option>
+                  <option>Samaná</option>
+                  <option>Monte Cristi</option>
+                  <option>Dajabón</option>
+                  <option>Santiago Rodríguez</option>
+                  <option>Elías Piña</option>
+                  <option>San José de Ocoa</option>
+                  <option>Independencia</option>
+                  <option>Baoruco</option>
+                  <option>Pedernales</option>
+                  <option>Hermanas Mirabal</option>
+                </select>
+                <svg style="position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+              <button type="button" onclick="seleccionarTodasProvincias()" style="background:none;border:1.5px solid var(--border);border-radius:var(--r-md);padding:8px 14px;color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-body);white-space:nowrap;transition:all .15s;" id="onb-btn-todas-provincias">
+                Todo el país
+              </button>
+            </div>
+            <div id="onb-provincias-tags" style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px;"></div>
           </div>
         </div>
       </div>
