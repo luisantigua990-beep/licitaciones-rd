@@ -2371,9 +2371,9 @@ body {
 html { background: var(--color-bg, #0A0A0A); }
 
 /* ── ONBOARDING WIZARD ─────────────────────────────── */
-.onb-overlay { position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:center;justify-content:center; }
+.onb-overlay { position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px; }
 .onb-overlay.oculto { display:none; }
-.onb-wizard { display:flex;width:100%;max-width:960px;height:90vh;max-height:680px;background:var(--bg);border-radius:var(--r-xl);overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.5); }
+.onb-wizard { display:flex;width:100%;max-width:1000px;height:90vh;max-height:720px;background:var(--bg);border-radius:var(--r-xl);overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.5);margin:auto; }
 .onb-sidebar { width:280px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);padding:28px 24px;display:flex;flex-direction:column;overflow-y:auto; }
 .onb-content { flex:1;display:flex;flex-direction:column;overflow:hidden; }
 .onb-paso-nav { display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:var(--r-md);cursor:pointer;transition:background .15s; }
@@ -8128,7 +8128,7 @@ function initBanner() {
 
 // ── ONBOARDING WIZARD ────────────────────────────────────────────────────
 let onbPaso = 0;
-const ONB_TOTAL = 5;
+const ONB_TOTAL = 4;
 let onbEspecialidades = [];
 let onbModalidades = [];
 let onbProvincias = [];
@@ -8401,36 +8401,42 @@ function toggleProvincia(btn, val) {
 
 function toggleTodasProvincias() { seleccionarTodasProvincias(); }
 
-function abrirModalObra() {
-  const m = document.getElementById('onb-obra-modal');
-  m.style.display = 'flex';
-  m.style.alignItems = 'center';
-  m.style.justifyContent = 'center';
-  // limpiar campos
+function abrirModalObra() { mostrarFormObraInline(); } // alias compatibilidad
+
+function mostrarFormObraInline() {
+  const form = document.getElementById('onb-obra-inline');
+  const btn  = document.getElementById('onb-btn-agregar-obra');
+  if (!form) return;
   ['obra-nombre','obra-institucion','obra-monto','obra-meses','obra-anio'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
+  form.style.display = 'block';
+  if (btn) btn.style.display = 'none';
+  document.getElementById('obra-nombre')?.focus();
 }
 
-function cerrarModalObra() {
-  document.getElementById('onb-obra-modal').style.display = 'none';
-  ['obra-nombre','obra-institucion','obra-monto','obra-meses','obra-anio'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = '';
-  });
+function cancelarObraInline() {
+  const form = document.getElementById('onb-obra-inline');
+  const btn  = document.getElementById('onb-btn-agregar-obra');
+  if (form) form.style.display = 'none';
+  if (btn)  btn.style.display  = 'flex';
 }
 
-function guardarObra() {
+function guardarObraInline() {
   const nombre = document.getElementById('obra-nombre')?.value.trim();
   const inst   = document.getElementById('obra-institucion')?.value.trim();
   const monto  = Number(document.getElementById('obra-monto')?.value);
   const meses  = Number(document.getElementById('obra-meses')?.value);
   const anio   = document.getElementById('obra-anio')?.value;
-  if (!nombre) { mostrarToast('Ingresa el nombre del proyecto', 'warning'); return; }
-  const obra = { nombre, institucion: inst, monto, meses, anio };
-  onbObras.push(obra);
+  if (!nombre) { mostrarToast('Ingresa el nombre de la obra', 'warning'); return; }
+  onbObras.push({ nombre, institucion: inst, monto, meses, anio });
   renderObras();
-  cerrarModalObra();
+  cancelarObraInline();
 }
+
+function cerrarModalObra() { cancelarObraInline(); } // alias
+
+function guardarObra() { guardarObraInline(); } // alias
 
 function renderObras() {
   const lista = document.getElementById('onb-obras-lista');
@@ -8493,16 +8499,13 @@ function mostrarResumenOnb() {
   const resumen = document.getElementById('onb-resumen');
   const cont = document.getElementById('onb-resumen-contenido');
   if (resumen) resumen.style.display = 'block';
-  const rubrosStr = onbRubros.length ? onbRubros.join(', ') : '—';
   const catStr = onbCategorias.length ? `${onbCategorias.length} categorías seleccionadas` : '—';
   const provStr = onbProvincias.length === 32 ? 'Todo el país' : onbProvincias.length ? `${onbProvincias.length} provincias` : '—';
   if (cont) cont.innerHTML = `
     <b>Empresa:</b> ${sanitize(razon)}<br>
-    <b>Rubros:</b> ${rubrosStr}<br>
-    <b>Categorías de interés:</b> ${catStr}<br>
+    <b>Categorías UNSPSC:</b> ${catStr}<br>
     <b>Provincias:</b> ${provStr}<br>
-    <b>Obras:</b> ${onbObras.length} registradas<br>
-    <b>Modalidades:</b> ${onbModalidades.length ? onbModalidades.join(', ') : '—'}
+    <b>Obras:</b> ${onbObras.length} registradas
   `;
 }
 
@@ -8702,29 +8705,22 @@ function initOnboarding() {
         <div class="onb-paso-nav" id="onb-nav-1" onclick="irAPaso(1)">
           <div class="onb-paso-num" id="onb-num-1">2</div>
           <div>
-            <div style="font-size:13px;font-weight:700;">Categorías UNSPSC</div>
-            <div style="font-size:11px;color:var(--muted);">Familias de catálogo</div>
+            <div style="font-size:13px;font-weight:700;">Experiencia y capacidad</div>
+            <div style="font-size:11px;color:var(--muted);">Obras ejecutadas · rango de montos</div>
           </div>
         </div>
         <div class="onb-paso-nav" id="onb-nav-2" onclick="irAPaso(2)">
           <div class="onb-paso-num" id="onb-num-2">3</div>
           <div>
-            <div style="font-size:13px;font-weight:700;">Experiencia y capacidad</div>
-            <div style="font-size:11px;color:var(--muted);">Obras ejecutadas · rango de montos</div>
+            <div style="font-size:13px;font-weight:700;">Alcance geográfico</div>
+            <div style="font-size:11px;color:var(--muted);">Provincias donde operas</div>
           </div>
         </div>
         <div class="onb-paso-nav" id="onb-nav-3" onclick="irAPaso(3)">
           <div class="onb-paso-num" id="onb-num-3">4</div>
           <div>
-            <div style="font-size:13px;font-weight:700;">Alcance geográfico</div>
-            <div style="font-size:11px;color:var(--muted);">Provincias donde operas</div>
-          </div>
-        </div>
-        <div class="onb-paso-nav" id="onb-nav-4" onclick="irAPaso(4)">
-          <div class="onb-paso-num" id="onb-num-4">5</div>
-          <div>
-            <div style="font-size:13px;font-weight:700;">Notificaciones</div>
-            <div style="font-size:11px;color:var(--muted);">Push y alertas</div>
+            <div style="font-size:13px;font-weight:700;">Notificaciones y rubros</div>
+            <div style="font-size:11px;color:var(--muted);">Push · categorías UNSPSC</div>
           </div>
         </div>
       </div>
@@ -8747,7 +8743,7 @@ function initOnboarding() {
       <!-- PASO 1: Identidad legal -->
       <div class="onb-step" id="onb-step-0">
         <div class="onb-step-header">
-          <div class="onb-step-label">PASO 1 DE 5</div>
+          <div class="onb-step-label">PASO 1 DE 4</div>
           <h2 class="onb-step-titulo">Identidad legal.</h2>
           <p class="onb-step-desc">Esta información aparecerá en tu perfil y la usamos para verificar tu empresa en el RPE.</p>
         </div>
@@ -8795,209 +8791,10 @@ function initOnboarding() {
         </div>
       </div>
 
-      <!-- PASO 2: Categorías UNSPSC -->
+      <!-- PASO 2: Experiencia y capacidad -->
       <div class="onb-step" id="onb-step-1" style="display:none;">
         <div class="onb-step-header">
-          <div class="onb-step-label">PASO 2 DE 5</div>
-          <h2 class="onb-step-titulo">Categorías UNSPSC.</h2>
-          <p class="onb-step-desc">¿En qué categorías del catálogo opera tu empresa? Busca por código o nombre y agrégalas.</p>
-        </div>
-        <div class="onb-fields">
-          <div class="ll-field">
-            <label class="ll-field__label">Categorías UNSPSC</label>
-            <p style="font-size:12px;color:var(--muted);margin:4px 0 10px;">Busca por código (ej: 72130000) o por nombre (ej: construcción). Selecciona del desplegable para agregar.</p>
-            <div style="margin-bottom:8px;">
-              <input class="ll-input" id="onb-cat-search" placeholder="Ej: 72130000 o construcción" oninput="filtrarCatalogoUnspsc(this.value)" style="margin-bottom:8px;">
-            </div>
-            <div style="display:flex;gap:8px;margin-bottom:10px;">
-              <div style="position:relative;flex:1;">
-                <select class="ll-input" id="onb-cat-select" style="appearance:none;padding-right:32px;" onchange="agregarCategoriaSelect(this)">
-                  <option value="">— Selecciona una categoría para agregar —</option>
-                  <option value="10100000|Animales vivos">10100000 · Animales vivos</option>
-                  <option value="10150000|Semillas, bulbos, plantulas y esquejes">10150000 · Semillas y plantulas</option>
-                  <option value="10170000|Fertilizantes y nutrientes">10170000 · Fertilizantes y herbicidas</option>
-                  <option value="11100000|Minerales y metales">11100000 · Minerales y metales</option>
-                  <option value="11110000|Tierra y piedra">11110000 · Tierra y piedra</option>
-                  <option value="14100000|Materiales de papel">14100000 · Materiales de papel</option>
-                  <option value="15100000|Combustibles">15100000 · Combustibles</option>
-                  <option value="15120000|Lubricantes y aceites">15120000 · Lubricantes y aceites</option>
-                  <option value="20100000|Maquinaria de minería">20100000 · Maquinaria de minería</option>
-                  <option value="21100000|Maquinaria agrícola">21100000 · Maquinaria agrícola</option>
-                  <option value="22100000|Maquinaria pesada de construcción">22100000 · Maquinaria pesada de construcción</option>
-                  <option value="23150000|Maquinaria y equipos industriales">23150000 · Maquinaria y equipos industriales</option>
-                  <option value="24100000|Manejo de materiales">24100000 · Manejo de materiales</option>
-                  <option value="25100000|Vehículos de motor">25100000 · Vehículos de motor</option>
-                  <option value="25110000|Transporte marítimo">25110000 · Transporte marítimo</option>
-                  <option value="26100000|Fuentes de energía">26100000 · Fuentes de energía</option>
-                  <option value="26120000|Alambres y cables">26120000 · Alambres y cables</option>
-                  <option value="26130000|Generación de energía">26130000 · Generación de energía</option>
-                  <option value="27110000|Herramientas de mano">27110000 · Herramientas de mano</option>
-                  <option value="30100000|Componentes estructurales">30100000 · Componentes estructurales</option>
-                  <option value="30110000|Hormigón, cemento y yeso">30110000 · Hormigón, cemento y yeso</option>
-                  <option value="30120000|Carreteras y paisaje">30120000 · Carreteras y paisaje</option>
-                  <option value="30130000|Productos de construcción estructurales">30130000 · Productos estructurales</option>
-                  <option value="30140000|Aislamiento">30140000 · Aislamiento</option>
-                  <option value="30150000|Materiales de acabado exterior">30150000 · Acabados exteriores</option>
-                  <option value="30160000|Materiales de acabado interior">30160000 · Acabados interiores</option>
-                  <option value="30170000|Puertas, ventanas y vidrio">30170000 · Puertas, ventanas y vidrio</option>
-                  <option value="30180000|Instalaciones de plomería">30180000 · Plomería</option>
-                  <option value="30190000|Equipo de apoyo construcción">30190000 · Apoyo para construcción</option>
-                  <option value="30200000|Estructuras prefabricadas">30200000 · Estructuras prefabricadas</option>
-                  <option value="30220000|Estructuras permanentes">30220000 · Estructuras permanentes</option>
-                  <option value="31160000|Ferretería">31160000 · Ferretería</option>
-                  <option value="31200000|Adhesivos y selladores">31200000 · Adhesivos y selladores</option>
-                  <option value="31210000|Pinturas y acabados">31210000 · Pinturas y acabados</option>
-                  <option value="32100000|Circuitos y microensamblajes">32100000 · Circuitos electrónicos</option>
-                  <option value="39100000|Lámparas y bombillas">39100000 · Lámparas y bombillas</option>
-                  <option value="39110000|Iluminación y artefactos">39110000 · Iluminación</option>
-                  <option value="39120000|Equipos eléctricos">39120000 · Equipos eléctricos</option>
-                  <option value="40100000|Calefacción y ventilación">40100000 · HVAC</option>
-                  <option value="40140000|Distribución de fluidos y gas">40140000 · Distribución de gas</option>
-                  <option value="40150000|Bombas y compresores">40150000 · Bombas y compresores</option>
-                  <option value="40160000|Filtrado y purificación">40160000 · Filtrado industrial</option>
-                  <option value="41100000|Equipo de laboratorio">41100000 · Equipo de laboratorio</option>
-                  <option value="41110000|Instrumentos de medición">41110000 · Instrumentos de medición</option>
-                  <option value="42120000|Equipos veterinarios">42120000 · Equipos veterinarios</option>
-                  <option value="42130000|Telas y vestidos médicos">42130000 · Vestuario médico</option>
-                  <option value="42140000|Suministros de tratamiento médico">42140000 · Suministros médicos</option>
-                  <option value="42150000|Equipos dentales">42150000 · Equipos dentales</option>
-                  <option value="42180000|Examen y control del paciente">42180000 · Control de pacientes</option>
-                  <option value="42200000|Imágenes diagnósticas médicas">42200000 · Imágenes diagnósticas</option>
-                  <option value="42290000|Productos quirúrgicos">42290000 · Productos quirúrgicos</option>
-                  <option value="43190000|Dispositivos de comunicaciones">43190000 · Telecomunicaciones</option>
-                  <option value="43200000|Componentes de TI">43200000 · Componentes de TI</option>
-                  <option value="43210000|Equipo informático">43210000 · Equipo informático</option>
-                  <option value="43220000|Equipos de redes">43220000 · Redes y comunicaciones</option>
-                  <option value="43230000|Software">43230000 · Software</option>
-                  <option value="44100000|Maquinaria de oficina">44100000 · Maquinaria de oficina</option>
-                  <option value="44110000|Accesorios de oficina">44110000 · Accesorios de oficina</option>
-                  <option value="44120000|Suministros de oficina">44120000 · Suministros de oficina</option>
-                  <option value="45100000|Equipo de imprenta">45100000 · Equipo de imprenta</option>
-                  <option value="45110000|Equipos de audio y video">45110000 · Audio y video</option>
-                  <option value="46100000|Armas ligeras y munición">46100000 · Armas y munición</option>
-                  <option value="46150000|Protección del orden público">46150000 · Orden público</option>
-                  <option value="46160000|Seguridad y control público">46160000 · Seguridad pública</option>
-                  <option value="46170000|Seguridad y vigilancia">46170000 · Seguridad y vigilancia</option>
-                  <option value="46190000|Protección contra incendios">46190000 · Protección contra incendios</option>
-                  <option value="47100000|Tratamiento de aguas residuales">47100000 · Tratamiento de agua</option>
-                  <option value="47130000|Suministros de aseo y limpieza">47130000 · Suministros de limpieza</option>
-                  <option value="48100000|Equipos de servicios de alimentación">48100000 · Servicios de alimentación</option>
-                  <option value="49160000|Equipos deportivos">49160000 · Equipos deportivos</option>
-                  <option value="50100000|Frutos secos">50100000 · Frutos secos</option>
-                  <option value="50110000|Carne y aves de corral">50110000 · Carne y aves</option>
-                  <option value="50130000|Lácteos y huevos">50130000 · Lácteos y huevos</option>
-                  <option value="50190000|Alimentos preparados">50190000 · Alimentos preparados</option>
-                  <option value="50200000|Bebidas">50200000 · Bebidas</option>
-                  <option value="50220000|Cereales y legumbres">50220000 · Cereales y legumbres</option>
-                  <option value="51100000|Medicamentos antiinfecciosos">51100000 · Medicamentos antiinfecciosos</option>
-                  <option value="51120000|Medicamentos cardiovasculares">51120000 · Medicamentos cardiovasculares</option>
-                  <option value="51140000|Medicamentos del sistema nervioso">51140000 · Sistema nervioso central</option>
-                  <option value="51200000|Medicamentos inmunomoduladores">51200000 · Inmunomoduladores</option>
-                  <option value="51210000|Categorías de medicamentos varios">51210000 · Medicamentos varios</option>
-                  <option value="52100000|Revestimientos de suelos">52100000 · Revestimientos de suelos</option>
-                  <option value="52140000|Aparatos electrodomésticos">52140000 · Electrodomésticos</option>
-                  <option value="52160000|Electrónica de consumo">52160000 · Electrónica de consumo</option>
-                  <option value="53100000|Ropa">53100000 · Ropa</option>
-                  <option value="53110000|Calzado">53110000 · Calzado</option>
-                  <option value="53130000|Artículos de tocador">53130000 · Artículos de tocador</option>
-                  <option value="55100000|Medios impresos">55100000 · Medios impresos</option>
-                  <option value="56100000|Muebles de alojamiento">56100000 · Muebles de alojamiento</option>
-                  <option value="56110000|Muebles comerciales e industriales">56110000 · Muebles comerciales</option>
-                  <option value="56120000|Mobiliario escolar y educativo">56120000 · Mobiliario educativo</option>
-                  <option value="60100000|Materiales didácticos">60100000 · Materiales didácticos</option>
-                  <option value="60130000|Instrumentos musicales">60130000 · Instrumentos musicales</option>
-                  <option value="60140000|Juguetes y juegos">60140000 · Juguetes y juegos</option>
-                  <option value="70100000|Pesquerías y acuicultura">70100000 · Pesca y acuicultura</option>
-                  <option value="70110000|Horticultura">70110000 · Horticultura</option>
-                  <option value="70130000|Gestión del terreno">70130000 · Gestión del suelo</option>
-                  <option value="70140000|Producción de cultivos">70140000 · Cultivos</option>
-                  <option value="70150000|Silvicultura">70150000 · Silvicultura</option>
-                  <option value="70170000|Recursos hidráulicos">70170000 · Recursos hidráulicos</option>
-                  <option value="71100000|Servicios de minería">71100000 · Servicios de minería</option>
-                  <option value="71110000|Perforación de petróleo y gas">71110000 · Perforación petrolífera</option>
-                  <option value="71120000|Construcción de pozos">71120000 · Construcción de pozos</option>
-                  <option value="72100000|Mantenimiento y reparación de instalaciones">72100000 · Mantenimiento de instalaciones</option>
-                  <option value="72130000|Construcción general de edificios">72130000 · Construcción de edificios</option>
-                  <option value="72140000|Construcción pesada">72140000 · Construcción pesada</option>
-                  <option value="73100000|Industrias de plásticos y químicos">73100000 · Plásticos y químicos</option>
-                  <option value="73110000|Industrias de madera y papel">73110000 · Madera y papel</option>
-                  <option value="73120000|Industrias del metal">73120000 · Industrias del metal</option>
-                  <option value="73130000|Industrias de alimentos">73130000 · Industrias alimenticias</option>
-                  <option value="73150000|Servicios de apoyo a fabricación">73150000 · Apoyo a fabricación</option>
-                  <option value="73160000|Fabricación de maquinaria">73160000 · Fabricación de maquinaria</option>
-                  <option value="73180000|Servicios de maquinado">73180000 · Maquinado y procesado</option>
-                  <option value="76100000|Servicios de descontaminación">76100000 · Descontaminación</option>
-                  <option value="76110000|Servicios de aseo y limpieza">76110000 · Aseo y limpieza</option>
-                  <option value="76120000|Eliminación de desechos">76120000 · Gestión de desechos</option>
-                  <option value="76130000|Limpieza de residuos peligrosos">76130000 · Residuos peligrosos</option>
-                  <option value="77100000|Gestión medioambiental">77100000 · Gestión ambiental</option>
-                  <option value="77110000|Protección medioambiental">77110000 · Protección ambiental</option>
-                  <option value="77120000|Control de contaminación">77120000 · Control de contaminación</option>
-                  <option value="78100000|Transporte de correo y carga">78100000 · Transporte de carga</option>
-                  <option value="78110000|Transporte de pasajeros">78110000 · Transporte de pasajeros</option>
-                  <option value="78130000|Almacenaje">78130000 · Almacenaje</option>
-                  <option value="78140000|Servicios de transporte">78140000 · Servicios de transporte</option>
-                  <option value="78180000|Mantenimiento de transportes">78180000 · Mantenimiento de vehículos</option>
-                  <option value="80100000|Servicios de asesoría de gestión">80100000 · Asesoría de gestión</option>
-                  <option value="80110000|Servicios de recursos humanos">80110000 · Recursos humanos</option>
-                  <option value="80120000|Servicios legales">80120000 · Servicios legales</option>
-                  <option value="80130000|Servicios inmobiliarios">80130000 · Servicios inmobiliarios</option>
-                  <option value="80140000|Mercadeo y distribución">80140000 · Mercadeo y distribución</option>
-                  <option value="80160000|Administración de empresas">80160000 · Administración empresarial</option>
-                  <option value="81100000|Ingeniería profesional">81100000 · Ingeniería profesional</option>
-                  <option value="81110000|Servicios informáticos">81110000 · Servicios de TI</option>
-                  <option value="81120000|Economía">81120000 · Economía</option>
-                  <option value="81130000|Estadística">81130000 · Estadística</option>
-                  <option value="82100000|Publicidad">82100000 · Publicidad</option>
-                  <option value="82110000|Escritura y traducciones">82110000 · Escritura y traducciones</option>
-                  <option value="82120000|Servicios de reproducción">82120000 · Reproducción</option>
-                  <option value="82130000|Servicios fotográficos">82130000 · Fotografía</option>
-                  <option value="82140000|Diseño gráfico">82140000 · Diseño gráfico</option>
-                  <option value="83100000|Servicios públicos">83100000 · Servicios públicos</option>
-                  <option value="83110000|Telecomunicaciones">83110000 · Telecomunicaciones</option>
-                  <option value="84100000|Finanzas de desarrollo">84100000 · Finanzas</option>
-                  <option value="84110000|Contabilidad y auditorías">84110000 · Contabilidad</option>
-                  <option value="84120000|Banca e inversiones">84120000 · Banca</option>
-                  <option value="84130000|Seguros y pensiones">84130000 · Seguros</option>
-                  <option value="85100000|Servicios integrales de salud">85100000 · Salud integral</option>
-                  <option value="85110000|Prevención de enfermedades">85110000 · Prevención</option>
-                  <option value="85120000|Práctica médica">85120000 · Práctica médica</option>
-                  <option value="85130000|Investigación médica">85130000 · Investigación médica</option>
-                  <option value="85150000|Nutrición">85150000 · Nutrición</option>
-                  <option value="86100000|Formación profesional">86100000 · Formación profesional</option>
-                  <option value="86110000|Educación alternativa">86110000 · Educación alternativa</option>
-                  <option value="86120000|Instituciones educativas">86120000 · Instituciones educativas</option>
-                  <option value="86130000|Servicios educativos especializados">86130000 · Educación especializada</option>
-                  <option value="86140000|Instalaciones educativas">86140000 · Instalaciones educativas</option>
-                  <option value="90100000|Restaurantes y catering">90100000 · Catering</option>
-                  <option value="90110000|Hoteles y alojamientos">90110000 · Hoteles y alojamientos</option>
-                  <option value="90130000|Artes interpretativas">90130000 · Artes</option>
-                  <option value="90150000|Entretenimiento">90150000 · Entretenimiento</option>
-                  <option value="92100000|Orden público y seguridad">92100000 · Seguridad pública</option>
-                  <option value="92110000|Defensa nacional">92110000 · Defensa nacional</option>
-                  <option value="92120000|Seguridad y protección personal">92120000 · Seguridad privada</option>
-                  <option value="93100000|Instituciones políticas">93100000 · Instituciones políticas</option>
-                  <option value="93130000|Ayuda humanitaria">93130000 · Ayuda humanitaria</option>
-                  <option value="93140000|Servicios comunitarios">93140000 · Servicios comunitarios</option>
-                  <option value="93150000|Administración pública">93150000 · Administración pública</option>
-                  <option value="93160000|Tributación">93160000 · Tributación</option>
-                  <option value="94100000|Organizaciones laborales">94100000 · Organizaciones laborales</option>
-                  <option value="94130000|Organizaciones cívicas">94130000 · Organizaciones cívicas</option>
-                </select>
-                <svg style="position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-              </div>
-            </div>
-            <!-- Tags seleccionados -->
-            <div id="onb-categorias-tags" style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px;"></div>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- PASO 3: Experiencia y capacidad -->
-      <div class="onb-step" id="onb-step-2" style="display:none;">
-        <div class="onb-step-header">
-          <div class="onb-step-label">PASO 3 DE 5</div>
+          <div class="onb-step-label">PASO 2 DE 4</div>
           <h2 class="onb-step-titulo">Experiencia y capacidad de ejecución.</h2>
           <p class="onb-step-desc">Esto determina qué licitaciones ves primero y qué marcamos como "fuerte match".</p>
         </div>
@@ -9029,9 +8826,41 @@ function initOnboarding() {
 
           <div class="ll-field">
             <label class="ll-field__label">Obras representativas</label>
-            <p style="font-size:12px;color:var(--muted);margin:4px 0 10px;">Agrega cada proyecto con su descripción, monto y duración. Sin límite.</p>
-            <div id="onb-obras-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;"></div>
-            <button type="button" class="onb-btn-añadir" onclick="abrirModalObra()">
+            <p style="font-size:12px;color:var(--muted);margin:4px 0 10px;">Agrega cada proyecto con su nombre, monto y tiempo de ejecución. Sin límite.</p>
+            <div id="onb-obras-lista" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+
+            <!-- Formulario inline expandible -->
+            <div id="onb-obra-inline" style="display:none;background:var(--surface);border:1.5px solid var(--green-border);border-radius:var(--r-md);padding:16px;margin-bottom:10px;">
+              <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px;">Nueva obra representativa</div>
+              <div class="ll-field" style="margin-bottom:10px;">
+                <label class="ll-field__label">Nombre / descripción de la obra</label>
+                <input class="ll-input" id="obra-nombre" placeholder="Ej: Rehabilitación red de acueducto Sabana Grande de Boyá">
+              </div>
+              <div class="ll-field" style="margin-bottom:10px;">
+                <label class="ll-field__label">Institución contratante</label>
+                <input class="ll-input" id="obra-institucion" placeholder="Ej: INAPA">
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px;">
+                <div class="ll-field">
+                  <label class="ll-field__label">Monto (RD$)</label>
+                  <input class="ll-input" type="number" id="obra-monto" placeholder="187000000">
+                </div>
+                <div class="ll-field">
+                  <label class="ll-field__label">Duración (meses)</label>
+                  <input class="ll-input" type="number" id="obra-meses" placeholder="14">
+                </div>
+                <div class="ll-field">
+                  <label class="ll-field__label">Año de fin</label>
+                  <input class="ll-input" type="number" id="obra-anio" placeholder="2024" min="1990" max="2030">
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button type="button" onclick="cancelarObraInline()" style="background:none;border:1px solid var(--border);border-radius:var(--r-md);padding:8px 16px;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font-body);">Cancelar</button>
+                <button type="button" onclick="guardarObraInline()" style="background:var(--green);color:#0D1B2A;border:none;border-radius:var(--r-md);padding:8px 18px;font-size:13px;font-weight:800;cursor:pointer;font-family:var(--font-body);">+ Guardar obra</button>
+              </div>
+            </div>
+
+            <button type="button" id="onb-btn-agregar-obra" onclick="mostrarFormObraInline()" style="width:100%;border:1.5px dashed var(--border);border-radius:var(--r-md);padding:12px;background:none;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font-body);display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;" onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--green)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Agregar obra
             </button>
@@ -9039,10 +8868,10 @@ function initOnboarding() {
         </div>
       </div>
 
-      <!-- PASO 4: Alcance geográfico -->
-      <div class="onb-step" id="onb-step-3" style="display:none;">
+      <!-- PASO 3: Alcance geográfico -->
+      <div class="onb-step" id="onb-step-2" style="display:none;">
         <div class="onb-step-header">
-          <div class="onb-step-label">PASO 4 DE 5</div>
+          <div class="onb-step-label">PASO 3 DE 4</div>
           <h2 class="onb-step-titulo">Alcance geográfico.</h2>
           <p class="onb-step-desc">¿En qué provincias puedes ejecutar proyectos?</p>
         </div>
@@ -9097,14 +8926,165 @@ function initOnboarding() {
         </div>
       </div>
 
-      <!-- PASO 5: Preferencias de alertas -->
-      <div class="onb-step" id="onb-step-4" style="display:none;">
+      <!-- PASO 4: Notificaciones y rubros -->
+      <div class="onb-step" id="onb-step-3" style="display:none;">
         <div class="onb-step-header">
-          <div class="onb-step-label">PASO 5 DE 5</div>
-          <h2 class="onb-step-titulo">Notificaciones.</h2>
-          <p class="onb-step-desc">Activa las alertas para que te avisemos cuando haya nuevas licitaciones que coincidan con tu perfil.</p>
+          <div class="onb-step-label">PASO 4 DE 4</div>
+          <h2 class="onb-step-titulo">Notificaciones y rubros.</h2>
+          <p class="onb-step-desc">Selecciona tus categorías de interés y activa las alertas para recibir procesos que coincidan con tu perfil.</p>
         </div>
         <div class="onb-fields">
+
+          <!-- Categorías UNSPSC -->
+          <div class="ll-field">
+            <label class="ll-field__label">Categorías UNSPSC de interés</label>
+            <p style="font-size:12px;color:var(--muted);margin:4px 0 8px;">Busca por código (ej: 72130000) o nombre (ej: construcción)</p>
+            <input class="ll-input" id="onb-cat-search" placeholder="Ej: 72130000 o construcción" oninput="filtrarCatalogoUnspsc(this.value)" style="margin-bottom:8px;">
+            <div style="position:relative;margin-bottom:10px;">
+              <select class="ll-input" id="onb-cat-select" style="appearance:none;padding-right:32px;" onchange="agregarCategoriaSelect(this)">
+                <option value="">— Selecciona una categoría —</option>
+                <option value="10100000|Animales vivos">10100000 · Animales vivos</option>
+                <option value="10150000|Semillas y plantulas">10150000 · Semillas y plantulas</option>
+                <option value="10170000|Fertilizantes y herbicidas">10170000 · Fertilizantes y herbicidas</option>
+                <option value="11100000|Minerales y metales">11100000 · Minerales y metales</option>
+                <option value="11110000|Tierra y piedra">11110000 · Tierra y piedra</option>
+                <option value="14100000|Materiales de papel">14100000 · Materiales de papel</option>
+                <option value="15100000|Combustibles">15100000 · Combustibles</option>
+                <option value="15120000|Lubricantes y aceites">15120000 · Lubricantes y aceites</option>
+                <option value="20100000|Maquinaria de minería">20100000 · Maquinaria de minería</option>
+                <option value="21100000|Maquinaria agrícola">21100000 · Maquinaria agrícola</option>
+                <option value="22100000|Maquinaria pesada de construcción">22100000 · Maquinaria pesada de construcción</option>
+                <option value="23150000|Maquinaria y equipos industriales">23150000 · Maquinaria y equipos industriales</option>
+                <option value="24100000|Manejo de materiales">24100000 · Manejo de materiales</option>
+                <option value="25100000|Vehículos de motor">25100000 · Vehículos de motor</option>
+                <option value="26100000|Fuentes de energía">26100000 · Fuentes de energía</option>
+                <option value="26120000|Alambres y cables">26120000 · Alambres y cables</option>
+                <option value="26130000|Generación de energía">26130000 · Generación de energía</option>
+                <option value="27110000|Herramientas de mano">27110000 · Herramientas de mano</option>
+                <option value="30100000|Componentes estructurales">30100000 · Componentes estructurales</option>
+                <option value="30110000|Hormigón, cemento y yeso">30110000 · Hormigón, cemento y yeso</option>
+                <option value="30120000|Carreteras y paisaje">30120000 · Carreteras y paisaje</option>
+                <option value="30130000|Productos estructurales">30130000 · Productos estructurales</option>
+                <option value="30140000|Aislamiento">30140000 · Aislamiento</option>
+                <option value="30150000|Acabados exteriores">30150000 · Acabados exteriores</option>
+                <option value="30160000|Acabados interiores">30160000 · Acabados interiores</option>
+                <option value="30170000|Puertas, ventanas y vidrio">30170000 · Puertas, ventanas y vidrio</option>
+                <option value="30180000|Plomería">30180000 · Plomería</option>
+                <option value="30190000|Apoyo para construcción">30190000 · Apoyo para construcción</option>
+                <option value="30200000|Estructuras prefabricadas">30200000 · Estructuras prefabricadas</option>
+                <option value="30220000|Estructuras permanentes">30220000 · Estructuras permanentes</option>
+                <option value="31160000|Ferretería">31160000 · Ferretería</option>
+                <option value="31200000|Adhesivos y selladores">31200000 · Adhesivos y selladores</option>
+                <option value="31210000|Pinturas y acabados">31210000 · Pinturas y acabados</option>
+                <option value="32100000|Circuitos electrónicos">32100000 · Circuitos electrónicos</option>
+                <option value="39100000|Lámparas y bombillas">39100000 · Lámparas y bombillas</option>
+                <option value="39110000|Iluminación">39110000 · Iluminación</option>
+                <option value="39120000|Equipos eléctricos">39120000 · Equipos eléctricos</option>
+                <option value="40100000|Calefacción y ventilación HVAC">40100000 · HVAC</option>
+                <option value="40140000|Distribución de gas">40140000 · Distribución de gas</option>
+                <option value="40150000|Bombas y compresores">40150000 · Bombas y compresores</option>
+                <option value="40160000|Filtrado industrial">40160000 · Filtrado industrial</option>
+                <option value="41100000|Equipo de laboratorio">41100000 · Equipo de laboratorio</option>
+                <option value="41110000|Instrumentos de medición">41110000 · Instrumentos de medición</option>
+                <option value="42120000|Equipos veterinarios">42120000 · Equipos veterinarios</option>
+                <option value="42140000|Suministros médicos">42140000 · Suministros médicos</option>
+                <option value="42150000|Equipos dentales">42150000 · Equipos dentales</option>
+                <option value="42200000|Imágenes diagnósticas">42200000 · Imágenes diagnósticas</option>
+                <option value="42290000|Productos quirúrgicos">42290000 · Productos quirúrgicos</option>
+                <option value="43190000|Telecomunicaciones">43190000 · Telecomunicaciones</option>
+                <option value="43200000|Componentes de TI">43200000 · Componentes de TI</option>
+                <option value="43210000|Equipo informático">43210000 · Equipo informático</option>
+                <option value="43220000|Redes y comunicaciones">43220000 · Redes y comunicaciones</option>
+                <option value="43230000|Software">43230000 · Software</option>
+                <option value="44100000|Maquinaria de oficina">44100000 · Maquinaria de oficina</option>
+                <option value="44120000|Suministros de oficina">44120000 · Suministros de oficina</option>
+                <option value="45100000|Equipo de imprenta">45100000 · Equipo de imprenta</option>
+                <option value="46150000|Orden público">46150000 · Orden público</option>
+                <option value="46160000|Seguridad pública">46160000 · Seguridad pública</option>
+                <option value="46170000|Seguridad y vigilancia">46170000 · Seguridad y vigilancia</option>
+                <option value="46190000|Protección contra incendios">46190000 · Protección contra incendios</option>
+                <option value="47100000|Tratamiento de agua">47100000 · Tratamiento de agua</option>
+                <option value="47130000|Suministros de limpieza">47130000 · Suministros de limpieza</option>
+                <option value="48100000|Servicios de alimentación">48100000 · Servicios de alimentación</option>
+                <option value="50110000|Carne y aves">50110000 · Carne y aves</option>
+                <option value="50130000|Lácteos y huevos">50130000 · Lácteos y huevos</option>
+                <option value="50190000|Alimentos preparados">50190000 · Alimentos preparados</option>
+                <option value="50200000|Bebidas">50200000 · Bebidas</option>
+                <option value="51100000|Medicamentos antiinfecciosos">51100000 · Medicamentos antiinfecciosos</option>
+                <option value="51120000|Medicamentos cardiovasculares">51120000 · Medicamentos cardiovasculares</option>
+                <option value="51140000|Sistema nervioso central">51140000 · Sistema nervioso central</option>
+                <option value="51210000|Medicamentos varios">51210000 · Medicamentos varios</option>
+                <option value="52100000|Revestimientos de suelos">52100000 · Revestimientos de suelos</option>
+                <option value="52140000|Electrodomésticos">52140000 · Electrodomésticos</option>
+                <option value="53100000|Ropa">53100000 · Ropa</option>
+                <option value="53110000|Calzado">53110000 · Calzado</option>
+                <option value="55100000|Medios impresos">55100000 · Medios impresos</option>
+                <option value="56100000|Muebles de alojamiento">56100000 · Muebles de alojamiento</option>
+                <option value="56110000|Muebles comerciales">56110000 · Muebles comerciales</option>
+                <option value="56120000|Mobiliario educativo">56120000 · Mobiliario educativo</option>
+                <option value="60100000|Materiales didácticos">60100000 · Materiales didácticos</option>
+                <option value="70100000|Pesca y acuicultura">70100000 · Pesca y acuicultura</option>
+                <option value="70110000|Horticultura">70110000 · Horticultura</option>
+                <option value="70130000|Gestión del suelo">70130000 · Gestión del suelo</option>
+                <option value="70140000|Cultivos">70140000 · Cultivos</option>
+                <option value="70150000|Silvicultura">70150000 · Silvicultura</option>
+                <option value="70170000|Recursos hidráulicos">70170000 · Recursos hidráulicos</option>
+                <option value="71100000|Servicios de minería">71100000 · Servicios de minería</option>
+                <option value="71120000|Construcción de pozos">71120000 · Construcción de pozos</option>
+                <option value="72100000|Mantenimiento de instalaciones">72100000 · Mantenimiento de instalaciones</option>
+                <option value="72130000|Construcción de edificios">72130000 · Construcción de edificios</option>
+                <option value="72140000|Construcción pesada">72140000 · Construcción pesada</option>
+                <option value="73100000|Plásticos y químicos">73100000 · Plásticos y químicos</option>
+                <option value="73110000|Madera y papel">73110000 · Madera y papel</option>
+                <option value="73120000|Industrias del metal">73120000 · Industrias del metal</option>
+                <option value="73130000|Industrias alimenticias">73130000 · Industrias alimenticias</option>
+                <option value="73150000|Apoyo a fabricación">73150000 · Apoyo a fabricación</option>
+                <option value="73160000|Fabricación de maquinaria">73160000 · Fabricación de maquinaria</option>
+                <option value="76100000|Descontaminación">76100000 · Descontaminación</option>
+                <option value="76110000|Aseo y limpieza">76110000 · Aseo y limpieza</option>
+                <option value="76120000|Gestión de desechos">76120000 · Gestión de desechos</option>
+                <option value="77100000|Gestión ambiental">77100000 · Gestión ambiental</option>
+                <option value="77110000|Protección ambiental">77110000 · Protección ambiental</option>
+                <option value="78100000|Transporte de carga">78100000 · Transporte de carga</option>
+                <option value="78110000|Transporte de pasajeros">78110000 · Transporte de pasajeros</option>
+                <option value="78130000|Almacenaje">78130000 · Almacenaje</option>
+                <option value="78140000|Servicios de transporte">78140000 · Servicios de transporte</option>
+                <option value="80100000|Asesoría de gestión">80100000 · Asesoría de gestión</option>
+                <option value="80110000|Recursos humanos">80110000 · Recursos humanos</option>
+                <option value="80120000|Servicios legales">80120000 · Servicios legales</option>
+                <option value="80130000|Servicios inmobiliarios">80130000 · Servicios inmobiliarios</option>
+                <option value="80160000|Administración empresarial">80160000 · Administración empresarial</option>
+                <option value="81100000|Ingeniería profesional">81100000 · Ingeniería profesional</option>
+                <option value="81110000|Servicios de TI">81110000 · Servicios de TI</option>
+                <option value="82100000|Publicidad">82100000 · Publicidad</option>
+                <option value="82110000|Escritura y traducciones">82110000 · Escritura y traducciones</option>
+                <option value="82140000|Diseño gráfico">82140000 · Diseño gráfico</option>
+                <option value="83110000|Telecomunicaciones-servicios">83110000 · Servicios de telecomunicaciones</option>
+                <option value="84100000|Finanzas">84100000 · Finanzas</option>
+                <option value="84110000|Contabilidad">84110000 · Contabilidad</option>
+                <option value="84120000|Banca">84120000 · Banca</option>
+                <option value="84130000|Seguros">84130000 · Seguros</option>
+                <option value="85100000|Salud integral">85100000 · Salud integral</option>
+                <option value="85110000|Prevención de enfermedades">85110000 · Prevención</option>
+                <option value="85120000|Práctica médica">85120000 · Práctica médica</option>
+                <option value="86100000|Formación profesional">86100000 · Formación profesional</option>
+                <option value="86120000|Instituciones educativas">86120000 · Instituciones educativas</option>
+                <option value="86130000|Educación especializada">86130000 · Educación especializada</option>
+                <option value="86140000|Instalaciones educativas">86140000 · Instalaciones educativas</option>
+                <option value="90100000|Catering">90100000 · Catering</option>
+                <option value="90110000|Hoteles y alojamientos">90110000 · Hoteles y alojamientos</option>
+                <option value="92100000|Seguridad pública-orden">92100000 · Seguridad pública</option>
+                <option value="92120000|Seguridad privada">92120000 · Seguridad privada</option>
+                <option value="93130000|Ayuda humanitaria">93130000 · Ayuda humanitaria</option>
+                <option value="93140000|Servicios comunitarios">93140000 · Servicios comunitarios</option>
+                <option value="93150000|Administración pública">93150000 · Administración pública</option>
+              </select>
+              <svg style="position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </div>
+            <div id="onb-categorias-tags" style="display:flex;flex-wrap:wrap;gap:6px;min-height:20px;margin-bottom:8px;"></div>
+          </div>
+
+          <div style="height:1px;background:var(--border);margin:4px 0 16px;"></div>
 
           <!-- Botón real de notificaciones push -->
           <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r-lg);padding:20px;display:flex;align-items:center;gap:16px;" id="onb-push-card">
@@ -9149,33 +9129,7 @@ function initOnboarding() {
   </div>
 </div>
 
-<!-- Modal añadir obra -->
-<div id="onb-obra-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:600;align-items:center;justify-content:center;">
-  <div style="background:var(--surface2);border-radius:var(--r-lg);padding:24px;width:100%;max-width:500px;margin:20px;">
-    <h3 style="font-size:16px;font-weight:800;margin-bottom:16px;">Agregar obra representativa</h3>
-    <div class="ll-field"><label class="ll-field__label">Nombre / descripción de la obra</label>
-      <input class="ll-input" id="obra-nombre" placeholder="Ej: Rehabilitación red de acueducto Sabana Grande de Boyá">
-    </div>
-    <div class="ll-field"><label class="ll-field__label">Institución contratante</label>
-      <input class="ll-input" id="obra-institucion" placeholder="Ej: INAPA">
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
-      <div class="ll-field"><label class="ll-field__label">Monto (RD$)</label>
-        <input class="ll-input" type="number" id="obra-monto" placeholder="187000000">
-      </div>
-      <div class="ll-field"><label class="ll-field__label">Duración (meses)</label>
-        <input class="ll-input" type="number" id="obra-meses" placeholder="14">
-      </div>
-      <div class="ll-field"><label class="ll-field__label">Año fin</label>
-        <input class="ll-input" type="number" id="obra-anio" placeholder="2024" min="1990" max="2030">
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
-      <button class="ll-btn ll-btn--secondary" onclick="cerrarModalObra()">Cancelar</button>
-      <button class="ll-btn ll-btn--primary" onclick="guardarObra()">Agregar obra</button>
-    </div>
-  </div>
-</div>
+<!-- modal obra eliminado — ahora inline -->
 
 </body>
 </html>
