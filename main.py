@@ -3193,7 +3193,8 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
                         partes.append(f"Obras representativas: {obras_str}")
                     if p.get("tiene_rpe"): partes.append("Tiene RPE: Sí")
                     if partes:
-                        contexto_empresa = "\n\nCONTEXTO DE LA EMPRESA OFERENTE:\n" + "\n".join(partes) + "\n\nUsa este contexto para personalizar la evaluación: indica si la empresa cumple los requisitos principales, si el proceso está dentro de su rango de montos y experiencia, y añade una recomendación específica al final del resumen_ejecutivo."        except Exception as e_perfil:
+                        contexto_empresa = "\n\nCONTEXTO DE LA EMPRESA OFERENTE:\n" + "\n".join(partes) + "\n\nUsa este contexto para personalizar la evaluación: indica si la empresa cumple los requisitos principales, si el proceso está dentro de su rango de montos y experiencia, y añade una recomendación específica al final del resumen_ejecutivo."
+        except Exception as e_perfil:
             print(f"⚠️ No se pudo obtener perfil para personalizar análisis: {e_perfil}")
 
         MODELO = "gemini-2.5-flash"
