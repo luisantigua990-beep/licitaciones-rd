@@ -8188,6 +8188,77 @@ function renderTutorialPaso() {
 // ── WIZARD PERFIL EMPRESA (5 pasos) ──────────────────────────────────────
 function mostrarOnboarding() { mostrarWizardPerfil(); } // alias retrocompatible
 
+// ── Filtrar catálogo UNSPSC por búsqueda textual ──────────────
+function filtrarCatalogoUnspsc(q) {
+  const sel = document.getElementById('onb-cat-select');
+  if (!sel) return;
+  const texto = q.trim().toLowerCase();
+  Array.from(sel.options).forEach(opt => {
+    if (!opt.value) { opt.style.display = ''; return; } // placeholder siempre visible
+    const match = !texto || opt.text.toLowerCase().includes(texto) || opt.value.toLowerCase().includes(texto);
+    opt.style.display = match ? '' : 'none';
+  });
+  // Si hay exactamente una opción visible (aparte del placeholder), seleccionarla automáticamente
+  const visibles = Array.from(sel.options).filter(o => o.value && o.style.display !== 'none');
+  if (visibles.length === 1) sel.value = visibles[0].value;
+  else sel.value = '';
+}
+
+// ── Activar notificaciones desde el onboarding ──────────────
+async function activarNotifOnboarding() {
+  const btn = document.getElementById('onb-push-btn');
+  const txt = document.getElementById('onb-push-status-text');
+  const card = document.getElementById('onb-push-card');
+
+  // Si ya está activo, desactivar
+  if (btn && btn.dataset.activo === '1') {
+    await togglePush();
+    btn.textContent = 'Activar';
+    btn.style.background = 'var(--green)';
+    btn.dataset.activo = '0';
+    if (txt) txt.textContent = 'Recibirás alertas en tiempo real sobre fechas clave y nuevas licitaciones.';
+    if (card) card.style.borderColor = 'var(--border)';
+    return;
+  }
+
+  if (btn) { btn.textContent = 'Activando…'; btn.disabled = true; }
+  try {
+    await togglePush();
+    // Verificar si quedó activa
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (sub) {
+      if (btn) { btn.textContent = '✓ Activadas'; btn.style.background = 'var(--green-mid)'; btn.dataset.activo = '1'; btn.disabled = false; }
+      if (txt) txt.textContent = 'Notificaciones activas — recibirás alertas de nuevas licitaciones y fechas clave.';
+      if (card) card.style.borderColor = 'var(--green-border)';
+      mostrarToast('Notificaciones activadas', 'success');
+    } else {
+      if (btn) { btn.textContent = 'Activar'; btn.disabled = false; }
+      if (txt) txt.textContent = 'No se pudo activar. Verifica que tu navegador permita notificaciones.';
+    }
+  } catch(e) {
+    if (btn) { btn.textContent = 'Activar'; btn.disabled = false; }
+    console.error('Error activando notif:', e);
+  }
+}
+
+// Verificar estado push al abrir el paso 5
+async function verificarEstadoPushOnb() {
+  const btn = document.getElementById('onb-push-btn');
+  const txt = document.getElementById('onb-push-status-text');
+  const card = document.getElementById('onb-push-card');
+  if (!btn) return;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    if (sub) {
+      btn.textContent = '✓ Activadas'; btn.style.background = 'var(--green-mid)'; btn.dataset.activo = '1';
+      if (txt) txt.textContent = 'Notificaciones activas — recibirás alertas de nuevas licitaciones y fechas clave.';
+      if (card) card.style.borderColor = 'var(--green-border)';
+    }
+  } catch(e) {}
+}
+
 function mostrarWizardPerfil() {
   onbPaso = 0;
   document.getElementById('onb-overlay').classList.remove('oculto');
@@ -8411,7 +8482,10 @@ function renderOnbPaso() {
   if (atras) atras.style.display = onbPaso > 0 ? 'block' : 'none';
   if (saltar) saltar.style.visibility = onbPaso === ONB_TOTAL - 1 ? 'hidden' : 'visible';
   // Resumen en último paso
-  if (onbPaso === ONB_TOTAL - 1) mostrarResumenOnb();
+  if (onbPaso === ONB_TOTAL - 1) {
+    mostrarResumenOnb();
+    setTimeout(verificarEstadoPushOnb, 100);
+  }
 }
 
 function mostrarResumenOnb() {
@@ -8476,8 +8550,7 @@ async function guardarPerfilOnboarding() {
     monto_maximo:           parseMonto(document.getElementById('onb-monto-max')?.value),
     plazo_maximo_dias:      parseInt(document.getElementById('onb-plazo')?.value) || null,
     obras_representativas:  onbObras,
-    alertas_push:           document.getElementById('onb-push')?.checked || false,
-    alertas_email:          document.getElementById('onb-email-alerta')?.checked || false,
+    alertas_push:           !!pushSubscription,
     umbral_monto_min:       parseFloat(document.getElementById('onb-umbral-min')?.value) || null,
     onboarding_completado:  true,
     onboarding_paso_actual: 5,
@@ -8629,8 +8702,8 @@ function initOnboarding() {
         <div class="onb-paso-nav" id="onb-nav-1" onclick="irAPaso(1)">
           <div class="onb-paso-num" id="onb-num-1">2</div>
           <div>
-            <div style="font-size:13px;font-weight:700;">Procesos de interés</div>
-            <div style="font-size:11px;color:var(--muted);">Categoría · especialidades</div>
+            <div style="font-size:13px;font-weight:700;">Categorías UNSPSC</div>
+            <div style="font-size:11px;color:var(--muted);">Familias de catálogo</div>
           </div>
         </div>
         <div class="onb-paso-nav" id="onb-nav-2" onclick="irAPaso(2)">
@@ -8650,8 +8723,8 @@ function initOnboarding() {
         <div class="onb-paso-nav" id="onb-nav-4" onclick="irAPaso(4)">
           <div class="onb-paso-num" id="onb-num-4">5</div>
           <div>
-            <div style="font-size:13px;font-weight:700;">Preferencias de alertas</div>
-            <div style="font-size:11px;color:var(--muted);">Canales · umbrales</div>
+            <div style="font-size:13px;font-weight:700;">Notificaciones</div>
+            <div style="font-size:11px;color:var(--muted);">Push y alertas</div>
           </div>
         </div>
       </div>
@@ -8722,26 +8795,20 @@ function initOnboarding() {
         </div>
       </div>
 
-      <!-- PASO 2: Procesos de interés -->
+      <!-- PASO 2: Categorías UNSPSC -->
       <div class="onb-step" id="onb-step-1" style="display:none;">
         <div class="onb-step-header">
           <div class="onb-step-label">PASO 2 DE 5</div>
-          <h2 class="onb-step-titulo">Procesos de interés.</h2>
-          <p class="onb-step-desc">¿En qué tipo de procesos participa tu empresa? Selecciona todas las categorías que aplican.</p>
+          <h2 class="onb-step-titulo">Categorías UNSPSC.</h2>
+          <p class="onb-step-desc">¿En qué categorías del catálogo opera tu empresa? Busca por código o nombre y agrégalas.</p>
         </div>
         <div class="onb-fields">
           <div class="ll-field">
-            <label class="ll-field__label">Rubro principal</label>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
-              <button type="button" class="onb-chip" id="onb-rubro-obras" onclick="toggleRubro(this,'Obras')">Obras</button>
-              <button type="button" class="onb-chip" id="onb-rubro-bienes" onclick="toggleRubro(this,'Bienes')">Bienes</button>
-              <button type="button" class="onb-chip" id="onb-rubro-servicios" onclick="toggleRubro(this,'Servicios')">Servicios</button>
+            <label class="ll-field__label">Categorías UNSPSC</label>
+            <p style="font-size:12px;color:var(--muted);margin:4px 0 10px;">Busca por código (ej: 72130000) o por nombre (ej: construcción). Selecciona del desplegable para agregar.</p>
+            <div style="margin-bottom:8px;">
+              <input class="ll-input" id="onb-cat-search" placeholder="Ej: 72130000 o construcción" oninput="filtrarCatalogoUnspsc(this.value)" style="margin-bottom:8px;">
             </div>
-          </div>
-
-          <div class="ll-field">
-            <label class="ll-field__label">Categorías UNSPSC de interés</label>
-            <p style="font-size:12px;color:var(--muted);margin:4px 0 10px;">Selecciona categorías del catálogo y agrégalas a tu perfil</p>
             <div style="display:flex;gap:8px;margin-bottom:10px;">
               <div style="position:relative;flex:1;">
                 <select class="ll-input" id="onb-cat-select" style="appearance:none;padding-right:32px;" onchange="agregarCategoriaSelect(this)">
@@ -8924,16 +8991,6 @@ function initOnboarding() {
             <div id="onb-categorias-tags" style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px;"></div>
           </div>
 
-          <div class="ll-field">
-            <label class="ll-field__label">Modalidades de contratación en que participa</label>
-            <div class="onb-chips-wrap">
-              <button type="button" class="onb-chip" onclick="toggleModalidad(this,'Licitación Pública Nacional')">Licitación Pública Nacional</button>
-              <button type="button" class="onb-chip" onclick="toggleModalidad(this,'Compra Menor')">Compra Menor</button>
-              <button type="button" class="onb-chip" onclick="toggleModalidad(this,'Comparación de Precios')">Comparación de Precios</button>
-              <button type="button" class="onb-chip" onclick="toggleModalidad(this,'Contratación Directa')">Contratación Directa</button>
-              <button type="button" class="onb-chip" onclick="toggleModalidad(this,'Subasta Inversa')">Subasta Inversa</button>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -9044,28 +9101,23 @@ function initOnboarding() {
       <div class="onb-step" id="onb-step-4" style="display:none;">
         <div class="onb-step-header">
           <div class="onb-step-label">PASO 5 DE 5</div>
-          <h2 class="onb-step-titulo">Preferencias de alertas.</h2>
-          <p class="onb-step-desc">¿Cómo y cuándo quieres recibir notificaciones de licitaciones nuevas y fechas clave?</p>
+          <h2 class="onb-step-titulo">Notificaciones.</h2>
+          <p class="onb-step-desc">Activa las alertas para que te avisemos cuando haya nuevas licitaciones que coincidan con tu perfil.</p>
         </div>
         <div class="onb-fields">
-          <div class="ll-field">
-            <label class="ll-field__label">Activar notificaciones</label>
-            <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px;">
-              <label class="onb-check-card" id="card-push" style="flex-direction:row;align-items:center;gap:14px;padding:14px 16px;">
-                <input type="checkbox" id="onb-push" checked onchange="toggleCheckCard('card-push',this)">
-                <div>
-                  <div style="font-weight:700;font-size:14px;">Notificaciones push</div>
-                  <div style="font-size:12px;color:var(--muted);">En el navegador y app móvil, alertas en tiempo real</div>
-                </div>
-              </label>
-              <label class="onb-check-card" id="card-email-alerta" style="flex-direction:row;align-items:center;gap:14px;padding:14px 16px;">
-                <input type="checkbox" id="onb-email-alerta" checked onchange="toggleCheckCard('card-email-alerta',this)">
-                <div>
-                  <div style="font-weight:700;font-size:14px;">Correo electrónico</div>
-                  <div style="font-size:12px;color:var(--muted);">Resumen diario y análisis completo del pliego</div>
-                </div>
-              </label>
+
+          <!-- Botón real de notificaciones push -->
+          <div style="background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r-lg);padding:20px;display:flex;align-items:center;gap:16px;" id="onb-push-card">
+            <div style="width:44px;height:44px;border-radius:var(--r-md);background:var(--green-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
             </div>
+            <div style="flex:1;">
+              <div style="font-weight:700;font-size:15px;color:var(--text);">Activar notificaciones</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:2px;" id="onb-push-status-text">Recibirás alertas en tiempo real sobre fechas clave y nuevas licitaciones.</div>
+            </div>
+            <button type="button" id="onb-push-btn" onclick="activarNotifOnboarding()" style="background:var(--green);color:#0D1B2A;border:none;border-radius:var(--r-md);padding:10px 20px;font-size:13px;font-weight:800;cursor:pointer;font-family:var(--font-body);white-space:nowrap;transition:all .2s;">
+              Activar
+            </button>
           </div>
 
           <div class="ll-field" style="margin-top:20px;">
