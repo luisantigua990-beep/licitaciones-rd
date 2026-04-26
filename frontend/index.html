@@ -2924,6 +2924,10 @@ html { background: var(--color-bg, #0A0A0A); }
       <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
       Mercado
     </button>
+    <button class="dsb-nav-item" id="dsb-nav-perfilamiento" onclick="mostrarWizardPerfil()">
+      <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Perfilamiento
+    </button>
     <button class="dsb-nav-item" id="dsb-nav-reportes" onclick="switchTab2('reportes')">
       <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
       Reportes
@@ -3021,7 +3025,7 @@ html { background: var(--color-bg, #0A0A0A); }
     </header>
 
     <!-- Banner Beta -->
-    <div class="ll-card" id="beta-banner" onclick="mostrarOnboarding()" style="margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.07);cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 28px;">
+    <div class="ll-card" id="beta-banner" onclick="mostrarTutorial()" style="margin:0;border-radius:0;border-left:none;border-right:none;border-top:none;border-color:rgba(245,158,11,0.35);background:rgba(245,158,11,0.07);cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 28px;">
       <span class="ll-chip ll-chip--warning" style="flex-shrink:0;">BETA</span>
       <span class="ll-body-sm" style="flex:1;">Acceso Anticipado — Estás entre los primeros. Toca para conocer todo lo que puedes hacer.</span>
       <button onclick="event.stopPropagation();cerrarBanner()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:0;line-height:1;">✕</button>
@@ -3106,7 +3110,7 @@ html { background: var(--color-bg, #0A0A0A); }
       </div>
       <div id="perfil-nombre-status" style="font-size:12px;color:var(--green);min-height:18px;margin-bottom:12px"></div>
       <button class="btn-outline" onclick="logout()">Cerrar sesión</button>
-      <button class="btn-outline" style="margin-top:8px;border-color:var(--green-border);color:var(--green)" onclick="mostrarOnboarding()">Ver tutorial</button>
+      <button class="btn-outline" style="margin-top:8px;border-color:var(--green-border);color:var(--green)" onclick="mostrarTutorial()">Ver tutorial</button>
     </div>
 
     <div class="perfil-card">
@@ -8130,9 +8134,62 @@ let onbModalidades = [];
 let onbProvincias = [];
 let onbObras = [];
 
-function mostrarOnboarding() {
+// ── SHEET TUTORIAL (onboarding anterior — 6 slides) ──────────────────────
+let tutorialPaso = 0;
+const TUTORIAL_TOTAL = 6;
+
+function mostrarTutorial() {
+  tutorialPaso = 0;
+  document.getElementById('onb-tutorial-overlay').classList.remove('oculto');
+  renderTutorialPaso();
+}
+
+function cerrarTutorial(abrirPerfil) {
+  document.getElementById('onb-tutorial-overlay').classList.add('oculto');
+  localStorage.setItem('tutorial_completado', '1');
+  if (abrirPerfil && !localStorage.getItem('onb_completado') && currentUser?.id) {
+    setTimeout(mostrarWizardPerfil, 400);
+  }
+}
+
+function tutorialSiguiente() {
+  if (tutorialPaso < TUTORIAL_TOTAL - 1) {
+    tutorialPaso++;
+    renderTutorialPaso();
+  } else {
+    cerrarTutorial(true); // al terminar → abre wizard perfil
+  }
+}
+
+function tutorialAnterior() {
+  if (tutorialPaso > 0) { tutorialPaso--; renderTutorialPaso(); }
+}
+
+function renderTutorialPaso() {
+  for (let i = 0; i < TUTORIAL_TOTAL; i++) {
+    const s = document.getElementById('onb-slide-' + i);
+    if (s) s.classList.toggle('visible', i === tutorialPaso);
+    const d = document.getElementById('onbdot-' + i);
+    if (!d) continue;
+    d.classList.remove('active', 'done', 'is-active');
+    if (i < tutorialPaso)          d.classList.add('done');
+    else if (i === tutorialPaso)   d.classList.add('is-active');
+  }
+  const btn  = document.getElementById('onb-btn-next');
+  const skip = document.getElementById('onb-btn-skip');
+  const back = document.getElementById('onb-btn-back');
+  if (btn)  btn.textContent = tutorialPaso === TUTORIAL_TOTAL - 1 ? '¡Empezar!' : 'Siguiente →';
+  if (skip) skip.style.visibility = tutorialPaso === TUTORIAL_TOTAL - 1 ? 'hidden' : 'visible';
+  if (back) back.style.display = tutorialPaso > 0 ? 'block' : 'none';
+}
+
+// ── WIZARD PERFIL EMPRESA (5 pasos) ──────────────────────────────────────
+function mostrarOnboarding() { mostrarWizardPerfil(); } // alias retrocompatible
+
+function mostrarWizardPerfil() {
   onbPaso = 0;
   document.getElementById('onb-overlay').classList.remove('oculto');
+  document.querySelectorAll('.dsb-nav-item').forEach(b => b.classList.remove('active'));
   renderOnbPaso();
 }
 
@@ -8356,12 +8413,104 @@ async function guardarPerfilOnboarding() {
 }
 
 function initOnboarding() {
-  if (!localStorage.getItem('onb_completado') && currentUser?.id) {
-    setTimeout(mostrarOnboarding, 1200);
+  if (!currentUser?.id) return;
+  // Usuarios nuevos: primero tutorial, luego wizard de perfil
+  if (!localStorage.getItem('tutorial_completado')) {
+    setTimeout(mostrarTutorial, 1200);
+  } else if (!localStorage.getItem('onb_completado')) {
+    // Ya vio el tutorial pero no completó el perfil
+    setTimeout(mostrarWizardPerfil, 1200);
   }
 }
 
 </script>
+<!-- ── TUTORIAL SHEET (6 slides) ── -->
+<div class="onb-overlay oculto" id="onb-tutorial-overlay">
+  <div class="onb-sheet">
+    <div class="onb-progress">
+      <div class="onb-prog-dot is-active" id="onbdot-0"></div>
+      <div class="onb-prog-dot" id="onbdot-1"></div>
+      <div class="onb-prog-dot" id="onbdot-2"></div>
+      <div class="onb-prog-dot" id="onbdot-3"></div>
+      <div class="onb-prog-dot" id="onbdot-4"></div>
+      <div class="onb-prog-dot" id="onbdot-5"></div>
+    </div>
+
+    <!-- Slide 1 -->
+    <div class="onb-slide visible" id="onb-slide-0">
+      <div class="onb-icon-wrap">
+        <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </div>
+      <div class="onb-titulo">Bienvenido a LicitacionLab</div>
+      <div class="onb-desc">Tu plataforma para <strong>monitorear licitaciones públicas</strong> de República Dominicana en tiempo real.<br><br>Más de <strong>400 procesos activos</strong> del portal DGCP, actualizados automáticamente.</div>
+      <div class="onb-tip"><b>Acceso Anticipado:</b> Estás entre los primeros en usar LicitacionLab. Tu feedback directo moldea el producto — escríbenos por WhatsApp cuando quieras.</div>
+    </div>
+
+    <!-- Slide 2 -->
+    <div class="onb-slide" id="onb-slide-1">
+      <div class="onb-icon-wrap">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </div>
+      <div class="onb-titulo">Busca lo que te interesa</div>
+      <div class="onb-desc">Usa la barra de búsqueda para encontrar licitaciones por <strong>título, código o categoría UNSPSC</strong>.<br><br>Filtra por <strong>Obras, Bienes o Servicios</strong> con los chips de la parte superior, o usa los filtros avanzados por institución y monto.</div>
+      <div class="onb-tip"><b>Tip:</b> Escribe "72" en el buscador para ver todos los procesos de construcción e ingeniería.</div>
+    </div>
+
+    <!-- Slide 3 -->
+    <div class="onb-slide" id="onb-slide-2">
+      <div class="onb-icon-wrap">
+        <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+      <div class="onb-titulo">Dale seguimiento</div>
+      <div class="onb-desc">Entra al detalle de cualquier proceso y presiona <strong>Seguir proceso</strong> para agregarlo a <strong>Mis Procesos</strong>.<br><br>Desde ahí verás el <strong>cronograma completo de fechas</strong> y recibirás alertas automáticas cuando se acerque una fecha clave.</div>
+      <div class="onb-tip"><b>Tip:</b> En la lista principal, desliza una tarjeta hacia la izquierda para ir directo a contactar un experto.</div>
+    </div>
+
+    <!-- Slide 4 -->
+    <div class="onb-slide" id="onb-slide-3">
+      <div class="onb-icon-wrap">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      </div>
+      <div class="onb-titulo">Análisis automático del pliego</div>
+      <div class="onb-desc">Al seguir un proceso, LicitacionLab analiza el pliego automáticamente y te entrega:<br><br>
+        <strong>· Checklist de documentos</strong> requeridos por categoría<br>
+        <strong>· Alertas de irregularidades</strong> — detecta si el proceso presenta indicios de estar dirigido según la Ley 47-25<br>
+        <strong>· Evaluación de competitividad</strong> y recomendación<br>
+        <strong>· Requisitos de experiencia</strong> y financieros
+      </div>
+      <div class="onb-tip"><b>📧 Correo:</b> El análisis completo te llegará al correo registrado. Si no aparece en tu bandeja, revisa la carpeta de <strong>correos no deseados o spam</strong>.</div>
+    </div>
+
+    <!-- Slide 5 -->
+    <div class="onb-slide" id="onb-slide-4">
+      <div class="onb-icon-wrap">
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      </div>
+      <div class="onb-titulo">Activa las notificaciones</div>
+      <div class="onb-desc">Toca la <strong>campanita</strong> en la pantalla principal para activar las alertas en tu dispositivo.<br><br>Recibirás alertas automáticas <strong>7, 3, 1 y 0 días antes</strong> de cada fecha clave del proceso.</div>
+      <div class="onb-tip"><b>Tip:</b> También puedes activarlas desde Mi Perfil → Notificaciones.</div>
+    </div>
+
+    <!-- Slide 6 -->
+    <div class="onb-slide" id="onb-slide-5">
+      <div class="onb-icon-wrap" style="background:var(--green-dim)">
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div class="onb-titulo">¡Ya estás listo!</div>
+      <div class="onb-desc">Ahora vamos a configurar tu <strong>perfil de empresa</strong> para que el matching de licitaciones sea personalizado.<br><br>Solo toma ~6 minutos y puedes completarlo en cualquier momento.</div>
+      <div class="onb-tip"><b>Tip:</b> Puedes volver a ver este tutorial desde el sidebar → Ver tutorial.</div>
+    </div>
+
+    <div class="onb-actions" style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-top:1px solid var(--border);">
+      <button class="ll-btn ll-btn--ghost" id="onb-btn-skip" onclick="cerrarTutorial(false)">Saltar</button>
+      <div style="display:flex;gap:8px;">
+        <button class="ll-btn ll-btn--secondary" id="onb-btn-back" onclick="tutorialAnterior()" style="display:none;">← Atrás</button>
+        <button class="ll-btn ll-btn--primary" id="onb-btn-next" onclick="tutorialSiguiente()">Siguiente →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── ONBOARDING WIZARD ── -->
 <div class="onb-overlay oculto" id="onb-overlay">
   <div class="onb-wizard">
@@ -8381,20 +8530,41 @@ function initOnboarding() {
 
       <!-- Pasos -->
       <div style="display:flex;flex-direction:column;gap:2px;" id="onb-pasos-nav">
-        ${[
-          ['Identidad legal','RNC · razón social · domicilio'],
-          ['Clasificación MOPC','Categoría · especialidades'],
-          ['Experiencia y capacidad','Obras ejecutadas · rango de montos'],
-          ['Alcance geográfico','Provincias donde operas'],
-          ['Preferencias de alertas','Canales · umbrales'],
-        ].map(([titulo, sub], i) => `
-        <div class="onb-paso-nav" id="onb-nav-${i}" onclick="irAPaso(${i})">
-          <div class="onb-paso-num" id="onb-num-${i}">${i+1}</div>
+        <div class="onb-paso-nav" id="onb-nav-0" onclick="irAPaso(0)">
+          <div class="onb-paso-num" id="onb-num-0">1</div>
           <div>
-            <div style="font-size:13px;font-weight:700;">${titulo}</div>
-            <div style="font-size:11px;color:var(--muted);">${sub}</div>
+            <div style="font-size:13px;font-weight:700;">Identidad legal</div>
+            <div style="font-size:11px;color:var(--muted);">RNC · razón social · domicilio</div>
           </div>
-        </div>`).join('')}
+        </div>
+        <div class="onb-paso-nav" id="onb-nav-1" onclick="irAPaso(1)">
+          <div class="onb-paso-num" id="onb-num-1">2</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;">Clasificación MOPC</div>
+            <div style="font-size:11px;color:var(--muted);">Categoría · especialidades</div>
+          </div>
+        </div>
+        <div class="onb-paso-nav" id="onb-nav-2" onclick="irAPaso(2)">
+          <div class="onb-paso-num" id="onb-num-2">3</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;">Experiencia y capacidad</div>
+            <div style="font-size:11px;color:var(--muted);">Obras ejecutadas · rango de montos</div>
+          </div>
+        </div>
+        <div class="onb-paso-nav" id="onb-nav-3" onclick="irAPaso(3)">
+          <div class="onb-paso-num" id="onb-num-3">4</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;">Alcance geográfico</div>
+            <div style="font-size:11px;color:var(--muted);">Provincias donde operas</div>
+          </div>
+        </div>
+        <div class="onb-paso-nav" id="onb-nav-4" onclick="irAPaso(4)">
+          <div class="onb-paso-num" id="onb-num-4">5</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;">Preferencias de alertas</div>
+            <div style="font-size:11px;color:var(--muted);">Canales · umbrales</div>
+          </div>
+        </div>
       </div>
 
       <!-- Progreso -->
