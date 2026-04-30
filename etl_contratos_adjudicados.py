@@ -30,11 +30,7 @@ SUPABASE_URL  = os.getenv("SUPABASE_URL")
 SUPABASE_KEY  = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
 API_BASE_URL  = "https://datosabiertos.dgcp.gob.do/api-dgcp/v1"
 
-# ⚠️  CONFIRMAR: prueba estos 3 en Postman/curl y descomenta el que funcione:
-# ENDPOINT_CONTRATOS = "/contratos"
-# ENDPOINT_CONTRATOS = "/adjudicaciones"
-# ENDPOINT_CONTRATOS = "/procesos/adjudicacion"
-ENDPOINT_CONTRATOS = "/contratos"   # candidato más probable
+ENDPOINT_CONTRATOS = "/contratos"   # ✅ confirmado
 
 PAGE_SIZE     = 1000
 DELAY_BETWEEN_PAGES = 0.3  # seg — igual que en monitor.py
@@ -158,29 +154,74 @@ def upsert_institucion(codigo, nombre):
         return None
 
 
+def obtener_datos_rpe(rnc):
+    """
+    Consulta el endpoint /proveedores de la DGCP con el RNC
+    y devuelve datos de contacto del primer resultado activo.
+    """
+    try:
+        r = requests.get(
+            f"{API_BASE_URL}/proveedores",
+            params={"rnc": rnc, "limit": 1},
+            timeout=15,
+        )
+        r.raise_for_status()
+        data = r.json()
+        if data.get("hasError"):
+            return {}
+        payload = data.get("payload", {})
+        content = payload.get("content", payload) if isinstance(payload, dict) else payload
+        if not content or not isinstance(content, list):
+            return {}
+        p = content[0]
+        return {
+            "correo_comercial":   p.get("correo_comercial"),
+            "correo_contacto":    p.get("correo_contacto"),
+            "telefono_comercial": p.get("telefono_comercial"),
+            "telefono_contacto":  p.get("telefono_contacto"),
+            "nombre_contacto":    p.get("contacto"),
+            "posicion_contacto":  p.get("posicion_contacto"),
+            "provincia":          p.get("provincia"),
+            "direccion":          p.get("direccion"),
+            "estado_rpe":         p.get("estado"),
+            "enriquecido_rpe":    True,
+        }
+    except Exception as e:
+        print(f"⚠️  obtener_datos_rpe({rnc}): {e}")
+        return {}
+
+
 def upsert_empresa(rnc, nombre):
     """
     Inserta o recupera empresa adjudicada.
-    Si tiene RNC → upsert por RNC (campo UNIQUE).
+    Si tiene RNC → upsert por RNC + enriquece con datos del RPE.
     Si no tiene RNC → buscar por nombre, insertar si no existe.
     """
     nombre_clean = (nombre or "").strip()
     if not nombre_clean:
         return None
 
-    # Cache key: RNC si existe, nombre normalizado si no
     cache_key = rnc if rnc else f"_nombre_{nombre_clean.lower()}"
     if cache_key in _cache_emp:
         return _cache_emp[cache_key]
 
     try:
         if rnc:
+            # Base de la empresa
+            datos = {"rnc": rnc, "nombre": nombre_clean}
+
+            # Enriquecer con RPE (email, teléfono, contacto)
+            rpe_data = obtener_datos_rpe(rnc)
+            if rpe_data:
+                datos.update(rpe_data)
+            else:
+                datos["enriquecido_rpe"] = False
+
             r = supabase.table("empresas_estado") \
-                .upsert({"rnc": rnc, "nombre": nombre_clean}, on_conflict="rnc") \
+                .upsert(datos, on_conflict="rnc") \
                 .execute()
             uid = r.data[0]["id"]
         else:
-            # Sin RNC: buscar primero
             existente = supabase.table("empresas_estado") \
                 .select("id") \
                 .eq("nombre", nombre_clean) \
@@ -190,7 +231,7 @@ def upsert_empresa(rnc, nombre):
                 uid = existente.data["id"]
             else:
                 r = supabase.table("empresas_estado") \
-                    .insert({"nombre": nombre_clean}) \
+                    .insert({"nombre": nombre_clean, "enriquecido_rpe": False}) \
                     .execute()
                 uid = r.data[0]["id"]
 
@@ -210,55 +251,40 @@ def mapear_contrato(c):
     """
     Convierte un registro del API DGCP al esquema de contratos_adjudicados.
 
-    ⚠️  AJUSTAR los nombres de campos una vez confirmes el endpoint real.
-    Los nombres aquí son los más probables basados en el patrón de /procesos.
-
-    Campos esperados del API (a confirmar):
-      codigo_proceso, titulo, unidad_compra, codigo_unidad_compra,
-      modalidad, objeto_proceso, monto_adjudicado (o monto_contrato),
-      proveedor_adjudicado (o nombre_proveedor), rnc_proveedor,
-      fecha_adjudicacion (o fecha_suscripcion), divisa
+    Campos confirmados del endpoint /contratos (verificado 2026-04-30):
+      codigo_contrato, codigo_proceso, descripcion, estado_contrato,
+      fecha_adjudicacion, valor_contratado, divisa, metodo_pago,
+      unidad_compra, codigo_unidad_compra,
+      rpe (= RNC del proveedor), razon_social (= nombre del proveedor),
+      fecha_creacion_contrato, url_contrato
     """
     return {
-        # Identificador único del contrato en la DGCP
-        # Si no hay campo específico, usamos codigo_proceso como OCID
-        "ocid": c.get("codigo_contrato") or c.get("codigo_proceso") or "",
+        # ✅ ID único del contrato
+        "ocid": c.get("codigo_contrato", ""),
 
-        "codigo_proceso":    c.get("codigo_proceso"),
-        "titulo_proceso":    (c.get("titulo") or c.get("titulo_proceso") or "").strip(),
-        "modalidad":         c.get("modalidad"),
-        "objeto_proceso":    c.get("objeto_proceso"),
+        # ✅ Proceso relacionado
+        "codigo_proceso":  c.get("codigo_proceso"),
 
-        "monto_adjudicado":  (
-            c.get("monto_adjudicado")
-            or c.get("monto_contrato")
-            or c.get("monto")
-            or c.get("valor_adjudicado")
-        ),
-        "divisa": c.get("divisa", "DOP"),
+        # ✅ Título / descripción
+        "titulo_proceso":  (c.get("descripcion") or "").strip(),
 
-        "fecha_adjudicacion": parse_fecha(
-            c.get("fecha_adjudicacion")
-            or c.get("fecha_suscripcion")
-            or c.get("fecha_contrato")
-        ),
-        "fecha_contrato": parse_fecha(c.get("fecha_suscripcion") or c.get("fecha_contrato")),
+        # La API /contratos no devuelve modalidad directamente
+        "modalidad":       c.get("metodo_pago"),
+        "objeto_proceso":  c.get("estado_contrato"),
 
-        # Empresa adjudicada — campos a confirmar
-        "_nombre_proveedor": (
-            c.get("proveedor_adjudicado")
-            or c.get("nombre_proveedor")
-            or c.get("adjudicatario")
-            or c.get("proveedor")
-            or ""
-        ).strip(),
-        "_rnc_proveedor": (
-            c.get("rnc_proveedor")
-            or c.get("rnc_adjudicatario")
-            or c.get("rnc")
-        ),
+        # ✅ Monto real adjudicado
+        "monto_adjudicado": c.get("valor_contratado"),
+        "divisa":           c.get("divisa", "DOP"),
 
-        # Institución compradora
+        # ✅ Fechas
+        "fecha_adjudicacion": parse_fecha(c.get("fecha_adjudicacion")),
+        "fecha_contrato":     parse_fecha(c.get("fecha_creacion_contrato")),
+
+        # ✅ Proveedor adjudicado
+        "_nombre_proveedor": (c.get("razon_social") or "").strip(),
+        "_rnc_proveedor":     c.get("rpe"),   # rpe = RNC en la API DGCP
+
+        # ✅ Institución compradora
         "_codigo_unidad": str(c.get("codigo_unidad_compra", "SIN_CODIGO")),
         "_nombre_unidad":  c.get("unidad_compra", "Sin nombre"),
     }
