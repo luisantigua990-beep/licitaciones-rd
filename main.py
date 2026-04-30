@@ -1678,6 +1678,61 @@ async def forzar_monitor(_: None = Depends(verificar_admin)):
     return {"nuevos": len(nuevos)}
 
 
+@app.post("/api/admin/etl-contratos")
+async def admin_etl_contratos(
+    background_tasks: BackgroundTasks,
+    modo: str = "incremental",
+    desde: str = None,
+    hasta: str = None,
+    year: int = None,
+    _: None = Depends(verificar_admin)
+):
+    """
+    Dispara el ETL de contratos adjudicados en segundo plano.
+
+    Modos:
+      - incremental (default) → últimos 2 días
+      - full                  → histórico completo desde 2021
+      - custom                → requiere desde + hasta (YYYY-MM-DD)
+      - year                  → requiere year (ej: 2023)
+
+    Llamar con:
+      POST /api/admin/etl-contratos?modo=full
+      POST /api/admin/etl-contratos?modo=custom&desde=2024-01-01&hasta=2024-12-31
+      POST /api/admin/etl-contratos?modo=year&year=2023
+    Header: X-Admin-Key: <ADMIN_SECRET>
+    """
+    def _run(modo, desde, hasta):
+        try:
+            if modo == "full":
+                f_desde = "2021-01-01"
+                f_hasta = datetime.now().strftime("%Y-%m-%d")
+            elif modo == "year" and year:
+                f_desde = f"{year}-01-01"
+                f_hasta = f"{year}-12-31"
+            elif modo == "custom" and desde and hasta:
+                f_desde = desde
+                f_hasta = hasta
+            else:
+                f_desde = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+                f_hasta  = datetime.now().strftime("%Y-%m-%d")
+                modo     = "incremental"
+
+            run_etl(f_desde, f_hasta, modo=modo)
+        except Exception as e:
+            print(f"❌ Error en ETL admin ({modo}): {e}")
+
+    background_tasks.add_task(_run, modo, desde, hasta)
+    return {
+        "ok": True,
+        "mensaje": f"ETL '{modo}' iniciado en segundo plano. Revisa los Deploy Logs en Railway.",
+        "modo": modo,
+        "desde": desde,
+        "hasta": hasta,
+        "year": year,
+    }
+
+
 @app.put("/api/notificaciones/intereses")
 @limiter.limit("20/minute")
 async def actualizar_intereses(request: Request, payload: dict):
