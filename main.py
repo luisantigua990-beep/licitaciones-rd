@@ -36,6 +36,7 @@ from monitor import ejecutar_monitor
 from notifications import enviar_notificacion
 from router_agentes import agentes_router, social_router
 from router_closer import closer_router
+from etl_contratos_adjudicados import run_etl
 
 # reportlab se importa dentro de _generar_pdf_analisis_bytes (lazy import)
 
@@ -255,6 +256,20 @@ def nurturing_loop():
         time.sleep(24 * 3600)
 
 
+def etl_contratos_loop():
+    """Sincroniza contratos adjudicados de la API DGCP cada 24 horas."""
+    time.sleep(300)  # esperar 5 min al arranque para no solapar con monitor
+    while True:
+        try:
+            desde = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+            hasta = datetime.now().strftime("%Y-%m-%d")
+            print(f"\n⏰ ETL Contratos adjudicados: {desde} → {hasta}")
+            run_etl(desde, hasta, modo="incremental")
+        except Exception as e:
+            print(f"❌ Error en ETL contratos: {e}")
+        time.sleep(24 * 3600)  # cada 24 horas
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Inicia el monitor API y el scraper en tiempo real al arrancar."""
@@ -277,6 +292,11 @@ async def lifespan(app: FastAPI):
     hilo_pendientes = threading.Thread(target=reprocesar_pendientes_loop, daemon=True)
     hilo_pendientes.start()
     print("✅ Reproceso de pliegos pendientes iniciado (cada 30 minutos)")
+
+    # ETL contratos adjudicados (cada 24h)
+    hilo_etl = threading.Thread(target=etl_contratos_loop, daemon=True)
+    hilo_etl.start()
+    print("✅ ETL contratos adjudicados iniciado (cada 24 horas)")
 
     yield
     print("🛑 Servidor detenido")
