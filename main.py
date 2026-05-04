@@ -38,6 +38,7 @@ from router_agentes import agentes_router, social_router
 from router_closer import closer_router
 from etl_contratos_adjudicados import run_etl
 from competidores_feature import competidores_router
+from reenriquecer_empresas import get_reenriquecimiento_router
 
 # reportlab se importa dentro de _generar_pdf_analisis_bytes (lazy import)
 
@@ -350,6 +351,9 @@ app.include_router(closer_router)
 
 # ── Inteligencia Competitiva ──────────────────────────────
 app.include_router(competidores_router)
+
+# ── Admin: re-enriquecimiento RPE ─────────────────────────
+app.include_router(get_reenriquecimiento_router())
 
 
 @app.get("/health")
