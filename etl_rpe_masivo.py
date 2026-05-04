@@ -50,7 +50,11 @@ BATCH_SUPABASE    = 500   # empresas por batch al actualizar
 def descargar_rpe_completo(desde_pagina: int = 1) -> dict:
     """
     Descarga todas las páginas del RPE y retorna un dict:
-    { numero_documento_normalizado: {contacto...} }
+    { rpe_secuencial: {contacto...} }
+
+    CLAVE: El campo de cruce es `rpe` (número secuencial interno del DGCP),
+    NO el numero_documento (RNC de la DGII).
+    empresas_estado.rnc almacena ese número secuencial, no el RNC real.
     """
     rpe_index = {}
     page = desde_pagina
@@ -79,21 +83,15 @@ def descargar_rpe_completo(desde_pagina: int = 1) -> dict:
                 print(f"✅ Sin más registros en página {page} — descarga completa.")
                 break
 
-            # Indexar por numero_documento (RNC normalizado)
+            # ✅ Indexar por rpe secuencial — mismo campo que viene en /contratos
+            # empresas_estado.rnc = rpe secuencial del DGCP (NO el RNC de la DGII)
             for p in content:
-                rnc_raw = str(p.get("numero_documento") or "").strip()
-                if not rnc_raw:
+                rpe_val = str(p.get("rpe") or "").strip()
+                if not rpe_val or rpe_val == "0":
                     continue
 
-                # Normalizar RNC — remover guiones y ceros a la izquierda no significativos
-                rnc_norm = rnc_raw.replace("-", "").lstrip("0") or rnc_raw
-
-                email = p.get("correo_comercial") or p.get("correo_contacto")
-                tel   = p.get("telefono_comercial") or p.get("telefono_contacto")
-
-                # Solo indexar si tiene datos de contacto útiles
-                if email or tel or p.get("contacto"):
-                    rpe_index[rnc_norm] = {
+                # Indexar siempre para poder marcar como procesado
+                rpe_index[rpe_val] = {
                         "correo_comercial":   p.get("correo_comercial"),
                         "correo_contacto":    p.get("correo_contacto"),
                         "telefono_comercial": p.get("telefono_comercial"),
@@ -177,17 +175,18 @@ def cruzar_y_actualizar(rpe_index: dict, dry_run: bool = False) -> dict:
         updates_sin_match    = []
 
         for emp in empresas:
-            rnc_norm = normalizar_rnc(emp.get("rnc", ""))
-            if not rnc_norm:
+            # rnc en empresas_estado = número rpe secuencial del DGCP
+            rpe_key = str(emp.get("rnc") or "").strip()
+            if not rpe_key:
                 continue
 
             stats["total_empresas"] += 1
 
-            if rnc_norm in rpe_index:
+            if rpe_key in rpe_index:
                 stats["con_match"] += 1
                 updates_con_match.append({
                     "id": emp["id"],
-                    **rpe_index[rnc_norm],
+                    **rpe_index[rpe_key],
                 })
             else:
                 stats["sin_match"] += 1
