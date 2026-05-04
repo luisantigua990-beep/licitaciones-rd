@@ -257,11 +257,19 @@ def nurturing_loop():
 
 
 def etl_contratos_loop():
-    """Sincroniza contratos adjudicados de la API DGCP cada 24 horas."""
+    """
+    Sincroniza contratos adjudicados de la API DGCP cada 24 horas.
+
+    NOTA: La API DGCP /contratos no tiene histórico real pre-2024.
+    El endpoint devuelve siempre el mismo pool de ~175K contratos recientes
+    independientemente del rango de fechas solicitado.
+    El upsert con on_conflict='ocid' garantiza idempotencia — no genera duplicados.
+    Usamos ventana de 7 días para capturar contratos con fecha_contrato rezagada.
+    """
     time.sleep(300)  # esperar 5 min al arranque para no solapar con monitor
     while True:
         try:
-            desde = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+            desde = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
             hasta = datetime.now().strftime("%Y-%m-%d")
             print(f"\n⏰ ETL Contratos adjudicados: {desde} → {hasta}")
             run_etl(desde, hasta, modo="incremental")
