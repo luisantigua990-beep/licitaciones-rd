@@ -333,11 +333,12 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Permitir conexiones desde cualquier origen (para la PWA)
+# Permitir conexiones desde la PWA y desde archivos HTML locales (admin tools)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://app.licitacionlab.com"],
-    allow_credentials=True,
+    allow_origins=["https://app.licitacionlab.com", "null"],
+    allow_origin_regex=r".*",  # permite file:// para herramientas admin locales
+    allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "apikey", "X-Admin-Key"],
 )
