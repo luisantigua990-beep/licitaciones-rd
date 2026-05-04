@@ -157,12 +157,20 @@ def upsert_institucion(codigo, nombre):
 def obtener_datos_rpe(rnc):
     """
     Consulta el endpoint /proveedores de la DGCP con el RNC
-    y devuelve datos de contacto del primer resultado activo.
+    y devuelve datos de contacto SOLO si el RNC del resultado coincide.
+
+    BUG CONOCIDO DE LA API DGCP: cuando el RNC no existe en el RPE,
+    la API retorna el primer resultado del índice en lugar de devolver
+    una lista vacía. Por eso validamos que el RNC del resultado sea
+    exactamente el que consultamos — si no coincide, descartamos.
     """
+    if not rnc:
+        return {}
+    rnc_str = str(rnc).strip()
     try:
         r = requests.get(
             f"{API_BASE_URL}/proveedores",
-            params={"rnc": rnc, "limit": 1},
+            params={"rnc": rnc_str, "limit": 1},
             timeout=15,
         )
         r.raise_for_status()
@@ -174,6 +182,20 @@ def obtener_datos_rpe(rnc):
         if not content or not isinstance(content, list):
             return {}
         p = content[0]
+
+        # ✅ VALIDACIÓN CRÍTICA: verificar que el RNC del resultado coincida
+        # La API devuelve el primer registro del índice cuando no encuentra el RNC
+        rnc_resultado = str(p.get("rnc") or p.get("rpe") or "").strip()
+        if rnc_resultado and rnc_resultado != rnc_str:
+            # La API devolvió un registro diferente — no es el proveedor correcto
+            return {}
+
+        # Validar que al menos tenga un dato de contacto real
+        email = p.get("correo_comercial") or p.get("correo_contacto")
+        tel   = p.get("telefono_comercial") or p.get("telefono_contacto")
+        if not email and not tel:
+            return {}
+
         return {
             "correo_comercial":   p.get("correo_comercial"),
             "correo_contacto":    p.get("correo_contacto"),
