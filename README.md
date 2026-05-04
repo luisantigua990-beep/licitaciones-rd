@@ -23,3 +23,4 @@ Sistema que monitorea la API de la DGCP (Direcci√≥n General de Contrataciones P√
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_KEY=eyJ...
 ```
+.
