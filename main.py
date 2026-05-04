@@ -37,6 +37,7 @@ from notifications import enviar_notificacion
 from router_agentes import agentes_router, social_router
 from router_closer import closer_router
 from etl_contratos_adjudicados import run_etl
+from competidores_feature import competidores_router
 
 # reportlab se importa dentro de _generar_pdf_analisis_bytes (lazy import)
 
@@ -346,6 +347,9 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(agentes_router)
 app.include_router(social_router)
 app.include_router(closer_router)
+
+# ── Inteligencia Competitiva ──────────────────────────────
+app.include_router(competidores_router)
 
 
 @app.get("/health")
