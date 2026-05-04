@@ -18,6 +18,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
@@ -3654,7 +3655,7 @@ html { background: var(--color-bg, #0A0A0A); }
   </div><!-- /tabs-wrapper -->
 
   <!-- ── TAB: INTELIGENCIA COMPETITIVA ── -->
-  <div id="tab-inteligencia" style="position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:72px;display:none;">
+  <div id="tab-inteligencia" style="position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:72px;display:none;z-index:1;">
 
     <!-- Header -->
     <div style="padding:20px 20px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);padding-bottom:14px;">
@@ -8826,7 +8827,7 @@ function icRenderDashboard(data) {
   document.getElementById('ic-kpi-contacto').textContent = emp.nombre_contacto || email || 'No disponible';
   document.getElementById('ic-kpi-contacto-pos').textContent = emp.posicion_contacto || '';
 
-  // Charts con Canvas API (no Chart.js — ya que puede no estar disponible aquí)
+  // Charts con Chart.js
   icRenderChartCanvas('ic-chart-contratos', data.por_anio, 'cantidad_contratos', false);
   icRenderChartCanvas('ic-chart-montos', data.por_anio, 'monto_total', true);
 
@@ -8849,14 +8850,18 @@ function icRenderDashboard(data) {
   const contEl = document.getElementById('ic-contratos');
   if (data.ultimos_contratos && data.ultimos_contratos.length) {
     contEl.innerHTML = data.ultimos_contratos.map(c => `
-      <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;">
+      <div onclick="icVerProceso('${c.ocid || ''}')" style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer;" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
         <div style="flex:1;padding-right:8px;overflow:hidden;">
-          <div style="color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.titulo || 'Sin título'}</div>
-          <div style="font-size:11px;color:var(--muted);">${c.institucion || ''}</div>
+          <div style="color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${c.titulo || 'Sin título'}</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:3px;">
+            <span style="font-size:10px;font-family:var(--font-mono);color:var(--muted);">${c.ocid || ''}</span>
+            ${c.institucion ? `<span style="font-size:10px;color:var(--muted);">· ${c.institucion}</span>` : ''}
+          </div>
         </div>
         <div style="text-align:right;flex-shrink:0;">
           <div style="font-weight:700;color:var(--green);">RD$ ${icFmtM(c.monto)}</div>
           <div style="font-size:11px;color:var(--muted);">${icFmtFecha(c.fecha)}</div>
+          <div style="font-size:10px;color:var(--green);margin-top:2px;">Ver proceso →</div>
         </div>
       </div>`).join('');
   } else {
@@ -8869,47 +8874,72 @@ function icRenderDashboard(data) {
 function icRenderChartCanvas(canvasId, datos, campo, esMonto) {
   const cv = document.getElementById(canvasId);
   if (!cv || !datos || !datos.length) return;
-  const W = cv.parentElement.offsetWidth || 140;
-  const H = 130;
-  cv.width = W; cv.height = H;
-  const ctx = cv.getContext('2d');
-  ctx.clearRect(0, 0, W, H);
+  // Destruir chart anterior si existe
+  const existente = Chart.getChart(cv);
+  if (existente) existente.destroy();
 
-  const GREEN = getComputedStyle(document.documentElement).getPropertyValue('--green').trim() || '#16A34A';
-  const MUTED = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#737373';
-  const BG2   = getComputedStyle(document.documentElement).getPropertyValue('--surface2').trim() || '#1F1F1F';
+  const isDark = !document.documentElement.getAttribute('data-theme') || document.documentElement.getAttribute('data-theme') !== 'light';
+  const GREEN  = isDark ? '#16A34A' : '#0F7A3E';
+  const MUTED  = isDark ? '#737373' : '#737373';
+  const GRID   = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
 
-  const vals = datos.map(d => esMonto ? Math.round(d[campo] / 1e6) : d[campo]);
   const labels = datos.map(d => String(d.anio));
-  const maxV = Math.max(...vals) || 1;
-  const n = vals.length;
-  const PAD = { t: 10, b: 24, l: 6, r: 6 };
-  const barW = Math.max(8, ((W - PAD.l - PAD.r) / n) - 4);
-  const step = (W - PAD.l - PAD.r) / n;
+  const vals   = datos.map(d => esMonto ? Math.round(d[campo] / 1e6) : d[campo]);
 
-  vals.forEach((v, i) => {
-    const x = PAD.l + i * step + step/2 - barW/2;
-    const barH = Math.max(2, ((v / maxV) * (H - PAD.t - PAD.b)));
-    const y = H - PAD.b - barH;
-    ctx.fillStyle = GREEN;
-    ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x, y, barW, barH, 3);
-    else ctx.rect(x, y, barW, barH);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    // Label eje X
-    ctx.fillStyle = MUTED;
-    ctx.font = '9px var(--font-body, sans-serif)';
-    ctx.textAlign = 'center';
-    ctx.fillText(labels[i], x + barW/2, H - 6);
-    // Valor encima
-    if (v > 0) {
-      ctx.fillStyle = GREEN;
-      ctx.font = 'bold 9px var(--font-body, sans-serif)';
-      ctx.fillText(esMonto ? v + 'M' : v, x + barW/2, y - 3);
+  cv.parentElement.style.height = '160px';
+  cv.parentElement.style.position = 'relative';
+
+  new Chart(cv, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: vals,
+        backgroundColor: GREEN,
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => esMonto ? 'RD$ ' + ctx.raw + 'M' : ctx.raw + ' contratos'
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: MUTED, font: { size: 11 } },
+          grid: { display: false },
+          border: { display: false }
+        },
+        y: {
+          ticks: {
+            color: MUTED, font: { size: 10 },
+            callback: v => esMonto ? v + 'M' : v
+          },
+          grid: { color: GRID },
+          border: { display: false }
+        }
+      }
     }
   });
+}
+
+function icVerProceso(ocid) {
+  if (!ocid) return;
+  // Buscar el proceso por código y navegar al detalle
+  const codigo = ocid.replace(/^ocds-[a-z0-9]+-/i, '');
+  if (typeof verDetalle === 'function') {
+    switchTab2('dashboard');
+    setTimeout(() => verDetalle(codigo), 100);
+  } else {
+    mostrarToast('Código: ' + (codigo || ocid));
+  }
 }
 
 function icVolverBusqueda() {
