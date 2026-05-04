@@ -161,6 +161,11 @@ def cruzar_y_actualizar(rpe_index: dict, dry_run: bool = False) -> dict:
     """
     Trae todas las empresas_estado, cruza con el índice del RPE
     y actualiza las que tienen match.
+
+    FIX: Usa UPDATE individual por id en lugar de upsert, para evitar
+    la violación del constraint NOT NULL en la columna 'nombre'.
+    El upsert intentaba insertar filas nuevas sin 'nombre', fallando.
+    El UPDATE solo modifica los campos de contacto en filas existentes.
     """
     stats = {
         "total_empresas":  0,
@@ -189,8 +194,8 @@ def cruzar_y_actualizar(rpe_index: dict, dry_run: bool = False) -> dict:
         if not empresas:
             break
 
-        updates_con_match    = []
-        updates_sin_match    = []
+        updates_con_match = []
+        updates_sin_match = []
 
         for emp in empresas:
             # rnc en empresas_estado = número rpe secuencial del DGCP
@@ -210,18 +215,28 @@ def cruzar_y_actualizar(rpe_index: dict, dry_run: bool = False) -> dict:
                 stats["sin_match"] += 1
                 updates_sin_match.append(emp["id"])
 
-        # Actualizar empresas con match en lotes de 100
+        # ─────────────────────────────────────────────────────
+        # FIX: UPDATE individual por id (no upsert)
+        # upsert fallaba con NOT NULL en 'nombre' porque intentaba
+        # insertar nuevas filas sin incluir ese campo obligatorio.
+        # UPDATE solo modifica campos de contacto en filas existentes.
+        # ─────────────────────────────────────────────────────
         if not dry_run:
             for i in range(0, len(updates_con_match), 100):
                 lote = updates_con_match[i:i+100]
-                try:
-                    supabase.table("empresas_estado") \
-                        .upsert(lote, on_conflict="id") \
-                        .execute()
-                    stats["actualizadas"] += len(lote)
-                except Exception as e:
-                    print(f"❌ Error upsert lote: {e}")
-                    stats["errores"] += len(lote)
+                for emp in lote:
+                    try:
+                        emp_id = emp.pop("id")
+                        supabase.table("empresas_estado") \
+                            .update(emp) \
+                            .eq("id", emp_id) \
+                            .execute()
+                        emp["id"] = emp_id
+                        stats["actualizadas"] += 1
+                    except Exception as e:
+                        emp["id"] = emp_id
+                        print(f"❌ Error update {emp_id}: {e}")
+                        stats["errores"] += 1
 
             # Marcar sin match como intentados (enriquecido_rpe=True pero sin datos)
             for i in range(0, len(updates_sin_match), 100):
