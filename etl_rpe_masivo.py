@@ -59,39 +59,45 @@ def descargar_rpe_completo(desde_pagina: int = 1) -> dict:
     rpe_index = {}
     page = desde_pagina
     total_descargados = 0
+    paginas_saltadas  = []
+    MAX_INTENTOS      = 3
 
     print(f"\n📥 Descargando RPE completo desde página {desde_pagina}...")
 
     while True:
-        try:
-            r = requests.get(
-                f"{API_BASE_URL}/proveedores",
-                params={"page": page, "limit": PAGE_SIZE},
-                timeout=30,
-            )
-            r.raise_for_status()
-            data = r.json()
+        intentos = 0
+        exito    = False
 
-            if data.get("hasError"):
-                print(f"⚠️  hasError en página {page}")
-                break
+        while intentos < MAX_INTENTOS:
+            try:
+                r = requests.get(
+                    f"{API_BASE_URL}/proveedores",
+                    params={"page": page, "limit": PAGE_SIZE},
+                    timeout=30,
+                )
+                r.raise_for_status()
+                data = r.json()
 
-            payload = data.get("payload", {})
-            content = payload.get("content", []) if isinstance(payload, dict) else payload
+                if data.get("hasError"):
+                    print(f"⚠️  hasError en página {page}")
+                    exito = True
+                    break
 
-            if not content:
-                print(f"✅ Sin más registros en página {page} — descarga completa.")
-                break
+                payload = data.get("payload", {})
+                content = payload.get("content", []) if isinstance(payload, dict) else payload
 
-            # ✅ Indexar por rpe secuencial — mismo campo que viene en /contratos
-            # empresas_estado.rnc = rpe secuencial del DGCP (NO el RNC de la DGII)
-            for p in content:
-                rpe_val = str(p.get("rpe") or "").strip()
-                if not rpe_val or rpe_val == "0":
-                    continue
+                if not content:
+                    print(f"✅ Sin más registros en página {page} — descarga completa.")
+                    if paginas_saltadas:
+                        print(f"⚠️  Páginas saltadas (error DGCP): {paginas_saltadas}")
+                    return rpe_index
 
-                # Indexar siempre para poder marcar como procesado
-                rpe_index[rpe_val] = {
+                # ✅ Indexar por rpe secuencial
+                for p in content:
+                    rpe_val = str(p.get("rpe") or "").strip()
+                    if not rpe_val or rpe_val == "0":
+                        continue
+                    rpe_index[rpe_val] = {
                         "correo_comercial":   p.get("correo_comercial"),
                         "correo_contacto":    p.get("correo_contacto"),
                         "telefono_comercial": p.get("telefono_comercial"),
@@ -104,27 +110,39 @@ def descargar_rpe_completo(desde_pagina: int = 1) -> dict:
                         "enriquecido_rpe":    True,
                     }
 
-            total_descargados += len(content)
-            total_paginas = data.get("pages", "?")
+                total_descargados += len(content)
+                total_paginas = data.get("pages", "?")
 
-            if page % 10 == 0 or page == 1:
-                print(f"   Página {page}/{total_paginas} — {total_descargados:,} descargados — {len(rpe_index):,} con contacto")
+                if page % 10 == 0 or page == 1:
+                    print(f"   Página {page}/{total_paginas} — {total_descargados:,} descargados — {len(rpe_index):,} indexados")
 
-            if len(content) < PAGE_SIZE:
-                print(f"✅ Última página ({page}) — descarga completa.")
+                if len(content) < PAGE_SIZE:
+                    print(f"✅ Última página ({page}) — descarga completa.")
+                    if paginas_saltadas:
+                        print(f"⚠️  Páginas saltadas (error DGCP): {paginas_saltadas}")
+                    return rpe_index
+
+                exito = True
                 break
 
+            except requests.exceptions.RequestException as e:
+                intentos += 1
+                if intentos < MAX_INTENTOS:
+                    print(f"❌ Error página {page} (intento {intentos}/{MAX_INTENTOS}): {e} — reintentando en 5s...")
+                    time.sleep(5)
+                else:
+                    print(f"⏭️  Página {page} saltada tras {MAX_INTENTOS} intentos — error DGCP, continuando...")
+                    paginas_saltadas.append(page)
+                    exito = True
+
+        if exito:
             page += 1
             time.sleep(DELAY_ENTRE_PAGS)
 
-        except requests.exceptions.RequestException as e:
-            print(f"❌ Error en página {page}: {e}")
-            print(f"   Reintentando en 5s...")
-            time.sleep(5)
-            continue
-
     print(f"\n📊 RPE descargado: {total_descargados:,} registros totales")
-    print(f"   Con datos de contacto: {len(rpe_index):,}")
+    print(f"   Indexados: {len(rpe_index):,}")
+    if paginas_saltadas:
+        print(f"   Páginas saltadas: {paginas_saltadas}")
     return rpe_index
 
 
