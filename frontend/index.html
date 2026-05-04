@@ -1314,6 +1314,8 @@ body {
 
   /* Mercado */
   #tab-mercado .main { max-width: 1100px !important; padding: 28px 32px !important; }
+  #tab-inteligencia { padding: 0; }
+  #tab-inteligencia #ic-dashboard { max-width: 900px; margin: 0 auto; }
 }
 
 /* ── SIDEBAR DESKTOP (hidden en móvil, visible ≥900px) ── */
@@ -2959,6 +2961,10 @@ html { background: var(--color-bg, #0A0A0A); }
       <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       Perfil empresa
     </button>
+    <button class="dsb-nav-item" id="dsb-nav-inteligencia" onclick="switchTab2('inteligencia')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Empresas</span>
+    </button>
     <button class="dsb-nav-item" id="dsb-nav-reportes" onclick="switchTab2('reportes')">
       <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
       Reportes
@@ -3646,6 +3652,98 @@ html { background: var(--color-bg, #0A0A0A); }
     </div>
   </div>
   </div><!-- /tabs-wrapper -->
+
+  <!-- ── TAB: INTELIGENCIA COMPETITIVA ── -->
+  <div id="tab-inteligencia" style="position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:72px;display:none;">
+
+    <!-- Header -->
+    <div style="padding:20px 20px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);padding-bottom:14px;">
+      <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Inteligencia Competitiva</div>
+      <div style="display:flex;gap:8px;">
+        <div style="flex:1;position:relative;">
+          <input id="ic-search-input" type="text" placeholder="Busca por nombre o RNC..."
+            style="width:100%;padding:10px 14px 10px 38px;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r-md);color:var(--text);font-family:var(--font-body);font-size:14px;outline:none;"
+            oninput="icDebounce()" onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'">
+          <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);pointer-events:none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+        <button onclick="icBuscar()" style="padding:0 16px;background:var(--green);color:#fff;border:none;border-radius:var(--r-md);font-size:13px;font-weight:800;cursor:pointer;font-family:var(--font-body);white-space:nowrap;">Buscar</button>
+      </div>
+    </div>
+
+    <!-- Estado / Resultados -->
+    <div id="ic-estado" style="padding:8px 20px;font-size:12px;color:var(--muted);"></div>
+    <div id="ic-resultados" style="padding:0 20px;"></div>
+
+    <!-- Dashboard empresa -->
+    <div id="ic-dashboard" style="display:none;padding:0 20px 20px;">
+
+      <button onclick="icVolverBusqueda()" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--green);background:none;border:none;cursor:pointer;padding:12px 0 8px;font-family:var(--font-body);font-weight:700;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        Nueva búsqueda
+      </button>
+
+      <!-- Header empresa -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px;margin-bottom:12px;border-left:3px solid var(--green);">
+        <div id="ic-d-nombre" style="font-size:17px;font-weight:800;color:var(--text);margin-bottom:4px;"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--muted);">
+          <span id="ic-d-rnc"></span>
+          <span id="ic-d-provincia"></span>
+          <span id="ic-d-estado-rpe"></span>
+        </div>
+        <div id="ic-d-contacto" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+      </div>
+
+      <!-- KPIs -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div style="background:var(--surface2);border-radius:var(--r-md);padding:12px 14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Contratos</div>
+          <div id="ic-kpi-contratos" style="font-size:24px;font-weight:900;color:var(--text);"></div>
+          <div id="ic-kpi-rango" style="font-size:11px;color:var(--muted);margin-top:2px;"></div>
+        </div>
+        <div style="background:var(--surface2);border-radius:var(--r-md);padding:12px 14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Monto total</div>
+          <div id="ic-kpi-monto" style="font-size:20px;font-weight:900;color:var(--green);"></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">RD$</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:var(--r-md);padding:12px 14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Promedio/contrato</div>
+          <div id="ic-kpi-promedio" style="font-size:18px;font-weight:800;color:var(--text);"></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">RD$</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:var(--r-md);padding:12px 14px;">
+          <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Contacto</div>
+          <div id="ic-kpi-contacto" style="font-size:12px;font-weight:700;color:var(--text);margin-top:4px;word-break:break-all;"></div>
+          <div id="ic-kpi-contacto-pos" style="font-size:11px;color:var(--muted);margin-top:2px;"></div>
+        </div>
+      </div>
+
+      <!-- Gráficas -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;">
+          <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Contratos/año</div>
+          <canvas id="ic-chart-contratos" style="width:100%;max-height:140px;" role="img" aria-label="Contratos por año"></canvas>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;">
+          <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Monto/año (M)</div>
+          <canvas id="ic-chart-montos" style="width:100%;max-height:140px;" role="img" aria-label="Monto por año en millones"></canvas>
+        </div>
+      </div>
+
+      <!-- Top Instituciones -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;margin-bottom:12px;">
+        <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Top instituciones</div>
+        <div id="ic-instituciones"></div>
+      </div>
+
+      <!-- Últimos contratos -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;margin-bottom:16px;">
+        <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Últimos contratos</div>
+        <div id="ic-contratos"></div>
+      </div>
+
+    </div><!-- /ic-dashboard -->
+  </div><!-- /tab-inteligencia -->
+
   <nav class="ll-bottom-nav">
     <button class="ll-bottom-nav__item is-active" id="nav-dashboard" onclick="navDashboardTap()">
       <span class="ll-bottom-nav__icon-wrap"><svg class="ll-bottom-nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
@@ -3665,6 +3763,10 @@ html { background: var(--color-bg, #0A0A0A); }
     <button class="ll-bottom-nav__item" id="nav-mercado" onclick="switchTab2('mercado')">
       <span class="ll-bottom-nav__icon-wrap"><svg class="ll-bottom-nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>
       Mercado
+    </button>
+    <button class="ll-bottom-nav__item" id="nav-inteligencia" onclick="switchTab2('inteligencia')">
+      <span class="ll-bottom-nav__icon-wrap"><svg class="ll-bottom-nav__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+      Empresas
     </button>
   </nav>
 </div><!-- /screen-app -->
@@ -5733,13 +5835,14 @@ function navDashboardTap() {
 // ── NAV ──
 function switchTab2(tab) {
   window._lastActiveTab = tab;
-  const allTabs = ['dashboard','detalle','perfil','seguimiento','mercado','alertas','analisis','reportes','calendario'];
+  const allTabs = ['dashboard','detalle','perfil','seguimiento','mercado','alertas','analisis','reportes','calendario','inteligencia'];
   allTabs.forEach(t => {
     const el = document.getElementById(`tab-${t}`);
     if (el) el.style.display = t === tab ? 'block' : 'none';
   });
   if (tab==='seguimiento') cargarSeguimiento();
   if (tab==='mercado')     cargarMercado();
+  if (tab==='inteligencia') icRenderEstado('Busca una empresa por nombre o RNC para ver su historial de contratos con el Estado.');
   if (tab==='perfil')      cargarHistorialAnalisis();
   if (tab==='alertas')     cargarAlertas();
   if (tab==='analisis')    cargarAnalisisTab();
@@ -5747,7 +5850,7 @@ function switchTab2(tab) {
   if (tab==='calendario')  cargarCalendario();
   // Bottom-nav (móvil)
   document.querySelectorAll('.ll-bottom-nav__item').forEach(b => b.classList.remove('is-active'));
-  const navMap = { 'dashboard':'nav-dashboard','perfil':'nav-perfil','seguimiento':'nav-seguimiento','mercado':'nav-mercado' };
+  const navMap = { 'dashboard':'nav-dashboard','perfil':'nav-perfil','seguimiento':'nav-seguimiento','mercado':'nav-mercado','inteligencia':'nav-inteligencia' };
   if(navMap[tab]) document.getElementById(navMap[tab])?.classList.add('is-active');
   // Sidebar desktop
   document.querySelectorAll('.dsb-nav-item').forEach(b => b.classList.remove('active'));
@@ -5755,6 +5858,7 @@ function switchTab2(tab) {
     'dashboard':'dsb-nav-dashboard','perfil':'dsb-nav-perfil',
     'seguimiento':'dsb-nav-seguimiento','mercado':'dsb-nav-mercado',
     'analisis':'dsb-nav-analisis',
+    'inteligencia':'dsb-nav-inteligencia',
     'reportes':'dsb-nav-reportes','calendario':'dsb-nav-calendario'
   };
   if(dsbMap[tab]) document.getElementById(dsbMap[tab])?.classList.add('active');
@@ -8610,6 +8714,213 @@ function initOnboarding() {
   }
 }
 
+
+// ════════════════════════════════════════════════════════════
+// INTELIGENCIA COMPETITIVA
+// ════════════════════════════════════════════════════════════
+let _icDebounceTimer = null;
+let _icEmpresaActual = null;
+let _icChartC = null;
+let _icChartM = null;
+
+const IC_API = API + '/api/v1/proveedores';
+
+function icFmtM(n) {
+  if (!n || n === 0) return '0';
+  if (n >= 1e9) return (n/1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(0) + 'K';
+  return Math.round(n).toLocaleString();
+}
+
+function icFmtFecha(f) {
+  if (!f) return '';
+  return f.slice(0, 7);
+}
+
+function icRenderEstado(msg) {
+  const el = document.getElementById('ic-estado');
+  if (el) el.textContent = msg;
+}
+
+function icDebounce() {
+  clearTimeout(_icDebounceTimer);
+  _icDebounceTimer = setTimeout(icBuscar, 350);
+}
+
+async function icBuscar() {
+  const q = (document.getElementById('ic-search-input')?.value || '').trim();
+  if (q.length < 2) return;
+  document.getElementById('ic-resultados').innerHTML = '';
+  document.getElementById('ic-dashboard').style.display = 'none';
+  document.getElementById('ic-resultados').style.display = 'block';
+  icRenderEstado('Buscando...');
+  try {
+    const res = await fetch(`${IC_API}/buscar?q=${encodeURIComponent(q)}&limit=8`);
+    const data = await res.json();
+    icRenderResultados(data.resultados || []);
+  } catch(e) {
+    icRenderEstado('Error al conectar. Verifica tu conexión.');
+  }
+}
+
+function icRenderResultados(lista) {
+  const cont = document.getElementById('ic-resultados');
+  if (!lista.length) {
+    icRenderEstado('No se encontraron empresas para esa búsqueda.');
+    cont.innerHTML = '';
+    return;
+  }
+  icRenderEstado(lista.length + ' empresa(s) encontrada(s). Toca para ver el dashboard.');
+  cont.innerHTML = lista.map(e => `
+    <div onclick="icVerDashboard('${e.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:6px;cursor:pointer;transition:border-color .15s;" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:var(--text);">${e.nombre || '—'}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;">RNC: ${e.rnc || 'No disponible'}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:13px;font-weight:700;color:var(--green);">${e.total_contratos || 0} contratos</div>
+        <div style="font-size:11px;color:var(--muted);">RD$ ${icFmtM(e.monto_total)}</div>
+      </div>
+    </div>`).join('');
+}
+
+async function icVerDashboard(id) {
+  document.getElementById('ic-resultados').innerHTML = '';
+  document.getElementById('ic-resultados').style.display = 'none';
+  icRenderEstado('Cargando...');
+  try {
+    const res = await fetch(`${IC_API}/${id}/dashboard`);
+    const data = await res.json();
+    _icEmpresaActual = data;
+    icRenderDashboard(data);
+    icRenderEstado('');
+  } catch(e) {
+    icRenderEstado('Error al cargar el dashboard.');
+  }
+}
+
+function icRenderDashboard(data) {
+  const emp = data.empresa;
+  document.getElementById('ic-d-nombre').textContent = emp.nombre || '—';
+  document.getElementById('ic-d-rnc').textContent = emp.rnc ? 'RNC ' + emp.rnc : '';
+  document.getElementById('ic-d-provincia').textContent = emp.provincia || '';
+  document.getElementById('ic-d-estado-rpe').textContent = emp.estado_rpe ? 'Estado: ' + emp.estado_rpe : '';
+
+  // Badges de contacto
+  const email = emp.correo_comercial || emp.correo_contacto || '';
+  const tel   = emp.telefono_comercial || emp.telefono_contacto || '';
+  let badges = '';
+  if (email) badges += `<span style="font-size:11px;font-weight:700;padding:3px 10px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:var(--r-full);">✉ ${email}</span> `;
+  if (tel)   badges += `<span style="font-size:11px;font-weight:700;padding:3px 10px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:var(--r-full);">☎ ${tel}</span>`;
+  document.getElementById('ic-d-contacto').innerHTML = badges;
+
+  // KPIs
+  const k = data.kpis;
+  document.getElementById('ic-kpi-contratos').textContent = (k.total_contratos || 0).toLocaleString();
+  const rango = [k.primer_contrato, k.ultimo_contrato].filter(Boolean).map(icFmtFecha).join(' → ');
+  document.getElementById('ic-kpi-rango').textContent = rango;
+  document.getElementById('ic-kpi-monto').textContent = 'RD$ ' + icFmtM(k.monto_total);
+  const prom = k.total_contratos > 0 ? k.monto_total / k.total_contratos : 0;
+  document.getElementById('ic-kpi-promedio').textContent = 'RD$ ' + icFmtM(prom);
+  document.getElementById('ic-kpi-contacto').textContent = emp.nombre_contacto || email || 'No disponible';
+  document.getElementById('ic-kpi-contacto-pos').textContent = emp.posicion_contacto || '';
+
+  // Charts con Canvas API (no Chart.js — ya que puede no estar disponible aquí)
+  icRenderChartCanvas('ic-chart-contratos', data.por_anio, 'cantidad_contratos', false);
+  icRenderChartCanvas('ic-chart-montos', data.por_anio, 'monto_total', true);
+
+  // Instituciones
+  const instEl = document.getElementById('ic-instituciones');
+  if (data.top_instituciones && data.top_instituciones.length) {
+    instEl.innerHTML = data.top_instituciones.map(i => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;">
+        <span style="color:var(--text2);flex:1;padding-right:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${i.nombre || '—'}</span>
+        <div style="text-align:right;flex-shrink:0;">
+          <span style="font-weight:700;color:var(--green);">${i.cantidad_contratos}</span>
+          <div style="font-size:11px;color:var(--muted);">RD$ ${icFmtM(i.monto_total)}</div>
+        </div>
+      </div>`).join('');
+  } else {
+    instEl.innerHTML = '<div style="font-size:13px;color:var(--muted);">Sin datos</div>';
+  }
+
+  // Últimos contratos
+  const contEl = document.getElementById('ic-contratos');
+  if (data.ultimos_contratos && data.ultimos_contratos.length) {
+    contEl.innerHTML = data.ultimos_contratos.map(c => `
+      <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px;">
+        <div style="flex:1;padding-right:8px;overflow:hidden;">
+          <div style="color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${c.titulo || 'Sin título'}</div>
+          <div style="font-size:11px;color:var(--muted);">${c.institucion || ''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-weight:700;color:var(--green);">RD$ ${icFmtM(c.monto)}</div>
+          <div style="font-size:11px;color:var(--muted);">${icFmtFecha(c.fecha)}</div>
+        </div>
+      </div>`).join('');
+  } else {
+    contEl.innerHTML = '<div style="font-size:13px;color:var(--muted);">Sin contratos registrados</div>';
+  }
+
+  document.getElementById('ic-dashboard').style.display = 'block';
+}
+
+function icRenderChartCanvas(canvasId, datos, campo, esMonto) {
+  const cv = document.getElementById(canvasId);
+  if (!cv || !datos || !datos.length) return;
+  const W = cv.parentElement.offsetWidth || 140;
+  const H = 130;
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const GREEN = getComputedStyle(document.documentElement).getPropertyValue('--green').trim() || '#16A34A';
+  const MUTED = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || '#737373';
+  const BG2   = getComputedStyle(document.documentElement).getPropertyValue('--surface2').trim() || '#1F1F1F';
+
+  const vals = datos.map(d => esMonto ? Math.round(d[campo] / 1e6) : d[campo]);
+  const labels = datos.map(d => String(d.anio));
+  const maxV = Math.max(...vals) || 1;
+  const n = vals.length;
+  const PAD = { t: 10, b: 24, l: 6, r: 6 };
+  const barW = Math.max(8, ((W - PAD.l - PAD.r) / n) - 4);
+  const step = (W - PAD.l - PAD.r) / n;
+
+  vals.forEach((v, i) => {
+    const x = PAD.l + i * step + step/2 - barW/2;
+    const barH = Math.max(2, ((v / maxV) * (H - PAD.t - PAD.b)));
+    const y = H - PAD.b - barH;
+    ctx.fillStyle = GREEN;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, y, barW, barH, 3);
+    else ctx.rect(x, y, barW, barH);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // Label eje X
+    ctx.fillStyle = MUTED;
+    ctx.font = '9px var(--font-body, sans-serif)';
+    ctx.textAlign = 'center';
+    ctx.fillText(labels[i], x + barW/2, H - 6);
+    // Valor encima
+    if (v > 0) {
+      ctx.fillStyle = GREEN;
+      ctx.font = 'bold 9px var(--font-body, sans-serif)';
+      ctx.fillText(esMonto ? v + 'M' : v, x + barW/2, y - 3);
+    }
+  });
+}
+
+function icVolverBusqueda() {
+  document.getElementById('ic-dashboard').style.display = 'none';
+  document.getElementById('ic-resultados').style.display = 'block';
+  document.getElementById('ic-resultados').innerHTML = '';
+  icRenderEstado('Busca una empresa por nombre o RNC para ver su historial.');
+  const inp = document.getElementById('ic-search-input');
+  if (inp) { inp.value = ''; inp.focus(); }
+}
+// ════════════════════════════════════════════════════════════
 </script>
 <!-- ── TUTORIAL SHEET (6 slides) ── -->
 <div class="onb-overlay oculto" id="onb-tutorial-overlay">
