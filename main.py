@@ -41,6 +41,7 @@ from competidores_feature import competidores_router
 from reenriquecer_empresas import get_reenriquecimiento_router
 from etl_rpe_masivo import get_rpe_masivo_router
 from etl_ofertas import get_ofertas_router
+from agente_email_prospector import get_agente6_router
 
 # reportlab se importa dentro de _generar_pdf_analisis_bytes (lazy import)
 
@@ -363,6 +364,9 @@ app.include_router(get_rpe_masivo_router())
 
 # ── Admin: ETL Ofertas ────────────────────────────────────
 app.include_router(get_ofertas_router())
+
+# ── Agente 6: Email Prospector ────────────────────────────
+app.include_router(get_agente6_router())
 
 
 @app.get("/health")
