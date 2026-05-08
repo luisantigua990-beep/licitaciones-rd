@@ -647,23 +647,22 @@ def obtener_empresas_elegibles_v2(limite: int = BATCH_DEFAULT) -> list:
             .execute()
         ids_ya = [r["prospecto_id"] for r in (ya.data or [])]
 
-        # IDs con contratos adjudicados
+        # IDs con contratos adjudicados (limitado para evitar overflow JSON)
         con_contratos = supabase.table("contratos_adjudicados") \
             .select("empresa_id") \
+            .limit(5000) \
             .execute()
         ids_contratos = list({r["empresa_id"] for r in (con_contratos.data or []) if r["empresa_id"]})
 
-        # IDs con ofertas presentadas
-        con_ofertas = supabase.table("ofertas_procesos") \
-            .select("rpe") \
-            .execute()
-        rpes_con_ofertas = {r["rpe"] for r in (con_ofertas.data or []) if r.get("rpe")}
+        if not ids_contratos:
+            return []
 
         # Empresas elegibles: contratos + email + no enviado aún
+        excluir = ids_ya if ids_ya else ["00000000-0000-0000-0000-000000000000"]
         query = supabase.table("empresas_estado") \
             .select("id, nombre, rnc, correo_comercial, correo_contacto") \
             .in_("id", ids_contratos) \
-            .not_.in_("id", ids_ya if ids_ya else ["00000000-0000-0000-0000-000000000000"]) \
+            .not_.in_("id", excluir) \
             .not_.is_("correo_comercial", "null") \
             .limit(limite) \
             .execute()
@@ -671,14 +670,6 @@ def obtener_empresas_elegibles_v2(limite: int = BATCH_DEFAULT) -> list:
         elegibles = []
         for emp in (query.data or []):
             rnc = str(emp.get("rnc") or "")
-            # Verificar que tiene ofertas (si ya hay suficientes en la tabla)
-            tiene_ofertas = rnc in rpes_con_ofertas
-            if not tiene_ofertas and len(rpes_con_ofertas) < 10000:
-                # Si la tabla ofertas aún está incompleta, no exigir este filtro
-                pass
-            elif not tiene_ofertas:
-                continue
-
             elegibles.append({
                 "id":          emp["id"],
                 "nombre":      emp["nombre"],
