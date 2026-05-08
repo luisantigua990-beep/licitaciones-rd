@@ -635,46 +635,22 @@ def obtener_empresas_elegibles(limite: int = BATCH_DEFAULT) -> list:
 
 def obtener_empresas_elegibles_v2(limite: int = BATCH_DEFAULT) -> list:
     """
-    Versión simplificada y robusta con SQL directo.
-    Empresas con contratos + email que no han recibido email_1.
+    Usa la vista elegibles_email_v1 en Supabase para evitar queries masivas.
+    La vista ya filtra: contratos + email + no enviado email_1.
     """
     try:
-        # IDs que ya recibieron email_1
-        ya = supabase.table("outreach_log") \
-            .select("prospecto_id") \
-            .eq("canal", "email") \
-            .eq("tipo", "email_1") \
-            .execute()
-        ids_ya = [r["prospecto_id"] for r in (ya.data or [])]
-
-        # IDs con contratos adjudicados (limitado para evitar overflow JSON)
-        con_contratos = supabase.table("contratos_adjudicados") \
-            .select("empresa_id") \
-            .limit(5000) \
-            .execute()
-        ids_contratos = list({r["empresa_id"] for r in (con_contratos.data or []) if r["empresa_id"]})
-
-        if not ids_contratos:
-            return []
-
-        # Empresas elegibles: contratos + email + no enviado aún
-        excluir = ids_ya if ids_ya else ["00000000-0000-0000-0000-000000000000"]
-        query = supabase.table("empresas_estado") \
-            .select("id, nombre, rnc, correo_comercial, correo_contacto") \
-            .in_("id", ids_contratos) \
-            .not_.in_("id", excluir) \
-            .not_.is_("correo_comercial", "null") \
+        result = supabase.table("elegibles_email_v1") \
+            .select("id, nombre, rnc, email") \
             .limit(limite) \
             .execute()
 
         elegibles = []
-        for emp in (query.data or []):
-            rnc = str(emp.get("rnc") or "")
+        for emp in (result.data or []):
             elegibles.append({
                 "id":          emp["id"],
                 "nombre":      emp["nombre"],
-                "rnc":         rnc,
-                "email":       emp.get("correo_comercial") or emp.get("correo_contacto"),
+                "rnc":         str(emp.get("rnc") or ""),
+                "email":       emp.get("email"),
                 "tipo_enviar": "email_1",
             })
 
