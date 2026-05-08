@@ -46,7 +46,7 @@ ANTHROPIC_KEY    = os.getenv("ANTHROPIC_API_KEY")
 FROM_EMAIL       = "Luis Antigua · LicitacionLab <luis@licitacionlab.com>"
 REPLY_TO         = "l.antigua@licitacionlab.com"
 APP_URL          = "https://app.licitacionlab.com"
-CONSULTING_URL   = "https://wa.me/18096XXXXXX"  # reemplazar con tu WhatsApp
+CONSULTING_URL   = "https://wa.me/18098154457"  # reemplazar con tu WhatsApp
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 claude   = Anthropic(api_key=ANTHROPIC_KEY)
