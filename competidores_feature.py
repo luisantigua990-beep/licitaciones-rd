@@ -266,14 +266,12 @@ def inteligencia_empresa(empresa_id: str):
 
 # ─────────────────────────────────────────────────────────────
 # GET /api/v1/proveedores/proceso/{codigo_proceso}/oferentes
-# Quiénes participaron en un proceso + ganador identificado
 # ─────────────────────────────────────────────────────────────
-
 @competidores_router.get("/proceso/{codigo_proceso}/oferentes")
 def get_oferentes_proceso(codigo_proceso: str):
     """
-    Para un proceso dado, devuelve todos los oferentes con su monto,
-    estado, y flag de si ganó (cruzando con contratos_adjudicados).
+    Devuelve todos los oferentes de un proceso con monto, estado
+    y flag es_ganador (cruzando con contratos_adjudicados).
     """
     try:
         r = supabase.rpc("get_oferentes_proceso", {
