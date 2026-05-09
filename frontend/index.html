@@ -3737,9 +3737,62 @@ html { background: var(--color-bg, #0A0A0A); }
       </div>
 
       <!-- Últimos contratos -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;margin-bottom:16px;">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;margin-bottom:12px;">
         <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Últimos contratos</div>
         <div id="ic-contratos"></div>
+      </div>
+
+      <!-- ── INTELIGENCIA COMPETITIVA WIN/LOSS ── -->
+      <div id="ic-winloss-section" style="display:none;">
+
+        <!-- Separador -->
+        <div style="display:flex;align-items:center;gap:10px;margin:4px 0 12px;">
+          <div style="flex:1;height:1px;background:var(--border);"></div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">Inteligencia Win / Loss</div>
+          <div style="flex:1;height:1px;background:var(--border);"></div>
+        </div>
+
+        <!-- KPIs Win/Loss -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+          <div style="background:var(--surface2);border-radius:var(--r-md);padding:12px 10px;text-align:center;">
+            <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Win Rate</div>
+            <div id="ic-wl-winrate" style="font-size:22px;font-weight:900;color:var(--green);"></div>
+          </div>
+          <div style="background:var(--surface2);border-radius:var(--r-md);padding:12px 10px;text-align:center;">
+            <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Ganados</div>
+            <div id="ic-wl-ganados" style="font-size:22px;font-weight:900;color:var(--green);"></div>
+          </div>
+          <div style="background:var(--surface2);border-radius:var(--r-md);padding:12px 10px;text-align:center;">
+            <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">Perdidos</div>
+            <div id="ic-wl-perdidos" style="font-size:22px;font-weight:900;color:var(--text);"></div>
+          </div>
+        </div>
+
+        <!-- Barra visual Win/Loss -->
+        <div id="ic-wl-barra-wrap" style="margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-bottom:4px;">
+            <span>Procesos con resultado conocido</span>
+            <span id="ic-wl-total"></span>
+          </div>
+          <div style="height:8px;background:var(--border);border-radius:999px;overflow:hidden;">
+            <div id="ic-wl-barra" style="height:100%;background:var(--green);border-radius:999px;transition:width .4s;"></div>
+          </div>
+        </div>
+
+        <!-- Competidores frecuentes -->
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;margin-bottom:16px;">
+          <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;">Competidores frecuentes</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Empresas que participaron en los mismos procesos</div>
+          <div id="ic-competidores">
+            <div style="font-size:13px;color:var(--muted);padding:8px 0;">Cargando...</div>
+          </div>
+        </div>
+
+      </div><!-- /ic-winloss-section -->
+
+      <!-- Loading inteligencia -->
+      <div id="ic-winloss-loading" style="display:none;text-align:center;padding:16px 0;">
+        <div style="font-size:12px;color:var(--muted);">Calculando inteligencia competitiva...</div>
       </div>
 
     </div><!-- /ic-dashboard -->
@@ -8786,6 +8839,9 @@ function icRenderResultados(lista) {
 async function icVerDashboard(id) {
   document.getElementById('ic-resultados').innerHTML = '';
   document.getElementById('ic-resultados').style.display = 'none';
+  // Ocultar sección win/loss mientras carga nuevo dashboard
+  const wlSec = document.getElementById('ic-winloss-section');
+  if (wlSec) wlSec.style.display = 'none';
   icRenderEstado('Cargando...');
   try {
     const res = await fetch(`${IC_API}/${id}/dashboard`);
@@ -8793,6 +8849,8 @@ async function icVerDashboard(id) {
     _icEmpresaActual = data;
     icRenderDashboard(data);
     icRenderEstado('');
+    // Cargar inteligencia Win/Loss en paralelo sin bloquear el dashboard
+    icCargarInteligencia(id);
   } catch(e) {
     icRenderEstado('Error al cargar el dashboard.');
   }
@@ -8936,6 +8994,77 @@ function icVerProceso(ocid) {
     setTimeout(() => verDetalle(codigo), 100);
   } else {
     mostrarToast('Código: ' + (codigo || ocid));
+  }
+}
+
+async function icCargarInteligencia(empresa_id) {
+  const seccion  = document.getElementById('ic-winloss-section');
+  const loading  = document.getElementById('ic-winloss-loading');
+  if (!seccion || !loading) return;
+
+  seccion.style.display = 'none';
+  loading.style.display = 'block';
+
+  try {
+    const res  = await fetch(`${IC_API}/${empresa_id}/inteligencia`);
+    const data = await res.json();
+
+    const wl   = data.winloss || {};
+    const comp = data.competidores_frecuentes || [];
+
+    // KPIs Win/Loss
+    const wr = wl.win_rate_pct ?? 0;
+    document.getElementById('ic-wl-winrate').textContent  = wr + '%';
+    document.getElementById('ic-wl-ganados').textContent  = (wl.procesos_ganados  ?? 0).toLocaleString();
+    document.getElementById('ic-wl-perdidos').textContent = (wl.procesos_perdidos ?? 0).toLocaleString();
+
+    // Barra
+    const total = wl.total_con_resultado ?? 0;
+    document.getElementById('ic-wl-total').textContent = total.toLocaleString() + ' procesos';
+    document.getElementById('ic-wl-barra').style.width  = Math.min(wr, 100) + '%';
+
+    // Competidores
+    const compEl = document.getElementById('ic-competidores');
+    if (comp.length) {
+      compEl.innerHTML = comp.map((c, i) => `
+        <div onclick="icVerDashboardPorRnc('${c.rpe}')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer;" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+          <div style="flex:1;overflow:hidden;">
+            <div style="font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.nombre || '—'}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:1px;">${c.coincidencias} coincidencias</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;padding-left:8px;">
+            <div style="font-size:12px;font-weight:700;color:${c.veces_ganador > 0 ? 'var(--green)' : 'var(--muted)'};">${c.veces_ganador} ganados</div>
+            <div style="font-size:10px;color:var(--muted);">${c.win_rate_vs_ti}% win</div>
+          </div>
+        </div>`).join('');
+    } else {
+      compEl.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">Sin competidores identificados aún.</div>';
+    }
+
+    loading.style.display  = 'none';
+    seccion.style.display  = 'block';
+
+  } catch(e) {
+    loading.style.display  = 'none';
+    // Si falla silenciosamente no rompe el dashboard existente
+    console.warn('Win/Loss no disponible:', e);
+  }
+}
+
+async function icVerDashboardPorRnc(rnc) {
+  if (!rnc) return;
+  icRenderEstado('Cargando empresa...');
+  document.getElementById('ic-dashboard').style.display = 'none';
+  try {
+    const res  = await fetch(`${IC_API}/buscar?q=${encodeURIComponent(rnc)}&limit=1`);
+    const data = await res.json();
+    if (data.resultados && data.resultados.length) {
+      icVerDashboard(data.resultados[0].id);
+    } else {
+      icRenderEstado('No se encontró la empresa.');
+    }
+  } catch(e) {
+    icRenderEstado('Error al cargar empresa.');
   }
 }
 
