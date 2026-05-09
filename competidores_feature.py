@@ -206,6 +206,63 @@ def dashboard_empresa(empresa_id: str):
 
 
 # ─────────────────────────────────────────────────────────────
+# GET /api/v1/proveedores/{empresa_id}/inteligencia
+# Win/Loss + Competidores frecuentes cruzando ofertas_procesos
+# con contratos_adjudicados
+# ─────────────────────────────────────────────────────────────
+
+@competidores_router.get("/{empresa_id}/inteligencia")
+def inteligencia_empresa(empresa_id: str):
+    """
+    Inteligencia competitiva de una empresa:
+    - Win rate (procesos ganados vs participaciones totales)
+    - Procesos ganados / perdidos / total
+    - Monto total adjudicado
+    - Top 10 competidores frecuentes con sus win rates
+    Cruza contratos_adjudicados + ofertas_procesos via RPC.
+    """
+    # Primero obtener el RNC de la empresa a partir del empresa_id (UUID)
+    try:
+        r_emp = supabase.table("empresas_estado") \
+            .select("rnc, nombre") \
+            .eq("id", empresa_id) \
+            .single() \
+            .execute()
+    except Exception:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    if not r_emp.data:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    rnc = r_emp.data["rnc"]
+
+    # Win/Loss profile
+    try:
+        r_perfil = supabase.rpc("get_perfil_winloss", {"p_rnc": rnc}).execute()
+        perfil = r_perfil.data or {}
+    except Exception as e:
+        perfil = {"error": str(e)}
+
+    # Competidores frecuentes
+    try:
+        r_comp = supabase.rpc("get_competidores_frecuentes", {
+            "p_rnc": rnc,
+            "p_limit": 10,
+        }).execute()
+        competidores = r_comp.data or []
+    except Exception as e:
+        competidores = []
+
+    return {
+        "empresa_id": empresa_id,
+        "rnc": rnc,
+        "nombre": r_emp.data["nombre"],
+        "winloss": perfil,
+        "competidores_frecuentes": competidores,
+    }
+
+
+# ─────────────────────────────────────────────────────────────
 # GET /api/v1/proveedores/prospectos  [ADMIN]
 # Empresas ideales para prospección de LicitacionLab
 # ─────────────────────────────────────────────────────────────
