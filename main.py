@@ -40,7 +40,7 @@ from etl_contratos_adjudicados import run_etl
 from competidores_feature import competidores_router
 from reenriquecer_empresas import get_reenriquecimiento_router
 from etl_rpe_masivo import get_rpe_masivo_router
-from etl_ofertas import get_ofertas_router
+from etl_ofertas_v3 import get_ofertas_router
 from agente_email_prospector import get_agente6_router
 
 # reportlab se importa dentro de _generar_pdf_analisis_bytes (lazy import)
