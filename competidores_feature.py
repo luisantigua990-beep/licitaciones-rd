@@ -262,6 +262,27 @@ def inteligencia_empresa(empresa_id: str):
     }
 
 
+
+
+# ─────────────────────────────────────────────────────────────
+# GET /api/v1/proveedores/proceso/{codigo_proceso}/oferentes
+# Quiénes participaron en un proceso + ganador identificado
+# ─────────────────────────────────────────────────────────────
+
+@competidores_router.get("/proceso/{codigo_proceso}/oferentes")
+def get_oferentes_proceso(codigo_proceso: str):
+    """
+    Para un proceso dado, devuelve todos los oferentes con su monto,
+    estado, y flag de si ganó (cruzando con contratos_adjudicados).
+    """
+    try:
+        r = supabase.rpc("get_oferentes_proceso", {
+            "p_codigo_proceso": codigo_proceso
+        }).execute()
+        return r.data or {"total_oferentes": 0, "ganador": None, "oferentes": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
 # ─────────────────────────────────────────────────────────────
 # GET /api/v1/proveedores/prospectos  [ADMIN]
 # Empresas ideales para prospección de LicitacionLab
