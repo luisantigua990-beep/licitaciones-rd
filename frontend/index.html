@@ -429,9 +429,8 @@ body {
   position: relative; z-index: 100; flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 18px;
+  padding-top: 0px;
   height: 58px;
-  padding-top: max(0px, env(safe-area-inset-top));
-  height: calc(58px + env(safe-area-inset-top));
   background: var(--navbar-bg);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
@@ -6449,13 +6448,8 @@ async function _tryRefreshToken() {
   if (tokenVencido) {
     const ok = await _tryRefreshToken();
     if (!ok) {
-      console.warn('⚠️ Token vencido y refresh falló — limpiando sesión');
-      localStorage.removeItem('sb_token');
-      localStorage.removeItem('sb_refresh_token');
-      localStorage.removeItem('sb_user');
-      currentUser = null;
-      startShowcaseRefresh();
-      return;
+      // Refresh falló pero el usuario está guardado — mostrar app de todas formas
+      console.warn('⚠️ Token vencido y refresh falló — mostrando app con sesión guardada');
     }
   }
 
@@ -7416,7 +7410,9 @@ async function cargarMercado() {
     if (verificado === 'true') params.set('verificado', 'true');
     if (ratingMin)      params.set('rating_min', ratingMin);
 
-    const res  = await fetch(`${API}/api/mercado/proveedores?${params}`);
+    const res  = await fetch(`${API}/api/mercado/proveedores?${params}`, {
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('sb_token') || '') }
+    });
     const data = await res.json();
     let provs  = data.proveedores || [];
 
