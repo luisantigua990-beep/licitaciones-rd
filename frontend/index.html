@@ -1315,8 +1315,38 @@ body {
 
   /* Mercado */
   #tab-mercado .main { max-width: 1100px !important; padding: 28px 32px !important; }
-  #tab-inteligencia { padding: 0; }
-  #tab-inteligencia #ic-dashboard { max-width: 900px; margin: 0 auto; }
+  /* u2500u2500 FIX INTELIGENCIA DESKTOP u2500u2500 */
+  #tab-inteligencia {
+    padding: 0 !important;
+    position: absolute !important;
+    inset: 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  #tab-inteligencia #ic-dashboard {
+    max-width: 860px !important;
+    margin: 0 auto !important;
+    padding: 0 32px 32px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  #tab-inteligencia > div:first-child {
+    max-width: 860px !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 24px 32px 14px !important;
+  }
+  #tab-inteligencia #ic-estado,
+  #tab-inteligencia #ic-resultados {
+    max-width: 860px !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding-left: 32px !important;
+    padding-right: 32px !important;
+  }
+  #ic-search-input { font-size: 15px !important; }
 }
 
 /* ── SIDEBAR DESKTOP (hidden en móvil, visible ≥900px) ── */
@@ -5581,6 +5611,9 @@ async function verDetalle(codigo) {
 
   // ── ESTADO ANÁLISIS BANNER ──
   let estadoAnalisisBanner = '';
+  // Cargar participantes en background
+  cargarParticipantesProceso(p.codigo_proceso);
+
   if (['procesando','pendiente','pendiente_analisis'].includes(analisis?.estado)) {
     estadoAnalisisBanner = `<div class="analisis-procesando">
       <div class="analisis-procesando-spinner"></div>
@@ -5672,6 +5705,7 @@ async function verDetalle(codigo) {
           <button class="detalle-tab-btn"        id="dtab-btn-plazos"    onclick="cambiarTabDetalle('${codigo}','plazos')">Plazos</button>
           <button class="detalle-tab-btn"        id="dtab-btn-docs"      onclick="cambiarTabDetalle('${codigo}','docs')">Artículos${artsBadge}</button>
           <button class="detalle-tab-btn"        id="dtab-btn-score"     onclick="cambiarTabDetalle('${codigo}','score')">¿Vale la pena?${scoreBadge}</button>
+          <button class="detalle-tab-btn"        id="dtab-btn-participantes" onclick="cambiarTabDetalle('${codigo}','participantes')">Participantes</button>
         </div>
 
         <!-- TAB: RESUMEN -->
@@ -5735,7 +5769,22 @@ async function verDetalle(codigo) {
         <!-- TAB: SCORE (solo visible en móvil, en desktop se ve en el aside) -->
         <div class="detalle-tab-panel" id="dtab-panel-score">
           ${renderTabScore(analisis, p)}
+  
+        <!-- TAB: PARTICIPANTES -->
+        <div class="detalle-tab-panel" id="dtab-panel-participantes">
+          <div class="ll-card" style="margin-bottom:12px;">
+            <div class="ll-card__header">
+              <h2 class="ll-card__title">Participantes del proceso</h2>
+              <span id="dtab-participantes-badge" class="ll-chip" style="font-size:11px;"></span>
+            </div>
+            <div class="ll-card__body">
+              <div id="dtab-participantes-content">
+                <div style="font-size:13px;color:var(--muted);padding:12px 0;">Cargando participantes...</div>
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
       </div>
 
       <!-- ASIDE (desktop) -->
@@ -9076,6 +9125,65 @@ function icVolverBusqueda() {
   const inp = document.getElementById('ic-search-input');
   if (inp) { inp.value = ''; inp.focus(); }
 }
+
+// ── PARTICIPANTES DEL PROCESO ──────────────────────────────
+async function cargarParticipantesProceso(codigo) {
+  const el = document.getElementById('dtab-participantes-content');
+  const badge = document.getElementById('dtab-participantes-badge');
+  if (!el) return;
+
+  try {
+    const res  = await fetch(`${API}/api/v1/proveedores/proceso/${encodeURIComponent(codigo)}/oferentes`);
+    const data = await res.json();
+    const oferentes = data.oferentes || [];
+    const total     = data.total_oferentes || 0;
+    const ganador   = data.ganador || null;
+
+    if (badge) badge.textContent = total + ' empresa' + (total !== 1 ? 's' : '');
+
+    if (!total) {
+      el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">Sin datos de participantes para este proceso.</div>';
+      return;
+    }
+
+    // Cabecera con ganador si existe
+    let html = '';
+    if (ganador) {
+      html += `<div style="background:var(--green-dim);border:1px solid var(--green-border);border-radius:var(--r-md);padding:10px 14px;margin-bottom:12px;font-size:13px;">
+        <span style="font-weight:700;color:var(--green);">🏆 Ganador:</span>
+        <span style="color:var(--text);margin-left:6px;">${sanitize(ganador)}</span>
+      </div>`;
+    }
+
+    // Tabla de oferentes
+    html += '<div style="display:flex;flex-direction:column;gap:0;">';
+    oferentes.forEach((o, i) => {
+      const esGanador = o.es_ganador;
+      const monto = o.valor_oferta ? 'RD$ ' + icFmtM(Number(o.valor_oferta)) : '—';
+      const montoAdj = o.monto_adjudicado ? 'RD$ ' + icFmtM(Number(o.monto_adjudicado)) : null;
+      html += `
+        <div onclick="icVerDashboardPorRnc('${o.rpe}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
+          <div style="flex:1;overflow:hidden;padding-right:8px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              ${esGanador ? '<span style="font-size:13px;">🏆</span>' : `<span style="font-size:12px;font-weight:700;color:var(--muted);">#${i+1}</span>`}
+              <span style="font-size:13px;font-weight:${esGanador?'700':'500'};color:${esGanador?'var(--text)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sanitize(o.razon_social||'—')}</span>
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;padding-left:20px;">${o.tipo_oferta||''}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:13px;font-weight:700;color:${esGanador?'var(--green)':'var(--text2)'};">${monto}</div>
+            ${montoAdj && esGanador ? `<div style="font-size:11px;color:var(--muted);">Adj: RD$ ${icFmtM(Number(o.monto_adjudicado))}</div>` : ''}
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+
+    el.innerHTML = html;
+  } catch(e) {
+    if (el) el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">No hay datos de participantes disponibles.</div>';
+  }
+}
+
 // ════════════════════════════════════════════════════════════
 </script>
 <!-- ── TUTORIAL SHEET (6 slides) ── -->
