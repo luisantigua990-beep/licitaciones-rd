@@ -2633,6 +2633,14 @@ def descargar_y_extraer_texto_pdf(url_documentos: str) -> str:
     pdf_bytes = resp_pdf.content
     del resp_pdf  # liberar la respuesta HTTP de inmediato para ahorrar RAM
 
+    # ── Detección de formato real ANTES de intentar PdfReader ──────────────
+    # Firma OLE2 (D0 CF 11 E0): archivos .doc, .xls, .ppt binarios de Office.
+    # PdfReader lanza PdfStreamError con estos bytes → loop infinito de reintentos.
+    # Los marcamos como sin_pliego para que no se vuelvan a intentar jamás.
+    _OLE2_MAGIC = b"\xd0\xcf\x11\xe0"
+    if pdf_bytes[:4] == _OLE2_MAGIC:
+        raise Exception("__DOC_OLE2__: El documento es un archivo .doc binario (OLE2), no un PDF. No se puede analizar.")
+
     pdf_file = io.BytesIO(pdf_bytes)
     lector_pdf = PdfReader(pdf_file)
 
@@ -3149,6 +3157,10 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
             }).execute()
         else:
             _estado_previo = _fila_existente.data[0].get("estado", "")
+            # sin_pliego = documento OLE2/.doc o formato no analizable — no reintentar jamás
+            if _estado_previo == "sin_pliego":
+                print(f"🚫 {proceso_id} está marcado como sin_pliego — abortando análisis")
+                return
             if _estado_previo in ("procesando", "completado"):
                 # Si es forzar, ignorar cache y tomar el lock directamente
                 if forzar and _estado_previo == "completado":
@@ -3407,11 +3419,17 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
         enviar_email_analisis(proceso_id, datos_json)
 
     except Exception as e:
-        print(f"❌ Error de IA en {proceso_id}: {str(e)}")
+        msg = str(e)
+        print(f"❌ Error de IA en {proceso_id}: {msg}")
+        # Si el error es por documento OLE2 (.doc), marcar como sin_pliego
+        # para que el loop de reproceso NO lo reintente jamás.
+        estado_error = "sin_pliego" if "__DOC_OLE2__" in msg else "error"
         supabase_admin.table("analisis_pliego").upsert({
             "proceso_id": proceso_id,
-            "estado": "error"
+            "estado": estado_error
         }).execute()
+        if estado_error == "sin_pliego":
+            print(f"🚫 {proceso_id} marcado como sin_pliego (OLE2/.doc — no reintentable)")
 
 @app.get("/api/admin/test-pliego")
 def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567"), _: None = Depends(verificar_admin)):
