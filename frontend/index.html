@@ -1008,6 +1008,22 @@ body {
 }
 /* En móvil el aside se oculta — el score va en su tab */
 .detalle-col-aside { display: none; }
+
+/* ── FIX PWA SAFE AREA (status bar translucent) ──
+   Cuando la app está instalada como PWA con black-translucent,
+   el contenido empieza desde el borde físico de la pantalla.
+   Compensamos con env(safe-area-inset-top) en el navbar. */
+.ll-navbar {
+  padding-top: env(safe-area-inset-top, 0px) !important;
+  height: calc(58px + env(safe-area-inset-top, 0px)) !important;
+  min-height: calc(58px + env(safe-area-inset-top, 0px)) !important;
+  align-items: flex-end !important;
+}
+/* El contenido principal también necesita compensar el navbar más alto */
+#tabs-wrapper {
+  padding-top: 0;
+}
+
 @media (min-width: 900px) {
   /* En desktop el detalle-container ocupa todo el ancho disponible */
   #detalle-container {
@@ -5567,12 +5583,59 @@ async function verDetalle(codigo) {
   document.getElementById('tab-detalle').style.display = 'block';
   document.getElementById('detalle-container').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
-  const [res, resEnm] = await Promise.all([
-    fetch(`${API}/api/procesos/${codigo}`),
-    fetch(`${API}/api/procesos/${codigo}/historial`).catch(() => null)
-  ]);
-  const data = await res.json();
+  try {
+
+  let res, resEnm;
+  try {
+    [res, resEnm] = await Promise.all([
+      fetch(`${API}/api/procesos/${codigo}`),
+      fetch(`${API}/api/procesos/${codigo}/historial`).catch(() => null)
+    ]);
+  } catch (fetchErr) {
+    document.getElementById('detalle-container').innerHTML = `
+      <div style="padding:32px 16px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:12px;">📡</div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Sin conexión</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">No se pudo conectar al servidor. Verifica tu internet e intenta de nuevo.</div>
+        <button onclick="verDetalle('${codigo}')" class="ll-btn ll-btn--secondary">Reintentar</button>
+      </div>`;
+    return;
+  }
+
+  if (!res.ok) {
+    const errMsg = res.status === 404 ? 'Proceso no encontrado.' : `Error del servidor (${res.status}). Intenta de nuevo.`;
+    document.getElementById('detalle-container').innerHTML = `
+      <div style="padding:32px 16px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:12px;">⚠️</div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:6px;">${errMsg}</div>
+        <button onclick="verDetalle('${codigo}')" class="ll-btn ll-btn--secondary" style="margin-top:8px;">Reintentar</button>
+      </div>`;
+    return;
+  }
+
+  let data;
+  try {
+    data = await res.json();
+  } catch (parseErr) {
+    document.getElementById('detalle-container').innerHTML = `
+      <div style="padding:32px 16px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:12px;">⚠️</div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Error leyendo respuesta del servidor.</div>
+        <button onclick="verDetalle('${codigo}')" class="ll-btn ll-btn--secondary" style="margin-top:8px;">Reintentar</button>
+      </div>`;
+    return;
+  }
+
   const p    = data.proceso;
+  if (!p) {
+    document.getElementById('detalle-container').innerHTML = `
+      <div style="padding:32px 16px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:12px;">🔍</div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Proceso no encontrado.</div>
+        <button onclick="mostrarDashboard()" class="ll-btn ll-btn--secondary" style="margin-top:8px;">Volver</button>
+      </div>`;
+    return;
+  }
   const arts = data.articulos || [];
   const analisis = data.analisis;
 
@@ -5802,6 +5865,16 @@ async function verDetalle(codigo) {
 
   if (['procesando','pendiente','pendiente_analisis'].includes(analisis?.estado)) {
     iniciarPollingAnalisis(p.codigo_proceso);
+  }
+  } catch (unexpectedErr) {
+    console.error('[verDetalle] Error inesperado:', unexpectedErr);
+    document.getElementById('detalle-container').innerHTML = `
+      <div style="padding:32px 16px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:12px;">⚠️</div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Error al cargar el proceso</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">${unexpectedErr.message || 'Error desconocido'}</div>
+        <button onclick="verDetalle('${codigo}')" class="ll-btn ll-btn--secondary">Reintentar</button>
+      </div>`;
   }
 }
 
