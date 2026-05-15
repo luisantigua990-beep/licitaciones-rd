@@ -117,7 +117,7 @@
 
 /* ── RESET ── */
 *, *::before, *::after {
-  margin: 0; padding: 0; box-sizing: border-box; max-width: 100%;
+  margin: 0; padding: 0; box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
 }
 html, body { height: 100%; overflow: hidden; }
@@ -2261,11 +2261,6 @@ body {
 @media (max-width: 900px) {
   #mercado-sidebar { display: none !important; }
   #mercado-filtros-btn { display: flex !important; }
-  #mercado-topbar { padding: 10px 12px !important; gap: 6px !important; }
-  #mercado-topbar > div:first-child { flex: 1; min-width: 0; }
-  #mercado-topbar > div:last-child { gap: 6px !important; }
-  #mercado-topbar .ll-input { width: 100% !important; min-width: 0 !important; }
-  #mercado-topbar > div:last-child { flex-wrap: nowrap; }
 }
 /* Drawer mobile de filtros */
 #mercado-filtros-drawer {
@@ -3007,14 +3002,8 @@ html { background: var(--color-bg, #0A0A0A); }
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <span>Empresas</span>
     </button>
-    <button class="dsb-nav-item" id="dsb-nav-reportes" onclick="switchTab2('reportes')">
-      <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-      Reportes
-    </button>
-    <button class="dsb-nav-item" id="dsb-nav-calendario" onclick="switchTab2('calendario')">
-      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-      Calendario
-    </button>
+    
+    
 
     <div class="dsb-divider"></div>
 
@@ -3339,7 +3328,7 @@ html { background: var(--color-bg, #0A0A0A); }
   <div id="tab-mercado">
 
     <!-- TOPBAR -->
-    <div id="mercado-topbar" style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:30;flex-wrap:wrap;gap:8px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:30;">
       <div style="display:flex;align-items:center;gap:10px;">
         <span style="font-size:12px;color:var(--muted);">Exploración</span>
         <span style="color:var(--muted);">›</span>
@@ -3349,7 +3338,7 @@ html { background: var(--color-bg, #0A0A0A); }
       <div style="display:flex;align-items:center;gap:10px;">
         <div style="position:relative;">
           <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="mercado-busqueda" class="ll-input" placeholder="Buscar proveedor, categoría…" style="padding-left:32px;width:clamp(120px,40vw,260px);height:36px;font-size:13px;" oninput="debouncarMercado()" onfocus="mostrarSugerencias()" onblur="setTimeout(()=>ocultarSugerencias(),200)">
+          <input id="mercado-busqueda" class="ll-input" placeholder="Buscar proveedor, categoría…" style="padding-left:32px;width:260px;height:36px;font-size:13px;" oninput="debouncarMercado()" onfocus="mostrarSugerencias()" onblur="setTimeout(()=>ocultarSugerencias(),200)">
           <div class="mercado-suggestions" id="mercado-suggestions"></div>
         </div>
         <button id="mercado-filtros-btn" onclick="abrirFiltrosMobile()" style="display:none;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:8px 12px;color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body);">
@@ -3696,10 +3685,10 @@ html { background: var(--color-bg, #0A0A0A); }
   </div><!-- /tabs-wrapper -->
 
   <!-- ── TAB: INTELIGENCIA COMPETITIVA ── -->
-  <div id="tab-inteligencia" style="position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:72px;display:none;z-index:1;background:var(--bg);">
+  <div id="tab-inteligencia" style="position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:72px;display:none;z-index:1;">
 
     <!-- Header -->
-    <div style="padding:14px 16px;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);">
+    <div style="padding:20px 20px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);padding-bottom:14px;">
       <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Inteligencia Competitiva</div>
       <div style="display:flex;gap:8px;">
         <div style="flex:1;position:relative;">
@@ -7619,7 +7608,12 @@ async function cargarMercado() {
     lista.classList.toggle('list-view', _mercadoView === 'list');
     renderProveedores(provs);
   } catch(e) {
-    lista.innerHTML = '<div class="mercado-empty">Error al cargar proveedores</div>';
+    const errMsg = e?.message || String(e) || 'Error desconocido';
+    lista.innerHTML = `<div class="mercado-empty" style="padding:20px;color:var(--muted);font-size:13px;">
+      <div style="font-size:18px;margin-bottom:8px;">⚠️</div>
+      <div style="font-weight:700;margin-bottom:4px;">Error al cargar proveedores</div>
+      <div style="font-size:12px;opacity:.7;">${errMsg}</div>
+    </div>`;
   }
 }
 
@@ -8894,7 +8888,6 @@ let _icChartM = null;
 const IC_API = API + '/api/v1/proveedores';
 
 
-// ── PARTICIPANTES DEL PROCESO ──────────────────────────────────────────
 async function cargarParticipantesProceso(codigo) {
   const el    = document.getElementById('dtab-participantes-content');
   const badge = document.getElementById('dtab-participantes-badge');
@@ -8902,10 +8895,10 @@ async function cargarParticipantesProceso(codigo) {
   try {
     const res = await fetch(`${API}/api/v1/proveedores/proceso/${encodeURIComponent(codigo)}/oferentes`);
     if (!res.ok) { el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">Sin datos disponibles.</div>'; return; }
-    const data      = await res.json();
+    const data = await res.json();
     const oferentes = data.oferentes || [];
-    const total     = data.total_oferentes || 0;
-    const ganador   = data.ganador || null;
+    const total = data.total_oferentes || 0;
+    const ganador = data.ganador || null;
     if (badge) badge.textContent = total ? total + ' empresa' + (total !== 1 ? 's' : '') : '';
     if (!total) { el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">Sin datos de participantes para este proceso.</div>'; return; }
     let h = '';
@@ -8913,15 +8906,9 @@ async function cargarParticipantesProceso(codigo) {
     h += '<div>';
     oferentes.forEach((o, i) => {
       const monto = o.valor_oferta ? 'RD$ ' + icFmtM(Number(o.valor_oferta)) : '—';
-      const adj   = (o.es_ganador && o.monto_adjudicado) ? `<div style="font-size:10px;color:var(--muted);">Adj: RD$ ${icFmtM(Number(o.monto_adjudicado))}</div>` : '';
+      const adj = (o.es_ganador && o.monto_adjudicado) ? `<div style="font-size:10px;color:var(--muted);">Adj: RD$ ${icFmtM(Number(o.monto_adjudicado))}</div>` : '';
       h += `<div onclick="icVerDashboardPorRnc('${o.rpe}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer;" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='transparent'">
-        <div style="flex:1;overflow:hidden;padding-right:8px;">
-          <div style="display:flex;align-items:center;gap:6px;">
-            <span style="font-size:12px;flex-shrink:0;">${o.es_ganador ? '🏆' : '#'+(i+1)}</span>
-            <span style="font-size:13px;font-weight:${o.es_ganador?700:500};color:${o.es_ganador?'var(--text)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sanitize(o.razon_social||'—')}</span>
-          </div>
-          <div style="font-size:11px;color:var(--muted);padding-left:18px;">${o.tipo_oferta||''}</div>
-        </div>
+        <div style="flex:1;overflow:hidden;padding-right:8px;"><div style="display:flex;align-items:center;gap:6px;"><span style="font-size:12px;flex-shrink:0;">${o.es_ganador ? '🏆' : '#'+(i+1)}</span><span style="font-size:13px;font-weight:${o.es_ganador?700:500};color:${o.es_ganador?'var(--text)':'var(--text2)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sanitize(o.razon_social||'—')}</span></div><div style="font-size:11px;color:var(--muted);padding-left:18px;">${o.tipo_oferta||''}</div></div>
         <div style="text-align:right;flex-shrink:0;"><div style="font-size:13px;font-weight:700;color:${o.es_ganador?'var(--green)':'var(--text2)'};">${monto}</div>${adj}</div>
       </div>`;
     });
