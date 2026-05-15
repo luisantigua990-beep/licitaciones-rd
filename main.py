@@ -4040,7 +4040,7 @@ def listar_proveedores(
     rating_min:  float = Query(None), # ej: 4.0
     categoria:   str = Query(None),   # nombre de categoría específica
     page:        int = Query(1, ge=1),
-    page_size:   int = Query(20, ge=1, le=50),
+    page_size:   int = Query(20, ge=1, le=100),
 ):
     """Listar proveedores activos con filtros."""
     try:
