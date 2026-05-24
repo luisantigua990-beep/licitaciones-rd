@@ -52,7 +52,11 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 claude   = Anthropic(api_key=ANTHROPIC_KEY)
 
 DELAY_ENTRE_EMAILS = 2.0   # segundos entre envíos (anti-spam)
-BATCH_DEFAULT      = 50    # emails por llamada
+BATCH_DEFAULT      = 80    # Total por batch: 40 construcción + 40 bienes/servicios
+BATCH_CONSTRUCCION = 70
+BATCH_BIENES       = 15
+EMAILS_EXCLUIDOS   = ['conser@conser.com.do']  # Clientes activos — no contactar
+EMPRESAS_EXCLUIDAS = ['conser, srl', 'conser srl']  # por nombre (lowercase)
 
 # Días entre emails de la secuencia
 SECUENCIA_DIAS = {
@@ -133,19 +137,77 @@ def obtener_perfil_empresa(empresa_id: str, rnc: str) -> dict:
     # --- Ofertas presentadas (participaciones) ---
     try:
         ro = supabase.table("ofertas_procesos") \
-            .select("estado_oferta, estado_evaluacion, valor_oferta, unidad_compra") \
+            .select("estado_oferta, estado_evaluacion, valor_oferta, unidad_compra, fecha_creacion") \
             .eq("rpe", str(rnc)) \
             .execute()
         ofertas = ro.data or []
     except Exception:
         ofertas = []
 
-    perfil["total_ofertas"]  = len(ofertas)
+    # Total histórico de participaciones (desde 2015)
+    perfil["total_ofertas"] = len(ofertas)
+
+    # Participaciones recientes desde 2024 (período con datos de adjudicación)
+    ofertas_2024 = [
+        o for o in ofertas
+        if (o.get("fecha_creacion") or "") >= "2024-01-01"
+    ]
+    perfil["total_ofertas_2024"] = len(ofertas_2024)
+
+    # Año más antiguo de participación
+    fechas = [o.get("fecha_creacion","") for o in ofertas if o.get("fecha_creacion")]
+    perfil["anio_primera_participacion"] = fechas[-1][:4] if fechas else "2017"
+
     perfil["total_perdidas"] = len([
         o for o in ofertas
         if "descalif" in (o.get("estado_evaluacion") or "").lower()
         or "no adjudic" in (o.get("estado_oferta") or "").lower()
     ])
+
+    # Instituciones donde participó sin ganar (para email_2)
+    perfil["instituciones_sin_ganar"] = list({
+        o.get("unidad_compra") for o in ofertas
+        if o.get("unidad_compra") and o.get("estado_oferta") != "Aprobada"
+    })[:5]
+
+    # Proceso activo relevante para Email 2
+    try:
+        instituciones_empresa = [
+            o.get('unidad_compra') for o in ofertas if o.get('unidad_compra')
+        ]
+        if instituciones_empresa:
+            from datetime import datetime as _dt
+            inst_top = max(set(instituciones_empresa), key=instituciones_empresa.count)
+            rp = supabase.table('procesos') \
+                .select('titulo, unidad_compra, monto_estimado, fecha_fin_recepcion_ofertas') \
+                .eq('estado_proceso', 'Proceso publicado') \
+                .ilike('unidad_compra', f'%{inst_top[:20]}%') \
+                .gte('fecha_fin_recepcion_ofertas', _dt.now().isoformat()) \
+                .order('fecha_fin_recepcion_ofertas') \
+                .limit(1) \
+                .execute()
+            perfil['proceso_activo_relevante'] = rp.data[0] if rp.data else None
+        else:
+            perfil['proceso_activo_relevante'] = None
+    except Exception:
+        perfil['proceso_activo_relevante'] = None
+
+
+    # Competidores que le ganaron (cruce ofertas_procesos vs contratos_adjudicados)
+    try:
+        rc = supabase.rpc("get_competidores_que_ganaron", {"p_rnc": str(rnc), "p_empresa_id": empresa_id}).execute()
+        if rc.data:
+            perfil["competidores_que_ganaron"] = rc.data[:3]
+        else:
+            raise Exception("RPC no disponible")
+    except Exception:
+        # Query directo
+        try:
+            sql_result = supabase.table("contratos_adjudicados")                 .select("empresa_id, monto_adjudicado, codigo_proceso")                 .execute()
+            # Fallback simplificado sin RPC
+            perfil["competidores_que_ganaron"] = []
+        except Exception:
+            perfil["competidores_que_ganaron"] = []
 
     return perfil
 
@@ -163,73 +225,317 @@ def _fmt_monto(monto: float) -> str:
 
 
 PROMPTS_EMAIL = {
-    "email_1": """Eres Luis Antigua, ingeniero civil y consultor especialista en licitaciones públicas de República Dominicana, escribiendo un email de prospección B2B en español dominicano (formal pero directo, sin tuteo, sin emojis excesivos).
+    "email_1": """Eres Luis Antigua, ingeniero civil con 15+ años preparando propuestas para licitaciones públicas dominicanas.
+Escribes un email de prospección B2B en español formal dominicano.
 
-DATOS DE LA EMPRESA:
 {datos}
 
-Escribe SOLO el párrafo central del email (3-4 oraciones). El objetivo es:
-1. Mencionar datos específicos de su historial real en el DGCP (contratos ganados, instituciones donde han trabajado, participaciones)
-2. Identificar el dolor: licitaciones perdidas o tasa de éxito mejorable
-3. Presentarte como consultor experto que prepara propuestas completas (Sobre A + Sobre B) — el 70% de las propuestas que preparamos ganan
-4. Invitar a conversar — NO menciones precios, planes ni ninguna aplicación
+REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. Si un dato dice "N/D" o "datos no disponibles", NO lo menciones. No inventes nombres, cifras ni instituciones.
 
-NO incluyas saludo, firma, ni calls-to-action — esos van en el template HTML.
-Máximo 90 palabras. Tono: consultivo, experto, cercano. Habla en primera persona como Luis.""",
+Escribe SOLO el párrafo central del email (3-4 oraciones):
+1. Historial completo: cuántas participaciones desde qué año
+2. Período reciente (2024): contratos ganados con institución y monto real — si hay competidor real que les ganó, nómbralo
+3. "Llevamos años preparando propuestas para esas instituciones y conocemos lo que buscan — cosas que no siempre están escritas en el pliego"
+4. 70% de adjudicación sin prometer nada, cuántos contratos adicionales habrían representado
+5. CTA: escríbenos por WhatsApp — sin precios ni app
 
-    "email_2": """Eres Luis Antigua, ingeniero civil y consultor especialista en licitaciones públicas de República Dominicana, escribiendo el segundo email de seguimiento en español dominicano.
+Máximo 100 palabras. NO incluyas saludo ni firma.
+Tono: consultor que revisó el expediente, directo, autoridad, genera curiosidad.""",
 
-DATOS DE LA EMPRESA:
+    "email_1_bienes_servicios": """Eres Luis Antigua, ingeniero civil con 15+ años preparando propuestas para licitaciones públicas dominicanas.
+Escribes un email de prospección B2B en español formal dominicano.
+
 {datos}
+
+REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. Si un dato dice "N/D" o "datos no disponibles", NO lo menciones. No inventes nombres, cifras ni instituciones.
+
+Escribe SOLO el párrafo central del email (3-4 oraciones):
+1. Historial completo: cuántas participaciones desde qué año — establece que conoces su expediente
+2. Período reciente (2024): contratos ganados con institución y monto — si hay competidor real que les ganó, nómbralo específicamente
+3. "Llevamos años trabajando con esas instituciones y conocemos lo que buscan — cosas que no siempre están escritas en el pliego"
+4. 70% de adjudicación sin prometer nada, cuántos contratos adicionales habrían representado para su empresa
+5. CTA: escríbenos por WhatsApp — sin precios ni app
+
+Máximo 100 palabras. NO incluyas saludo ni firma.
+Tono: consultor que revisó el expediente, directo, genera curiosidad sobre "lo que no está escrito".""",
+
+    "email_1_construccion": """Eres Luis Antigua, ingeniero civil con 15+ años preparando propuestas de obras públicas para licitaciones del DGCP dominicano.
+Escribes un email de prospección B2B en español formal dominicano dirigido a una empresa constructora.
+
+{datos}
+
+REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nombres, montos ni instituciones.
+
+Escribe SOLO el párrafo central del email (3-4 oraciones):
+1. Historial completo: cuántas participaciones desde qué año en procesos del DGCP
+2. Período reciente (2024): menciona la institución real (MOPC, MIVHED, INAPA, etc.), el tipo de obra y el monto exacto del contrato ganado — si hay un competidor constructor real que les ganó, nómbralo
+3. "El Sobre A y el Sobre B tienen que contar una historia coherente con lo que el pliego realmente busca — y eso es algo que sabemos construir"
+4. 70% de adjudicación sin prometer nada, cuántos contratos adicionales de obras habrían representado
+5. CTA: escríbenos por WhatsApp — sin precios ni app
+
+Máximo 110 palabras. NO incluyas saludo ni firma.
+Tono: colega constructor que conoce el terreno, técnico pero accesible, autoridad sobre Sobre A y Sobre B.""",
+
+    "email_2": """Eres Luis Antigua, consultor experto en licitaciones públicas dominicanas.
+Escribes el segundo email de seguimiento en español formal dominicano.
+
+{datos}
+
+REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes instituciones, montos ni datos que no estén en los datos. Si un dato dice "N/D", no lo uses.
 
 Escribe SOLO el párrafo central (3-4 oraciones):
-1. Empresas con historial similar al de ellos han mejorado su tasa de adjudicación trabajando con consultoría especializada
-2. El Estado dominicano lanza cientos de licitaciones por semana y los plazos de preparación son cortos
-3. El diferenciador: preparamos la propuesta técnica completa — el cliente solo firma y entrega
-4. NO menciones precios, planes ni ninguna aplicación
+1. Haz referencia concreta a UNA institución real donde hayan participado (usa las que aparecen en los datos)
+2. Menciona que esa institución sigue lanzando procesos y que hay oportunidades activas
+3. El diferenciador: nosotros preparamos la propuesta completa — el cliente solo firma y entrega
+4. El Estado dominicano adjudica miles de millones en contratos cada mes
 
-NO incluyas saludo, firma, ni calls-to-action.
-Máximo 90 palabras. Tono: enfocado en resultados, sin presión.""",
+Máximo 90 palabras. NO incluyas saludo ni firma. Tono: enfocado en resultados concretos.""",
 
-    "email_3": """Eres Luis Antigua, ingeniero civil y consultor especialista en licitaciones públicas de República Dominicana, escribiendo el tercer y último email en español dominicano.
+    "email_3": """Eres Luis Antigua, consultor experto en licitaciones públicas dominicanas.
+Escribes el tercer email de una secuencia en español formal dominicano.
 
-DATOS DE LA EMPRESA:
 {datos}
 
-Este es el email de cierre. Escribe SOLO el párrafo central (2-3 oraciones):
-1. Hay licitaciones activas AHORA en instituciones donde ya han participado
-2. El tiempo de preparación es el factor crítico — quienes empiezan antes ganan más
-3. Invitación directa y simple: una llamada de 15 minutos para evaluar si podemos trabajar juntos
-4. NO menciones precios, planes ni ninguna aplicación
+REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
 
-NO incluyas saludo, firma, ni calls-to-action.
-Máximo 70 palabras. Tono: directo, urgente pero respetuoso.""",
+Este email es el argumento de ROI directo. Escribe SOLO el párrafo central (3 oraciones):
+1. Contrasta su tasa real vs el 70% que logramos — usa los números exactos de los datos
+2. Menciona el ingreso potencial adicional estimado que aparece en los datos
+3. Cierre directo: invítalos a escribirte por WhatsApp para evaluar si podemos trabajar juntos
+
+Máximo 80 palabras. NO incluyas saludo ni firma. Tono: directo, números concretos, sin presión.""",
+
+    "email_4": """Eres Luis Antigua, consultor experto en licitaciones públicas dominicanas.
+Escribes el cuarto y último email en español formal dominicano.
+
+{datos}
+
+REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
+
+Este es el cierre final. Escribe SOLO el párrafo central (2-3 oraciones):
+1. Sé honesto: es el último email de esta secuencia
+2. Menciona brevemente el historial real de la empresa (solo lo que está en los datos)
+3. Deja la puerta abierta para el futuro sin presionar
+
+Máximo 70 palabras. NO incluyas saludo ni firma. Tono: amigable, sin presión, genuino.""",
+
+    "email_2": """Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo el SEGUNDO email de seguimiento en español formal dominicano.
+La empresa no respondió el primer email hace 4 días.
+
+{datos}
+
+REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
+
+Escribe SOLO el párrafo central (3 oraciones):
+1. Referencia breve al primer email: "Le escribí hace unos días sobre el historial de [empresa] en el DGCP."
+2. Menciona UN proceso activo real de las instituciones donde han participado (usa el dato "Proceso activo relevante" si está disponible) — indica institución, descripción breve y fecha límite real
+3. "En LicitacionLab preparamos la propuesta completa — el cliente solo firma y entrega. Escríbanos por WhatsApp."
+
+Máximo 80 palabras. NO incluyas saludo ni firma.
+Tono: directo, sin presión, enfocado en la oportunidad concreta.""",
+
+    "email_3": """Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo el TERCER email de seguimiento en español formal dominicano.
+La empresa lleva 8 días sin responder.
+
+{datos}
+
+REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
+
+Este es el email del ROI. Escribe SOLO el párrafo central (3 oraciones):
+1. Directo al número: cuántas participaciones desde 2024, cuántas ganaron, cuánto representaron en promedio por contrato (usa el monto promedio real de los contratos ganados)
+2. El contraste: con nuestra tasa del 70% habrían ganado ~X contratos adicionales — eso es aproximadamente RD$X en ingresos que se fueron a otras empresas (promedio real × contratos adicionales perdidos)
+3. "Esa brecha es recuperable. Escríbanos por WhatsApp."
+
+Máximo 80 palabras. NO incluyas saludo ni firma.
+Tono: números concretos, sin drama, sin exagerar.""",
+
+    "email_4": """Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo el CUARTO y último email de seguimiento en español formal dominicano.
+La empresa lleva 14 días sin responder.
+
+{datos}
+
+REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
+
+Escribe SOLO el párrafo central (2-3 oraciones):
+1. Honesto y breve: "Este es el último correo que le enviaremos."
+2. Menciona las instituciones reales donde han participado y que seguirán publicando procesos
+3. Cierre sin presión: "Cuando quieran mejorar su ratio de adjudicación en el DGCP, aquí estaremos. Escríbanos por WhatsApp."
+
+Máximo 70 palabras. NO incluyas saludo ni firma.
+Tono: amigable, sin presión, genuino, cierre limpio.""",
 }
+
+def _asunto_email_1(nombre, perfil):
+    total_historico = perfil.get('total_ofertas', 0) or 0
+    total_2024      = perfil.get('total_ofertas_2024', 0) or 0
+    contratos       = perfil.get('total_contratos', 0) or 0
+    anio            = perfil.get('anio_primera_participacion', '2017')
+    if total_2024 > 0 and contratos == 0:
+        return f"{nombre} — {total_2024} participaciones recientes en DGCP sin adjudicación"
+    elif total_historico > 0 and contratos > 0:
+        return f"{nombre} — revisamos sus {total_historico} participaciones en el DGCP"
+    else:
+        return f"{nombre} — revisamos su historial en el DGCP desde {anio}"
+
+def _asunto_email_2(nombre, perfil):
+    insts = perfil.get('instituciones_top', [])
+    proceso = perfil.get('proceso_activo_relevante')
+    if proceso:
+        inst = proceso.get('unidad_compra','').split('(')[0].strip()[:35]
+        return f"{nombre} — proceso abierto en {inst} cierra pronto"
+    elif insts:
+        inst = insts[0]['nombre'].split('(')[0].strip()[:35]
+        return f"{nombre} — hay procesos activos en {inst} ahora mismo"
+    return f"{nombre} — hay licitaciones abiertas en sus instituciones"
+
+def _asunto_email_3(nombre, perfil):
+    total_2024  = perfil.get('total_ofertas_2024', 0) or 0
+    ganadas     = perfil.get('total_contratos', 0) or 0
+    monto_total = perfil.get('monto_total', 0) or 0
+    if total_2024 > 0 and ganadas > 0:
+        monto_prom     = monto_total / ganadas
+        adicionales    = max(0, round(total_2024 * 0.70) - ganadas)
+        dejado         = adicionales * monto_prom
+        if dejado > 0:
+            return f"{nombre} — RD${int(dejado/1_000_000)}M en contratos que se fueron a otras empresas"
+    elif total_2024 > 0:
+        return f"{nombre} — {total_2024} participaciones desde 2024, calculamos el costo real"
+    return f"{nombre} — el costo real de no ganar licitaciones"
+
+def _asunto_email_4(nombre, perfil):
+    return f"{nombre} — último mensaje de nuestra parte"
 
 ASUNTOS_EMAIL = {
-    "email_1": lambda nombre, perfil: f"{nombre} — revisamos su historial en el DGCP",
-    "email_2": lambda nombre, perfil: f"{nombre} — hay licitaciones abiertas en sus instituciones",
-    "email_3": lambda nombre, perfil: f"Última oportunidad — licitaciones activas para {nombre}",
+    "email_1": _asunto_email_1,
+    "email_2": _asunto_email_2,
+    "email_3": _asunto_email_3,
+    "email_4": _asunto_email_4,
 }
 
 
-def generar_cuerpo_claude(nombre: str, perfil: dict, tipo_email: str) -> str:
+def generar_cuerpo_claude(nombre: str, perfil: dict, tipo_email: str, sector: str = "bienes_servicios") -> str:
     """Llama a Claude para generar el párrafo personalizado del email."""
     inst_str = ", ".join([
         f"{i['nombre']} ({i['contratos']} contratos)"
         for i in perfil.get("instituciones_top", [])
     ]) or "varias instituciones del Estado"
 
+    # Calcular tasa de éxito real
+    total_ofertas  = perfil.get('total_ofertas', 0) or 0
+    contratos_gan  = perfil.get('total_contratos', 0) or 0
+    monto_total    = perfil.get('monto_total', 0) or 0
+
+    if total_ofertas > 0:
+        tasa_real = round(contratos_gan / total_ofertas * 100)
+        tasa_str  = f"{tasa_real}% ({contratos_gan} ganadas de {total_ofertas} participaciones)"
+    else:
+        tasa_str = "sin datos de participaciones recientes"
+
+    # Potencial si usara nuestro servicio (70%)
+    if total_ofertas > 0:
+        potencial_ganadas  = round(total_ofertas * 0.70)
+        mejora_contratos   = max(0, potencial_ganadas - contratos_gan)
+        monto_promedio     = monto_total / contratos_gan if contratos_gan > 0 else 150000
+        ingreso_potencial  = _fmt_monto(mejora_contratos * monto_promedio)
+        potencial_str = (
+            f"Con nuestra tasa del 70%, de {total_ofertas} participaciones "
+            f"habría ganado ~{potencial_ganadas} contratos "
+            f"(+{mejora_contratos} adicionales, ~{ingreso_potencial} en ingresos adicionales estimados)"
+        )
+    else:
+        potencial_str = "potencial de mejora significativo con consultoría especializada"
+
+    # Construir texto de competidores
+    competidores = perfil.get("competidores_que_ganaron", [])
+    if competidores:
+        comp_str = ", ".join([
+            f"{c.get('competidor', 'N/D')} (les ganó {c.get('procesos_ganados_contra_mi', 0)} veces)"
+            for c in competidores
+        ])
+    else:
+        comp_str = "datos no disponibles"
+
+    # Período de participaciones
+    anio_inicio = perfil.get("anio_primera_participacion", "2017")
+    total_historico = perfil.get("total_ofertas", 0) or 0
+    total_2024 = perfil.get("total_ofertas_2024", 0) or 0
+
+    # Tasa solo sobre el período con datos completos (desde 2024)
+    if total_2024 > 0 and contratos_gan > 0:
+        tasa_2024 = round(contratos_gan / total_2024 * 100)
+        tasa_str = f"{tasa_2024}% ({contratos_gan} ganados de {total_2024} participaciones desde 2024)"
+    elif total_2024 > 0:
+        tasa_str = f"0% ({total_2024} participaciones desde 2024, ninguna adjudicada en ese período)"
+    else:
+        tasa_str = "sin participaciones recientes registradas"
+
+    # Potencial calculado sobre participaciones desde 2024
+    if total_2024 > 0:
+        potencial_ganadas = round(total_2024 * 0.70)
+        mejora = max(0, potencial_ganadas - contratos_gan)
+        monto_prom = monto_total / contratos_gan if contratos_gan > 0 else 150000
+        potencial_str = (
+            f"de {total_2024} participaciones recientes con nuestra tasa del 70% "
+            f"habrían ganado ~{potencial_ganadas} contratos "
+            f"(+{mejora} adicionales, ~{_fmt_monto(mejora * monto_prom)} estimados)"
+        )
+    else:
+        potencial_str = "potencial de mejora significativo con consultoría especializada"
+
+    # Proceso activo relevante para email_2
+    proceso_activo = perfil.get('proceso_activo_relevante')
+    if proceso_activo:
+        from datetime import datetime as _dt2
+        fecha_lim = proceso_activo.get('fecha_fin_recepcion_ofertas', '')[:10]
+        monto_proc = _fmt_monto(proceso_activo.get('monto_estimado') or 0)
+        proceso_str = (
+            f"{proceso_activo.get('titulo', 'N/D')[:80]} | "
+            f"Institución: {proceso_activo.get('unidad_compra', 'N/D')} | "
+            f"Monto estimado: {monto_proc} | "
+            f"Fecha límite: {fecha_lim}"
+        )
+    else:
+        proceso_str = "datos no disponibles"
+
+    # Monto promedio real por contrato ganado
+    monto_prom_real = monto_total / contratos_gan if contratos_gan > 0 else 0
+    ingresos_perdidos = max(0, round(total_2024 * 0.70) - contratos_gan) * monto_prom_real
+
     datos_str = f"""
-- Empresa: {nombre}
-- Contratos ganados con el Estado: {perfil.get('total_contratos', 0)}
-- Monto total adjudicado: {_fmt_monto(perfil.get('monto_total', 0))}
-- Principales instituciones: {inst_str}
-- Licitaciones en las que participó: {perfil.get('total_ofertas', 'N/D')}
-- Licitaciones perdidas (estimado): {perfil.get('total_perdidas', 'N/D')}
-- Último contrato: {perfil.get('ultimo_contrato', 'N/D')}
+DATOS REALES DE LA EMPRESA — usar SOLO estos, no inventar nada. Si dice "N/D" o "datos no disponibles", no lo menciones.
+
+EMPRESA:
+- Nombre: {nombre}
+- Contacto: {perfil.get('nombre_contacto') or nombre}
+- Cargo: {perfil.get('posicion_contacto') or 'N/D'}
+- Provincia: {perfil.get('provincia') or 'República Dominicana'}
+
+HISTORIAL COMPLETO EN DGCP (desde {anio_inicio}):
+- Total de participaciones registradas: {total_historico}
+- Primer año de participación: {anio_inicio}
+
+PERÍODO RECIENTE — datos de adjudicación disponibles desde marzo 2024:
+- Participaciones desde 2024: {total_2024}
+- Contratos adjudicados desde 2024: {contratos_gan}
+- Monto total adjudicado desde 2024: {_fmt_monto(monto_total)}
+- Monto promedio por contrato ganado: {_fmt_monto(monto_prom_real)}
+- Tasa de éxito en período reciente: {tasa_str}
+- Instituciones donde ganó desde 2024: {inst_str if inst_str != "varias instituciones del Estado" else "datos no disponibles"}
+- Competidores que les ganaron en esos mismos procesos recientes: {comp_str}
+
+PROCESO ACTIVO RELEVANTE (para mencionar en email_2):
+- {proceso_str}
+
+OPORTUNIDAD:
+- {potencial_str}
+- Ingresos estimados dejados sobre la mesa: {_fmt_monto(ingresos_perdidos)} (promedio real × contratos adicionales)
 """
-    prompt = PROMPTS_EMAIL[tipo_email].format(datos=datos_str)
+    # Seleccionar prompt según sector para email_1
+    if tipo_email == "email_1":
+        key = f"email_1_{sector}" if f"email_1_{sector}" in PROMPTS_EMAIL else "email_1"
+    else:
+        key = tipo_email
+    prompt = PROMPTS_EMAIL[key].format(datos=datos_str)
 
     try:
         resp = claude.messages.create(
@@ -410,15 +716,61 @@ def construir_html_email(
       </tr>
     </table>
 
-    <!-- CTA principal — solo contacto, sin precios -->
+    <!-- Precios -->
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
       <tr>
-        <td align="center">
-          <a href="{CONSULTING_URL}?text=Hola%20Luis%2C%20vi%20su%20email%20y%20me%20interesa%20hablar%20sobre%20licitaciones"
-             style="display:inline-block;background:#1a5c2a;color:#ffffff;text-decoration:none;text-align:center;padding:16px 40px;border-radius:6px;font-size:15px;font-weight:600;">
-            Conversar con Luis Antigua
+        <td width="31%" align="center" style="padding:0 4px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-radius:6px;border:1px solid #ece9e3;">
+            <tr><td style="padding:14px 12px;text-align:center;">
+              <p style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:#888;margin:0 0 6px;">Explorador</p>
+              <p style="font-family:Georgia,serif;font-size:20px;color:#1a1a1a;margin:0 0 2px;">RD$1,490</p>
+              <p style="font-size:11px;color:#aaa;margin:0 0 8px;">/ mes</p>
+              <p style="font-size:11px;color:#666;margin:0;line-height:1.4;">Alertas + búsqueda</p>
+            </td></tr>
+          </table>
+        </td>
+        <td width="4%"></td>
+        <td width="31%" align="center" style="padding:0 4px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a5c2a;border-radius:6px;border:2px solid #1a5c2a;">
+            <tr><td style="padding:14px 12px;text-align:center;">
+              <p style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:rgba(255,255,255,0.7);margin:0 0 6px;">⭐ Competidor</p>
+              <p style="font-family:Georgia,serif;font-size:20px;color:#ffffff;margin:0 0 2px;">RD$3,990</p>
+              <p style="font-size:11px;color:rgba(255,255,255,0.6);margin:0 0 8px;">/ mes</p>
+              <p style="font-size:11px;color:rgba(255,255,255,0.85);margin:0;line-height:1.4;">+ Análisis IA + Intel competitiva</p>
+            </td></tr>
+          </table>
+        </td>
+        <td width="4%"></td>
+        <td width="31%" align="center" style="padding:0 4px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-radius:6px;border:1px solid #ece9e3;">
+            <tr><td style="padding:14px 12px;text-align:center;">
+              <p style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:#888;margin:0 0 6px;">Ganador</p>
+              <p style="font-family:Georgia,serif;font-size:20px;color:#1a1a1a;margin:0 0 2px;">RD$8,500</p>
+              <p style="font-size:11px;color:#aaa;margin:0 0 8px;">/ mes</p>
+              <p style="font-size:11px;color:#666;margin:0;line-height:1.4;">Todo + consultoría incluida</p>
+            </td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <!-- CTAs -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+      <tr>
+        <td width="48%" style="padding-right:8px;">
+          <a href="{APP_URL}?utm_source=email&utm_campaign=prospecto&utm_content={tipo_email}"
+             style="display:block;background:#1a5c2a;color:#ffffff;text-decoration:none;text-align:center;padding:14px 16px;border-radius:6px;font-size:14px;font-weight:600;">
+            Ver mi historial completo
+            <span style="display:block;font-weight:400;font-size:12px;opacity:0.8;margin-top:2px;">App · Desde RD$1,490/mes</span>
           </a>
-          <p style="font-size:12px;color:#888;margin:10px 0 0;">WhatsApp · Llamada · Sin compromiso</p>
+        </td>
+        <td width="4%"></td>
+        <td width="48%" style="padding-left:8px;">
+          <a href="{CONSULTING_URL}?text=Hola%20Luis%2C%20me%20interesa%20la%20consultor%C3%ADa"
+             style="display:block;background:#ffffff;color:#1a5c2a;border:1.5px solid #1a5c2a;text-decoration:none;text-align:center;padding:14px 16px;border-radius:6px;font-size:14px;font-weight:600;">
+            Hablar con el consultor
+            <span style="display:block;font-weight:400;font-size:12px;color:#555;margin-top:2px;">Licitaciones MOPC · CAASD · INAPA</span>
+          </a>
         </td>
       </tr>
     </table>
@@ -427,16 +779,16 @@ def construir_html_email(
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a5c2a;border-radius:6px;margin-bottom:28px;">
       <tr>
         <td width="33%" align="center" style="padding:20px 12px;">
-          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">70%</span>
-          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Tasa de adjudicación</span>
+          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">15,000+</span>
+          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Empresas monitoreadas</span>
         </td>
         <td width="33%" align="center" style="padding:20px 12px;">
-          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">15+</span>
-          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Años de experiencia</span>
+          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">176k</span>
+          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Contratos en la BD</span>
         </td>
         <td width="33%" align="center" style="padding:20px 12px;">
-          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">MOPC · INAPA · CAASD</span>
-          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Instituciones donde trabajamos</span>
+          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">24/7</span>
+          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Alertas en tiempo real</span>
         </td>
       </tr>
     </table>
@@ -445,7 +797,7 @@ def construir_html_email(
     <p style="font-size:14px;color:#3a3a3a;line-height:1.6;margin:0;">
       <strong style="display:block;font-size:15px;color:#1a1a1a;">Luis Antigua</strong>
       Ing. Civil · Consultor de Licitaciones Públicas<br>
-      <span style="font-size:13px;color:#888;">República Dominicana · +1 (809) 815-4457</span>
+      <span style="font-size:13px;color:#888;">LicitacionLab · app.licitacionlab.com</span>
     </p>
 
   </td></tr>
@@ -590,16 +942,15 @@ def obtener_empresas_elegibles(limite: int = BATCH_DEFAULT) -> list:
         return []
 
 
-def obtener_empresas_elegibles_v2(limite: int = BATCH_DEFAULT) -> list:
+def obtener_empresas_elegibles_v2(limite: int = BATCH_DEFAULT, sector: str = None) -> list:
     """
-    Usa la vista elegibles_email_v1 en Supabase para evitar queries masivas.
-    La vista ya filtra: contratos + email + no enviado email_1.
+    Usa la vista elegibles_email_v1. Si sector='construccion' o 'bienes_servicios', filtra.
     """
     try:
-        result = supabase.table("elegibles_email_v1") \
-            .select("id, nombre, rnc, email") \
-            .limit(limite) \
-            .execute()
+        q = supabase.table("elegibles_email_v1").select("id, nombre, rnc, email, sector")
+        if sector:
+            q = q.eq("sector", sector)
+        result = q.limit(limite).execute()
 
         elegibles = []
         for emp in (result.data or []):
@@ -608,6 +959,7 @@ def obtener_empresas_elegibles_v2(limite: int = BATCH_DEFAULT) -> list:
                 "nombre":      emp["nombre"],
                 "rnc":         str(emp.get("rnc") or ""),
                 "email":       emp.get("email"),
+                "sector":      emp.get("sector", "bienes_servicios"),
                 "tipo_enviar": "email_1",
             })
 
@@ -650,6 +1002,7 @@ def run_batch(
     limite: int = BATCH_DEFAULT,
     dry_run: bool = False,
     tipo_forzado: str = None,
+    sector_forzado: str = None,
 ) -> dict:
     """
     Envía un batch de emails. Retorna stats.
@@ -668,12 +1021,35 @@ def run_batch(
     print(f"   batch={limite} | dry_run={dry_run}")
     print(f"{'='*55}\n")
 
-    elegibles = obtener_empresas_elegibles_v2(limite)
+    # ── Batch 70/15: 70 construcción + 15 bienes/servicios ──
+    if sector_forzado:
+        elegibles = obtener_empresas_elegibles_v2(limite, sector=sector_forzado)
+    else:
+        emp_const  = obtener_empresas_elegibles_v2(BATCH_CONSTRUCCION, sector="construccion")
+        emp_bienes = obtener_empresas_elegibles_v2(BATCH_BIENES, sector="bienes_servicios")
+        # Intercalar para variedad
+        elegibles = []
+        for i in range(max(len(emp_const), len(emp_bienes))):
+            if i < len(emp_const):
+                elegibles.append(emp_const[i])
+            if i < len(emp_bienes):
+                elegibles.append(emp_bienes[i])
+        elegibles = elegibles[:limite]
+
+    # Excluir clientes activos
+    elegibles = [
+        e for e in elegibles
+        if e.get('nombre', '').lower() not in EMPRESAS_EXCLUIDAS
+        and e.get('email', '').lower() not in EMAILS_EXCLUIDOS
+    ]
+
     if not elegibles:
         print("✅ Sin empresas elegibles en este momento.")
         return stats
 
-    print(f"📋 {len(elegibles)} empresas elegibles encontradas\n")
+    n_const  = sum(1 for e in elegibles if e.get("sector") == "construccion")
+    n_bienes = sum(1 for e in elegibles if e.get("sector") == "bienes_servicios")
+    print(f"📋 {len(elegibles)} empresas elegibles: {n_const} construcción | {n_bienes} bienes/servicios\n")
 
     for emp in elegibles:
         nombre    = emp["nombre"]
@@ -688,7 +1064,8 @@ def run_batch(
         perfil = obtener_perfil_empresa(eid, rnc)
 
         # 2. Generar cuerpo con Claude
-        cuerpo = generar_cuerpo_claude(nombre, perfil, tipo)
+        sector_emp = emp.get("sector", "bienes_servicios")
+        cuerpo = generar_cuerpo_claude(nombre, perfil, tipo, sector=sector_emp)
 
         # 3. Construir asunto y HTML
         asunto = ASUNTOS_EMAIL[tipo](nombre, perfil)
