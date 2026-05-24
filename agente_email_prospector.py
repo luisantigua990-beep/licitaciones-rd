@@ -163,50 +163,53 @@ def _fmt_monto(monto: float) -> str:
 
 
 PROMPTS_EMAIL = {
-    "email_1": """Eres el equipo de LicitacionLab escribiendo un email de ventas B2B en español dominicano (formal pero directo, sin tuteo, sin emojis excesivos).
+    "email_1": """Eres Luis Antigua, ingeniero civil y consultor especialista en licitaciones públicas de República Dominicana, escribiendo un email de prospección B2B en español dominicano (formal pero directo, sin tuteo, sin emojis excesivos).
 
 DATOS DE LA EMPRESA:
 {datos}
 
 Escribe SOLO el párrafo central del email (3-4 oraciones). El objetivo es:
-1. Mencionar datos específicos de su historial (contratos, monto, instituciones)
-2. Hacer la pregunta del dolor: ¿saben por qué perdieron algunas licitaciones?
-3. Conectar con LicitacionLab como la solución
+1. Mencionar datos específicos de su historial real en el DGCP (contratos ganados, instituciones donde han trabajado, participaciones)
+2. Identificar el dolor: licitaciones perdidas o tasa de éxito mejorable
+3. Presentarte como consultor experto que prepara propuestas completas (Sobre A + Sobre B) — el 70% de las propuestas que preparamos ganan
+4. Invitar a conversar — NO menciones precios, planes ni ninguna aplicación
 
 NO incluyas saludo, firma, ni calls-to-action — esos van en el template HTML.
-Máximo 80 palabras. Tono: inteligente, consultivo, no agresivo.""",
+Máximo 90 palabras. Tono: consultivo, experto, cercano. Habla en primera persona como Luis.""",
 
-    "email_2": """Eres el equipo de LicitacionLab escribiendo el segundo email de una secuencia de ventas en español dominicano.
+    "email_2": """Eres Luis Antigua, ingeniero civil y consultor especialista en licitaciones públicas de República Dominicana, escribiendo el segundo email de seguimiento en español dominicano.
 
 DATOS DE LA EMPRESA:
 {datos}
 
-Este email tiene enfoque de FOMO (miedo a quedarse atrás). Escribe SOLO el párrafo central (3-4 oraciones):
-1. Mencionar que empresas similares en su sector están usando herramientas de inteligencia
-2. Referencia sutil a sus contratos actuales como punto de partida
-3. Urgencia suave: el Estado dominicano lanza +200 licitaciones por semana
+Escribe SOLO el párrafo central (3-4 oraciones):
+1. Empresas con historial similar al de ellos han mejorado su tasa de adjudicación trabajando con consultoría especializada
+2. El Estado dominicano lanza cientos de licitaciones por semana y los plazos de preparación son cortos
+3. El diferenciador: preparamos la propuesta técnica completa — el cliente solo firma y entrega
+4. NO menciones precios, planes ni ninguna aplicación
 
 NO incluyas saludo, firma, ni calls-to-action.
-Máximo 80 palabras. Tono: competitivo pero respetuoso.""",
+Máximo 90 palabras. Tono: enfocado en resultados, sin presión.""",
 
-    "email_3": """Eres el equipo de LicitacionLab escribiendo el tercer y último email de una secuencia de ventas en español dominicano.
+    "email_3": """Eres Luis Antigua, ingeniero civil y consultor especialista en licitaciones públicas de República Dominicana, escribiendo el tercer y último email en español dominicano.
 
 DATOS DE LA EMPRESA:
 {datos}
 
 Este es el email de cierre. Escribe SOLO el párrafo central (2-3 oraciones):
-1. Mencionar que hay licitaciones ABIERTAS AHORA en su sector/instituciones donde ya han trabajado
-2. Crear urgencia real: los plazos vencen pronto
-3. Invitación directa a probar la app o hablar con el consultor
+1. Hay licitaciones activas AHORA en instituciones donde ya han participado
+2. El tiempo de preparación es el factor crítico — quienes empiezan antes ganan más
+3. Invitación directa y simple: una llamada de 15 minutos para evaluar si podemos trabajar juntos
+4. NO menciones precios, planes ni ninguna aplicación
 
 NO incluyas saludo, firma, ni calls-to-action.
-Máximo 60 palabras. Tono: directo, urgente pero profesional.""",
+Máximo 70 palabras. Tono: directo, urgente pero respetuoso.""",
 }
 
 ASUNTOS_EMAIL = {
-    "email_1": lambda nombre, perfil: f"{nombre} — encontramos tu historial en el DGCP",
-    "email_2": lambda nombre, perfil: f"Empresas como {nombre} ganaron {_fmt_monto(perfil.get('monto_total',0)*1.3)} más en 2025",
-    "email_3": lambda nombre, perfil: f"Hay {3} licitaciones abiertas en tu sector esta semana",
+    "email_1": lambda nombre, perfil: f"{nombre} — revisamos su historial en el DGCP",
+    "email_2": lambda nombre, perfil: f"{nombre} — hay licitaciones abiertas en sus instituciones",
+    "email_3": lambda nombre, perfil: f"Última oportunidad — licitaciones activas para {nombre}",
 }
 
 
@@ -407,61 +410,15 @@ def construir_html_email(
       </tr>
     </table>
 
-    <!-- Precios -->
+    <!-- CTA principal — solo contacto, sin precios -->
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
       <tr>
-        <td width="31%" align="center" style="padding:0 4px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-radius:6px;border:1px solid #ece9e3;">
-            <tr><td style="padding:14px 12px;text-align:center;">
-              <p style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:#888;margin:0 0 6px;">Explorador</p>
-              <p style="font-family:Georgia,serif;font-size:20px;color:#1a1a1a;margin:0 0 2px;">RD$1,490</p>
-              <p style="font-size:11px;color:#aaa;margin:0 0 8px;">/ mes</p>
-              <p style="font-size:11px;color:#666;margin:0;line-height:1.4;">Alertas + búsqueda</p>
-            </td></tr>
-          </table>
-        </td>
-        <td width="4%"></td>
-        <td width="31%" align="center" style="padding:0 4px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a5c2a;border-radius:6px;border:2px solid #1a5c2a;">
-            <tr><td style="padding:14px 12px;text-align:center;">
-              <p style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:rgba(255,255,255,0.7);margin:0 0 6px;">⭐ Competidor</p>
-              <p style="font-family:Georgia,serif;font-size:20px;color:#ffffff;margin:0 0 2px;">RD$3,990</p>
-              <p style="font-size:11px;color:rgba(255,255,255,0.6);margin:0 0 8px;">/ mes</p>
-              <p style="font-size:11px;color:rgba(255,255,255,0.85);margin:0;line-height:1.4;">+ Análisis IA + Intel competitiva</p>
-            </td></tr>
-          </table>
-        </td>
-        <td width="4%"></td>
-        <td width="31%" align="center" style="padding:0 4px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-radius:6px;border:1px solid #ece9e3;">
-            <tr><td style="padding:14px 12px;text-align:center;">
-              <p style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:#888;margin:0 0 6px;">Ganador</p>
-              <p style="font-family:Georgia,serif;font-size:20px;color:#1a1a1a;margin:0 0 2px;">RD$8,500</p>
-              <p style="font-size:11px;color:#aaa;margin:0 0 8px;">/ mes</p>
-              <p style="font-size:11px;color:#666;margin:0;line-height:1.4;">Todo + consultoría incluida</p>
-            </td></tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-
-    <!-- CTAs -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-      <tr>
-        <td width="48%" style="padding-right:8px;">
-          <a href="{APP_URL}?utm_source=email&utm_campaign=prospecto&utm_content={tipo_email}"
-             style="display:block;background:#1a5c2a;color:#ffffff;text-decoration:none;text-align:center;padding:14px 16px;border-radius:6px;font-size:14px;font-weight:600;">
-            Ver mi historial completo
-            <span style="display:block;font-weight:400;font-size:12px;opacity:0.8;margin-top:2px;">App · Desde RD$1,490/mes</span>
+        <td align="center">
+          <a href="{CONSULTING_URL}?text=Hola%20Luis%2C%20vi%20su%20email%20y%20me%20interesa%20hablar%20sobre%20licitaciones"
+             style="display:inline-block;background:#1a5c2a;color:#ffffff;text-decoration:none;text-align:center;padding:16px 40px;border-radius:6px;font-size:15px;font-weight:600;">
+            Conversar con Luis Antigua
           </a>
-        </td>
-        <td width="4%"></td>
-        <td width="48%" style="padding-left:8px;">
-          <a href="{CONSULTING_URL}?text=Hola%20Luis%2C%20me%20interesa%20la%20consultor%C3%ADa"
-             style="display:block;background:#ffffff;color:#1a5c2a;border:1.5px solid #1a5c2a;text-decoration:none;text-align:center;padding:14px 16px;border-radius:6px;font-size:14px;font-weight:600;">
-            Hablar con el consultor
-            <span style="display:block;font-weight:400;font-size:12px;color:#555;margin-top:2px;">Licitaciones MOPC · CAASD · INAPA</span>
-          </a>
+          <p style="font-size:12px;color:#888;margin:10px 0 0;">WhatsApp · Llamada · Sin compromiso</p>
         </td>
       </tr>
     </table>
@@ -470,16 +427,16 @@ def construir_html_email(
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a5c2a;border-radius:6px;margin-bottom:28px;">
       <tr>
         <td width="33%" align="center" style="padding:20px 12px;">
-          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">15,000+</span>
-          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Empresas monitoreadas</span>
+          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">70%</span>
+          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Tasa de adjudicación</span>
         </td>
         <td width="33%" align="center" style="padding:20px 12px;">
-          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">176k</span>
-          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Contratos en la BD</span>
+          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">15+</span>
+          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Años de experiencia</span>
         </td>
         <td width="33%" align="center" style="padding:20px 12px;">
-          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">24/7</span>
-          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Alertas en tiempo real</span>
+          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">MOPC · INAPA · CAASD</span>
+          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Instituciones donde trabajamos</span>
         </td>
       </tr>
     </table>
@@ -488,7 +445,7 @@ def construir_html_email(
     <p style="font-size:14px;color:#3a3a3a;line-height:1.6;margin:0;">
       <strong style="display:block;font-size:15px;color:#1a1a1a;">Luis Antigua</strong>
       Ing. Civil · Consultor de Licitaciones Públicas<br>
-      <span style="font-size:13px;color:#888;">LicitacionLab · app.licitacionlab.com</span>
+      <span style="font-size:13px;color:#888;">República Dominicana · +1 (809) 815-4457</span>
     </p>
 
   </td></tr>
