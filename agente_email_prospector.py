@@ -614,6 +614,40 @@ def construir_html_email(
         header_html = ""
         saludo_style = "font-size:15px;color:#2c2c2c;line-height:1.7;margin:0 0 20px;"
     else:
+        # Header dinámico según perfil
+        tasa_header = round(contratos / part_2024 * 100) if part_2024 > 0 else 0
+        competidor_top = ""
+        comps = perfil.get("competidores_que_ganaron", [])
+        if comps:
+            competidor_top = comps[0].get("competidor", "").split(",")[0].strip()[:30]
+
+        if tasa_header >= 70:
+            # Alto ratio — hook de volumen
+            linea1 = f"{nombre}:"
+            linea2 = f"<span style='color:#7fe89f;'>excelente tasa</span> —"
+            linea3 = "¿cuántos procesos más podrían ganar?"
+        elif tasa_header >= 50:
+            # Ratio medio — hook de mejora
+            comp_str = f"competidores como {competidor_top}" if competidor_top else "otras empresas"
+            linea1 = f"{nombre}:"
+            linea2 = f"<span style='color:#7fe89f;'>{tasa_header}% de adjudicación</span> —"
+            linea3 = f"podría llegar al 70%"
+        elif part_2024 > 0 and contratos == 0:
+            # Cero ganados
+            linea1 = f"{nombre}:"
+            linea2 = f"<span style='color:#7fe89f;'>{part_2024} participaciones</span>"
+            linea3 = "desde 2024 sin ningún contrato ganado"
+        elif competidor_top:
+            # Bajo ratio con competidor conocido
+            linea1 = f"{nombre}:"
+            linea2 = f"<span style='color:#7fe89f;'>¿por qué {competidor_top}</span>"
+            linea3 = "les sigue ganando?"
+        else:
+            # Bajo ratio genérico
+            linea1 = f"{nombre}:"
+            linea2 = f"<span style='color:#7fe89f;'>{part_2024} procesos desde 2024</span>"
+            linea3 = f"y solo {contratos} contratos ganados"
+
         header_html = f"""
   <!-- HEADER -->
   <tr><td style="background:#1a5c2a;padding:28px 40px 24px;">
@@ -626,7 +660,7 @@ def construir_html_email(
       <tr>
         <td>
           <div style="font-family:Georgia,serif;font-size:27px;color:#ffffff;line-height:1.25;font-weight:400;">
-            Encontramos el historial de<br><span style="color:#7fe89f;">{nombre}</span><br>en el DGCP
+            {linea1}<br>{linea2}<br>{linea3}
           </div>
           <p style="color:rgba(255,255,255,0.7);font-size:14px;margin:10px 0 0;">Datos reales de su empresa en el portal de compras del Estado dominicano</p>
         </td>
