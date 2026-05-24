@@ -230,7 +230,9 @@ def _fmt_monto(monto: float) -> str:
 
 
 PROMPTS_EMAIL = {
-    "email_1": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques por qué no puedes escribir. Si los datos son limitados, escribe con lo que hay. Tu única función es producir el párrafo del email.
+    "email_1": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques. Tu única función es producir el párrafo del email.
+
+IMPORTANTE: Al final de los datos verás una sección "ESTRATEGIA DE COMUNICACIÓN PARA ESTE EMAIL" — úsala para determinar el ángulo del hook. Si dice ALTO RATIO, NO menciones el 70% como ventaja; habla de volumen y capacidad. Si dice BAJO RATIO, enfócate en la brecha de contratos perdidos. Si dice RATIO MEDIO, habla de mejora incremental.
 
 Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo un email de prospección B2B en español formal dominicano.
 
@@ -248,7 +250,9 @@ Escribe SOLO el párrafo central (3-4 oraciones):
 Máximo 110 palabras. NO incluyas saludo ni firma.
 Tono: consultor que ya revisó el expediente, autoridad, genera curiosidad.""",
 
-    "email_1_bienes_servicios": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques por qué no puedes escribir. Si los datos son limitados, escribe con lo que hay. Tu única función es producir el párrafo del email.
+    "email_1_bienes_servicios": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques. Tu única función es producir el párrafo del email.
+
+IMPORTANTE: Al final de los datos verás una sección "ESTRATEGIA DE COMUNICACIÓN PARA ESTE EMAIL" — úsala para determinar el ángulo del hook. Si dice ALTO RATIO, NO menciones el 70% como ventaja; habla de volumen y capacidad. Si dice BAJO RATIO, enfócate en la brecha de contratos perdidos. Si dice RATIO MEDIO, habla de mejora incremental.
 
 Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo un email de prospección B2B en español formal dominicano a una empresa de bienes o servicios.
 
@@ -266,7 +270,9 @@ Escribe SOLO el párrafo central (3-4 oraciones):
 Máximo 110 palabras. NO incluyas saludo ni firma.
 Tono: consultor con autoridad, directo, genera curiosidad.""",
 
-    "email_1_construccion": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques por qué no puedes escribir. Si los datos son limitados, escribe con lo que hay. Tu única función es producir el párrafo del email.
+    "email_1_construccion": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques. Tu única función es producir el párrafo del email.
+
+IMPORTANTE: Al final de los datos verás una sección "ESTRATEGIA DE COMUNICACIÓN PARA ESTE EMAIL" — úsala para determinar el ángulo del hook. Si dice ALTO RATIO, NO menciones el 70% como ventaja; habla de volumen y capacidad. Si dice BAJO RATIO, enfócate en la brecha de contratos perdidos. Si dice RATIO MEDIO, habla de mejora incremental.
 
 Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo un email de prospección B2B a una empresa constructora dominicana.
 
@@ -483,6 +489,34 @@ def generar_cuerpo_claude(nombre: str, perfil: dict, tipo_email: str, sector: st
     monto_prom_real = monto_total / contratos_gan if contratos_gan > 0 else 0
     ingresos_perdidos = max(0, round(total_2024 * 0.70) - contratos_gan) * monto_prom_real
 
+    # Perfil de la empresa según tasa de adjudicación
+    if total_2024 > 0 and contratos_gan >= 0:
+        tasa_pct = round(contratos_gan / total_2024 * 100) if total_2024 > 0 else 0
+        if tasa_pct < 50:
+            perfil_hook = (
+                f"PERFIL: BAJO RATIO ({tasa_pct}%) — "
+                "El hook principal es que están perdiendo contratos y algo en las propuestas está fallando. "
+                "NO menciones el 70% como meta — menciona la brecha: cuántos contratos adicionales habrían ganado. "
+                "Tono: señalar el problema con autoridad, sin atacar."
+            )
+        elif tasa_pct < 70:
+            perfil_hook = (
+                f"PERFIL: RATIO MEDIO ({tasa_pct}%) — "
+                "Tienen buen historial pero hay margen de mejora. "
+                "El hook es que ya van bien y con nuestra metodología pueden llegar al 70%. "
+                "Tono: reconocer su buen desempeño y proponer mejora incremental."
+            )
+        else:
+            perfil_hook = (
+                f"PERFIL: ALTO RATIO ({tasa_pct}%) — "
+                "Su tasa supera o iguala la nuestra. NO menciones el 70% como ventaja — sería contraproducente. "
+                "El hook es VOLUMEN y CAPACIDAD: ya saben ganar, el problema es cuántos procesos pueden preparar al mismo tiempo. "
+                "Argumento: con LicitacionLab pueden participar en más procesos sin aumentar su equipo interno. "
+                "Tono: reconocer su excelente tasa y hablar de escalar."
+            )
+    else:
+        perfil_hook = "PERFIL: SIN DATOS SUFICIENTES — usa el hook general de preparación de propuestas."
+
     datos_str = f"""
 DATOS REALES DE LA EMPRESA — usar SOLO estos, no inventar nada. Si dice "N/D" o "datos no disponibles", no lo menciones.
 
@@ -511,6 +545,9 @@ PROCESO ACTIVO RELEVANTE (para mencionar en email_2):
 OPORTUNIDAD:
 - {potencial_str}
 - Ingresos estimados dejados sobre la mesa: {_fmt_monto(ingresos_perdidos)} (promedio real × contratos adicionales)
+
+ESTRATEGIA DE COMUNICACIÓN PARA ESTE EMAIL:
+{perfil_hook}
 """
     # Seleccionar prompt según sector para email_1
     if tipo_email == "email_1":
