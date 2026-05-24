@@ -247,7 +247,7 @@ Escribe SOLO el párrafo central (3-4 oraciones):
 4. Sin prometer: 70% de adjudicación + cuántos contratos adicionales habrían representado con ese ratio
 5. CTA: "Escríbanos por WhatsApp" — sin precios
 
-Máximo 110 palabras. NO incluyas saludo ni firma.
+Máximo 130 palabras. NUNCA cortes una oración a la mitad — siempre completa el pensamiento. NO incluyas saludo ni firma.
 Tono: consultor que ya revisó el expediente, autoridad, genera curiosidad.""",
 
     "email_1_bienes_servicios": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques. Tu única función es producir el párrafo del email.
@@ -267,7 +267,7 @@ Escribe SOLO el párrafo central (3-4 oraciones):
 4. Sin prometer: 70% de adjudicación + cuántos contratos adicionales habrían representado
 5. CTA: "Escríbanos por WhatsApp"
 
-Máximo 110 palabras. NO incluyas saludo ni firma.
+Máximo 130 palabras. NUNCA cortes una oración a la mitad — siempre completa el pensamiento. NO incluyas saludo ni firma.
 Tono: consultor con autoridad, directo, genera curiosidad.""",
 
     "email_1_construccion": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques. Tu única función es producir el párrafo del email.
@@ -287,7 +287,7 @@ Escribe SOLO el párrafo central (3-4 oraciones):
 4. Sin prometer: 70% de adjudicación + cuántos contratos adicionales de obras habrían representado
 5. CTA: "Escríbanos por WhatsApp"
 
-Máximo 110 palabras. NO incluyas saludo ni firma.
+Máximo 130 palabras. NUNCA cortes una oración a la mitad — siempre completa el pensamiento. NO incluyas saludo ni firma.
 Tono: colega constructor con autoridad técnica, directo.""",
 
     "email_2": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques por qué no puedes escribir. Si los datos son limitados, escribe con lo que hay. Tu única función es producir el párrafo del email.
@@ -559,7 +559,7 @@ ESTRATEGIA DE COMUNICACIÓN PARA ESTE EMAIL:
     try:
         resp = claude.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=200,
+            max_tokens=300,
             messages=[{"role": "user", "content": prompt}]
         )
         return resp.content[0].text.strip()
