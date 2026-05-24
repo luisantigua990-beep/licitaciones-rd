@@ -1249,6 +1249,85 @@ def get_agente6_router():
     def preview_agente6(rnc: str = Query(..., description="RNC de la empresa a previsualizar")):
         return preview_empresa(rnc)
 
+    @router.post("/agente6/enviar", dependencies=[Depends(verificar_admin)])
+    def enviar_manual(
+        rnc:    str = Query(None, description="RNC o RPE de la empresa"),
+        nombre: str = Query(None, description="Nombre o parte del nombre de la empresa"),
+        tipo:   str = Query("email_1", description="email_1 | email_2 | email_3 | email_4"),
+        dry_run: bool = Query(False, description="Solo simular, no enviar"),
+    ):
+        """Envía un email manual a una empresa específica por RNC o nombre."""
+        # Buscar empresa
+        empresa = None
+        if rnc:
+            r = supabase.table("empresas_estado") \
+                .select("id, nombre, rnc, correo_comercial, sector") \
+                .eq("rnc", str(rnc)) \
+                .limit(1).execute()
+            if r.data:
+                empresa = r.data[0]
+        elif nombre:
+            r = supabase.table("empresas_estado") \
+                .select("id, nombre, rnc, correo_comercial, sector") \
+                .ilike("nombre", f"%{nombre}%") \
+                .limit(1).execute()
+            if r.data:
+                empresa = r.data[0]
+
+        if not empresa:
+            return {"ok": False, "mensaje": f"Empresa no encontrada con {'RNC ' + str(rnc) if rnc else 'nombre ' + nombre}"}
+
+        email_dest = empresa.get("correo_comercial")
+        if not email_dest:
+            return {"ok": False, "mensaje": f"La empresa {empresa['nombre']} no tiene email registrado"}
+
+        emp_nombre = empresa["nombre"]
+        emp_rnc    = str(empresa.get("rnc") or "")
+        emp_id     = empresa["id"]
+        sector     = empresa.get("sector", "bienes_servicios")
+
+        # Construir perfil y email
+        perfil   = obtener_perfil_empresa(emp_id, emp_rnc)
+        cuerpo   = generar_cuerpo_claude(emp_nombre, perfil, tipo, sector=sector)
+        asunto   = ASUNTOS_EMAIL.get(tipo, ASUNTOS_EMAIL["email_1"])(emp_nombre, perfil)
+        html     = construir_html_email(emp_nombre, perfil, cuerpo, tipo, emp_id)
+
+        if dry_run:
+            return {
+                "ok":      True,
+                "dry_run": True,
+                "empresa": emp_nombre,
+                "email":   email_dest,
+                "asunto":  asunto,
+                "cuerpo":  cuerpo,
+            }
+
+        resultado = enviar_email_resend(email_dest, emp_nombre, asunto, html)
+
+        if resultado.get("ok"):
+            # Registrar en outreach_log
+            try:
+                supabase.table("outreach_log").insert({
+                    "prospecto_id": emp_id,
+                    "canal":        "email",
+                    "tipo":         tipo,
+                    "asunto":       asunto,
+                    "enviado_at":   datetime.utcnow().isoformat(),
+                    "resend_id":    resultado.get("resend_id"),
+                    "manual":       True,
+                }).execute()
+            except Exception:
+                pass
+
+        return {
+            "ok":      resultado.get("ok", False),
+            "empresa": emp_nombre,
+            "email":   email_dest,
+            "asunto":  asunto,
+            "tipo":    tipo,
+            "error":   resultado.get("error"),
+        }
+
     return router
 
 
