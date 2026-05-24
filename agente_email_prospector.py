@@ -104,6 +104,9 @@ def obtener_perfil_empresa(empresa_id: str, rnc: str) -> dict:
         perfil["monto_promedio"]     = sum(montos) / len(montos)
         perfil["ultimo_contrato"]    = contratos[0].get("fecha_adjudicacion")
         perfil["modalidades"]        = list({c.get("modalidad") for c in contratos if c.get("modalidad")})
+        # Año del primer contrato registrado (los contratos vienen desc, el último es el más antiguo)
+        primer_fecha = contratos[-1].get("fecha_adjudicacion") or ""
+        perfil["primer_contrato_anio"] = primer_fecha[:4] if primer_fecha else "2024"
 
         # Top 3 instituciones
         inst_count = {}
@@ -184,8 +187,10 @@ def obtener_perfil_empresa(empresa_id: str, rnc: str) -> dict:
                 .ilike('unidad_compra', f'%{inst_top[:20]}%') \
                 .gte('fecha_fin_recepcion_ofertas', _dt.now().isoformat()) \
                 .order('fecha_fin_recepcion_ofertas') \
-                .limit(1) \
+                .limit(3) \
                 .execute()
+            perfil['procesos_activos_relevantes'] = rp.data if rp.data else []
+            # Mantener compatibilidad con código que usa el singular
             perfil['proceso_activo_relevante'] = rp.data[0] if rp.data else None
         else:
             perfil['proceso_activo_relevante'] = None
@@ -225,141 +230,107 @@ def _fmt_monto(monto: float) -> str:
 
 
 PROMPTS_EMAIL = {
-    "email_1": """Eres Luis Antigua, ingeniero civil con 15+ años preparando propuestas para licitaciones públicas dominicanas.
-Escribes un email de prospección B2B en español formal dominicano.
+    "email_1": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques por qué no puedes escribir. Si los datos son limitados, escribe con lo que hay. Tu única función es producir el párrafo del email.
+
+Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo un email de prospección B2B en español formal dominicano.
 
 {datos}
 
-REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. Si un dato dice "N/D" o "datos no disponibles", NO lo menciones. No inventes nombres, cifras ni instituciones.
-
-Escribe SOLO el párrafo central del email (3-4 oraciones):
-1. Historial completo: cuántas participaciones desde qué año
-2. Período reciente (2024): contratos ganados con institución y monto real — si hay competidor real que les ganó, nómbralo
-3. "Llevamos años preparando propuestas para esas instituciones y conocemos lo que buscan — cosas que no siempre están escritas en el pliego"
-4. 70% de adjudicación sin prometer nada, cuántos contratos adicionales habrían representado
-5. CTA: escríbenos por WhatsApp — sin precios ni app
-
-Máximo 100 palabras. NO incluyas saludo ni firma.
-Tono: consultor que revisó el expediente, directo, autoridad, genera curiosidad.""",
-
-    "email_1_bienes_servicios": """Eres Luis Antigua, ingeniero civil con 15+ años preparando propuestas para licitaciones públicas dominicanas.
-Escribes un email de prospección B2B en español formal dominicano.
-
-{datos}
-
-REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. Si un dato dice "N/D" o "datos no disponibles", NO lo menciones. No inventes nombres, cifras ni instituciones.
-
-Escribe SOLO el párrafo central del email (3-4 oraciones):
-1. Historial completo: cuántas participaciones desde qué año — establece que conoces su expediente
-2. Período reciente (2024): contratos ganados con institución y monto — si hay competidor real que les ganó, nómbralo específicamente
-3. "Llevamos años trabajando con esas instituciones y conocemos lo que buscan — cosas que no siempre están escritas en el pliego"
-4. 70% de adjudicación sin prometer nada, cuántos contratos adicionales habrían representado para su empresa
-5. CTA: escríbenos por WhatsApp — sin precios ni app
-
-Máximo 100 palabras. NO incluyas saludo ni firma.
-Tono: consultor que revisó el expediente, directo, genera curiosidad sobre "lo que no está escrito".""",
-
-    "email_1_construccion": """Eres Luis Antigua, ingeniero civil con 15+ años preparando propuestas de obras públicas para licitaciones del DGCP dominicano.
-Escribes un email de prospección B2B en español formal dominicano dirigido a una empresa constructora.
-
-{datos}
-
-REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nombres, montos ni instituciones.
-
-Escribe SOLO el párrafo central del email (3-4 oraciones):
-1. Historial completo: cuántas participaciones desde qué año en procesos del DGCP
-2. Período reciente (2024): menciona la institución real (MOPC, MIVHED, INAPA, etc.), el tipo de obra y el monto exacto del contrato ganado — si hay un competidor constructor real que les ganó, nómbralo
-3. "El Sobre A y el Sobre B tienen que contar una historia coherente con lo que el pliego realmente busca — y eso es algo que sabemos construir"
-4. 70% de adjudicación sin prometer nada, cuántos contratos adicionales de obras habrían representado
-5. CTA: escríbenos por WhatsApp — sin precios ni app
-
-Máximo 110 palabras. NO incluyas saludo ni firma.
-Tono: colega constructor que conoce el terreno, técnico pero accesible, autoridad sobre Sobre A y Sobre B.""",
-
-    "email_2": """Eres Luis Antigua, consultor experto en licitaciones públicas dominicanas.
-Escribes el segundo email de seguimiento en español formal dominicano.
-
-{datos}
-
-REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes instituciones, montos ni datos que no estén en los datos. Si un dato dice "N/D", no lo uses.
+REGLA DE DATOS: Usa ÚNICAMENTE los datos anteriores. Si un dato dice "N/D" o "datos no disponibles", no lo menciones. No inventes nada.
 
 Escribe SOLO el párrafo central (3-4 oraciones):
-1. Haz referencia concreta a UNA institución real donde hayan participado (usa las que aparecen en los datos)
-2. Menciona que esa institución sigue lanzando procesos y que hay oportunidades activas
-3. El diferenciador: nosotros preparamos la propuesta completa — el cliente solo firma y entrega
-4. El Estado dominicano adjudica miles de millones en contratos cada mes
+1. Preséntate: "Soy el Ing. Luis Antigua, fundador de LicitacionLab — plataforma de inteligencia para licitaciones públicas dominicanas que prepara propuestas completas (Sobre A y Sobre B)."
+2. Historial real: participaciones desde qué año + desde 2024 contratos ganados con institución y monto exacto
+3. Si hay competidor real que les ganó, nómbralo — luego: "Llevamos años preparando propuestas para esas instituciones y sabemos lo que buscan — cosas que no siempre están escritas en el pliego"
+4. Sin prometer: 70% de adjudicación + cuántos contratos adicionales habrían representado con ese ratio
+5. CTA: "Escríbanos por WhatsApp" — sin precios
 
-Máximo 90 palabras. NO incluyas saludo ni firma. Tono: enfocado en resultados concretos.""",
+Máximo 110 palabras. NO incluyas saludo ni firma.
+Tono: consultor que ya revisó el expediente, autoridad, genera curiosidad.""",
 
-    "email_3": """Eres Luis Antigua, consultor experto en licitaciones públicas dominicanas.
-Escribes el tercer email de una secuencia en español formal dominicano.
+    "email_1_bienes_servicios": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques por qué no puedes escribir. Si los datos son limitados, escribe con lo que hay. Tu única función es producir el párrafo del email.
 
-{datos}
-
-REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
-
-Este email es el argumento de ROI directo. Escribe SOLO el párrafo central (3 oraciones):
-1. Contrasta su tasa real vs el 70% que logramos — usa los números exactos de los datos
-2. Menciona el ingreso potencial adicional estimado que aparece en los datos
-3. Cierre directo: invítalos a escribirte por WhatsApp para evaluar si podemos trabajar juntos
-
-Máximo 80 palabras. NO incluyas saludo ni firma. Tono: directo, números concretos, sin presión.""",
-
-    "email_4": """Eres Luis Antigua, consultor experto en licitaciones públicas dominicanas.
-Escribes el cuarto y último email en español formal dominicano.
+Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo un email de prospección B2B en español formal dominicano a una empresa de bienes o servicios.
 
 {datos}
 
-REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
+REGLA DE DATOS: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
 
-Este es el cierre final. Escribe SOLO el párrafo central (2-3 oraciones):
-1. Sé honesto: es el último email de esta secuencia
-2. Menciona brevemente el historial real de la empresa (solo lo que está en los datos)
-3. Deja la puerta abierta para el futuro sin presionar
+Escribe SOLO el párrafo central (3-4 oraciones):
+1. Preséntate: "Soy el Ing. Luis Antigua, fundador de LicitacionLab — plataforma de inteligencia para licitaciones públicas dominicanas que prepara propuestas completas (Sobre A y Sobre B)."
+2. Historial real: participaciones desde qué año + desde 2024 contratos ganados con institución y monto exacto
+3. Si hay competidor real que les ganó, nómbralo — luego: "Conocemos lo que estas instituciones buscan en una propuesta — cosas que no siempre están escritas en el pliego"
+4. Sin prometer: 70% de adjudicación + cuántos contratos adicionales habrían representado
+5. CTA: "Escríbanos por WhatsApp"
 
-Máximo 70 palabras. NO incluyas saludo ni firma. Tono: amigable, sin presión, genuino.""",
+Máximo 110 palabras. NO incluyas saludo ni firma.
+Tono: consultor con autoridad, directo, genera curiosidad.""",
 
-    "email_2": """Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo el SEGUNDO email de seguimiento en español formal dominicano.
+    "email_1_construccion": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques por qué no puedes escribir. Si los datos son limitados, escribe con lo que hay. Tu única función es producir el párrafo del email.
+
+Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo un email de prospección B2B a una empresa constructora dominicana.
+
+{datos}
+
+REGLA DE DATOS: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
+
+Escribe SOLO el párrafo central (3-4 oraciones):
+1. Preséntate: "Soy el Ing. Luis Antigua, fundador de LicitacionLab — plataforma de inteligencia para licitaciones públicas dominicanas que prepara propuestas completas (Sobre A y Sobre B)."
+2. Historial real: participaciones desde qué año + desde 2024 institución exacta (MOPC, CAASD, MIVHED, etc.), tipo de obra y monto
+3. Si hay competidor constructor real que les ganó, nómbralo — luego: "El Sobre A y el Sobre B tienen que contar una historia coherente con lo que el pliego realmente busca — y eso es algo que sabemos construir"
+4. Sin prometer: 70% de adjudicación + cuántos contratos adicionales de obras habrían representado
+5. CTA: "Escríbanos por WhatsApp"
+
+Máximo 110 palabras. NO incluyas saludo ni firma.
+Tono: colega constructor con autoridad técnica, directo.""",
+
+    "email_2": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques por qué no puedes escribir. Si los datos son limitados, escribe con lo que hay. Tu única función es producir el párrafo del email.
+
+Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo el SEGUNDO email de seguimiento en español formal dominicano.
 La empresa no respondió el primer email hace 4 días.
 
 {datos}
 
-REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
+REGLA DE DATOS: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
 
-Escribe SOLO el párrafo central (3 oraciones):
-1. Referencia breve al primer email: "Le escribí hace unos días sobre el historial de [empresa] en el DGCP."
-2. Menciona UN proceso activo real de las instituciones donde han participado (usa el dato "Proceso activo relevante" si está disponible) — indica institución, descripción breve y fecha límite real
+Escribe SOLO el párrafo central (3-4 oraciones):
+1. "Le escribí hace unos días sobre el historial de [empresa] en el DGCP."
+2. Si hay procesos activos en los datos, menciona 2 o 3 brevemente: institución real, descripción corta, monto estimado y fecha límite real de cada uno
 3. "En LicitacionLab preparamos la propuesta completa — el cliente solo firma y entrega. Escríbanos por WhatsApp."
 
-Máximo 80 palabras. NO incluyas saludo ni firma.
-Tono: directo, sin presión, enfocado en la oportunidad concreta.""",
+Máximo 100 palabras. NO incluyas saludo ni firma.
+Tono: directo, sin presión, enfocado en las oportunidades concretas.""",
 
-    "email_3": """Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo el TERCER email de seguimiento en español formal dominicano.
+    "email_3": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques por qué no puedes escribir. Si los datos son limitados, escribe con lo que hay. Tu única función es producir el párrafo del email.
+
+Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo el TERCER email de seguimiento en español formal dominicano.
 La empresa lleva 8 días sin responder.
 
 {datos}
 
-REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
+REGLA DE DATOS: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
 
-Este es el email del ROI. Escribe SOLO el párrafo central (3 oraciones):
-1. Directo al número: cuántas participaciones desde 2024, cuántas ganaron, cuánto representaron en promedio por contrato (usa el monto promedio real de los contratos ganados)
-2. El contraste: con nuestra tasa del 70% habrían ganado ~X contratos adicionales — eso es aproximadamente RD$X en ingresos que se fueron a otras empresas (promedio real × contratos adicionales perdidos)
+Escribe SOLO el párrafo central (3 oraciones):
+1. Directo al número: cuántas participaciones desde 2024, cuántas ganaron, cuánto promedio por contrato ganado (usa monto promedio real)
+2. El contraste: con 70% de adjudicación habrían ganado ~X contratos adicionales — eso es aproximadamente RD$X en ingresos que se fueron a otras empresas (usa el dato "Ingresos estimados dejados sobre la mesa")
 3. "Esa brecha es recuperable. Escríbanos por WhatsApp."
 
 Máximo 80 palabras. NO incluyas saludo ni firma.
-Tono: números concretos, sin drama, sin exagerar.""",
+Tono: números concretos, sin drama, directo.""",
 
-    "email_4": """Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo el CUARTO y último email de seguimiento en español formal dominicano.
+    "email_4": """INSTRUCCIÓN CRÍTICA — OBLIGATORIA: Escribe SIEMPRE el email sin excepción. Nunca opines sobre los datos, nunca expliques limitaciones, nunca preguntes, nunca justifiques por qué no puedes escribir. Si los datos son limitados, escribe con lo que hay. Tu única función es producir el párrafo del email.
+
+Eres el Ing. Luis Antigua, fundador de LicitacionLab, escribiendo el CUARTO y último email en español formal dominicano.
 La empresa lleva 14 días sin responder.
 
 {datos}
 
-REGLA ABSOLUTA: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
+REGLA DE DATOS: Usa ÚNICAMENTE los datos anteriores. No inventes nada.
 
 Escribe SOLO el párrafo central (2-3 oraciones):
-1. Honesto y breve: "Este es el último correo que le enviaremos."
+1. "Este es el último correo que le enviaremos."
 2. Menciona las instituciones reales donde han participado y que seguirán publicando procesos
-3. Cierre sin presión: "Cuando quieran mejorar su ratio de adjudicación en el DGCP, aquí estaremos. Escríbanos por WhatsApp."
+3. "Cuando quieran mejorar su ratio de adjudicación en el DGCP, aquí estaremos. Escríbanos por WhatsApp."
 
 Máximo 70 palabras. NO incluyas saludo ni firma.
 Tono: amigable, sin presión, genuino, cierre limpio.""",
@@ -371,19 +342,28 @@ def _asunto_email_1(nombre, perfil):
     contratos       = perfil.get('total_contratos', 0) or 0
     anio            = perfil.get('anio_primera_participacion', '2017')
     if total_2024 > 0 and contratos == 0:
-        return f"{nombre} — {total_2024} participaciones recientes en DGCP sin adjudicación"
-    elif total_historico > 0 and contratos > 0:
+        return f"{nombre} — {total_2024} participaciones desde 2024 sin adjudicación"
+    elif total_2024 > 0 and contratos > 0:
+        tasa = round(contratos / total_2024 * 100)
+        if tasa < 20:
+            return f"{nombre}: {total_2024} procesos desde 2024 — y solo {contratos} contratos ganados"
         return f"{nombre} — revisamos sus {total_historico} participaciones en el DGCP"
     else:
         return f"{nombre} — revisamos su historial en el DGCP desde {anio}"
 
 def _asunto_email_2(nombre, perfil):
+    procesos = perfil.get('procesos_activos_relevantes') or []
+    if not procesos and perfil.get('proceso_activo_relevante'):
+        procesos = [perfil['proceso_activo_relevante']]
+    if procesos:
+        n = len(procesos)
+        inst = procesos[0].get('unidad_compra', '').split('(')[0].strip()[:30]
+        fecha = (procesos[0].get('fecha_fin_recepcion_ofertas') or '')[:10]
+        if n >= 2:
+            return f"{nombre} — {n} procesos activos en sus instituciones esta semana"
+        return f"{nombre} — proceso abierto en {inst} cierra el {fecha}"
     insts = perfil.get('instituciones_top', [])
-    proceso = perfil.get('proceso_activo_relevante')
-    if proceso:
-        inst = proceso.get('unidad_compra','').split('(')[0].strip()[:35]
-        return f"{nombre} — proceso abierto en {inst} cierra pronto"
-    elif insts:
+    if insts:
         inst = insts[0]['nombre'].split('(')[0].strip()[:35]
         return f"{nombre} — hay procesos activos en {inst} ahora mismo"
     return f"{nombre} — hay licitaciones abiertas en sus instituciones"
@@ -393,11 +373,11 @@ def _asunto_email_3(nombre, perfil):
     ganadas     = perfil.get('total_contratos', 0) or 0
     monto_total = perfil.get('monto_total', 0) or 0
     if total_2024 > 0 and ganadas > 0:
-        monto_prom     = monto_total / ganadas
-        adicionales    = max(0, round(total_2024 * 0.70) - ganadas)
-        dejado         = adicionales * monto_prom
+        monto_prom  = monto_total / ganadas
+        adicionales = max(0, round(total_2024 * 0.70) - ganadas)
+        dejado      = adicionales * monto_prom
         if dejado > 0:
-            return f"{nombre} — RD${int(dejado/1_000_000)}M en contratos que se fueron a otras empresas"
+            return f"{nombre} — ~RD${int(dejado/1_000_000)}M en contratos que se fueron a otras empresas"
     elif total_2024 > 0:
         return f"{nombre} — {total_2024} participaciones desde 2024, calculamos el costo real"
     return f"{nombre} — el costo real de no ganar licitaciones"
@@ -482,18 +462,20 @@ def generar_cuerpo_claude(nombre: str, perfil: dict, tipo_email: str, sector: st
     else:
         potencial_str = "potencial de mejora significativo con consultoría especializada"
 
-    # Proceso activo relevante para email_2
-    proceso_activo = perfil.get('proceso_activo_relevante')
-    if proceso_activo:
-        from datetime import datetime as _dt2
-        fecha_lim = proceso_activo.get('fecha_fin_recepcion_ofertas', '')[:10]
-        monto_proc = _fmt_monto(proceso_activo.get('monto_estimado') or 0)
-        proceso_str = (
-            f"{proceso_activo.get('titulo', 'N/D')[:80]} | "
-            f"Institución: {proceso_activo.get('unidad_compra', 'N/D')} | "
-            f"Monto estimado: {monto_proc} | "
-            f"Fecha límite: {fecha_lim}"
-        )
+    # Procesos activos relevantes para email_2 (hasta 3)
+    procesos_activos = perfil.get('procesos_activos_relevantes') or []
+    if not procesos_activos and perfil.get('proceso_activo_relevante'):
+        procesos_activos = [perfil['proceso_activo_relevante']]
+
+    if procesos_activos:
+        lineas = []
+        for i, p in enumerate(procesos_activos[:3], 1):
+            fecha_lim  = p.get('fecha_fin_recepcion_ofertas', '')[:10]
+            monto_proc = _fmt_monto(p.get('monto_estimado') or 0)
+            titulo     = p.get('titulo', 'N/D')[:70]
+            inst       = p.get('unidad_compra', 'N/D')
+            lineas.append(f"{i}. {titulo} | {inst} | {monto_proc} | Cierra: {fecha_lim}")
+        proceso_str = "\n".join(lineas)
     else:
         proceso_str = "datos no disponibles"
 
@@ -571,29 +553,31 @@ def construir_html_email(
 
     monto_fmt   = _fmt_monto(perfil.get("monto_total", 0))
     contratos   = perfil.get("total_contratos", 0)
-    perdidas    = perfil.get("total_perdidas", "N/D")
+    part_2024   = perfil.get("total_ofertas_2024", 0) or 0
     inst_tags   = ""
     for inst in perfil.get("instituciones_top", [])[:4]:
-        inst_tags += f'<span style="display:inline-block;background:#edf7f0;color:#1a5c2a;border:1px solid #b8e0c5;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:500;margin:3px 3px 3px 0;">{inst["nombre"]} — {inst["contratos"]} contratos</span>'
+        inst_tags += (
+            f'<span style="display:inline-block;background:#edf7f0;color:#1a5c2a;'
+            f'border:1px solid #b8e0c5;border-radius:20px;padding:4px 12px;'
+            f'font-size:12px;font-weight:500;margin:3px 3px 3px 0;">'
+            f'{inst["nombre"]} — {inst["contratos"]} contratos</span>'
+        )
 
-    # Unsubscribe token simple (empresa_id en base64)
     import base64
-    token = base64.urlsafe_b64encode(empresa_id.encode()).decode()
+    token     = base64.urlsafe_b64encode(empresa_id.encode()).decode()
     unsub_url = f"{APP_URL}/unsub?t={token}"
 
-    html = f"""<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>LicitacionLab</title>
-</head>
-<body style="margin:0;padding:0;background:#f0ede8;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+    # Mensaje WhatsApp pre-cargado personalizado
+    nombre_enc = nombre.replace(' ', '%20').replace(',', '%2C').replace('&', '%26')[:60]
+    ws_text    = f"Hola%20Ing.%20Luis%2C%20recib%C3%AD%20su%20correo%20sobre%20{nombre_enc}%20y%20me%20interesa%20conversar."
+    ws_url     = f"{CONSULTING_URL}?text={ws_text}"
 
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ede8;padding:32px 16px;">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:4px;overflow:hidden;border:1px solid #ddd9d2;">
-
+    # Email 4 va sin header verde (más personal)
+    if tipo_email == "email_4":
+        header_html = ""
+        saludo_style = "font-size:15px;color:#2c2c2c;line-height:1.7;margin:0 0 20px;"
+    else:
+        header_html = f"""
   <!-- HEADER -->
   <tr><td style="background:#1a5c2a;padding:28px 40px 24px;">
     <table width="100%" cellpadding="0" cellspacing="0">
@@ -611,38 +595,45 @@ def construir_html_email(
         </td>
       </tr>
     </table>
-  </td></tr>
+  </td></tr>"""
+        saludo_style = "font-size:15px;color:#2c2c2c;line-height:1.7;margin:0 0 20px;"
 
-  <!-- BODY -->
-  <tr><td style="padding:36px 40px;">
+    # Año para el label del historial
+    primer_contrato_anio = perfil.get("primer_contrato_anio") or                            perfil.get("anio_primera_participacion") or "2024"
 
-    <!-- Saludo -->
-    <p style="font-size:15px;color:#2c2c2c;line-height:1.7;margin:0 0 20px;">
-      Estimado equipo de <strong style="color:#1a5c2a;">{nombre}</strong> —
-    </p>
+    # Calcular tasa de adjudicación para la data card
+    tasa_card = "N/D"
+    if part_2024 > 0:
+        tasa_num  = round(contratos / part_2024 * 100)
+        tasa_card = f"{tasa_num}%"
+        tasa_color = "#a32d2d" if tasa_num < 30 else "#1a5c2a"
+    else:
+        tasa_color = "#777"
 
-    <!-- Párrafo generado por Claude -->
-    <p style="font-size:15px;color:#3a3a3a;line-height:1.75;margin:0 0 24px;">
-      {cuerpo_ia}
-    </p>
-
+    # Data card y tags solo en email_1 y email_2
+    if tipo_email in ("email_1", "email_1_construccion", "email_1_bienes_servicios"):
+        data_section = f"""
     <!-- Data card -->
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-left:3px solid #1a5c2a;border-radius:0 6px 6px 0;margin-bottom:20px;">
       <tr><td style="padding:20px 24px;">
-        <p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#1a5c2a;margin:0 0 16px;">Su historial en el Estado dominicano</p>
+        <p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#1a5c2a;margin:0 0 16px;">Su historial en el Estado dominicano desde {primer_contrato_anio}</p>
         <table width="100%" cellpadding="0" cellspacing="0">
           <tr>
-            <td width="33%" align="center">
+            <td width="25%" align="center">
               <span style="font-family:Georgia,serif;font-size:26px;color:#1a5c2a;display:block;">{contratos}</span>
               <span style="font-size:12px;color:#777;">Contratos ganados</span>
             </td>
-            <td width="33%" align="center">
+            <td width="25%" align="center">
               <span style="font-family:Georgia,serif;font-size:26px;color:#1a1a1a;display:block;">{monto_fmt}</span>
               <span style="font-size:12px;color:#777;">Monto adjudicado</span>
             </td>
-            <td width="33%" align="center">
-              <span style="font-family:Georgia,serif;font-size:26px;color:#a32d2d;display:block;">{perdidas}</span>
-              <span style="font-size:12px;color:#777;">Licitaciones perdidas</span>
+            <td width="25%" align="center">
+              <span style="font-family:Georgia,serif;font-size:26px;color:#1a5c2a;display:block;">{part_2024}</span>
+              <span style="font-size:12px;color:#777;">Participaciones desde 2024</span>
+            </td>
+            <td width="25%" align="center">
+              <span style="font-family:Georgia,serif;font-size:26px;color:{tasa_color};display:block;">{tasa_card}</span>
+              <span style="font-size:12px;color:#777;">Tasa de adjudicación</span>
             </td>
           </tr>
         </table>
@@ -650,162 +641,124 @@ def construir_html_email(
     </table>
 
     <!-- Tags de instituciones -->
-    <div style="margin-bottom:24px;">
+    <div style="margin-bottom:28px;">
       {inst_tags}
     </div>
 
-    <!-- Beneficios de la app -->
-    <p style="font-size:13px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:#999;margin:0 0 12px;">Lo que LicitacionLab hace por su empresa</p>
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-      <tr>
-        <td width="48%" valign="top" style="padding-right:8px;padding-bottom:10px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-radius:6px;border:1px solid #ece9e3;">
-            <tr><td style="padding:14px 16px;">
-              <p style="font-size:13px;font-weight:600;color:#1a1a1a;margin:0 0 4px;">🔔 Alertas en tiempo real</p>
-              <p style="font-size:12px;color:#666;line-height:1.5;margin:0;">Recibe notificaciones al instante cuando una institución donde ya ha trabajado publique una nueva licitación en su sector.</p>
-            </td></tr>
-          </table>
-        </td>
-        <td width="4%"></td>
-        <td width="48%" valign="top" style="padding-left:8px;padding-bottom:10px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-radius:6px;border:1px solid #ece9e3;">
-            <tr><td style="padding:14px 16px;">
-              <p style="font-size:13px;font-weight:600;color:#1a1a1a;margin:0 0 4px;">🤖 Análisis IA del pliego</p>
-              <p style="font-size:12px;color:#666;line-height:1.5;margin:0;">IA analiza cada pliego y le dice si vale la pena participar, qué documentos necesita, y si el proceso tiene señales de direccionamiento.</p>
-            </td></tr>
-          </table>
-        </td>
-      </tr>
-      <tr>
-        <td width="48%" valign="top" style="padding-right:8px;padding-bottom:10px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-radius:6px;border:1px solid #ece9e3;">
-            <tr><td style="padding:14px 16px;">
-              <p style="font-size:13px;font-weight:600;color:#1a1a1a;margin:0 0 4px;">📊 Inteligencia competitiva</p>
-              <p style="font-size:12px;color:#666;line-height:1.5;margin:0;">Vea quién más participa en cada proceso, cuánto ofertaron sus competidores en el pasado y qué empresas dominan cada institución.</p>
-            </td></tr>
-          </table>
-        </td>
-        <td width="4%"></td>
-        <td width="48%" valign="top" style="padding-left:8px;padding-bottom:10px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-radius:6px;border:1px solid #ece9e3;">
-            <tr><td style="padding:14px 16px;">
-              <p style="font-size:13px;font-weight:600;color:#1a1a1a;margin:0 0 4px;">📁 Descarga de pliegos</p>
-              <p style="font-size:12px;color:#666;line-height:1.5;margin:0;">Descargue cualquier pliego directamente desde la app. Sin entrar al portal del DGCP, sin perder tiempo buscando documentos dispersos.</p>
-            </td></tr>
-          </table>
-        </td>
-      </tr>
-      <tr>
-        <td width="48%" valign="top" style="padding-right:8px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-radius:6px;border:1px solid #ece9e3;">
-            <tr><td style="padding:14px 16px;">
-              <p style="font-size:13px;font-weight:600;color:#1a1a1a;margin:0 0 4px;">📅 Checklist de documentos</p>
-              <p style="font-size:12px;color:#666;line-height:1.5;margin:0;">La IA genera automáticamente el checklist de documentos legales, técnicos y financieros requeridos para cada proceso específico.</p>
-            </td></tr>
-          </table>
-        </td>
-        <td width="4%"></td>
-        <td width="48%" valign="top" style="padding-left:8px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#edf7f0;border-radius:6px;border:1px solid #b8e0c5;">
-            <tr><td style="padding:14px 16px;">
-              <p style="font-size:13px;font-weight:600;color:#1a5c2a;margin:0 0 4px;">🏆 Consultoría experta</p>
-              <p style="font-size:12px;color:#1a5c2a;line-height:1.5;margin:0;opacity:0.85;">Para licitaciones grandes (MOPC, CAASD, INAPA) contamos con consultores especializados que preparan su oferta completa.</p>
-            </td></tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-
-    <!-- Precios -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-      <tr>
-        <td width="31%" align="center" style="padding:0 4px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-radius:6px;border:1px solid #ece9e3;">
-            <tr><td style="padding:14px 12px;text-align:center;">
-              <p style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:#888;margin:0 0 6px;">Explorador</p>
-              <p style="font-family:Georgia,serif;font-size:20px;color:#1a1a1a;margin:0 0 2px;">RD$1,490</p>
-              <p style="font-size:11px;color:#aaa;margin:0 0 8px;">/ mes</p>
-              <p style="font-size:11px;color:#666;margin:0;line-height:1.4;">Alertas + búsqueda</p>
-            </td></tr>
-          </table>
-        </td>
-        <td width="4%"></td>
-        <td width="31%" align="center" style="padding:0 4px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a5c2a;border-radius:6px;border:2px solid #1a5c2a;">
-            <tr><td style="padding:14px 12px;text-align:center;">
-              <p style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:rgba(255,255,255,0.7);margin:0 0 6px;">⭐ Competidor</p>
-              <p style="font-family:Georgia,serif;font-size:20px;color:#ffffff;margin:0 0 2px;">RD$3,990</p>
-              <p style="font-size:11px;color:rgba(255,255,255,0.6);margin:0 0 8px;">/ mes</p>
-              <p style="font-size:11px;color:rgba(255,255,255,0.85);margin:0;line-height:1.4;">+ Análisis IA + Intel competitiva</p>
-            </td></tr>
-          </table>
-        </td>
-        <td width="4%"></td>
-        <td width="31%" align="center" style="padding:0 4px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f0;border-radius:6px;border:1px solid #ece9e3;">
-            <tr><td style="padding:14px 12px;text-align:center;">
-              <p style="font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;color:#888;margin:0 0 6px;">Ganador</p>
-              <p style="font-family:Georgia,serif;font-size:20px;color:#1a1a1a;margin:0 0 2px;">RD$8,500</p>
-              <p style="font-size:11px;color:#aaa;margin:0 0 8px;">/ mes</p>
-              <p style="font-size:11px;color:#666;margin:0;line-height:1.4;">Todo + consultoría incluida</p>
-            </td></tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-
-    <!-- CTAs -->
-    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-      <tr>
-        <td width="48%" style="padding-right:8px;">
-          <a href="{APP_URL}?utm_source=email&utm_campaign=prospecto&utm_content={tipo_email}"
-             style="display:block;background:#1a5c2a;color:#ffffff;text-decoration:none;text-align:center;padding:14px 16px;border-radius:6px;font-size:14px;font-weight:600;">
-            Ver mi historial completo
-            <span style="display:block;font-weight:400;font-size:12px;opacity:0.8;margin-top:2px;">App · Desde RD$1,490/mes</span>
-          </a>
-        </td>
-        <td width="4%"></td>
-        <td width="48%" style="padding-left:8px;">
-          <a href="{CONSULTING_URL}?text=Hola%20Luis%2C%20me%20interesa%20la%20consultor%C3%ADa"
-             style="display:block;background:#ffffff;color:#1a5c2a;border:1.5px solid #1a5c2a;text-decoration:none;text-align:center;padding:14px 16px;border-radius:6px;font-size:14px;font-weight:600;">
-            Hablar con el consultor
-            <span style="display:block;font-weight:400;font-size:12px;color:#555;margin-top:2px;">Licitaciones MOPC · CAASD · INAPA</span>
-          </a>
-        </td>
-      </tr>
-    </table>
-
-    <!-- Social proof band -->
+    <!-- Bloque social proof -->
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a5c2a;border-radius:6px;margin-bottom:28px;">
       <tr>
         <td width="33%" align="center" style="padding:20px 12px;">
-          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">15,000+</span>
-          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Empresas monitoreadas</span>
+          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">70%</span>
+          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Tasa de adjudicación</span>
         </td>
         <td width="33%" align="center" style="padding:20px 12px;">
-          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">176k</span>
-          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Contratos en la BD</span>
+          <span style="font-family:Georgia,serif;font-size:13px;color:#ffffff;display:block;line-height:1.4;">Ing. Civil</span>
+          <span style="font-family:Georgia,serif;font-size:13px;color:#ffffff;display:block;line-height:1.4;">Consultor de Licitaciones Públicas</span>
+          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:4px;">Ing. Luis Antigua</span>
         </td>
         <td width="33%" align="center" style="padding:20px 12px;">
-          <span style="font-family:Georgia,serif;font-size:22px;color:#ffffff;display:block;">24/7</span>
-          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:2px;">Alertas en tiempo real</span>
+          <span style="font-family:Georgia,serif;font-size:13px;color:#ffffff;display:block;line-height:1.4;">MOPC · INAPA · CAASD</span>
+          <span style="font-size:11px;color:rgba(255,255,255,0.65);display:block;margin-top:4px;">y otras instituciones</span>
+        </td>
+      </tr>
+    </table>"""
+    else:
+        data_section = ""
+
+    # Bloque visual de contraste para email_3
+    if tipo_email == "email_3" and part_2024 > 0 and contratos > 0:
+        tasa_real     = round(contratos / part_2024 * 100)
+        adicionales   = max(0, round(part_2024 * 0.70) - contratos)
+        t_color       = "#a32d2d" if tasa_real < 30 else "#1a5c2a"
+        roi_section   = f"""
+    <!-- Bloque contraste ROI -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+      <tr>
+        <td width="48%" style="padding-right:8px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#fff5f5;border:1px solid #f5c6c6;border-radius:6px;">
+            <tr><td style="padding:20px;text-align:center;">
+              <p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:{t_color};margin:0 0 8px;">Su tasa actual</p>
+              <span style="font-family:Georgia,serif;font-size:40px;color:{t_color};display:block;line-height:1;">{tasa_real}%</span>
+              <span style="font-size:12px;color:#888;display:block;margin-top:4px;">{contratos} de {part_2024} procesos</span>
+            </td></tr>
+          </table>
+        </td>
+        <td width="4%"></td>
+        <td width="48%" style="padding-left:8px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#edf7f0;border:1px solid #b8e0c5;border-radius:6px;">
+            <tr><td style="padding:20px;text-align:center;">
+              <p style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#1a5c2a;margin:0 0 8px;">Con LicitacionLab</p>
+              <span style="font-family:Georgia,serif;font-size:40px;color:#1a5c2a;display:block;line-height:1;">70%</span>
+              <span style="font-size:12px;color:#888;display:block;margin-top:4px;">~{adicionales} contratos adicionales</span>
+            </td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>"""
+    else:
+        roi_section = ""
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LicitacionLab</title>
+</head>
+<body style="margin:0;padding:0;background:#f0ede8;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ede8;padding:32px 16px;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:4px;overflow:hidden;border:1px solid #ddd9d2;">
+
+  {header_html}
+
+  <!-- BODY -->
+  <tr><td style="padding:36px 40px;">
+
+    <!-- Saludo -->
+    <p style="{saludo_style}">
+      Estimado <strong style="color:#1a5c2a;">{perfil.get('nombre_contacto') or ('equipo de ' + nombre)}</strong> —
+    </p>
+
+    <!-- Párrafo generado por IA -->
+    <p style="font-size:15px;color:#3a3a3a;line-height:1.75;margin:0 0 28px;">
+      {cuerpo_ia}
+    </p>
+
+    {data_section}
+
+    {roi_section}
+
+    <!-- CTA único WhatsApp -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+      <tr>
+        <td align="center">
+          <a href="{ws_url}"
+             style="display:inline-block;background:#1a5c2a;color:#ffffff;text-decoration:none;text-align:center;padding:16px 48px;border-radius:6px;font-size:15px;font-weight:600;">
+            Hablar con el consultor
+          </a>
+          <p style="font-size:12px;color:#999;margin:10px 0 0;">WhatsApp · Sin compromiso</p>
         </td>
       </tr>
     </table>
 
     <!-- Firma -->
-    <p style="font-size:14px;color:#3a3a3a;line-height:1.6;margin:0;">
-      <strong style="display:block;font-size:15px;color:#1a1a1a;">Luis Antigua</strong>
-      Ing. Civil · Consultor de Licitaciones Públicas<br>
-      <span style="font-size:13px;color:#888;">LicitacionLab · app.licitacionlab.com</span>
-    </p>
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr><td style="border-top:1px solid #ece9e3;padding-top:20px;">
+        <strong style="display:block;font-size:15px;color:#1a1a1a;">Ing. Luis Antigua</strong>
+        <span style="font-size:13px;color:#555;">Ing. Civil · Consultor de Licitaciones Públicas</span><br>
+        <span style="font-size:13px;color:#888;">República Dominicana · +1 (809) 815-4457</span>
+      </td></tr>
+    </table>
 
   </td></tr>
 
   <!-- FOOTER -->
   <tr><td style="background:#f7f5f0;padding:20px 40px;border-top:1px solid #ece9e3;">
     <p style="font-size:11.5px;color:#aaa;line-height:1.6;text-align:center;margin:0;">
-      Recibió este email porque su empresa está registrada en el RPE del DGCP.<br>
+      Recibió este correo porque su empresa está registrada en el RPE de la DGCP.<br>
       <a href="{unsub_url}" style="color:#1a5c2a;text-decoration:none;">Cancelar suscripción</a> ·
       Santo Domingo, República Dominicana
     </p>
