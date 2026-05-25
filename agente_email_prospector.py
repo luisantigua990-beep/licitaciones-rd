@@ -820,7 +820,12 @@ def construir_html_email(
       <tr><td style="border-top:1px solid #ece9e3;padding-top:20px;">
         <strong style="display:block;font-size:15px;color:#1a1a1a;">Ing. Luis Antigua</strong>
         <span style="font-size:13px;color:#555;">Ing. Civil · Consultor de Licitaciones Públicas</span><br>
-        <span style="font-size:13px;color:#888;">República Dominicana · +1 (809) 815-4457</span>
+        <span style="font-size:13px;color:#888;">República Dominicana · +1 (809) 815-4457</span><br>
+        <a href="https://www.instagram.com/licitacionlab/" target="_blank"
+           style="display:inline-block;margin-top:10px;text-decoration:none;background:#f0ede8;border:1px solid #ddd9d2;border-radius:20px;padding:5px 14px;">
+          <span style="font-size:12px;color:#1a1a1a;font-weight:600;">@licitacionlab</span>
+          <span style="font-size:12px;color:#888;"> · Síguenos en Instagram</span>
+        </a>
       </td></tr>
     </table>
 
