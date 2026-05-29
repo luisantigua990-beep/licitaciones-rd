@@ -7548,6 +7548,147 @@ function limpiarFiltrosMercado() {
   cargarMercado();
 }
 
+// ── Render de tarjetas de proveedores (Mercado) ──
+const _PROV_TIPO_LABEL = {
+  materiales: 'Materiales',
+  equipos: 'Equipos',
+  mano_obra: 'Mano de obra',
+  servicios: 'Servicios',
+  subcontratista: 'Subcontratista',
+};
+
+function _provStars(rating) {
+  const r = Math.round((Number(rating) || 0));
+  let s = '';
+  for (let i = 1; i <= 5; i++) s += (i <= r) ? '★' : '☆';
+  return s;
+}
+
+function _provMapUrl(p) {
+  if (p.latitud && p.longitud) {
+    return `https://www.google.com/maps/search/?api=1&query=${p.latitud},${p.longitud}`;
+  }
+  if (p.direccion) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.direccion)}`;
+  }
+  return '';
+}
+
+function renderProveedores(provs) {
+  const lista = document.getElementById('mercado-lista');
+  if (!lista) return;
+
+  if (!provs || !provs.length) {
+    lista.innerHTML = `<div class="mercado-empty">
+      <div style="font-size:30px;margin-bottom:10px;">🔍</div>
+      <div style="font-weight:800;color:var(--text);margin-bottom:4px;">No se encontraron proveedores</div>
+      <div style="font-size:13px;">Prueba quitando filtros o cambiando la búsqueda.</div>
+    </div>`;
+    return;
+  }
+
+  lista.innerHTML = provs.map(p => {
+    const nombre = sanitize(p.nombre_empresa || 'Sin nombre');
+    const inicial = (p.nombre_empresa || '?').trim().charAt(0).toUpperCase();
+
+    // Logo
+    const logo = p.logo_url
+      ? `<img class="prov-logo" src="${safeUrl(p.logo_url)}" alt="" onerror="this.outerHTML='<div class=&quot;prov-logo-placeholder&quot;>${inicial}</div>'">`
+      : `<div class="prov-logo-placeholder">${inicial}</div>`;
+
+    // Verificado
+    const verif = p.verificado
+      ? `<span class="prov-verificado">✓ Verificado</span>`
+      : '';
+
+    // Tipo badge
+    const tipoKey = (p.tipo || '').toLowerCase();
+    const tipoLabel = _PROV_TIPO_LABEL[tipoKey] || (p.tipo ? sanitize(p.tipo) : '');
+    const tipoBadge = tipoLabel
+      ? `<span class="prov-tipo-badge prov-tipo-${sanitize(tipoKey)}">${tipoLabel}</span>`
+      : '';
+
+    // Descripción
+    const desc = p.descripcion
+      ? `<div class="prov-desc">${sanitize(p.descripcion)}</div>`
+      : '';
+
+    // Categorías
+    const cats = (p.proveedor_categorias || [])
+      .map(c => c.categoria_nombre)
+      .filter(Boolean)
+      .slice(0, 4);
+    const catsHtml = cats.length
+      ? `<div class="prov-cats">${cats.map(c => `<span class="prov-cat-chip">${sanitize(c)}</span>`).join('')}</div>`
+      : '';
+
+    // Meta (zona, dirección, rating)
+    const zonas = Array.isArray(p.zona_geografica) ? p.zona_geografica : (p.zona_geografica ? [p.zona_geografica] : []);
+    const metaRows = [];
+    if (zonas.length) {
+      metaRows.push(`<div class="prov-meta-row">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span>${sanitize(zonas.join(', '))}</span></div>`);
+    }
+    if (p.direccion) {
+      metaRows.push(`<div class="prov-meta-row">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span>${sanitize(p.direccion)}</span></div>`);
+    }
+    if (p.rating_promedio || p.num_resenas) {
+      const rating = Number(p.rating_promedio || 0).toFixed(1);
+      const resenas = p.num_resenas ? ` · ${p.num_resenas} reseña${p.num_resenas == 1 ? '' : 's'}` : '';
+      metaRows.push(`<div class="prov-meta-row">
+        <span style="color:#F59E0B;letter-spacing:1px;">${_provStars(p.rating_promedio)}</span>
+        <span>${rating}${resenas}</span></div>`);
+    }
+    const metaHtml = metaRows.length ? `<div class="prov-meta">${metaRows.join('')}</div>` : '';
+
+    // Redes sociales
+    const social = [];
+    if (p.website) social.push(`<a class="prov-social-btn" href="${safeUrl(p.website)}" target="_blank" rel="noopener" title="Sitio web">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></a>`);
+    if (p.instagram) social.push(`<a class="prov-social-btn" href="${safeUrl(p.instagram)}" target="_blank" rel="noopener" title="Instagram">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg></a>`);
+    if (p.facebook) social.push(`<a class="prov-social-btn" href="${safeUrl(p.facebook)}" target="_blank" rel="noopener" title="Facebook">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z"/></svg></a>`);
+    const socialHtml = social.length ? `<div class="prov-social">${social.join('')}</div>` : '';
+
+    // Acciones
+    const waNum = p.whatsapp || p.telefono || '';
+    const actions = [];
+    if (waNum) {
+      actions.push(`<button class="prov-btn-wa" onclick="contactarProveedor('${p.id}','whatsapp','${sanitize(waNum)}')">WhatsApp</button>`);
+    }
+    if (p.telefono) {
+      actions.push(`<a class="prov-btn-call" href="tel:${sanitize(String(p.telefono).replace(/[^\d+]/g,''))}" style="text-decoration:none;" onclick="contactarProveedor('${p.id}','telefono','${sanitize(p.telefono)}')">Llamar</a>`);
+    }
+    const mapUrl = _provMapUrl(p);
+    if (mapUrl) {
+      actions.push(`<a class="prov-btn-map" href="${safeUrl(mapUrl)}" target="_blank" rel="noopener" title="Ver en mapa">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></a>`);
+    }
+    const actionsHtml = actions.length ? `<div class="prov-actions">${actions.join('')}</div>` : '';
+
+    return `<div class="prov-card">
+      <div class="prov-card-header">
+        ${logo}
+        <div class="prov-info">
+          <div class="prov-nombre">${nombre}${verif}</div>
+          ${tipoBadge}
+        </div>
+      </div>
+      <div class="prov-card-body">
+        ${desc}
+        ${catsHtml}
+        ${metaHtml}
+        ${socialHtml}
+      </div>
+      ${actionsHtml}
+    </div>`;
+  }).join('');
+}
+
 async function cargarMercado() {
   const lista = document.getElementById('mercado-lista');
   if (!lista) return;
