@@ -4160,10 +4160,22 @@ async function supabaseRequest(endpoint, method, body) {
   const token = localStorage.getItem('sb_token');
   const headers = { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
-    method, headers, body: body ? JSON.stringify(body) : undefined
-  });
-  return res.json();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/${endpoint}`, {
+      method, headers, body: body ? JSON.stringify(body) : undefined
+    });
+    let data = {};
+    try { data = await res.json(); } catch (e) { data = {}; }
+    // Si la respuesta es un error HTTP sin cuerpo JSON útil (429, 500, etc.),
+    // construimos un error legible para que login()/register() no fallen en silencio.
+    if (!res.ok && !data.error && !data.msg && !data.error_code) {
+      if (res.status === 429) { data.error_code = 'over_request_rate_limit'; data.msg = 'Demasiados intentos. Espera un momento.'; }
+      else { data.error_code = 'http_' + res.status; data.msg = 'Error del servidor (' + res.status + ')'; }
+    }
+    return data;
+  } catch (e) {
+    return { error_code: 'network_error', msg: 'Sin conexión. Revisa tu internet e intenta de nuevo.' };
+  }
 }
 
 // ── SOCIAL AUTH (Supabase OAuth) ──
@@ -4201,13 +4213,16 @@ async function login() {
   //   viejo: { error, error_description }   nuevo: { code, error_code, msg }
   if (!data.access_token || data.error || data.error_code || data.msg) {
     const msg = (data.error_description || data.msg || data.error || data.error_code || '').toLowerCase();
+    const code = (data.error_code || '').toLowerCase();
     let msgEs = 'Correo o contraseña incorrectos';
-    if (msg.includes('rate limit') || msg.includes('too many')) {
-      msgEs = '⏳ Demasiados intentos. Espera un momento.';
+    if (code.includes('rate') || msg.includes('rate limit') || msg.includes('too many') || msg.includes('demasiados')) {
+      msgEs = '⏳ Demasiados intentos. Espera 1-2 minutos e intenta de nuevo.';
+    } else if (code === 'network_error') {
+      msgEs = 'Sin conexión. Revisa tu internet e intenta de nuevo.';
     } else if (msg.includes('not confirmed') || msg.includes('confirm')) {
       msgEs = 'Confirma tu correo antes de entrar. Revisa tu email.';
     } else if (msg && !msg.includes('invalid') && !msg.includes('credential') && !msg.includes('grant')) {
-      msgEs = msg;
+      msgEs = data.msg || msgEs;
     }
     return showMsg(msgEs, 'error');
   }
