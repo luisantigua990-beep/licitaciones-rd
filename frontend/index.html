@@ -2723,6 +2723,7 @@ html { background: var(--color-bg, #0A0A0A); }
       <div style="text-align:center;margin-top:16px;">
         <button onclick="switchTab('recovery')" style="background:none;border:none;color:var(--color-text-subtle);font-size:12px;cursor:pointer;font-family:var(--font-sans);text-decoration:underline;padding:0;">Olvidé mi contraseña</button>
       </div>
+      <div style="text-align:center;margin-top:10px;color:var(--color-text-subtle);font-size:10px;opacity:.6;">build v5 · auth-fix</div>
     </div>
 
     <!-- Form registro -->
@@ -6640,6 +6641,7 @@ async function _tryRefreshToken() {
 }
 
 (async function iniciarApp() {
+  console.log('%c🟢 LicitacionLab BUILD v5 · auth-fix', 'color:#16a34a;font-weight:bold');
   _hydratarSesionDesdeCookies();
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
