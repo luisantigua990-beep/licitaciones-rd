@@ -5622,6 +5622,130 @@ function actualizarAsideChecklist(codigo, totalItems) {
   if (count) count.textContent = `${marcados} / ${totalItems}`;
 }
 
+// ── Precio Inteligente ─────────────────────────────────────────────────────
+let _precioCache = {};
+
+async function cargarPrecioInteligente(codigo) {
+  const cont = document.getElementById('dtab-oferta-content');
+  if (!cont) return;
+
+  // No recargar si ya se cargó para este proceso
+  if (_precioCache[codigo]) { renderPrecioInteligente(cont, _precioCache[codigo]); return; }
+
+  cont.innerHTML = `<div style="padding:32px;text-align:center;">
+    <div class="spinner" style="margin:0 auto 12px;"></div>
+    <div style="font-size:13px;color:var(--muted);">Analizando ${''} contratos similares...</div></div>`;
+
+  try {
+    const token = localStorage.getItem('sb_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${API}/api/procesos/${codigo}/precio-inteligente`, { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    _precioCache[codigo] = data;
+    renderPrecioInteligente(cont, data);
+  } catch(e) {
+    cont.innerHTML = `<div style="padding:24px;text-align:center;">
+      <div style="font-size:28px;margin-bottom:8px;">📊</div>
+      <div style="font-size:13px;color:var(--muted);">No se pudo cargar el análisis de precio. Intenta de nuevo.</div>
+      <button onclick="delete _precioCache['${codigo}'];cargarPrecioInteligente('${codigo}')"
+        class="ll-btn ll-btn--secondary" style="margin-top:12px;font-size:12px;">Reintentar</button></div>`;
+  }
+}
+
+function renderPrecioInteligente(cont, data) {
+  if (!data || !data.disponible) {
+    cont.innerHTML = `<div style="padding:24px;text-align:center;">
+      <div style="font-size:28px;margin-bottom:8px;">🔍</div>
+      <div style="font-size:13px;color:var(--muted);">${data?.mensaje || 'No hay suficientes contratos similares aún.'}</div></div>`;
+    return;
+  }
+
+  const fmt = (n) => n != null ? 'RD$' + Number(n).toLocaleString('es-DO', {maximumFractionDigits:0}) : '—';
+  const pct = (n) => n != null ? (n >= 0 ? `-${Math.abs(n)}%` : `+${Math.abs(n)}%`) : '—';
+  const pctColor = (n) => n != null && n > 0 ? 'var(--success)' : n < 0 ? 'var(--danger)' : 'var(--muted)';
+
+  const {
+    nivel_analisis, muestra_contratos,
+    monto_referencial, divisa,
+    precio_sugerido, precio_rango_min, precio_rango_max,
+    descuento_mediana, descuento_promedio,
+    top_competidores, narrativa_ia
+  } = data;
+
+  // --- KPI cards ---
+  const kpis = [
+    { label: 'Precio sugerido', value: fmt(precio_sugerido), sub: 'Mediana histórica de ganadores', big: true, color: 'var(--primary)' },
+    { label: 'Rango competitivo', value: `${fmt(precio_rango_min)} – ${fmt(precio_rango_max)}`, sub: 'P25 – P75 de ganadores similares', color: 'var(--text)' },
+    { label: 'Descuento típico', value: pct(descuento_mediana), sub: `Promedio ${pct(descuento_promedio)} sobre el referencial`, color: pctColor(descuento_mediana) },
+    { label: 'Referencial', value: fmt(monto_referencial), sub: `Monto estimado por la institución · ${divisa}`, color: 'var(--muted)' },
+  ];
+
+  const kpiHtml = kpis.map(k => `
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;flex:1;min-width:140px;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px;">${k.label}</div>
+      <div style="font-size:${k.big?'20px':'16px'};font-weight:800;color:${k.color};line-height:1.2;">${k.value}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;">${k.sub}</div>
+    </div>`).join('');
+
+  // --- Competidores ---
+  const compHtml = (top_competidores || []).length > 0
+    ? (top_competidores || []).map((c, i) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="width:24px;height:24px;border-radius:50%;background:var(--primary-10);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--primary);">${i+1}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${sanitize(c.nombre)}</div>
+          <div style="font-size:11px;color:var(--muted);">${c.victorias_similares} contratos ganados · Promedio ${fmt(c.monto_promedio)}</div>
+        </div>
+      </div>`).join('')
+    : `<div style="font-size:13px;color:var(--muted);padding:8px 0;">Sin datos de competidores para este tipo.</div>`;
+
+  // --- Narrativa IA ---
+  const narrativaHtml = narrativa_ia ? `
+    <div class="ll-card" style="margin-bottom:12px;border-left:3px solid var(--primary);">
+      <div class="ll-card__header">
+        <h2 class="ll-card__title">🤖 Recomendación IA</h2>
+      </div>
+      <div class="ll-card__body">
+        <p style="font-size:13px;color:var(--text2);line-height:1.75;margin:0;">${sanitize(narrativa_ia)}</p>
+      </div>
+    </div>` : '';
+
+  cont.innerHTML = `
+    <!-- Badge de fuente -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;">
+      <span style="font-size:16px;">📊</span>
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--text);">Basado en ${muestra_contratos} contratos similares</div>
+        <div style="font-size:11px;color:var(--muted);">${sanitize(nivel_analisis || '')}</div>
+      </div>
+    </div>
+
+    <!-- KPI grid -->
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+      ${kpiHtml}
+    </div>
+
+    ${narrativaHtml}
+
+    <!-- Competidores -->
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div class="ll-card__header">
+        <h2 class="ll-card__title">🏆 Competidores frecuentes</h2>
+        <span class="ll-chip" style="font-size:11px;">${(top_competidores||[]).length} empresas</span>
+      </div>
+      <div class="ll-card__body" style="padding-top:0;">
+        ${compHtml}
+      </div>
+    </div>
+
+    <!-- Aviso metodológico -->
+    <div style="font-size:11px;color:var(--muted);text-align:center;padding:8px;">
+      Análisis estadístico basado en contratos adjudicados del DGCP. Úsalo como referencia, no como garantía.
+    </div>`;
+}
+
 function cambiarTabDetalle(codigo, tabId) {
   document.querySelectorAll(`#detalle-container .detalle-tab-btn`).forEach(b => b.classList.remove('active'));
   document.querySelectorAll(`#detalle-container .detalle-tab-panel`).forEach(p => p.classList.remove('active'));
@@ -5629,6 +5753,10 @@ function cambiarTabDetalle(codigo, tabId) {
   const panel = document.getElementById(`dtab-panel-${tabId}`);
   if (btn)   btn.classList.add('active');
   if (panel) panel.classList.add('active');
+  // Lazy-load del tab Precio Inteligente
+  if (tabId === 'oferta' && codigo) {
+    cargarPrecioInteligente(codigo);
+  }
 }
 
 async function verDetalle(codigo) {
@@ -5816,6 +5944,7 @@ async function verDetalle(codigo) {
           <button class="detalle-tab-btn"        id="dtab-btn-docs"      onclick="cambiarTabDetalle('${codigo}','docs')">Artículos${artsBadge}</button>
           <button class="detalle-tab-btn"        id="dtab-btn-score"     onclick="cambiarTabDetalle('${codigo}','score')">¿Vale la pena?${scoreBadge}</button>
           <button class="detalle-tab-btn"        id="dtab-btn-participantes" onclick="cambiarTabDetalle('${codigo}','participantes')">Participantes</button>
+          <button class="detalle-tab-btn"        id="dtab-btn-oferta"    onclick="cambiarTabDetalle('${codigo}','oferta')">💰 Precio</button>
         </div>
 
         <!-- TAB: RESUMEN -->
@@ -5881,8 +6010,7 @@ async function verDetalle(codigo) {
           ${renderTabScore(analisis, p)}
         </div>
 
-        <!-- TAB: PARTICIPANTES -->
-        <div class="detalle-tab-panel" id="dtab-panel-participantes">
+        <!-- TAB: PARTICIPANTES -->\n        <div class="detalle-tab-panel" id="dtab-panel-participantes">
           <div class="ll-card" style="margin-bottom:12px;">
             <div class="ll-card__header">
               <h2 class="ll-card__title">Participantes del proceso</h2>
@@ -5892,6 +6020,16 @@ async function verDetalle(codigo) {
               <div id="dtab-participantes-content">
                 <div style="font-size:13px;color:var(--muted);padding:12px 0;">Cargando participantes...</div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: PRECIO INTELIGENTE -->
+        <div class="detalle-tab-panel" id="dtab-panel-oferta">
+          <div id="dtab-oferta-content">
+            <div style="padding:32px;text-align:center;">
+              <div class="spinner" style="margin:0 auto 12px;"></div>
+              <div style="font-size:13px;color:var(--muted);">Analizando historial de contratos similares...</div>
             </div>
           </div>
         </div>
