@@ -135,7 +135,7 @@ body {
 .screen { position: fixed; inset: 0; z-index: 1; background: var(--bg); display: none; flex-direction: column; }
 .screen.active { display: flex; }
 /* Auth screen necesita scroll propio */
-#screen-auth.active { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+#screen-auth.active { overflow-y: auto; }
 #tabs-wrapper { flex: 1; position: relative; overflow: clip; min-height: 0; }
 
 /* ── AUTH SCREEN ── */
@@ -1990,7 +1990,7 @@ body {
 .intereses-status { font-size: 12px; color: var(--green); margin-top: 8px; min-height: 18px; }
 
 /* ── SEGUIMIENTO ── */
-#tab-seguimiento { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 72px; display: none; }
+#tab-seguimiento { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 72px; display: none; }
 .seg-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 24px 16px 18px;
@@ -2186,8 +2186,8 @@ body {
 .ptr-spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
 
 /* ── MISC TABS ── */
-#tab-detalle    { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 72px; display: none; }
-#tab-perfil     { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 72px; display: none; }
+#tab-detalle    { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 72px; display: none; }
+#tab-perfil     { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 72px; display: none; }
 .historial-card { background: var(--bg2); border: 1.5px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; margin-bottom: 8px; cursor: pointer; transition: border-color .15s; }
 .historial-card:active { border-color: var(--green-border); }
 .historial-card-titulo { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; margin-bottom: 4px; }
@@ -2199,7 +2199,7 @@ body {
 .historial-card-estado.error { background: rgba(231,76,60,.1); color: var(--red); border: 1px solid rgba(231,76,60,.25); }
 .historial-card-fecha { font-size: 10px; color: var(--muted); }
 .historial-resumen { font-size: 11px; color: var(--text2); margin-top: 6px; line-height: 1.5; border-top: 1px solid var(--border); padding-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-#tab-dashboard  { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 16px; display: none; }
+#tab-dashboard  { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 16px; display: none; }
 
 /* ── TOAST ── */
 .toast {
@@ -2235,7 +2235,7 @@ body {
 .analisis-listo-banner-btn.secondary { background: rgba(255,255,255,0.1); color: #86efac; border: 1px solid rgba(134,239,172,0.3); }
 
 /* ── MERCADO DE PROVEEDORES ── */
-#tab-mercado { position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 72px; display: none; }
+#tab-mercado { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 72px; display: none; }
 .mercado-header { padding: 18px 16px 10px; }
 .mercado-title { font-size: 22px; font-weight: 900; color: var(--text); letter-spacing: -0.5px; }
 .mercado-subtitle { font-size: 13px; color: var(--muted); margin-top: 3px; font-weight: 500; }
@@ -3685,7 +3685,7 @@ html { background: var(--color-bg, #0A0A0A); }
   </div><!-- /tabs-wrapper -->
 
   <!-- ── TAB: INTELIGENCIA COMPETITIVA ── -->
-  <div id="tab-inteligencia" style="position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:72px;display:none;z-index:1;">
+  <div id="tab-inteligencia" style="position:absolute;inset:0;overflow-y:auto;padding-bottom:72px;display:none;z-index:1;">
 
     <!-- Header -->
     <div style="padding:20px 20px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);padding-bottom:14px;">
@@ -4094,6 +4094,47 @@ document.addEventListener('keydown', e => { if(e.key==='Escape') closeDrawer(); 
 const SUPABASE_URL = 'https://yqmwwwqgtkrxtjxaqyxk.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxbXd3d3FndGtyeHRqeGFxeXhrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3ODE2NDYsImV4cCI6MjA4NzM1NzY0Nn0.DbhJpEBYac1DZLUU05lz4rF9qHjDCViaI-FAHtgN2ac';
 let currentUser = null;
+
+// ── Respaldo de sesión en cookies ──────────────────────────────────────────
+// iOS borra el localStorage de las PWA instaladas (standalone) entre cierres.
+// Las cookies sobreviven mejor en ese contexto, así que guardamos la sesión en
+// ambos lados y la rehidratamos al arrancar si el localStorage quedó vacío.
+function _setCookie(nombre, valor, dias) {
+  try {
+    const exp = new Date(Date.now() + dias * 864e5).toUTCString();
+    document.cookie = `${nombre}=${encodeURIComponent(valor)}; Expires=${exp}; Path=/; SameSite=Lax; Secure`;
+  } catch (e) {}
+}
+function _getCookie(nombre) {
+  try {
+    const m = document.cookie.match(new RegExp('(?:^|; )' + nombre + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  } catch (e) { return null; }
+}
+function _delCookie(nombre) {
+  try { document.cookie = `${nombre}=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; SameSite=Lax; Secure`; } catch (e) {}
+}
+function _syncSesionCookies() {
+  const t = localStorage.getItem('sb_token');
+  const r = localStorage.getItem('sb_refresh_token');
+  const u = localStorage.getItem('sb_user');
+  if (t) _setCookie('sb_token', t, 30);
+  if (r) _setCookie('sb_refresh_token', r, 30);
+  if (u) _setCookie('sb_user', u, 30);
+}
+function _hydratarSesionDesdeCookies() {
+  if (!localStorage.getItem('sb_user')) {
+    const u = _getCookie('sb_user');
+    if (u) {
+      localStorage.setItem('sb_user', u);
+      const t = _getCookie('sb_token');
+      const r = _getCookie('sb_refresh_token');
+      if (t) localStorage.setItem('sb_token', t);
+      if (r) localStorage.setItem('sb_refresh_token', r);
+      console.log('🍪 Sesión rehidratada desde cookies (localStorage estaba vacío)');
+    }
+  }
+}
 let searchTimer = null;
 let pushSubscription = null;
 
@@ -4184,6 +4225,7 @@ async function login() {
   }
   localStorage.setItem('sb_user', JSON.stringify(user));
   currentUser = user;
+  _syncSesionCookies();
   console.log('Login OK, user:', currentUser?.id);
   stopShowcaseRefresh();
   cargarPerfilEmpresa();   // carga perfil para ajuste de score
@@ -4231,6 +4273,9 @@ function logout() {
   localStorage.removeItem('sb_token');
   localStorage.removeItem('sb_refresh_token');
   localStorage.removeItem('sb_user');
+  _delCookie('sb_token');
+  _delCookie('sb_refresh_token');
+  _delCookie('sb_user');
   currentUser = null;
   document.getElementById('screen-app').classList.remove('active');
   document.getElementById('screen-auth').classList.add('active');
@@ -6570,6 +6615,7 @@ async function _tryRefreshToken() {
       if (data.refresh_token) localStorage.setItem('sb_refresh_token', data.refresh_token);
       if (data.user) localStorage.setItem('sb_user', JSON.stringify(data.user));
       currentUser = data.user || currentUser;
+      _syncSesionCookies();
       return true;
     }
   } catch(e) { console.warn('Refresh falló (sin conexión?):', e); }
@@ -6577,6 +6623,7 @@ async function _tryRefreshToken() {
 }
 
 (async function iniciarApp() {
+  _hydratarSesionDesdeCookies();
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
   // Acepta si hay al menos el usuario guardado (token puede estar vencido)
@@ -6623,6 +6670,7 @@ async function _tryRefreshToken() {
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible') return;
   if (!currentUser?.id) return;
+  _syncSesionCookies();
   const savedToken = localStorage.getItem('sb_token');
   let vencido = true;
   try {
@@ -6699,6 +6747,7 @@ async function sbRest(path, method = 'GET', body = null, extraHeaders = {}) {
           if (refreshData.refresh_token) {
             localStorage.setItem('sb_refresh_token', refreshData.refresh_token);
           }
+          _syncSesionCookies();
           console.log('✅ Token refrescado OK');
           res = await doRequest(token);
         }
@@ -6931,7 +6980,12 @@ function renderSegCard(item) {
 }
 
 async function cargarSeguimiento() {
-  if (!currentUser) return;
+  if (!currentUser) {
+    // Sesión aún no lista: mostrar estado vacío en vez de dejar la lista en blanco
+    seguimientoData = [];
+    renderSeguimiento();
+    return;
+  }
   const lista = document.getElementById('seg-lista');
   if (lista) lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
@@ -7470,6 +7524,14 @@ if ('serviceWorker' in navigator) {
     if (event.data?.type === 'SHOW_BADGE') {
       mostrarBadge();
     }
+  });
+  // Auto-actualización: cuando un Service Worker nuevo toma control,
+  // recargar una sola vez para aplicar el deploy más reciente.
+  let _swReloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (_swReloaded) return;
+    _swReloaded = true;
+    window.location.reload();
   });
 }
 
