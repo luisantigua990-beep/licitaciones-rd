@@ -4196,17 +4196,19 @@ async function login() {
   btn.disabled = true; btn.textContent = 'Entrando...';
   const data = await supabaseRequest('token?grant_type=password', 'POST', { email, password });
   btn.disabled = false; btn.textContent = 'Entrar';
-  if (data.error) {
-    const msg = (data.error_description || data.error || '').toLowerCase();
-    let msgEs = 'Error al iniciar sesión';
-    if (msg.includes('invalid login') || msg.includes('invalid credentials') || msg.includes('email not confirmed')) {
-      msgEs = 'Correo o contraseña incorrectos';
-    } else if (msg.includes('rate limit') || msg.includes('too many')) {
+  // Validación a prueba de balas: Supabase SOLO devuelve access_token si las credenciales
+  // son válidas. Manejamos ambos formatos de error de GoTrue:
+  //   viejo: { error, error_description }   nuevo: { code, error_code, msg }
+  if (!data.access_token || data.error || data.error_code || data.msg) {
+    const msg = (data.error_description || data.msg || data.error || data.error_code || '').toLowerCase();
+    let msgEs = 'Correo o contraseña incorrectos';
+    if (msg.includes('rate limit') || msg.includes('too many')) {
       msgEs = '⏳ Demasiados intentos. Espera un momento.';
-    } else if (data.error_description || data.error) {
-      msgEs = '' + (data.error_description || data.error);
+    } else if (msg.includes('not confirmed') || msg.includes('confirm')) {
+      msgEs = 'Confirma tu correo antes de entrar. Revisa tu email.';
+    } else if (msg && !msg.includes('invalid') && !msg.includes('credential') && !msg.includes('grant')) {
+      msgEs = msg;
     }
-    btn.disabled = false; btn.textContent = 'Entrar';
     return showMsg(msgEs, 'error');
   }
   localStorage.setItem('sb_token', data.access_token);
@@ -4250,12 +4252,12 @@ async function register() {
     data: { nombre }          // queda en raw_user_meta_data
   });
   btn.disabled = false; btn.textContent = 'Crear cuenta';
-  if (data.error) {
-    const msg = data.error_description || data.error || '';
+  if (data.error || data.error_code || data.msg) {
+    const msg = (data.error_description || data.msg || data.error || data.error_code || '').toLowerCase();
     let msgEs = 'Error al registrarse';
-    if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already exists')) {
+    if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('already been registered')) {
       msgEs = 'Este correo ya está registrado. Intenta iniciar sesión.';
-    } else if (msg.toLowerCase().includes('password')) {
+    } else if (msg.includes('password')) {
       msgEs = 'La contraseña debe tener al menos 6 caracteres';
     } else if (msg) { msgEs = '❌ ' + msg; }
     return showMsg(msgEs, 'error');
