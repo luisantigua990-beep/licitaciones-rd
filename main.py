@@ -1090,6 +1090,225 @@ def ejecutar_nurturing():
         print(f"❌ Error en ejecutar_nurturing: {e}")
 
 
+# ============================================
+# PRECIO INTELIGENTE — Sugerencia de oferta
+# ============================================
+_cache_precio: dict = {}   # {codigo_proceso: {ts, data}}
+_CACHE_PRECIO_TTL = 3600   # 1 hora
+
+@app.get("/api/procesos/{codigo_proceso}/precio-inteligente")
+@limiter.limit("30/minute")
+def precio_inteligente(request: Request, codigo_proceso: str):
+    """
+    Analiza el historial de contratos similares y sugiere un rango de precio
+    competitivo para el proceso dado. Usa un sistema en cascada:
+      1. modalidad + institución  (más específico)
+      2. modalidad + tipo proceso
+      3. solo tipo proceso         (más amplio)
+    Siempre devuelve una respuesta útil con la fuente indicada.
+    """
+    try:
+        # ── Cache ──────────────────────────────────────────────────────
+        ahora = time.time()
+        cached = _cache_precio.get(codigo_proceso)
+        if cached and ahora - cached["ts"] < _CACHE_PRECIO_TTL:
+            return cached["data"]
+
+        # ── 1. Datos del proceso actual ─────────────────────────────────
+        proc_res = supabase.table("procesos") \
+            .select("codigo_proceso,titulo,objeto_proceso,subobjeto_proceso,modalidad,unidad_compra,monto_estimado,divisa") \
+            .eq("codigo_proceso", codigo_proceso).execute()
+
+        if not proc_res.data:
+            raise HTTPException(status_code=404, detail="Proceso no encontrado")
+        p = proc_res.data[0]
+
+        objeto      = p.get("objeto_proceso")   or ""
+        modalidad   = p.get("modalidad")        or ""
+        institucion = p.get("unidad_compra")    or ""
+        monto_ref   = float(p.get("monto_estimado") or 0)
+        divisa      = p.get("divisa") or "DOP"
+
+        # ── 2. Función auxiliar: buscar contratos similares ─────────────
+        def buscar_contratos(filtros: dict) -> list:
+            """
+            Devuelve lista de {monto_adj, monto_ref, descuento_pct}
+            para procesos similares según los filtros dados.
+            """
+            q = supabase_admin \
+                .table("contratos_adjudicados") \
+                .select("monto_adjudicado, codigo_proceso") \
+                .gt("monto_adjudicado", 0) \
+                .limit(800)
+
+            # Traer códigos de procesos que cumplen filtros
+            proc_q = supabase_admin.table("procesos").select("codigo_proceso,monto_estimado")
+            if filtros.get("modalidad"):
+                proc_q = proc_q.eq("modalidad", filtros["modalidad"])
+            if filtros.get("unidad_compra"):
+                proc_q = proc_q.eq("unidad_compra", filtros["unidad_compra"])
+            if filtros.get("objeto_proceso"):
+                proc_q = proc_q.eq("objeto_proceso", filtros["objeto_proceso"])
+            procs = proc_q.limit(1000).execute()
+            if not procs.data:
+                return []
+
+            ref_map = {r["codigo_proceso"]: float(r["monto_estimado"] or 0) for r in procs.data}
+            codigos = list(ref_map.keys())
+            if not codigos:
+                return []
+
+            # Traer contratos de esos procesos (en lotes de 100)
+            resultado = []
+            for i in range(0, min(len(codigos), 500), 100):
+                lote = codigos[i:i+100]
+                ca = supabase_admin.table("contratos_adjudicados") \
+                    .select("monto_adjudicado, codigo_proceso") \
+                    .in_("codigo_proceso", lote) \
+                    .gt("monto_adjudicado", 0).execute()
+                for row in (ca.data or []):
+                    monto_adj = float(row["monto_adjudicado"])
+                    monto_est = ref_map.get(row["codigo_proceso"], 0)
+                    if monto_est > 0 and monto_adj < monto_est * 3 and monto_adj > monto_est * 0.01:
+                        desc = ((monto_est - monto_adj) / monto_est) * 100
+                        resultado.append({
+                            "monto_adj": monto_adj,
+                            "monto_est": monto_est,
+                            "descuento_pct": round(desc, 2)
+                        })
+            return resultado
+
+        # ── 3. Cascada de búsqueda ──────────────────────────────────────
+        nivel = ""
+        contratos = []
+        MIN_MUESTRA = 5
+
+        if modalidad and institucion:
+            contratos = buscar_contratos({"modalidad": modalidad, "unidad_compra": institucion})
+            if len(contratos) >= MIN_MUESTRA:
+                nivel = f"{modalidad} · {institucion}"
+        if len(contratos) < MIN_MUESTRA and modalidad and objeto:
+            contratos = buscar_contratos({"modalidad": modalidad, "objeto_proceso": objeto})
+            if len(contratos) >= MIN_MUESTRA:
+                nivel = f"{modalidad} · {objeto}"
+        if len(contratos) < MIN_MUESTRA and objeto:
+            contratos = buscar_contratos({"objeto_proceso": objeto})
+            nivel = f"Procesos de {objeto} (general)"
+        if not contratos:
+            return {"disponible": False, "mensaje": "No hay suficientes contratos similares para generar una sugerencia."}
+
+        # ── 4. Estadísticas ─────────────────────────────────────────────
+        descuentos = sorted([c["descuento_pct"] for c in contratos if -50 <= c["descuento_pct"] <= 99])
+        n = len(descuentos)
+
+        def pct(lst, p):
+            if not lst: return None
+            idx = int(len(lst) * p / 100)
+            return round(lst[min(idx, len(lst)-1)], 1)
+
+        p25     = pct(descuentos, 25)
+        mediana = pct(descuentos, 50)
+        p75     = pct(descuentos, 75)
+        promedio = round(sum(descuentos) / n, 1) if n else 0
+
+        precio_sugerido   = round(monto_ref * (1 - mediana/100), 2)   if monto_ref > 0 and mediana is not None else None
+        precio_rango_min  = round(monto_ref * (1 - p75/100),    2)    if monto_ref > 0 and p75 is not None else None
+        precio_rango_max  = round(monto_ref * (1 - p25/100),    2)    if monto_ref > 0 and p25 is not None else None
+
+        # ── 5. Competidores más frecuentes ─────────────────────────────
+        top_competidores = []
+        try:
+            codigos_muestra = list({c.get("codigo_proceso","") for c in contratos[:200] if c.get("codigo_proceso")})
+            if codigos_muestra:
+                ca_comp = supabase_admin.table("contratos_adjudicados") \
+                    .select("empresa_id, monto_adjudicado") \
+                    .in_("codigo_proceso", codigos_muestra[:100]).execute()
+                empresa_ids = list({r["empresa_id"] for r in (ca_comp.data or []) if r.get("empresa_id")})[:50]
+                if empresa_ids:
+                    emp = supabase_admin.table("empresas_estado") \
+                        .select("id, nombre, total_contratos") \
+                        .in_("id", empresa_ids).execute()
+                    emp_map = {r["id"]: r for r in (emp.data or [])}
+                    conteo: dict = {}
+                    montos_empresa: dict = {}
+                    for row in (ca_comp.data or []):
+                        eid = row.get("empresa_id")
+                        if eid:
+                            conteo[eid] = conteo.get(eid, 0) + 1
+                            montos_empresa.setdefault(eid, []).append(float(row.get("monto_adjudicado") or 0))
+                    top_raw = sorted(conteo.items(), key=lambda x: x[1], reverse=True)[:5]
+                    for eid, wins in top_raw:
+                        e = emp_map.get(eid, {})
+                        montos = montos_empresa.get(eid, [])
+                        avg_m = round(sum(montos)/len(montos), 0) if montos else 0
+                        top_competidores.append({
+                            "nombre": e.get("nombre", "Empresa desconocida"),
+                            "victorias_similares": wins,
+                            "monto_promedio": avg_m,
+                        })
+        except Exception as e_comp:
+            print(f"⚠️ Error cargando competidores: {e_comp}")
+
+        # ── 6. Narrativa IA (Gemini) ────────────────────────────────────
+        narrativa = ""
+        if cliente_gemini:
+            try:
+                ctx_precio = f"Monto referencial: RD${monto_ref:,.0f}" if monto_ref > 0 else "Monto referencial: no disponible"
+                ctx_sugerido = f"Precio sugerido (mediana histórica): RD${precio_sugerido:,.0f}" if precio_sugerido else ""
+                ctx_rango = f"Rango competitivo (P25-P75): RD${precio_rango_min:,.0f} – RD${precio_rango_max:,.0f}" if precio_rango_min and precio_rango_max else ""
+                comp_txt = "\n".join([f"- {c['nombre']}: {c['victorias_similares']} contratos ganados, promedio RD${c['monto_promedio']:,.0f}" for c in top_competidores]) if top_competidores else "Sin datos de competidores"
+                prompt = f"""Eres un experto en licitaciones públicas dominicanas. Basándote en estos datos históricos, escribe un análisis de estrategia de precio en máximo 4 oraciones, directo y accionable para una empresa que quiere ganar esta licitación.
+
+Proceso: {p.get('titulo','')[:120]}
+Tipo: {objeto} — {modalidad}
+Institución: {institucion}
+{ctx_precio}
+{ctx_sugerido}
+{ctx_rango}
+Descuento promedio de ganadores similares: {promedio}%
+Muestra de {n} contratos similares
+
+Top empresas que ganan este tipo de proceso:
+{comp_txt}
+
+Análisis (4 oraciones, en español, sin markdown, sin asteriscos):"""
+                resp = cliente_gemini.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=prompt
+                )
+                narrativa = resp.text.strip()
+            except Exception as e_ai:
+                print(f"⚠️ Error Gemini precio-inteligente: {e_ai}")
+                narrativa = ""
+
+        # ── 7. Armar respuesta ──────────────────────────────────────────
+        resultado = {
+            "disponible": True,
+            "nivel_analisis": nivel,
+            "muestra_contratos": n,
+            "monto_referencial": monto_ref,
+            "divisa": divisa,
+            "precio_sugerido": precio_sugerido,
+            "precio_rango_min": precio_rango_min,
+            "precio_rango_max": precio_rango_max,
+            "descuento_mediana": mediana,
+            "descuento_promedio": promedio,
+            "descuento_p25": p25,
+            "descuento_p75": p75,
+            "top_competidores": top_competidores,
+            "narrativa_ia": narrativa,
+        }
+
+        _cache_precio[codigo_proceso] = {"ts": ahora, "data": resultado}
+        return resultado
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error precio-inteligente {codigo_proceso}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/bienvenida")
 @limiter.limit("10/minute")
 async def enviar_bienvenida(request: Request):
