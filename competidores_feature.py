@@ -281,6 +281,62 @@ def get_oferentes_proceso(codigo_proceso: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
+
+# ─────────────────────────────────────────────────────────────
+# GET /api/v1/proveedores/proceso/{codigo_proceso}/historico
+# Para procesos que NO están en la tabla `procesos` (históricos):
+# devuelve título, adjudicaciones con ganadores y todos los oferentes.
+# ─────────────────────────────────────────────────────────────
+@competidores_router.get("/proceso/{codigo_proceso}/historico")
+def get_proceso_historico(codigo_proceso: str):
+    try:
+        # 1) Contratos adjudicados de ese proceso (puede haber varios por lotes)
+        contratos = supabase.table("contratos_adjudicados") \
+            .select("titulo_proceso, modalidad, objeto_proceso, monto_adjudicado, "
+                    "divisa, fecha_adjudicacion, fecha_contrato, anio, empresa_id") \
+            .eq("codigo_proceso", codigo_proceso) \
+            .order("monto_adjudicado", desc=True) \
+            .limit(50).execute().data or []
+
+        # 2) Nombres y RNC de las empresas ganadoras
+        ids = list({c["empresa_id"] for c in contratos if c.get("empresa_id")})
+        empresas = {}
+        if ids:
+            r = supabase.table("empresas_estado") \
+                .select("id, nombre, rnc").in_("id", ids).execute()
+            empresas = {e["id"]: e for e in (r.data or [])}
+        for c in contratos:
+            e = empresas.get(c.get("empresa_id")) or {}
+            c["empresa_nombre"] = e.get("nombre")
+            c["empresa_rnc"]    = e.get("rnc")
+            c.pop("empresa_id", None)
+
+        # 3) Todos los oferentes con sus montos (RPC existente)
+        oferentes = {"total_oferentes": 0, "ganador": None, "oferentes": []}
+        try:
+            r = supabase.rpc("get_oferentes_proceso",
+                             {"p_codigo_proceso": codigo_proceso}).execute()
+            if r.data:
+                oferentes = r.data
+        except Exception:
+            pass
+
+        if not contratos and not oferentes.get("oferentes"):
+            raise HTTPException(status_code=404, detail="Sin datos históricos para este proceso")
+
+        return {
+            "codigo_proceso": codigo_proceso,
+            "titulo":    contratos[0].get("titulo_proceso") if contratos else None,
+            "modalidad": contratos[0].get("modalidad") if contratos else None,
+            "anio":      contratos[0].get("anio") if contratos else None,
+            "contratos": contratos,
+            "oferentes": oferentes,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
 # ─────────────────────────────────────────────────────────────
 # GET /api/v1/proveedores/prospectos  [ADMIN]
 # Empresas ideales para prospección de LicitacionLab
