@@ -2349,6 +2349,19 @@ body {
 .mercado-form-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 400; backdrop-filter: blur(4px); }
 .mercado-form-sheet { position: fixed; top: 0; right: 0; bottom: 0; z-index: 401; background: var(--surface2); border-radius: var(--r-xl) 0 0 var(--r-xl); padding: 0; width: 100%; max-width: 480px; overflow-y: auto; transform: translateX(100%); transition: transform .35s cubic-bezier(.16,1,.3,1); box-shadow: -8px 0 40px rgba(0,0,0,.4); }
 .mercado-form-sheet.visible { transform: translateX(0); }
+/* ── SAFE-AREA iOS: los encabezados (con su botón X) de TODOS los paneles de
+   pantalla completa quedan SIEMPRE debajo de la barra de estado del iPhone ── */
+.mercado-form-sheet > div:first-child,
+#mercado-filtros-panel > div:first-child {
+  padding-top: max(18px, env(safe-area-inset-top)) !important;
+}
+.mercado-form-sheet { padding-bottom: env(safe-area-inset-bottom, 0px); }
+#mercado-filtros-panel { padding-bottom: env(safe-area-inset-bottom, 0px); }
+#modal-pricing { padding-top: max(20px, env(safe-area-inset-top)) !important; }
+@media (max-width:768px) {
+  .onb-wizard { padding-top: env(safe-area-inset-top, 0px); box-sizing: border-box; }
+  .onb-wizard .onb-actions-bar { padding-bottom: max(12px, env(safe-area-inset-bottom)) !important; }
+}
 .form-sheet-handle { width: 36px; height: 4px; background: var(--border2); border-radius: 2px; margin: 0 auto 16px; }
 .form-sheet-title { font-size: 17px; font-weight: 900; color: var(--text); margin-bottom: 16px; letter-spacing: -0.3px; }
 .form-field { margin-bottom: 14px; }
@@ -6808,7 +6821,7 @@ async function _tryRefreshToken() {
 }
 
 (async function iniciarApp() {
-  console.log('%c🟢 LicitacionLab BUILD v7 · onboarding-fix', 'color:#16a34a;font-weight:bold');
+  console.log('%c🟢 LicitacionLab BUILD v8 · safearea-fix', 'color:#16a34a;font-weight:bold');
   _hydratarSesionDesdeCookies();
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
@@ -8231,6 +8244,37 @@ function cerrarFormProveedor() {
   document.getElementById('mercado-form-overlay').style.display = 'none';
   document.getElementById('mercado-form-sheet').classList.remove('visible');
 }
+
+// ── RED DE SEGURIDAD: nunca quedar atrapado en un panel ──
+// ESC (teclado) cierra cualquier panel/modal abierto
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  try {
+    const sheet = document.getElementById('mercado-form-sheet');
+    if (sheet?.classList.contains('visible')) { cerrarFormProveedor(); return; }
+    const filtros = document.getElementById('mercado-filtros-drawer');
+    if (filtros?.classList.contains('open')) { cerrarFiltrosMobile(); return; }
+    const pricing = document.getElementById('modal-pricing');
+    if (pricing && pricing.style.display === 'block') { cerrarPricing(); return; }
+  } catch(err) {}
+});
+
+// Deslizar hacia la derecha sobre el sheet de proveedor también lo cierra (gesto iOS)
+(function initSwipeCierreSheet() {
+  const sheet = document.getElementById('mercado-form-sheet');
+  if (!sheet) return;
+  let x0 = null, y0 = null;
+  sheet.addEventListener('touchstart', (e) => {
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY;
+  }, { passive: true });
+  sheet.addEventListener('touchend', (e) => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    const dy = Math.abs(e.changedTouches[0].clientY - y0);
+    if (dx > 90 && dy < 60) cerrarFormProveedor();  // swipe derecha franco
+    x0 = y0 = null;
+  }, { passive: true });
+})();
 
 async function enviarRegistroProveedor() {
   const btn    = document.getElementById('pf-submit-btn');
