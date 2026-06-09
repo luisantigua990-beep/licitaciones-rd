@@ -5803,6 +5803,87 @@ function cambiarTabDetalle(codigo, tabId) {
   }
 }
 
+// Volver desde el detalle al dashboard (alias seguro)
+function volverDeDetalle() {
+  try { mostrarDashboard(); } catch(e) { try { switchTab2('dashboard'); } catch(e2) {} }
+}
+
+// ── PROCESO HISTÓRICO: participantes, montos y ganadores ──
+// Para procesos adjudicados que ya no están en la tabla de procesos activos.
+async function verProcesoHistorico(codigo) {
+  const cont = document.getElementById('detalle-container');
+  cont.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const res = await fetch(`${API}/api/v1/proveedores/proceso/${encodeURIComponent(codigo)}/historico`);
+    if (!res.ok) throw new Error('sin datos');
+    const d = await res.json();
+
+    const fmtRD = (n) => {
+      if (n === null || n === undefined || isNaN(Number(n))) return '—';
+      const v = Number(n);
+      return v >= 1_000_000 ? `RD$${(v/1_000_000).toFixed(1)}M` : `RD$${v.toLocaleString('es-DO')}`;
+    };
+
+    const ofs = (d.oferentes?.oferentes || []).slice().sort((a,b) => {
+      if (a.es_ganador !== b.es_ganador) return a.es_ganador ? -1 : 1;
+      return (a.valor_oferta || 0) - (b.valor_oferta || 0);
+    });
+
+    const filasOferentes = ofs.map(o => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            ${sanitize(o.razon_social || 'Empresa')}
+            ${o.es_ganador ? '<span style="font-size:10px;font-weight:800;padding:2px 8px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:var(--r-full);">🏆 GANADOR</span>' : ''}
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">${sanitize(o.estado_evaluacion || o.estado_oferta || '')}${o.rpe ? ' · RPE ' + sanitize(o.rpe) : ''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-size:13px;font-weight:800;font-family:var(--font-mono);color:${o.es_ganador ? 'var(--green)' : 'var(--text)'};">${fmtRD(o.valor_oferta)}</div>
+          ${o.es_ganador && o.monto_adjudicado ? `<div style="font-size:10px;color:var(--muted);">Adjudicado: ${fmtRD(o.monto_adjudicado)}</div>` : ''}
+        </div>
+      </div>`).join('');
+
+    const filasContratos = (d.contratos || []).map(c => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);">${sanitize(c.empresa_nombre || 'Empresa adjudicada')}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px;">${c.fecha_contrato ? new Date(c.fecha_contrato).toLocaleDateString('es-DO') : (c.anio || '')}${c.empresa_rnc ? ' · RPE ' + sanitize(c.empresa_rnc) : ''}</div>
+        </div>
+        <div style="font-size:13px;font-weight:800;font-family:var(--font-mono);color:var(--green);flex-shrink:0;">${fmtRD(c.monto_adjudicado)}</div>
+      </div>`).join('');
+
+    const totalOf = d.oferentes?.total_oferentes || ofs.length;
+
+    cont.innerHTML = `
+      <div style="padding:16px;">
+        <button onclick="volverDeDetalle()" class="ll-btn ll-btn--ghost ll-btn--sm" style="margin-bottom:12px;">← Volver</button>
+        <span style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:3px 10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-full);color:var(--muted);">Proceso histórico · Adjudicado</span>
+        <h2 style="font-size:18px;font-weight:900;color:var(--text);margin:10px 0 4px;line-height:1.3;">${sanitize(d.titulo || codigo)}</h2>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">${sanitize(codigo)}${d.modalidad ? ' · ' + sanitize(d.modalidad) : ''}${d.anio ? ' · ' + d.anio : ''}</div>
+
+        ${filasContratos ? `
+        <div class="ll-card" style="margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--green);margin-bottom:6px;">🏆 Adjudicación</div>
+          ${filasContratos}
+        </div>` : ''}
+
+        <div class="ll-card">
+          <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Participantes (${totalOf})</div>
+          ${filasOferentes || '<div style="font-size:13px;color:var(--muted);padding:10px 0;">No hay registro de ofertas para este proceso — solo la adjudicación final.</div>'}
+        </div>
+      </div>`;
+  } catch(e) {
+    cont.innerHTML = `
+      <div style="padding:32px 16px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:12px;">🔍</div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Sin datos históricos para este proceso.</div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:14px;">Este proceso no está en el portal actual ni en el archivo de adjudicaciones.</div>
+        <button onclick="volverDeDetalle()" class="ll-btn ll-btn--secondary">← Volver</button>
+      </div>`;
+  }
+}
+
 async function verDetalle(codigo) {
   // Ocultar TODOS los tabs antes de mostrar el detalle
   ['tab-dashboard','tab-perfil','tab-seguimiento','tab-mercado','tab-alertas','tab-analisis','tab-reportes','tab-calendario','tab-inteligencia'].forEach(id => {
@@ -5832,11 +5913,16 @@ async function verDetalle(codigo) {
   }
 
   if (!res.ok) {
-    const errMsg = res.status === 404 ? 'Proceso no encontrado.' : `Error del servidor (${res.status}). Intenta de nuevo.`;
+    if (res.status === 404) {
+      // Proceso histórico (no está en la tabla de procesos activos):
+      // mostrar participantes, montos y ganadores desde el archivo de ofertas
+      await verProcesoHistorico(codigo);
+      return;
+    }
     document.getElementById('detalle-container').innerHTML = `
       <div style="padding:32px 16px;text-align:center;">
         <div style="font-size:32px;margin-bottom:12px;">⚠️</div>
-        <div style="font-weight:700;color:var(--text);margin-bottom:6px;">${errMsg}</div>
+        <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Error del servidor (${res.status}). Intenta de nuevo.</div>
         <button onclick="verDetalle('${codigo}')" class="ll-btn ll-btn--secondary" style="margin-top:8px;">Reintentar</button>
       </div>`;
     return;
@@ -5857,12 +5943,7 @@ async function verDetalle(codigo) {
 
   const p    = data.proceso;
   if (!p) {
-    document.getElementById('detalle-container').innerHTML = `
-      <div style="padding:32px 16px;text-align:center;">
-        <div style="font-size:32px;margin-bottom:12px;">🔍</div>
-        <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Proceso no encontrado.</div>
-        <button onclick="mostrarDashboard()" class="ll-btn ll-btn--secondary" style="margin-top:8px;">Volver</button>
-      </div>`;
+    await verProcesoHistorico(codigo);
     return;
   }
   const arts = data.articulos || [];
@@ -6823,7 +6904,7 @@ async function _tryRefreshToken() {
 }
 
 (async function iniciarApp() {
-  console.log('%c🟢 LicitacionLab BUILD v9 · blindaje-global', 'color:#16a34a;font-weight:bold');
+  console.log('%c🟢 LicitacionLab BUILD v10 · historico-contacto', 'color:#16a34a;font-weight:bold');
   _hydratarSesionDesdeCookies();
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
@@ -9550,9 +9631,10 @@ function icRenderDashboard(data) {
   // Badges de contacto
   const email = emp.correo_comercial || emp.correo_contacto || '';
   const tel   = emp.telefono_comercial || emp.telefono_contacto || '';
+  const telHref = tel ? 'tel:+1' + String(tel).replace(/[^0-9]/g, '').replace(/^1/, '') : '';
   let badges = '';
-  if (email) badges += `<span style="font-size:11px;font-weight:700;padding:3px 10px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:var(--r-full);">✉ ${email}</span> `;
-  if (tel)   badges += `<span style="font-size:11px;font-weight:700;padding:3px 10px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:var(--r-full);">☎ ${tel}</span>`;
+  if (email) badges += `<a href="mailto:${sanitize(email)}" style="text-decoration:none;"><span style="font-size:11px;font-weight:700;padding:3px 10px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:var(--r-full);cursor:pointer;display:inline-flex;align-items:center;gap:4px;">✉ ${sanitize(email)}</span></a> `;
+  if (tel)   badges += `<a href="${telHref}" style="text-decoration:none;"><span style="font-size:11px;font-weight:700;padding:3px 10px;background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:var(--r-full);cursor:pointer;display:inline-flex;align-items:center;gap:4px;">☎ ${sanitize(tel)}</span></a>`;
   document.getElementById('ic-d-contacto').innerHTML = badges;
 
   // KPIs
