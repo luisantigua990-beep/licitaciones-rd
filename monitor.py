@@ -990,6 +990,12 @@ def ejecutar_monitor():
         if nuevos:
             procesar_articulos_de_nuevos(nuevos)
             notificar_procesos_nuevos(nuevos)
+            # Emails instantáneos a usuarios cuyo perfil matchea (resumen Gemini cacheado)
+            try:
+                from notificador_email_interes import enviar_emails_procesos_nuevos
+                enviar_emails_procesos_nuevos(nuevos)
+            except Exception as e:
+                print(f"⚠️ Error en emails de interés: {e}")
             for p in nuevos[:5]:
                 monto = f"RD${p.get('monto_estimado', 0):,.2f}" if p.get('monto_estimado') else "N/A"
                 print(f"   🆕 {p['titulo'][:50]}... | {monto}")
