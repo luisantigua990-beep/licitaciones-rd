@@ -5818,6 +5818,13 @@ async function verProcesoHistorico(codigo) {
     if (!res.ok) throw new Error('sin datos');
     const d = await res.json();
 
+    // El identificador era un OCID y el proceso SÍ está activo con su código real
+    // → mostrar el detalle completo normal (una sola redirección, sin loops)
+    if (d.existe_en_procesos && d.codigo_proceso && d.codigo_proceso !== codigo) {
+      verDetalle(d.codigo_proceso);
+      return;
+    }
+
     const fmtRD = (n) => {
       if (n === null || n === undefined || isNaN(Number(n))) return '—';
       const v = Number(n);
@@ -6904,7 +6911,7 @@ async function _tryRefreshToken() {
 }
 
 (async function iniciarApp() {
-  console.log('%c🟢 LicitacionLab BUILD v10 · historico-contacto', 'color:#16a34a;font-weight:bold');
+  console.log('%c🟢 LicitacionLab BUILD v11 · ocid-resuelto', 'color:#16a34a;font-weight:bold');
   _hydratarSesionDesdeCookies();
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
@@ -9753,8 +9760,8 @@ function icRenderChartCanvas(canvasId, datos, campo, esMonto) {
 
 function icVerProceso(ocid) {
   if (!ocid) return;
-  // Buscar el proceso por código y navegar al detalle
-  const codigo = ocid.replace(/^ocds-[a-z0-9]+-/i, '');
+  // El identificador puede ser OCID o codigo_proceso — el backend resuelve ambos
+  const codigo = ocid;
   if (typeof verDetalle === 'function') {
     switchTab2('dashboard');
     setTimeout(() => verDetalle(codigo), 100);
