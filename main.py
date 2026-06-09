@@ -4219,6 +4219,22 @@ async def guardar_perfil_empresa(request: Request):
         if not user_id:
             raise HTTPException(status_code=400, detail="user_id requerido")
 
+        # Whitelist de columnas reales — evita 500 si el frontend envía un campo
+        # que no existe en la tabla (causa raíz del wizard que reaparecía)
+        COLUMNAS_PERFIL = {
+            "user_id", "nombre_perfil", "sectores", "modalidades", "provincias",
+            "monto_minimo", "monto_maximo", "personal_tecnico", "tiene_equipos_propios",
+            "puede_alquilar_equipos", "experiencia_rubros", "anios_experiencia",
+            "tiene_estados_financieros", "tiene_rnc", "tiene_rpe", "alertas_email",
+            "alertas_telegram", "onboarding_completado", "onboarding_paso_actual",
+            "actualizado_en", "razon_social", "rnc", "domicilio", "categoria_mopc",
+            "especialidades", "obras_representativas", "patrimonio_neto",
+            "plazo_maximo_dias", "alertas_whatsapp", "alertas_push",
+            "umbral_monto_min", "umbral_monto_max", "rubros", "categorias_unspsc",
+            "email_empresa",
+        }
+        data = {k: v for k, v in data.items() if k in COLUMNAS_PERFIL}
+
         # Verificar si ya existe
         existente = supabase_admin.table("perfiles_empresa") \
             .select("id").eq("user_id", user_id).execute()
