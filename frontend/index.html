@@ -2247,6 +2247,15 @@ body {
 .mercado-chips::-webkit-scrollbar { display: none; }
 .mercado-chip { flex-shrink: 0; padding: 8px 16px; border-radius: var(--r-full); border: 1.5px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; font-family: var(--font-body); }
 .mercado-chip.active { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+/* Barra de categorías móvil: TODAS las opciones visibles (wrap), sin scroll horizontal */
+#mercado-chips-mobile { display: none; flex-wrap: wrap; gap: 7px; padding: 10px 16px 12px; border-bottom: 1px solid var(--border); background: var(--bg); }
+#mercado-chips-mobile .mercado-chip { flex-shrink: 0; padding: 7px 13px; font-size: 11.5px; }
+@media (max-width: 900px) {
+  #mercado-chips-mobile { display: flex; }
+  #mercado-topbar { flex-wrap: wrap; gap: 10px !important; padding: 12px 16px !important; }
+  #mercado-topbar-search { width: 100% !important; order: 3; }
+  #mercado-busqueda { width: 100% !important; }
+}
 .mercado-zona-wrap { padding: 0 16px 14px; }
 .mercado-zona-select { width: 100%; padding: 10px 12px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r-md); color: var(--text); font-family: var(--font-body); font-size: 13px; outline: none; box-sizing: border-box; }
 .mercado-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
@@ -3329,7 +3338,7 @@ html { background: var(--color-bg, #0A0A0A); }
   <div id="tab-mercado">
 
     <!-- TOPBAR -->
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:30;">
+    <div id="mercado-topbar" style="display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:30;">
       <div style="display:flex;align-items:center;gap:10px;">
         <span style="font-size:12px;color:var(--muted);">Exploración</span>
         <span style="color:var(--muted);">›</span>
@@ -3337,7 +3346,7 @@ html { background: var(--color-bg, #0A0A0A); }
         <span id="mercado-total-badge" style="background:var(--green-dim);color:var(--green);border:1px solid var(--green-border);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:800;font-family:var(--font-mono);">—</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
-        <div style="position:relative;">
+        <div id="mercado-topbar-search" style="position:relative;">
           <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input id="mercado-busqueda" class="ll-input" placeholder="Buscar proveedor, categoría…" style="padding-left:32px;width:260px;height:36px;font-size:13px;" oninput="debouncarMercado()" onfocus="mostrarSugerencias()" onblur="setTimeout(()=>ocultarSugerencias(),200)">
           <div class="mercado-suggestions" id="mercado-suggestions"></div>
@@ -3351,6 +3360,26 @@ html { background: var(--color-bg, #0A0A0A); }
           Agregar proveedor
         </button>
       </div>
+    </div>
+
+
+    <!-- BARRA DE CATEGORÍAS MÓVIL: todas las opciones visibles, sin scroll -->
+    <div id="mercado-chips-mobile">
+      <button class="mercado-chip active" data-cat="" onclick="filtrarChipMercado(this)">Todos</button>
+      <button class="mercado-chip" data-cat="materiales" onclick="filtrarChipMercado(this)">Materiales</button>
+      <button class="mercado-chip" data-cat="equipos" onclick="filtrarChipMercado(this)">Equipos</button>
+      <button class="mercado-chip" data-cat="mano_obra" onclick="filtrarChipMercado(this)">Mano de obra</button>
+      <button class="mercado-chip" data-cat="servicios" onclick="filtrarChipMercado(this)">Servicios</button>
+      <button class="mercado-chip" data-cat="subcontratista" onclick="filtrarChipMercado(this)">Subcontratistas</button>
+      <button class="mercado-chip" data-cat="consultoria" onclick="filtrarChipMercado(this)">Consultoría</button>
+      <button class="mercado-chip" data-cat="transporte" onclick="filtrarChipMercado(this)">Transporte</button>
+      <button class="mercado-chip" data-cat="electricidad" onclick="filtrarChipMercado(this)">Electricidad</button>
+      <button class="mercado-chip" data-cat="plomeria" onclick="filtrarChipMercado(this)">Plomería</button>
+      <button class="mercado-chip" data-cat="topografia" onclick="filtrarChipMercado(this)">Topografía</button>
+      <button class="mercado-chip" data-cat="demolicion" onclick="filtrarChipMercado(this)">Demolición</button>
+      <button class="mercado-chip" data-cat="laboratorio" onclick="filtrarChipMercado(this)">Laboratorio</button>
+      <button class="mercado-chip" data-cat="limpieza" onclick="filtrarChipMercado(this)">Limpieza</button>
+      <button class="mercado-chip" data-cat="seguridad" onclick="filtrarChipMercado(this)">Seguridad</button>
     </div>
 
     <!-- LAYOUT: sidebar + contenido -->
@@ -6779,7 +6808,7 @@ async function _tryRefreshToken() {
 }
 
 (async function iniciarApp() {
-  console.log('%c🟢 LicitacionLab BUILD v6 · empresas-fix', 'color:#16a34a;font-weight:bold');
+  console.log('%c🟢 LicitacionLab BUILD v7 · onboarding-fix', 'color:#16a34a;font-weight:bold');
   _hydratarSesionDesdeCookies();
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
@@ -7740,6 +7769,26 @@ function setMercadoView(v) {
 }
 
 function aplicarFiltrosMercado() { cargarMercado(); }
+
+// Filtro por chip en la barra móvil del Mercado (sincroniza con los checkboxes)
+function filtrarChipMercado(btn) {
+  const cont  = document.getElementById('mercado-chips-mobile');
+  const chips = cont ? [...cont.querySelectorAll('.mercado-chip')] : [];
+  const cat   = btn.dataset.cat;
+  if (!cat) {
+    // "Todos": limpiar selección
+    chips.forEach(c => c.classList.toggle('active', !c.dataset.cat));
+    document.querySelectorAll('.mercado-cat-check').forEach(c => c.checked = false);
+  } else {
+    btn.classList.toggle('active');
+    const activo = btn.classList.contains('active');
+    document.querySelectorAll(`.mercado-cat-check[value="${cat}"]`).forEach(c => c.checked = activo);
+    const algunActivo = chips.some(c => c.dataset.cat && c.classList.contains('active'));
+    const todosBtn = chips.find(c => !c.dataset.cat);
+    if (todosBtn) todosBtn.classList.toggle('active', !algunActivo);
+  }
+  cargarMercado();
+}
 
 function abrirFiltrosMobile() {
   const drawer = document.getElementById('mercado-filtros-drawer');
@@ -8794,6 +8843,7 @@ function mostrarTutorial() {
 function cerrarTutorial(abrirPerfil) {
   document.getElementById('onb-tutorial-overlay').classList.add('oculto');
   localStorage.setItem('tutorial_completado', '1');
+  _setCookie('tutorial_completado', '1', 365);
   if (abrirPerfil && !localStorage.getItem('onb_completado') && currentUser?.id) {
     setTimeout(mostrarWizardPerfil, 400);
   }
@@ -8931,7 +8981,7 @@ function cerrarOnboarding() {
 
 function saltarOnboarding() {
   cerrarOnboarding();
-  localStorage.setItem('onb_completado', '1');
+  _marcarOnbCompletado();
 }
 
 function irAPaso(n) {
@@ -9229,7 +9279,7 @@ async function guardarPerfilOnboarding() {
     });
     if (!res.ok) throw new Error('Error guardando');
     window._perfilEmpresa = datos;
-    localStorage.setItem('onb_completado', '1');
+    _marcarOnbCompletado();
     cerrarOnboarding();
     mostrarToast('✅ Perfil guardado — el Score IA ahora es personalizado', 'success');
   } catch(e) {
@@ -9238,13 +9288,43 @@ async function guardarPerfilOnboarding() {
   }
 }
 
-function initOnboarding() {
+// Marca el onboarding como completado en localStorage Y cookies
+// (iOS borra el localStorage de la PWA — las cookies sobreviven, igual que la sesión)
+function _marcarOnbCompletado() {
+  localStorage.setItem('onb_completado', '1');
+  localStorage.setItem('tutorial_completado', '1');
+  _setCookie('onb_completado', '1', 365);
+  _setCookie('tutorial_completado', '1', 365);
+}
+
+async function initOnboarding() {
   if (!currentUser?.id) return;
-  // Usuarios nuevos: primero tutorial, luego wizard de perfil
+
+  // 1) Rehidratar banderas desde cookies si iOS borró el localStorage
+  if (!localStorage.getItem('onb_completado') && _getCookie('onb_completado') === '1') {
+    localStorage.setItem('onb_completado', '1');
+  }
+  if (!localStorage.getItem('tutorial_completado') && _getCookie('tutorial_completado') === '1') {
+    localStorage.setItem('tutorial_completado', '1');
+  }
+
+  // 2) Atajo local: ya completado en este dispositivo
+  if (localStorage.getItem('onb_completado') === '1') return;
+
+  // 3) Fuente de verdad: el servidor. Si el perfil ya está completo en la BD,
+  //    NUNCA mostrar el wizard (sobrevive borrado de localStorage y cambio de dispositivo)
+  try {
+    if (!window._perfilEmpresa) await cargarPerfilEmpresa();
+  } catch(e) {}
+  if (window._perfilEmpresa?.onboarding_completado) {
+    _marcarOnbCompletado();
+    return;
+  }
+
+  // 4) Usuario realmente nuevo: primero tutorial, luego wizard de perfil
   if (!localStorage.getItem('tutorial_completado')) {
     setTimeout(mostrarTutorial, 1200);
-  } else if (!localStorage.getItem('onb_completado')) {
-    // Ya vio el tutorial pero no completó el perfil
+  } else {
     setTimeout(mostrarWizardPerfil, 1200);
   }
 }
