@@ -290,13 +290,31 @@ def get_oferentes_proceso(codigo_proceso: str):
 @competidores_router.get("/proceso/{codigo_proceso}/historico")
 def get_proceso_historico(codigo_proceso: str):
     try:
-        # 1) Contratos adjudicados de ese proceso (puede haber varios por lotes)
+        ident = codigo_proceso.strip()
+        CAMPOS = ("codigo_proceso, ocid, titulo_proceso, modalidad, objeto_proceso, "
+                  "monto_adjudicado, divisa, fecha_adjudicacion, fecha_contrato, anio, empresa_id")
+
+        # 1) Resolver identificador: puede llegar como codigo_proceso O como OCID
+        #    (las listas de Inteligencia Competitiva usan OCID, que es distinto)
         contratos = supabase.table("contratos_adjudicados") \
-            .select("titulo_proceso, modalidad, objeto_proceso, monto_adjudicado, "
-                    "divisa, fecha_adjudicacion, fecha_contrato, anio, empresa_id") \
-            .eq("codigo_proceso", codigo_proceso) \
-            .order("monto_adjudicado", desc=True) \
-            .limit(50).execute().data or []
+            .select(CAMPOS).eq("codigo_proceso", ident) \
+            .order("monto_adjudicado", desc=True).limit(50).execute().data or []
+        if not contratos:
+            contratos = supabase.table("contratos_adjudicados") \
+                .select(CAMPOS).eq("ocid", ident) \
+                .order("monto_adjudicado", desc=True).limit(50).execute().data or []
+
+        # Código real del proceso (para la RPC de oferentes y posible redirección)
+        codigo_real = contratos[0]["codigo_proceso"] if contratos else ident
+
+        # ¿El proceso existe en la tabla de procesos activos? → el frontend redirige al detalle normal
+        existe_en_procesos = False
+        try:
+            r = supabase.table("procesos").select("codigo_proceso") \
+                .eq("codigo_proceso", codigo_real).limit(1).execute()
+            existe_en_procesos = bool(r.data)
+        except Exception:
+            pass
 
         # 2) Nombres y RNC de las empresas ganadoras
         ids = list({c["empresa_id"] for c in contratos if c.get("empresa_id")})
@@ -315,17 +333,18 @@ def get_proceso_historico(codigo_proceso: str):
         oferentes = {"total_oferentes": 0, "ganador": None, "oferentes": []}
         try:
             r = supabase.rpc("get_oferentes_proceso",
-                             {"p_codigo_proceso": codigo_proceso}).execute()
+                             {"p_codigo_proceso": codigo_real}).execute()
             if r.data:
                 oferentes = r.data
         except Exception:
             pass
 
-        if not contratos and not oferentes.get("oferentes"):
+        if not contratos and not oferentes.get("oferentes") and not existe_en_procesos:
             raise HTTPException(status_code=404, detail="Sin datos históricos para este proceso")
 
         return {
-            "codigo_proceso": codigo_proceso,
+            "codigo_proceso": codigo_real,
+            "existe_en_procesos": existe_en_procesos,
             "titulo":    contratos[0].get("titulo_proceso") if contratos else None,
             "modalidad": contratos[0].get("modalidad") if contratos else None,
             "anio":      contratos[0].get("anio") if contratos else None,
