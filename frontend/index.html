@@ -2358,6 +2358,8 @@ body {
 .mercado-form-sheet { padding-bottom: env(safe-area-inset-bottom, 0px); }
 #mercado-filtros-panel { padding-bottom: env(safe-area-inset-bottom, 0px); }
 #modal-pricing { padding-top: max(20px, env(safe-area-inset-top)) !important; }
+#seg-estado-modal { padding-bottom: max(16px, env(safe-area-inset-bottom)) !important; }
+.onb-sheet { padding-bottom: env(safe-area-inset-bottom, 0px); }
 @media (max-width:768px) {
   .onb-wizard { padding-top: env(safe-area-inset-top, 0px); box-sizing: border-box; }
   .onb-wizard .onb-actions-bar { padding-bottom: max(12px, env(safe-area-inset-bottom)) !important; }
@@ -6821,7 +6823,7 @@ async function _tryRefreshToken() {
 }
 
 (async function iniciarApp() {
-  console.log('%c🟢 LicitacionLab BUILD v8 · safearea-fix', 'color:#16a34a;font-weight:bold');
+  console.log('%c🟢 LicitacionLab BUILD v9 · blindaje-global', 'color:#16a34a;font-weight:bold');
   _hydratarSesionDesdeCookies();
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
@@ -8246,7 +8248,7 @@ function cerrarFormProveedor() {
 }
 
 // ── RED DE SEGURIDAD: nunca quedar atrapado en un panel ──
-// ESC (teclado) cierra cualquier panel/modal abierto
+// ESC (teclado) cierra CUALQUIER panel/modal abierto, en orden de prioridad
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   try {
@@ -8256,8 +8258,50 @@ document.addEventListener('keydown', (e) => {
     if (filtros?.classList.contains('open')) { cerrarFiltrosMobile(); return; }
     const pricing = document.getElementById('modal-pricing');
     if (pricing && pricing.style.display === 'block') { cerrarPricing(); return; }
+    const segModal = document.getElementById('seg-estado-modal');
+    if (segModal && segModal.style.transform === 'translateY(0px)') { cerrarModalEstado?.(); return; }
+    const drawer = document.getElementById('drawer');
+    if (drawer?.classList.contains('open')) { closeDrawer?.(); return; }
+    const tutorial = document.getElementById('onb-tutorial-overlay');
+    if (tutorial && !tutorial.classList.contains('oculto')) { cerrarTutorial(false); return; }
+    const wizard = document.getElementById('onb-overlay');
+    if (wizard && !wizard.classList.contains('oculto')) { saltarOnboarding(); return; }
   } catch(err) {}
 });
+
+// ── RED GLOBAL DE ERRORES JS: ningún error rompe la app en silencio ──
+// Si algo explota, el usuario ve un toast en vez de una pantalla congelada.
+(function initRedErrores() {
+  let _ultimoToastError = 0;
+  function _avisarError() {
+    const ahora = Date.now();
+    if (ahora - _ultimoToastError < 8000) return; // máx 1 aviso cada 8s
+    _ultimoToastError = ahora;
+    try { mostrarToast('⚠️ Algo salió mal — desliza hacia abajo para refrescar', 'error'); } catch(e) {}
+  }
+  window.addEventListener('error', (e) => {
+    console.error('🔴 Error global:', e.message, e.filename, e.lineno);
+    _avisarError();
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    console.error('🔴 Promesa rechazada:', e.reason);
+    _avisarError();
+  });
+})();
+
+// ── FETCH CON TIMEOUT GLOBAL: ningún botón se queda en "cargando" infinito ──
+// Toda petición que tarde más de 45s se aborta y dispara el catch del llamador,
+// que ya muestra su mensaje de error correspondiente.
+(function initFetchTimeout() {
+  const _fetchOriginal = window.fetch.bind(window);
+  window.fetch = function(recurso, opciones = {}) {
+    if (opciones.signal) return _fetchOriginal(recurso, opciones); // respeta señales propias
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(new DOMException('Timeout de 45s', 'TimeoutError')), 45000);
+    return _fetchOriginal(recurso, { ...opciones, signal: ctrl.signal })
+      .finally(() => clearTimeout(timer));
+  };
+})();
 
 // Deslizar hacia la derecha sobre el sheet de proveedor también lo cierra (gesto iOS)
 (function initSwipeCierreSheet() {
@@ -9719,7 +9763,7 @@ function icVolverBusqueda() {
 // ════════════════════════════════════════════════════════════
 </script>
 <!-- ── TUTORIAL SHEET (6 slides) ── -->
-<div class="onb-overlay oculto" id="onb-tutorial-overlay">
+<div class="onb-overlay oculto" id="onb-tutorial-overlay" onclick="if(event.target===this)cerrarTutorial(false)">
   <div class="onb-sheet">
     <div class="onb-progress">
       <div class="onb-prog-dot is-active" id="onbdot-0"></div>
