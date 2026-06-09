@@ -953,29 +953,64 @@ async def enviar_carrusel_telegram(imagenes_b64: list, post_id: int):
     total = len(imagenes_b64)
     enviadas = 0
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         for i, img_b64 in enumerate(imagenes_b64[1:], start=2):
-            try:
-                img_bytes   = base64.b64decode(img_b64)
-                caption_img = f"Imagen {i} de {total} — Post #{post_id}"
+            img_bytes   = base64.b64decode(img_b64)
+            caption_img = f"Imagen {i} de {total} — Post #{post_id}"
 
-                resp = await client.post(
-                    url,
-                    data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption_img},
-                    files={"photo": (f"slide_{i}.png", img_bytes, "image/png")}
-                )
-                if resp.status_code != 200:
-                    print(f"[Telegram] Error slide {i}: {resp.text}")
-                else:
-                    print(f"[Telegram] Slide {i}/{total} enviado OK")
-                    enviadas += 1
+            # Hasta 3 intentos por slide (Telegram a veces da 429/timeout)
+            for intento in range(3):
+                try:
+                    resp = await client.post(
+                        url,
+                        data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption_img},
+                        files={"photo": (f"slide_{i}.png", img_bytes, "image/png")}
+                    )
+                    if resp.status_code == 200:
+                        print(f"[Telegram] Slide {i}/{total} enviado OK")
+                        enviadas += 1
+                        break
+                    if resp.status_code == 429:
+                        retry_after = 3
+                        try:
+                            retry_after = resp.json().get("parameters", {}).get("retry_after", 3)
+                        except Exception:
+                            pass
+                        print(f"[Telegram] 429 en slide {i} — esperando {retry_after}s")
+                        await asyncio.sleep(retry_after + 1)
+                        continue
+                    print(f"[Telegram] Error slide {i} (intento {intento+1}): {resp.status_code} {resp.text[:120]}")
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    print(f"[Telegram] Excepción slide {i} (intento {intento+1}): {e}")
+                    await asyncio.sleep(2)
 
-                await asyncio.sleep(0.5)
-
-            except Exception as e:
-                print(f"[Telegram] Error enviando slide {i}: {e}")
+            await asyncio.sleep(1.2)  # ritmo seguro entre slides
 
     return enviadas
+
+
+async def _enviar_slides_diferido(post_id: int, imagenes_b64: list, delay_seg: int = 25):
+    """
+    RESPALDO AUTOMÁTICO: envía los slides del carrusel SIN depender de n8n.
+    Espera unos segundos (para que n8n entregue primero la portada y el mensaje
+    de aprobación) y luego envía el resto. Idempotente vía carrusel_enviado_at.
+    """
+    try:
+        await asyncio.sleep(delay_seg)
+        r = supabase.table("social_log").select("carrusel_enviado_at") \
+            .eq("id", post_id).single().execute()
+        if r.data and r.data.get("carrusel_enviado_at"):
+            print(f"[Social] Slides del post {post_id} ya enviados — omitiendo respaldo")
+            return
+        enviadas = await enviar_carrusel_telegram(imagenes_b64, post_id)
+        if enviadas:
+            supabase.table("social_log").update({
+                "carrusel_enviado_at": datetime.utcnow().isoformat()
+            }).eq("id", post_id).execute()
+            print(f"[Social] Respaldo automático: {enviadas} slides del post {post_id} enviados")
+    except Exception as e:
+        print(f"[Social] Error en envío diferido del post {post_id}: {e}")
 
 
 
@@ -1058,8 +1093,12 @@ async def generar_posts_sociales(
                 "estado":          "pendiente_aprobacion"
             })
 
-            # Las imágenes restantes se envían vía POST /agente-social/carrusel/{post_id}
-            # que n8n llama justo después de recibir esta respuesta
+            # RESPALDO AUTOMÁTICO: el backend envía los slides 2..N a Telegram
+            # ~25s después, sin depender de que n8n llame a /carrusel/{post_id}.
+            # Si n8n sí llama, la marca carrusel_enviado_at evita duplicados.
+            if post_id and len(imagenes_carrusel) > 1:
+                asyncio.create_task(_enviar_slides_diferido(post_id, imagenes_carrusel))
+
             continue  # saltar el bloque normal
 
         # ── LICITACIONES / ANÁLISIS: imagen única ───────────────────────
@@ -1107,13 +1146,15 @@ async def enviar_carrusel_endpoint(
     if x_agent_secret != AGENT_SECRET:
         raise HTTPException(status_code=401, detail="No autorizado")
 
-    result = supabase.table("social_log").select("imagenes_extra, tipo_contenido").eq("id", post_id).single().execute()
+    result = supabase.table("social_log").select("imagenes_extra, tipo_contenido, carrusel_enviado_at").eq("id", post_id).single().execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Post no encontrado")
 
     post = result.data
     if post.get("tipo_contenido") != "educativo":
         return {"success": True, "enviadas": 0, "mensaje": "No es carrusel"}
+    if post.get("carrusel_enviado_at"):
+        return {"success": True, "enviadas": 0, "mensaje": "Slides ya enviados (idempotencia)"}
 
     imagenes_extra_raw = post.get("imagenes_extra")
     if not imagenes_extra_raw:
@@ -1124,6 +1165,11 @@ async def enviar_carrusel_endpoint(
     # Reconstruir lista completa con portada dummy en índice 0 para que la función salte índice 0
     imagenes_completas = [""] + imagenes_extra
     enviadas = await enviar_carrusel_telegram(imagenes_completas, post_id)
+
+    if enviadas:
+        supabase.table("social_log").update({
+            "carrusel_enviado_at": datetime.utcnow().isoformat()
+        }).eq("id", post_id).execute()
 
     return {"success": True, "enviadas": enviadas, "total_slides": len(imagenes_extra)}
 
