@@ -1,0 +1,50 @@
+name: ETL InfoPago
+
+on:
+  # Botón manual en la pestaña Actions de GitHub
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "Qué cargar"
+        type: choice
+        default: "todo"
+        options:
+          - todo
+          - ranking
+          - facturas
+          - trazabilidad
+  # Automático: todos los lunes a las 6:00 AM (hora RD)
+  schedule:
+    - cron: "0 10 * * 1"
+
+jobs:
+  etl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
+
+      - name: Ranking de instituciones 2026
+        if: ${{ inputs.modo == 'todo' || inputs.modo == 'ranking' || github.event_name == 'schedule' }}
+        run: python etl_infopago.py --modo ranking --periodo 2026
+
+      - name: Ranking de instituciones 2025
+        if: ${{ inputs.modo == 'todo' || inputs.modo == 'ranking' }}
+        run: python etl_infopago.py --modo ranking --periodo 2025
+
+      - name: Facturas desde contratos adjudicados
+        if: ${{ inputs.modo == 'todo' || inputs.modo == 'facturas' || github.event_name == 'schedule' }}
+        run: python etl_infopago.py --modo facturas --desde-contratos --limit 100
+
+      - name: Trazabilidad de pagos
+        if: ${{ inputs.modo == 'todo' || inputs.modo == 'trazabilidad' || github.event_name == 'schedule' }}
+        run: python etl_infopago.py --modo trazabilidad --limit 50
