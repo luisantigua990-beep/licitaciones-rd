@@ -72,7 +72,12 @@ def _request(method, path, params=None, json_body=None):
                 if isinstance(j, dict) and "data" in j:
                     return j.get("data")
                 return j
-            print(f"  ⚠ {r.status_code} {url} (intento {intento})")
+            body_err = ""
+            try:
+                body_err = r.text[:250]
+            except Exception:
+                pass
+            print(f"  ⚠ {r.status_code} {url} (intento {intento}) {body_err}")
             if 400 <= r.status_code < 500:
                 return None  # error de cliente: reintentar no ayuda (evita quemar minutos)
         except Exception as e:
@@ -224,9 +229,10 @@ def _contratos_de_rnc(rnc):
     """Contratos de un proveedor vía GetProcesosContratacion (paginado).
     El body exacto no está documentado públicamente: probamos variantes."""
     candidatos = [
+        lambda p: {"documentoIdentidad": rnc, "periodo": "todos", "pageNumber": p, "pageSize": 50},
         lambda p: {"documentoIdentidad": rnc, "pageNumber": p, "pageSize": 50},
-        lambda p: {"numeroDocumento": rnc, "pageNumber": p, "pageSize": 50},
-        lambda p: {"type": "document", "value": rnc, "pageNumber": p, "pageSize": 50},
+        lambda p: {"documentoIdentidad": rnc, "periodo": "", "pageNumber": p, "pageSize": 50},
+        lambda p: {"numeroDocumento": rnc, "periodo": "todos", "pageNumber": p, "pageSize": 50},
     ]
     for body_fn in candidatos:
         data = api_post("TrazabilidadPago/GetProcesosContratacion", body_fn(1))
@@ -385,6 +391,13 @@ def modo_facturas(args):
             continue
         prov, contratos = _contratos_de_rnc(rnc)
         if not contratos:
+            # FALLBACK: cosechar facturas directo por RNC con
+            # GetComprobantesFiscalesProveedores (body confirmado).
+            filas = [f for f in facturas_por_rnc(rnc) if f["comprobante_fiscal"]]
+            n = sb_upsert("infopago_facturas", _dedup(filas, ["comprobante_fiscal", "contrato"]),
+                          "comprobante_fiscal,contrato")
+            tot_fact += n
+            print(f"  [{i}/{len(rncs)}] {e.get('nombre') or rnc}: sin contratos vía API, {n} facturas por RNC directo")
             continue
         # Guardar vínculo proveedor ↔ contratos
         pc = [{
