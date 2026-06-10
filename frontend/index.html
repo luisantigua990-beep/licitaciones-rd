@@ -846,6 +846,23 @@ body {
 .loading { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 48px 20px; color: var(--muted); font-size: 14px; }
 .spinner { width: 22px; height: 22px; border: 2.5px solid var(--border2); border-top-color: var(--green); border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── UX v13: SKELETON SCREENS ── */
+.skel-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 16px; margin: 0 16px 10px; }
+.skel-line { height: 12px; border-radius: 6px; margin-bottom: 10px; background: linear-gradient(90deg, var(--border) 25%, var(--surface2) 50%, var(--border) 75%); background-size: 200% 100%; animation: skel-shimmer 1.3s infinite linear; }
+.skel-line:last-child { margin-bottom: 0; }
+.skel-line.w40 { width: 40%; } .skel-line.w90 { width: 90%; } .skel-line.w70 { width: 70%; } .skel-line.w55 { width: 55%; }
+@keyframes skel-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* ── UX v13: PULL-TO-REFRESH ── */
+.ptr-indicator { height: 0; overflow: hidden; display: flex; align-items: flex-end; justify-content: center; transition: height .15s ease-out; }
+.ptr-indicator .ptr-spinner { width: 22px; height: 22px; border: 2.5px solid var(--border); border-top-color: var(--green); border-radius: 50%; margin: 8px; opacity: .5; transition: opacity .15s, transform .2s; }
+.ptr-indicator.ready .ptr-spinner { opacity: 1; transform: rotate(180deg); }
+.ptr-indicator.loading .ptr-spinner { animation: spin .7s linear infinite; }
+
+/* ── UX v13: BOTÓN VOLVER ARRIBA ── */
+#btn-back-top { position: fixed; right: 16px; bottom: calc(80px + env(safe-area-inset-bottom, 0px)); width: 44px; height: 44px; border-radius: 50%; background: var(--green); color: #fff; border: none; font-size: 19px; font-weight: 800; cursor: pointer; z-index: 90; opacity: 0; pointer-events: none; transform: translateY(8px); transition: opacity .25s, transform .25s; box-shadow: 0 4px 16px rgba(0,0,0,.3); font-family: var(--font-body); }
+#btn-back-top.visible { opacity: 1; pointer-events: auto; transform: translateY(0); }
 .empty { text-align: center; padding: 48px 20px; color: var(--muted); }
 .empty-icon { font-size: 36px; margin-bottom: 10px; opacity: .5; }
 .empty-text { font-size: 14px; font-weight: 500; }
@@ -1990,7 +2007,7 @@ body {
 .intereses-status { font-size: 12px; color: var(--green); margin-top: 8px; min-height: 18px; }
 
 /* ── SEGUIMIENTO ── */
-#tab-seguimiento { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 72px; display: none; }
+#tab-seguimiento { position: absolute; inset: 0; overflow-y: auto; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); display: none; }
 .seg-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 24px 16px 18px;
@@ -2186,8 +2203,8 @@ body {
 .ptr-spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
 
 /* ── MISC TABS ── */
-#tab-detalle    { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 72px; display: none; }
-#tab-perfil     { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 72px; display: none; }
+#tab-detalle    { position: absolute; inset: 0; overflow-y: auto; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); display: none; }
+#tab-perfil     { position: absolute; inset: 0; overflow-y: auto; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); display: none; }
 .historial-card { background: var(--bg2); border: 1.5px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; margin-bottom: 8px; cursor: pointer; transition: border-color .15s; }
 .historial-card:active { border-color: var(--green-border); }
 .historial-card-titulo { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; margin-bottom: 4px; }
@@ -2199,7 +2216,7 @@ body {
 .historial-card-estado.error { background: rgba(231,76,60,.1); color: var(--red); border: 1px solid rgba(231,76,60,.25); }
 .historial-card-fecha { font-size: 10px; color: var(--muted); }
 .historial-resumen { font-size: 11px; color: var(--text2); margin-top: 6px; line-height: 1.5; border-top: 1px solid var(--border); padding-top: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-#tab-dashboard  { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 16px; display: none; }
+#tab-dashboard  { position: absolute; inset: 0; overflow-y: auto; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); display: none; }
 
 /* ── TOAST ── */
 .toast {
@@ -2235,7 +2252,7 @@ body {
 .analisis-listo-banner-btn.secondary { background: rgba(255,255,255,0.1); color: #86efac; border: 1px solid rgba(134,239,172,0.3); }
 
 /* ── MERCADO DE PROVEEDORES ── */
-#tab-mercado { position: absolute; inset: 0; overflow-y: auto; padding-bottom: 72px; display: none; }
+#tab-mercado { position: absolute; inset: 0; overflow-y: auto; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); display: none; }
 .mercado-header { padding: 18px 16px 10px; }
 .mercado-title { font-size: 22px; font-weight: 900; color: var(--text); letter-spacing: -0.5px; }
 .mercado-subtitle { font-size: 13px; color: var(--muted); margin-top: 3px; font-weight: 500; }
@@ -3113,9 +3130,11 @@ html { background: var(--color-bg, #0A0A0A); }
         </div>
         <div class="dash-topbar__right">
           <span class="dash-topbar__sort-label">Ordenar:
-            <select class="dash-topbar__sort-select" id="filtro-activos-visible" onchange="document.getElementById('filtro-activos').value=this.value;cargarProcesos(1)">
-              <option value="true">Cierra primero</option>
-              <option value="false">Todos</option>
+            <select class="dash-topbar__sort-select" id="filtro-orden-visible" onchange="cambiarOrdenProcesos(this.value)">
+              <option value="cierre">Cierra primero</option>
+              <option value="recientes">Más recientes</option>
+              <option value="monto">Mayor monto</option>
+              <option value="todos">Todos (incl. vencidos)</option>
             </select>
           </span>
         </div>
@@ -3734,7 +3753,7 @@ html { background: var(--color-bg, #0A0A0A); }
   </div>
 
   <!-- ── TAB: INTELIGENCIA COMPETITIVA ── -->
-  <div id="tab-inteligencia" style="position:absolute;inset:0;overflow-y:auto;padding-bottom:72px;display:none;z-index:1;">
+  <div id="tab-inteligencia" style="position:absolute;inset:0;overflow-y:auto;padding-bottom:calc(76px + env(safe-area-inset-bottom, 0px));display:none;z-index:1;">
 
     <!-- Header -->
     <div style="padding:20px 20px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);padding-bottom:14px;">
@@ -4614,6 +4633,7 @@ function filtrarRubro(rubro) {
 let rubroActivo = '';
 
 function filtrarRubroChip(rubro) {
+  haptic(); // UX v13
   rubroActivo = rubro;
   // Sincronizar el select oculto por compatibilidad
   const sel = document.getElementById('filtro-objeto');
@@ -4640,8 +4660,159 @@ function actualizarSaludo() {
 
 // ── PROCESOS ──
 let unspscFiltro = null;
+
+// ═══════════════ MEJORAS UX v13 ═══════════════
+
+// Haptic feedback (no-op en iOS Safari, vibra en Android)
+function haptic(ms = 10) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch(e) {} }
+
+// Skeleton screens — percepción de carga más rápida que un spinner
+function skeletonCards(n = 6) {
+  let html = '';
+  for (let i = 0; i < n; i++) {
+    html += `<div class="skel-card">
+      <div class="skel-line w40"></div>
+      <div class="skel-line w90"></div>
+      <div class="skel-line w70"></div>
+      <div class="skel-line w55"></div>
+    </div>`;
+  }
+  return html;
+}
+
+// Persistencia de filtros — el usuario configura una vez y la app lo recuerda
+const _FILTROS_KEY = 'll_filtros_procesos_v1';
+let _filtrosRestaurados = false;
+
+function guardarFiltrosProcesos() {
+  try {
+    localStorage.setItem(_FILTROS_KEY, JSON.stringify({
+      busqueda:    document.getElementById('busqueda')?.value || '',
+      rubro:       rubroActivo || '',
+      institucion: document.getElementById('filtro-institucion')?.value || '',
+      montoMin:    document.getElementById('filtro-monto-min')?.value || '',
+      montoMax:    document.getElementById('filtro-monto-max')?.value || '',
+      orden:       _ordenProcesos,
+      unspsc:      unspscFiltro
+    }));
+  } catch(e) {}
+}
+
+function restaurarFiltrosProcesos() {
+  if (_filtrosRestaurados) return;
+  _filtrosRestaurados = true;
+  try {
+    const f = JSON.parse(localStorage.getItem(_FILTROS_KEY) || 'null');
+    if (!f) return;
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+    set('busqueda', f.busqueda);
+    set('filtro-institucion', f.institucion);
+    set('filtro-monto-min', f.montoMin);
+    set('filtro-monto-max', f.montoMax);
+    if (f.busqueda) { try { toggleClearBtn(); } catch(e) {} }
+    if (f.rubro) {
+      rubroActivo = f.rubro;
+      const sel = document.getElementById('filtro-objeto'); if (sel) sel.value = f.rubro;
+      ['chip-all','chip-obras','chip-bienes','chip-servicios'].forEach(id => document.getElementById(id)?.classList.remove('is-active'));
+      const chipMap = { '': 'chip-all', 'Obras': 'chip-obras', 'Bienes': 'chip-bienes', 'Servicios': 'chip-servicios' };
+      document.getElementById(chipMap[f.rubro] || 'chip-all')?.classList.add('is-active');
+    }
+    if (f.orden) {
+      _ordenProcesos = f.orden;
+      const selO = document.getElementById('filtro-orden-visible'); if (selO) selO.value = f.orden;
+      const act = document.getElementById('filtro-activos'); if (act) act.value = f.orden === 'todos' ? 'false' : 'true';
+    }
+    if (f.unspsc && f.unspsc.codigo) {
+      unspscFiltro = f.unspsc;
+      const inp = document.getElementById('filtro-unspsc-text'); if (inp) inp.value = f.unspsc.nombre || '';
+      const tag = document.getElementById('unspsc-activo');
+      if (tag) { tag.style.display = 'flex'; const lbl = document.getElementById('unspsc-activo-label'); if (lbl) lbl.textContent = `${f.unspsc.nombre} (${f.unspsc.codigo})`; }
+    }
+    try { actualizarBadgeFiltros(); actualizarFiltrosActivos(); } catch(e) {}
+  } catch(e) {}
+}
+
+// Pull-to-refresh genérico para contenedores con scroll
+function attachPullToRefresh(elId, refreshFn) {
+  const el = document.getElementById(elId);
+  if (!el || el._ptrAttached) return;
+  el._ptrAttached = true;
+  const ind = document.createElement('div');
+  ind.className = 'ptr-indicator';
+  ind.innerHTML = '<div class="ptr-spinner"></div>';
+  el.prepend(ind);
+  let startY = 0, pulling = false;
+  el.addEventListener('touchstart', e => {
+    if (el.scrollTop <= 0) { startY = e.touches[0].clientY; pulling = true; }
+    else pulling = false;
+  }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    if (!pulling) return;
+    const dist = e.touches[0].clientY - startY;
+    if (dist > 10 && el.scrollTop <= 0) {
+      const d = Math.min(dist * 0.4, 70);
+      ind.style.height = d + 'px';
+      ind.classList.toggle('ready', d >= 58);
+    }
+  }, { passive: true });
+  el.addEventListener('touchend', async () => {
+    if (!pulling) return;
+    pulling = false;
+    if (ind.classList.contains('ready')) {
+      ind.classList.remove('ready');
+      ind.classList.add('loading');
+      ind.style.height = '44px';
+      haptic(15);
+      try { await refreshFn(); } catch(e) {}
+    }
+    ind.classList.remove('ready', 'loading');
+    ind.style.height = '0px';
+  }, { passive: true });
+}
+
+// Botón flotante "volver arriba"
+function initBackToTop() {
+  if (document.getElementById('btn-back-top')) return;
+  const btn = document.createElement('button');
+  btn.id = 'btn-back-top';
+  btn.setAttribute('aria-label', 'Volver arriba');
+  btn.textContent = '↑';
+  btn.onclick = () => {
+    haptic();
+    const tab = window._lastActiveTab || 'dashboard';
+    const el = document.getElementById('tab-' + tab);
+    if (el) el.scrollTo({ top: 0, behavior: 'smooth' });
+    btn.classList.remove('visible');
+  };
+  document.body.appendChild(btn);
+  ['tab-dashboard','tab-mercado','tab-seguimiento','tab-inteligencia','tab-perfil','tab-detalle'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('scroll', () => {
+      btn.classList.toggle('visible', el.scrollTop > 1200);
+    }, { passive: true });
+  });
+}
+
+// Inicializar mejoras UX (el script corre al final del body, el DOM ya existe)
+try {
+  initBackToTop();
+  attachPullToRefresh('tab-dashboard',   () => cargarProcesos(1));
+  attachPullToRefresh('tab-mercado',     () => cargarMercado());
+  attachPullToRefresh('tab-seguimiento', () => cargarSeguimiento());
+} catch(e) { console.warn('UX init:', e); }
+// ═══════════════ FIN MEJORAS UX v13 ═══════════════
+
+// Orden de la lista de procesos (FIX: antes "Cierra primero" no ordenaba nada)
+let _ordenProcesos = 'cierre';
+function cambiarOrdenProcesos(v) {
+  _ordenProcesos = v;
+  const act = document.getElementById('filtro-activos');
+  if (act) act.value = (v === 'todos') ? 'false' : 'true';
+  cargarProcesos(1);
+}
 async function cargarProcesos(page = 1) {
-  document.getElementById('procesos-container').innerHTML = '<div class="loading"><div class="spinner"></div><span>Cargando...</span></div>';
+  restaurarFiltrosProcesos(); // UX v13: restaurar filtros guardados (solo la primera vez)
+  document.getElementById('procesos-container').innerHTML = skeletonCards(6);
   const busqueda   = document.getElementById('busqueda').value;
   const objeto     = (typeof rubroActivo !== 'undefined' ? rubroActivo : null)
     || document.getElementById('filtro-objeto')?.value || '';
@@ -4649,14 +4820,18 @@ async function cargarProcesos(page = 1) {
   const institucion = document.getElementById('filtro-institucion')?.value || '';
   const montoMin   = document.getElementById('filtro-monto-min')?.value || '';
   const montoMax   = document.getElementById('filtro-monto-max')?.value || '';
+  // Mapear el selector visible al parámetro de orden del backend
+  const ordenMap = { cierre: 'cierre', recientes: 'publicacion', monto: 'monto', todos: 'publicacion' };
+  const ordenBackend = ordenMap[_ordenProcesos] || 'cierre';
 
-  let url = `${API}/api/procesos?page=${page}&limit=15&solo_activos=${activos}`;
+  let url = `${API}/api/procesos?page=${page}&limit=15&solo_activos=${activos}&orden=${ordenBackend}`;
   if (busqueda)    url += `&busqueda=${encodeURIComponent(busqueda)}`;
   if (objeto)      url += `&objeto=${encodeURIComponent(objeto)}`;
   if (institucion) url += `&institucion=${encodeURIComponent(institucion)}`;
   if (montoMin)    url += `&monto_min=${montoMin}`;
   if (montoMax)    url += `&monto_max=${montoMax}`;
   if (unspscFiltro) url += `&familia_unspsc=${encodeURIComponent(unspscFiltro.codigo)}`;
+  guardarFiltrosProcesos(); // UX v13: recordar filtros entre sesiones
 
   try {
     const controller = new AbortController();
@@ -4720,7 +4895,7 @@ function renderProcesos(procesos, data, page) {
 
   if (isDesktop) {
     container.innerHTML = procesos.map(p => {
-      const inst = (p.unidad_compra||'').split(' ').slice(0,1).join(' ').substring(0,10).toUpperCase() || '—';
+      const inst = sanitize((p.unidad_compra||'').split(' ').slice(0,1).join(' ').substring(0,10).toUpperCase()) || '—';
       const monto = formatMonto(p.monto_estimado);
       const cd = calcularCountdown(p.fecha_fin_recepcion_ofertas);
       // Barra de progreso: tiempo restante vs total publicado→cierre
@@ -4737,10 +4912,10 @@ function renderProcesos(procesos, data, page) {
         <div class="pdc-row1">
           <span class="pdc-code">${p.codigo_proceso||'—'}</span>
           <span class="pdc-inst-chip">${inst}</span>
-          <span class="pdc-estado-chip abierto">${p.estado_proceso||'Publicado'}</span>
+          <span class="pdc-estado-chip abierto">${sanitize(p.estado_proceso)||'Publicado'}</span>
           <button class="pdc-bookmark" onclick="event.stopPropagation();toggleSeguimiento('${p.codigo_proceso}')" id="bm-${p.codigo_proceso}">🔖</button>
         </div>
-        <div class="pdc-title">${p.titulo||'Sin título'}</div>
+        <div class="pdc-title">${sanitize(p.titulo)||'Sin título'}</div>
         <div class="pdc-meta">
           <span class="pdc-meta-item">
             <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -4748,11 +4923,11 @@ function renderProcesos(procesos, data, page) {
           </span>
           ${p.provincia ? `<span class="pdc-meta-item">
             <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-            ${p.provincia}
+            ${sanitize(p.provincia)}
           </span>` : ''}
           <span class="pdc-meta-item">
             <svg viewBox="0 0 24 24"><polyline points="20.59 13.41 15 19 9 13 14.59 7.41"/><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="20" x2="9" y2="6"/></svg>
-            ${unspsc}${p.objeto_proceso ? ' · '+p.objeto_proceso : ''}
+            ${sanitize(unspsc)}${p.objeto_proceso ? ' · '+sanitize(p.objeto_proceso) : ''}
           </span>
           <span class="pdc-meta-score" id="score-badge-${p.codigo_proceso}" style="display:none;"></span>
         </div>
@@ -4794,14 +4969,14 @@ function renderProcesos(procesos, data, page) {
               <span class="ll-mono ll-caption">${p.codigo_proceso||'—'}</span>
               <span class="ll-num">${formatMonto(p.monto_estimado)}</span>
             </div>
-            <h3 class="ll-card__title" style="margin:6px 0;">${p.titulo||'Sin título'}</h3>
+            <h3 class="ll-card__title" style="margin:6px 0;">${sanitize(p.titulo)||'Sin título'}</h3>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-              <span class="ll-body-sm ll-u-text-subtle">${p.unidad_compra||'—'}</span>
+              <span class="ll-body-sm ll-u-text-subtle">${sanitize(p.unidad_compra)||'—'}</span>
               <span class="ll-mono ll-caption">${cierre}</span>
             </div>
             <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:8px;">
-              ${tipo ? `<span class="${chipTipo}">${tipo}</span>` : ''}
-              ${p.modalidad ? `<span class="ll-chip">${p.modalidad}</span>` : ''}
+              ${tipo ? `<span class="${chipTipo}">${sanitize(tipo)}</span>` : ''}
+              ${p.modalidad ? `<span class="ll-chip">${sanitize(p.modalidad)}</span>` : ''}
               ${p.dirigido_mipymes ? '<span class="ll-chip ll-chip--warning">MIPYMES</span>' : ''}
               <span class="card-score-badge" id="score-badge-${p.codigo_proceso}" style="display:none;margin-left:auto;"></span>
             </div>
@@ -6960,7 +7135,7 @@ async function _tryRefreshToken() {
 }
 
 (async function iniciarApp() {
-  console.log('%c🟢 LicitacionLab BUILD v12 · nav-historial+buscador-mercado', 'color:#16a34a;font-weight:bold');
+  console.log('%c🟢 LicitacionLab BUILD v13 · orden-real+nav-historial+ux-pack (ptr, skeletons, filtros persistentes)', 'color:#16a34a;font-weight:bold');
   _hydratarSesionDesdeCookies();
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
@@ -7480,6 +7655,7 @@ function filtrarSeguimiento(filtro) {
 }
 
 async function toggleSeguimiento(codigo) {
+  haptic(12); // UX v13
   if (!currentUser) { mostrarToast('Debes iniciar sesión primero'); return; }
   const yaEsta = estaEnSeguimiento(codigo);
   if (yaEsta) {
@@ -7963,6 +8139,7 @@ function seleccionarSugerenciaMercado(nombre) {
 
 // Filtro por chip en la barra móvil del Mercado (sincroniza con los checkboxes)
 function filtrarChipMercado(btn) {
+  haptic(); // UX v13
   const cont  = document.getElementById('mercado-chips-mobile');
   const chips = cont ? [...cont.querySelectorAll('.mercado-chip')] : [];
   const cat   = btn.dataset.cat;
@@ -8164,7 +8341,7 @@ function renderProveedores(provs) {
 async function cargarMercado() {
   const lista = document.getElementById('mercado-lista');
   if (!lista) return;
-  lista.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  lista.innerHTML = skeletonCards(4);
 
   try {
     const busqueda = document.getElementById('mercado-busqueda')?.value.trim() || '';
