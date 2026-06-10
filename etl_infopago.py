@@ -199,26 +199,24 @@ def normalizar_factura(f, contrato=None, rnc=None):
     }
 
 
-def facturas_por_rnc(rnc, periodo="todos", rpe=None):
-    filas = []
-    for valor in _formatos_doc(rnc, rpe):
-        filas, page = [], 1
-        while True:
-            data = api_post("TrazabilidadPago/GetComprobantesFiscalesProveedores",
-                            {"documentoIdentidad": valor, "periodo": periodo,
-                             "pageNumber": page, "pageSize": 50})
-            time.sleep(SLEEP)
-            items = data if isinstance(data, list) else (pick(data or {}, "items", "lista", "comprobantes", "data", "registros") or [])
-            if not items:
-                break
-            filas += [normalizar_factura(f, rnc=rnc) for f in items]
-            if len(items) < 50:
-                break
-            page += 1
-            if page > 100:  # tope de seguridad
-                break
-        if filas:
-            break  # este formato funcionó, no probar más
+def facturas_por_id(infopago_id, rnc=None, periodo=""):
+    """Comprobantes del proveedor. Body confirmado (DevTools):
+    {"id": <Id interno>, "periodo": "", "pageNumber": N, "pageSize": M}"""
+    filas, page = [], 1
+    while True:
+        data = api_post("TrazabilidadPago/GetComprobantesFiscalesProveedores",
+                        {"id": infopago_id, "periodo": periodo,
+                         "pageNumber": page, "pageSize": 50})
+        time.sleep(SLEEP)
+        items = data if isinstance(data, list) else (pick(data or {}, "items", "lista", "comprobantes", "data", "registros") or [])
+        if not items:
+            break
+        filas += [normalizar_factura(f, rnc=rnc) for f in items]
+        if len(items) < 50:
+            break
+        page += 1
+        if page > 100:  # tope de seguridad
+            break
     return filas
 
 
@@ -229,55 +227,34 @@ def facturas_por_contrato(contrato):
     return [normalizar_factura(f, contrato=contrato) for f in items]
 
 
-def _formatos_doc(doc, rpe=None):
-    """Variantes de formato del documento: dígitos puros, con guiones
-    (RNC 9: 1-XX-XXXXX-X / Cédula 11: XXX-XXXXXXX-X) y RPE como último recurso."""
-    d = _re_doc.sub(r"\D", "", str(doc or ""))
-    fmts = []
-    if d:
-        fmts.append(d)
-        if len(d) == 9:
-            fmts.append(f"{d[0]}-{d[1:3]}-{d[3:8]}-{d[8]}")
-        elif len(d) == 11:
-            fmts.append(f"{d[0:3]}-{d[3:10]}-{d[10]}")
-    if rpe:
-        fmts.append(str(rpe))
-    return fmts
-
-
-def _contratos_de_rnc(rnc, rpe=None):
-    """Contratos de un proveedor vía GetProcesosContratacion (paginado).
-    Confirmado por el API: PERIODO es requerido. Probamos formatos del documento."""
-    candidatos = [
-        (lambda v: (lambda p: {"documentoIdentidad": v, "periodo": "todos",
-                               "pageNumber": p, "pageSize": 50}))(val)
-        for val in _formatos_doc(rnc, rpe)
-    ]
-    for body_fn in candidatos:
-        data = api_post("TrazabilidadPago/GetProcesosContratacion", body_fn(1))
+def _contratos_por_id(infopago_id):
+    """Contratos del proveedor vía GetProcesosContratacion (paginado).
+    Body confirmado (DevTools): {"id": <Id>, "periodo": "", "pageNumber": N, "pageSize": M}"""
+    body = lambda p: {"id": infopago_id, "periodo": "", "pageNumber": p, "pageSize": 50}
+    data = api_post("TrazabilidadPago/GetProcesosContratacion", body(1))
+    time.sleep(SLEEP)
+    bloque = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
+    if not bloque or not isinstance(bloque, dict) or "contratosProveedor" not in bloque:
+        # Algunos proveedores podrían no tener contratos registrados
+        return {}, []
+    prov = bloque.get("datosProveedor") or {}
+    cp = bloque.get("contratosProveedor") or {}
+    regs = list(cp.get("registros") or [])
+    total_pag = int(cp.get("totalPaginas") or 1)
+    vistos = {r.get("contrato") for r in regs}
+    page = 2
+    while page <= total_pag and page <= 60:
+        d2 = api_post("TrazabilidadPago/GetProcesosContratacion", body(page))
         time.sleep(SLEEP)
-        bloque = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
-        if not bloque or not isinstance(bloque, dict) or "contratosProveedor" not in bloque:
-            continue
-        prov = bloque.get("datosProveedor") or {}
-        cp = bloque.get("contratosProveedor") or {}
-        regs = list(cp.get("registros") or [])
-        total_pag = int(cp.get("totalPaginas") or 1)
-        vistos = {r.get("contrato") for r in regs}
-        page = 2
-        while page <= total_pag and page <= 60:
-            d2 = api_post("TrazabilidadPago/GetProcesosContratacion", body_fn(page))
-            time.sleep(SLEEP)
-            b2 = d2[0] if isinstance(d2, list) and d2 else {}
-            r2 = (b2.get("contratosProveedor") or {}).get("registros") or []
-            nuevos = [r for r in r2 if r.get("contrato") not in vistos]
-            if not nuevos:
-                break  # el API ignoró la paginación o no hay más
-            regs += nuevos
-            vistos.update(r.get("contrato") for r in nuevos)
-            page += 1
-        return prov, regs
-    return {}, []
+        b2 = d2[0] if isinstance(d2, list) and d2 else (d2 if isinstance(d2, dict) else {})
+        r2 = (b2.get("contratosProveedor") or {}).get("registros") or []
+        nuevos = [r for r in r2 if r.get("contrato") not in vistos]
+        if not nuevos:
+            break  # el API ignoró la paginación o no hay más
+        regs += nuevos
+        vistos.update(r.get("contrato") for r in nuevos)
+        page += 1
+    return prov, regs
 
 
 def _dedup(filas, claves):
@@ -289,11 +266,15 @@ def _dedup(filas, claves):
     return out
 
 
-# ── RESOLVER RPE → RNC (vía InfoPago GetReferenciaProveedor) ───
-# DESCUBRIMIENTO: empresas_estado.rnc contiene el RPE (2-6 dígitos),
-# NO el RNC. InfoPago exige RNC/Cédula (9/11 dígitos) como
-# documentoIdentidad. Este modo resuelve el documento real una sola
-# vez por empresa y lo cachea en empresas_estado.rnc_real.
+# ── RESOLVER RPE → (Id InfoPago, RNC) ──────────────────────────
+# CONFIRMADO con payload real del navegador (DevTools):
+#   POST Proveedor/GetReferenciaProveedor {"type":"rnc"|"name","value":...}
+#   → data: [{"Id": 50171, "RPE": "62056", "RazonSocial": "...",
+#             "NumeroDocumento": "131354238"}]
+# GetProcesosContratacion y GetComprobantesFiscalesProveedores exigen
+# ese **Id interno**, no el documento:
+#   {"id": 50171, "periodo": "", "pageNumber": 1, "pageSize": N}
+# empresas_estado.rnc contiene el RPE → matcheamos por RPE exacto.
 
 import re as _re_doc
 
@@ -308,82 +289,91 @@ def _norm_nombre(s):
     return _re_doc.sub(r"[^a-z0-9]", "", s)
 
 
-def _extraer_documento(data, nombre_esperado):
-    """Busca un RNC/cédula (9 u 11 dígitos) en la respuesta de
-    GetReferenciaProveedor, validando contra el nombre si hay varios."""
-    if data is None:
-        return None
-    items = data if isinstance(data, list) else \
-        (pick(data, "items", "lista", "registros", "data") or [data])
-    if not isinstance(items, list):
-        items = [items]
-    objetivo = _norm_nombre(nombre_esperado)
-    candidatos = []
-    for it in items:
-        if not isinstance(it, dict):
-            continue
-        doc = _solo_digitos(pick(it, "documentoIdentidad", "numeroDocumento",
-                                 "rnc", "documento", "cedula", "rncCedula"))
-        if len(doc) not in (9, 11):
-            continue
-        nom = _norm_nombre(pick(it, "razonSocial", "nombre", "nombreProveedor", "proveedor"))
-        score = 2 if (nom and objetivo and (nom == objetivo or objetivo in nom or nom in objetivo)) else 1
-        candidatos.append((score, doc))
-    if not candidatos:
-        return None
-    candidatos.sort(reverse=True)
-    # Si hay un solo resultado o hay match de nombre, lo aceptamos
-    if len(items) == 1 or candidatos[0][0] == 2:
-        return candidatos[0][1]
-    return None  # varios resultados sin match de nombre → no adivinar
-
-
-def resolver_rnc_empresa(rpe, nombre):
-    """Intenta resolver el documento real probando varias vías."""
-    # 1) Por RPE directo (por si el API lo soporta)
-    for tipo in ("rpe", "document"):
-        doc = _extraer_documento(
-            api_post("Proveedor/GetReferenciaProveedor", {"type": tipo, "value": str(rpe)}),
-            nombre)
-        time.sleep(SLEEP)
-        if doc:
-            return doc
-    # 2) Por nombre (vía confirmada en --explorar)
-    doc = _extraer_documento(
-        api_post("Proveedor/GetReferenciaProveedor", {"type": "name", "value": nombre}),
-        nombre)
+def _referencia_proveedor(tipo, valor):
+    data = api_post("Proveedor/GetReferenciaProveedor", {"type": tipo, "value": str(valor)})
     time.sleep(SLEEP)
-    return doc
+    if data is None:
+        return []
+    return data if isinstance(data, list) else [data]
+
+
+def _match_referencia(items, rpe=None, nombre=None):
+    """Elige el proveedor correcto: 1º por RPE exacto, 2º por nombre,
+    3º si es resultado único. Devuelve (infopago_id, rnc_o_cedula)."""
+    items = [it for it in items if isinstance(it, dict)]
+    elegido = None
+    if rpe:
+        for it in items:
+            if str(pick(it, "RPE", "rpe") or "") == str(rpe):
+                elegido = it; break
+    if not elegido and nombre:
+        objetivo = _norm_nombre(nombre)
+        for it in items:
+            nom = _norm_nombre(pick(it, "RazonSocial", "razonSocial", "nombre"))
+            if nom and objetivo and (nom == objetivo or objetivo in nom or nom in objetivo):
+                elegido = it; break
+    if not elegido and len(items) == 1:
+        elegido = items[0]
+    if not elegido:
+        return None, None
+    iid = pick(elegido, "Id", "id")
+    doc = _solo_digitos(pick(elegido, "NumeroDocumento", "numeroDocumento",
+                             "documentoIdentidad", "rnc"))
+    return iid, (doc if len(doc) in (9, 11) else None)
+
+
+def resolver_empresa(rpe, nombre, rnc_conocido=None):
+    """Devuelve (infopago_id, rnc). Vía rápida por RNC si ya lo tenemos,
+    si no por nombre (matcheando RPE en la respuesta)."""
+    if rnc_conocido:
+        iid, doc = _match_referencia(_referencia_proveedor("rnc", rnc_conocido), rpe, nombre)
+        if iid:
+            return iid, (doc or rnc_conocido)
+    if nombre:
+        iid, doc = _match_referencia(_referencia_proveedor("name", nombre), rpe, nombre)
+        if iid:
+            return iid, doc
+    return None, None
 
 
 def modo_resolver_rnc(args):
-    print(f"▶ Resolviendo RNC real de hasta {args.limit} empresas (más activas primero)")
+    print(f"▶ Resolviendo Id InfoPago + RNC de hasta {args.limit} empresas (más activas primero)")
     empresas = sb_select(
         "empresas_estado",
-        "select=id,rnc,nombre&rnc_real=is.null&nombre=not.is.null"
+        "select=id,rnc,rnc_real,nombre&infopago_id=is.null&nombre=not.is.null"
         f"&order=total_contratos.desc.nullslast&limit={args.limit}")
     if not empresas:
         print("✔ No hay empresas pendientes de resolver (o falló la consulta)")
         return
     ok = fail = 0
     for i, e in enumerate(empresas, 1):
-        doc = resolver_rnc_empresa(e.get("rnc"), e.get("nombre"))
-        if doc:
-            sb_patch("empresas_estado", f"id=eq.{e['id']}", {"rnc_real": doc})
+        iid, doc = resolver_empresa(e.get("rnc"), e.get("nombre"), e.get("rnc_real"))
+        cambios = {}
+        if iid:
+            cambios["infopago_id"] = iid
+        if doc and not e.get("rnc_real"):
+            cambios["rnc_real"] = doc
+        if cambios:
+            sb_patch("empresas_estado", f"id=eq.{e['id']}", cambios)
+        if iid:
             ok += 1
         else:
             fail += 1
         if i % 20 == 0 or i == len(empresas):
             print(f"  [{i}/{len(empresas)}] resueltos={ok} sin_match={fail}")
-    print(f"✅ {ok} RNCs resueltos, {fail} sin match")
+    print(f"✅ {ok} Ids InfoPago resueltos, {fail} sin match")
     if ok == 0:
-        print("✖ No se resolvió ningún RNC — revisar formato de GetReferenciaProveedor con --explorar")
+        print("✖ No se resolvió ningún Id — revisar GetReferenciaProveedor con --explorar")
         sys.exit(1)
 
 
 def modo_facturas(args):
     if args.rnc:
-        rncs = [{"rnc": args.rnc, "nombre": ""}]
+        iid, doc = _match_referencia(_referencia_proveedor("rnc", args.rnc))
+        if not iid:
+            print(f"✖ No se encontró el proveedor en InfoPago para RNC {args.rnc}")
+            sys.exit(1)
+        rncs = [{"infopago_id": iid, "rnc": doc or args.rnc, "nombre": ""}]
     elif args.contrato:
         filas = [f for f in facturas_por_contrato(args.contrato) if f["comprobante_fiscal"]]
         n = sb_upsert("infopago_facturas", _dedup(filas, ["comprobante_fiscal", "contrato"]),
@@ -391,37 +381,40 @@ def modo_facturas(args):
         print(f"✅ {n} facturas guardadas"); return
     elif args.desde_contratos:
         # Empresas con más contratos primero. OJO: la columna "rnc" es el RPE;
-        # el documento real está en rnc_real (poblado por --modo resolver-rnc).
-        print(f"▶ Tomando {args.limit} empresas con rnc_real (más activas primero)")
-        rncs = sb_select("empresas_estado",
-                         f"select=rnc,rnc_real,nombre&rnc_real=not.is.null&order=total_contratos.desc.nullslast&limit={args.limit}")
-        rncs = [{"rnc": r.get("rnc_real"), "rpe": r.get("rnc"), "nombre": r.get("nombre")} for r in rncs]
+        # el Id interno de InfoPago (infopago_id) lo pobla --modo resolver-rnc.
+        print(f"▶ Tomando {args.limit} empresas con infopago_id (más activas primero)")
+        regs = sb_select("empresas_estado",
+                         f"select=rnc,rnc_real,infopago_id,nombre&infopago_id=not.is.null&order=total_contratos.desc.nullslast&limit={args.limit}")
+        rncs = [{"infopago_id": r.get("infopago_id"), "rnc": r.get("rnc_real"),
+                 "rpe": r.get("rnc"), "nombre": r.get("nombre")} for r in regs]
         if not rncs:
-            print("✖ Ninguna empresa tiene rnc_real. Corre primero: --modo resolver-rnc")
+            print("✖ Ninguna empresa tiene infopago_id. Corre primero: --modo resolver-rnc")
             sys.exit(1)
     else:
         print("✖ Indica --rnc, --contrato o --desde-contratos"); return
 
     tot_fact, tot_contr = 0, 0
     for i, e in enumerate(rncs, 1):
+        iid = e.get("infopago_id")
         rnc = (e.get("rnc") or "").strip()
-        if len(rnc) not in (9, 11) or not rnc.isdigit():
-            print(f"  [{i}] saltando documento inválido: {rnc!r} ({e.get('nombre')})")
+        if not iid:
             continue
-        prov, contratos = _contratos_de_rnc(rnc, e.get("rpe"))
+        prov, contratos = _contratos_por_id(iid)
+        rnc = rnc or _solo_digitos(pick(prov, "numeroDocumento", "documentoIdentidad", "rnc")) or str(iid)
+        # Facturas directas del proveedor (un solo flujo paginado, más completo
+        # que ir contrato por contrato)
+        filas = [f for f in facturas_por_id(iid, rnc=rnc) if f["comprobante_fiscal"]]
+        filas = [dict(f, rnc_proveedor=f["rnc_proveedor"] or rnc) for f in filas]
+        n = sb_upsert("infopago_facturas", _dedup(filas, ["comprobante_fiscal", "contrato"]),
+                      "comprobante_fiscal,contrato")
+        tot_fact += n
         if not contratos:
-            # FALLBACK: cosechar facturas directo por RNC con
-            # GetComprobantesFiscalesProveedores (body confirmado).
-            filas = [f for f in facturas_por_rnc(rnc, rpe=e.get("rpe")) if f["comprobante_fiscal"]]
-            n = sb_upsert("infopago_facturas", _dedup(filas, ["comprobante_fiscal", "contrato"]),
-                          "comprobante_fiscal,contrato")
-            tot_fact += n
-            print(f"  [{i}/{len(rncs)}] {e.get('nombre') or rnc}: sin contratos vía API, {n} facturas por RNC directo")
+            print(f"  [{i}/{len(rncs)}] {e.get('nombre') or rnc}: 0 contratos, {n} facturas")
             continue
         # Guardar vínculo proveedor ↔ contratos
         pc = [{
             "rnc": rnc,
-            "rpe": pick(prov, "rpe"),
+            "rpe": pick(prov, "rpe") or e.get("rpe"),
             "razon_social": pick(prov, "razonSocial") or e.get("nombre"),
             "estado_rpe": pick(prov, "estadoRPE"),
             "monto_total_contratado": pick(prov, "montoTotalContratado"),
@@ -434,15 +427,6 @@ def modo_facturas(args):
         } for c in contratos if c.get("contrato")]
         sb_upsert("infopago_proveedor_contratos", _dedup(pc, ["rnc", "contrato"]), "rnc,contrato")
         tot_contr += len(pc)
-        # Facturas de los contratos más recientes (vienen ordenados desc)
-        filas = []
-        for c in contratos[:args.max_contratos]:
-            if c.get("contrato"):
-                filas += facturas_por_contrato(c["contrato"])
-        filas = [dict(f, rnc_proveedor=f["rnc_proveedor"] or rnc) for f in filas if f["comprobante_fiscal"]]
-        n = sb_upsert("infopago_facturas", _dedup(filas, ["comprobante_fiscal", "contrato"]),
-                      "comprobante_fiscal,contrato")
-        tot_fact += n
         print(f"  [{i}/{len(rncs)}] {e.get('nombre') or rnc}: {len(pc)} contratos, {n} facturas")
     print(f"✅ TOTAL: {tot_contr} contratos y {tot_fact} facturas guardadas")
     if tot_fact == 0 and tot_contr == 0:
