@@ -73,6 +73,8 @@ def _request(method, path, params=None, json_body=None):
                     return j.get("data")
                 return j
             print(f"  ⚠ {r.status_code} {url} (intento {intento})")
+            if 400 <= r.status_code < 500:
+                return None  # error de cliente: reintentar no ayuda (evita quemar minutos)
         except Exception as e:
             print(f"  ⚠ {type(e).__name__}: {e} (intento {intento})")
         time.sleep(1.5 * intento)
@@ -104,6 +106,18 @@ def sb_select(tabla, query):
     h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     r = requests.get(url, headers=h, timeout=60)
     return r.json() if r.status_code == 200 else []
+
+
+def sb_patch(tabla, filtro, cambios):
+    url = f"{SUPABASE_URL}/rest/v1/{tabla}?{filtro}"
+    h = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=minimal",
+    }
+    r = requests.patch(url, headers=h, data=json.dumps(cambios, default=str), timeout=60)
+    return r.status_code in (200, 204)
 
 
 # ── Utilidades de mapeo flexible ────────────────────────────────
@@ -250,6 +264,98 @@ def _dedup(filas, claves):
     return out
 
 
+# ── RESOLVER RPE → RNC (vía InfoPago GetReferenciaProveedor) ───
+# DESCUBRIMIENTO: empresas_estado.rnc contiene el RPE (2-6 dígitos),
+# NO el RNC. InfoPago exige RNC/Cédula (9/11 dígitos) como
+# documentoIdentidad. Este modo resuelve el documento real una sola
+# vez por empresa y lo cachea en empresas_estado.rnc_real.
+
+import re as _re_doc
+
+def _solo_digitos(v):
+    return _re_doc.sub(r"\D", "", str(v or ""))
+
+
+def _norm_nombre(s):
+    s = (s or "").lower()
+    for a, b in (("á","a"),("é","e"),("í","i"),("ó","o"),("ú","u"),("ñ","n")):
+        s = s.replace(a, b)
+    return _re_doc.sub(r"[^a-z0-9]", "", s)
+
+
+def _extraer_documento(data, nombre_esperado):
+    """Busca un RNC/cédula (9 u 11 dígitos) en la respuesta de
+    GetReferenciaProveedor, validando contra el nombre si hay varios."""
+    if data is None:
+        return None
+    items = data if isinstance(data, list) else \
+        (pick(data, "items", "lista", "registros", "data") or [data])
+    if not isinstance(items, list):
+        items = [items]
+    objetivo = _norm_nombre(nombre_esperado)
+    candidatos = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        doc = _solo_digitos(pick(it, "documentoIdentidad", "numeroDocumento",
+                                 "rnc", "documento", "cedula", "rncCedula"))
+        if len(doc) not in (9, 11):
+            continue
+        nom = _norm_nombre(pick(it, "razonSocial", "nombre", "nombreProveedor", "proveedor"))
+        score = 2 if (nom and objetivo and (nom == objetivo or objetivo in nom or nom in objetivo)) else 1
+        candidatos.append((score, doc))
+    if not candidatos:
+        return None
+    candidatos.sort(reverse=True)
+    # Si hay un solo resultado o hay match de nombre, lo aceptamos
+    if len(items) == 1 or candidatos[0][0] == 2:
+        return candidatos[0][1]
+    return None  # varios resultados sin match de nombre → no adivinar
+
+
+def resolver_rnc_empresa(rpe, nombre):
+    """Intenta resolver el documento real probando varias vías."""
+    # 1) Por RPE directo (por si el API lo soporta)
+    for tipo in ("rpe", "document"):
+        doc = _extraer_documento(
+            api_post("Proveedor/GetReferenciaProveedor", {"type": tipo, "value": str(rpe)}),
+            nombre)
+        time.sleep(SLEEP)
+        if doc:
+            return doc
+    # 2) Por nombre (vía confirmada en --explorar)
+    doc = _extraer_documento(
+        api_post("Proveedor/GetReferenciaProveedor", {"type": "name", "value": nombre}),
+        nombre)
+    time.sleep(SLEEP)
+    return doc
+
+
+def modo_resolver_rnc(args):
+    print(f"▶ Resolviendo RNC real de hasta {args.limit} empresas (más activas primero)")
+    empresas = sb_select(
+        "empresas_estado",
+        "select=id,rnc,nombre&rnc_real=is.null&nombre=not.is.null"
+        f"&order=total_contratos.desc.nullslast&limit={args.limit}")
+    if not empresas:
+        print("✔ No hay empresas pendientes de resolver (o falló la consulta)")
+        return
+    ok = fail = 0
+    for i, e in enumerate(empresas, 1):
+        doc = resolver_rnc_empresa(e.get("rnc"), e.get("nombre"))
+        if doc:
+            sb_patch("empresas_estado", f"id=eq.{e['id']}", {"rnc_real": doc})
+            ok += 1
+        else:
+            fail += 1
+        if i % 20 == 0 or i == len(empresas):
+            print(f"  [{i}/{len(empresas)}] resueltos={ok} sin_match={fail}")
+    print(f"✅ {ok} RNCs resueltos, {fail} sin match")
+    if ok == 0:
+        print("✖ No se resolvió ningún RNC — revisar formato de GetReferenciaProveedor con --explorar")
+        sys.exit(1)
+
+
 def modo_facturas(args):
     if args.rnc:
         rncs = [{"rnc": args.rnc, "nombre": ""}]
@@ -259,17 +365,23 @@ def modo_facturas(args):
                       "comprobante_fiscal,contrato")
         print(f"✅ {n} facturas guardadas"); return
     elif args.desde_contratos:
-        # Empresas con más contratos primero (empresas_estado tiene el RNC)
-        print(f"▶ Tomando {args.limit} empresas de empresas_estado (más activas primero)")
+        # Empresas con más contratos primero. OJO: la columna "rnc" es el RPE;
+        # el documento real está en rnc_real (poblado por --modo resolver-rnc).
+        print(f"▶ Tomando {args.limit} empresas con rnc_real (más activas primero)")
         rncs = sb_select("empresas_estado",
-                         f"select=rnc,nombre&rnc=not.is.null&order=total_contratos.desc.nullslast&limit={args.limit}")
+                         f"select=rnc_real,nombre&rnc_real=not.is.null&order=total_contratos.desc.nullslast&limit={args.limit}")
+        rncs = [{"rnc": r.get("rnc_real"), "nombre": r.get("nombre")} for r in rncs]
+        if not rncs:
+            print("✖ Ninguna empresa tiene rnc_real. Corre primero: --modo resolver-rnc")
+            sys.exit(1)
     else:
         print("✖ Indica --rnc, --contrato o --desde-contratos"); return
 
     tot_fact, tot_contr = 0, 0
     for i, e in enumerate(rncs, 1):
         rnc = (e.get("rnc") or "").strip()
-        if not rnc:
+        if len(rnc) not in (9, 11) or not rnc.isdigit():
+            print(f"  [{i}] saltando documento inválido: {rnc!r} ({e.get('nombre')})")
             continue
         prov, contratos = _contratos_de_rnc(rnc)
         if not contratos:
@@ -301,6 +413,9 @@ def modo_facturas(args):
         tot_fact += n
         print(f"  [{i}/{len(rncs)}] {e.get('nombre') or rnc}: {len(pc)} contratos, {n} facturas")
     print(f"✅ TOTAL: {tot_contr} contratos y {tot_fact} facturas guardadas")
+    if tot_fact == 0 and tot_contr == 0:
+        print("✖ Carga vacía — marcando el job como fallido para que GitHub lo muestre en rojo")
+        sys.exit(1)
 
 
 # ── MODO RANKING (campos reales confirmados del API) ───────────
@@ -433,7 +548,7 @@ def modo_proveedor(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="ETL InfoPago DGCP → Supabase")
     ap.add_argument("--explorar", action="store_true", help="Imprimir estructura real de cada endpoint")
-    ap.add_argument("--modo", choices=["facturas", "ranking", "proveedor", "trazabilidad"])
+    ap.add_argument("--modo", choices=["facturas", "ranking", "proveedor", "trazabilidad", "resolver-rnc"])
     ap.add_argument("--rnc", help="RNC del proveedor")
     ap.add_argument("--contrato", help="Código de contrato (ej. CAASD-2025-00188)")
     ap.add_argument("--desde-contratos", action="store_true",
@@ -448,6 +563,8 @@ if __name__ == "__main__":
 
     if args.explorar:
         modo_explorar(args.rnc or "130723354", args.contrato or "CAASD-2025-00188")
+    elif args.modo == "resolver-rnc":
+        modo_resolver_rnc(args)
     elif args.modo == "facturas":
         modo_facturas(args)
     elif args.modo == "ranking":
