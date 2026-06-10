@@ -199,22 +199,26 @@ def normalizar_factura(f, contrato=None, rnc=None):
     }
 
 
-def facturas_por_rnc(rnc, periodo="todos"):
-    filas, page = [], 1
-    while True:
-        data = api_post("TrazabilidadPago/GetComprobantesFiscalesProveedores",
-                        {"documentoIdentidad": rnc, "periodo": periodo,
-                         "pageNumber": page, "pageSize": 50})
-        time.sleep(SLEEP)
-        items = data if isinstance(data, list) else (pick(data or {}, "items", "lista", "comprobantes", "data") or [])
-        if not items:
-            break
-        filas += [normalizar_factura(f, rnc=rnc) for f in items]
-        if len(items) < 50:
-            break
-        page += 1
-        if page > 100:  # tope de seguridad
-            break
+def facturas_por_rnc(rnc, periodo="todos", rpe=None):
+    filas = []
+    for valor in _formatos_doc(rnc, rpe):
+        filas, page = [], 1
+        while True:
+            data = api_post("TrazabilidadPago/GetComprobantesFiscalesProveedores",
+                            {"documentoIdentidad": valor, "periodo": periodo,
+                             "pageNumber": page, "pageSize": 50})
+            time.sleep(SLEEP)
+            items = data if isinstance(data, list) else (pick(data or {}, "items", "lista", "comprobantes", "data", "registros") or [])
+            if not items:
+                break
+            filas += [normalizar_factura(f, rnc=rnc) for f in items]
+            if len(items) < 50:
+                break
+            page += 1
+            if page > 100:  # tope de seguridad
+                break
+        if filas:
+            break  # este formato funcionó, no probar más
     return filas
 
 
@@ -225,14 +229,29 @@ def facturas_por_contrato(contrato):
     return [normalizar_factura(f, contrato=contrato) for f in items]
 
 
-def _contratos_de_rnc(rnc):
+def _formatos_doc(doc, rpe=None):
+    """Variantes de formato del documento: dígitos puros, con guiones
+    (RNC 9: 1-XX-XXXXX-X / Cédula 11: XXX-XXXXXXX-X) y RPE como último recurso."""
+    d = _re_doc.sub(r"\D", "", str(doc or ""))
+    fmts = []
+    if d:
+        fmts.append(d)
+        if len(d) == 9:
+            fmts.append(f"{d[0]}-{d[1:3]}-{d[3:8]}-{d[8]}")
+        elif len(d) == 11:
+            fmts.append(f"{d[0:3]}-{d[3:10]}-{d[10]}")
+    if rpe:
+        fmts.append(str(rpe))
+    return fmts
+
+
+def _contratos_de_rnc(rnc, rpe=None):
     """Contratos de un proveedor vía GetProcesosContratacion (paginado).
-    El body exacto no está documentado públicamente: probamos variantes."""
+    Confirmado por el API: PERIODO es requerido. Probamos formatos del documento."""
     candidatos = [
-        lambda p: {"documentoIdentidad": rnc, "periodo": "todos", "pageNumber": p, "pageSize": 50},
-        lambda p: {"documentoIdentidad": rnc, "pageNumber": p, "pageSize": 50},
-        lambda p: {"documentoIdentidad": rnc, "periodo": "", "pageNumber": p, "pageSize": 50},
-        lambda p: {"numeroDocumento": rnc, "periodo": "todos", "pageNumber": p, "pageSize": 50},
+        (lambda v: (lambda p: {"documentoIdentidad": v, "periodo": "todos",
+                               "pageNumber": p, "pageSize": 50}))(val)
+        for val in _formatos_doc(rnc, rpe)
     ]
     for body_fn in candidatos:
         data = api_post("TrazabilidadPago/GetProcesosContratacion", body_fn(1))
@@ -375,8 +394,8 @@ def modo_facturas(args):
         # el documento real está en rnc_real (poblado por --modo resolver-rnc).
         print(f"▶ Tomando {args.limit} empresas con rnc_real (más activas primero)")
         rncs = sb_select("empresas_estado",
-                         f"select=rnc_real,nombre&rnc_real=not.is.null&order=total_contratos.desc.nullslast&limit={args.limit}")
-        rncs = [{"rnc": r.get("rnc_real"), "nombre": r.get("nombre")} for r in rncs]
+                         f"select=rnc,rnc_real,nombre&rnc_real=not.is.null&order=total_contratos.desc.nullslast&limit={args.limit}")
+        rncs = [{"rnc": r.get("rnc_real"), "rpe": r.get("rnc"), "nombre": r.get("nombre")} for r in rncs]
         if not rncs:
             print("✖ Ninguna empresa tiene rnc_real. Corre primero: --modo resolver-rnc")
             sys.exit(1)
@@ -389,11 +408,11 @@ def modo_facturas(args):
         if len(rnc) not in (9, 11) or not rnc.isdigit():
             print(f"  [{i}] saltando documento inválido: {rnc!r} ({e.get('nombre')})")
             continue
-        prov, contratos = _contratos_de_rnc(rnc)
+        prov, contratos = _contratos_de_rnc(rnc, e.get("rpe"))
         if not contratos:
             # FALLBACK: cosechar facturas directo por RNC con
             # GetComprobantesFiscalesProveedores (body confirmado).
-            filas = [f for f in facturas_por_rnc(rnc) if f["comprobante_fiscal"]]
+            filas = [f for f in facturas_por_rnc(rnc, rpe=e.get("rpe")) if f["comprobante_fiscal"]]
             n = sb_upsert("infopago_facturas", _dedup(filas, ["comprobante_fiscal", "contrato"]),
                           "comprobante_fiscal,contrato")
             tot_fact += n
