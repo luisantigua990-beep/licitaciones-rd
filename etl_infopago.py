@@ -206,39 +206,101 @@ def facturas_por_contrato(contrato):
     return [normalizar_factura(f, contrato=contrato) for f in items]
 
 
+def _contratos_de_rnc(rnc):
+    """Contratos de un proveedor vía GetProcesosContratacion (paginado).
+    El body exacto no está documentado públicamente: probamos variantes."""
+    candidatos = [
+        lambda p: {"documentoIdentidad": rnc, "pageNumber": p, "pageSize": 50},
+        lambda p: {"numeroDocumento": rnc, "pageNumber": p, "pageSize": 50},
+        lambda p: {"type": "document", "value": rnc, "pageNumber": p, "pageSize": 50},
+    ]
+    for body_fn in candidatos:
+        data = api_post("TrazabilidadPago/GetProcesosContratacion", body_fn(1))
+        time.sleep(SLEEP)
+        bloque = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
+        if not bloque or not isinstance(bloque, dict) or "contratosProveedor" not in bloque:
+            continue
+        prov = bloque.get("datosProveedor") or {}
+        cp = bloque.get("contratosProveedor") or {}
+        regs = list(cp.get("registros") or [])
+        total_pag = int(cp.get("totalPaginas") or 1)
+        vistos = {r.get("contrato") for r in regs}
+        page = 2
+        while page <= total_pag and page <= 60:
+            d2 = api_post("TrazabilidadPago/GetProcesosContratacion", body_fn(page))
+            time.sleep(SLEEP)
+            b2 = d2[0] if isinstance(d2, list) and d2 else {}
+            r2 = (b2.get("contratosProveedor") or {}).get("registros") or []
+            nuevos = [r for r in r2 if r.get("contrato") not in vistos]
+            if not nuevos:
+                break  # el API ignoró la paginación o no hay más
+            regs += nuevos
+            vistos.update(r.get("contrato") for r in nuevos)
+            page += 1
+        return prov, regs
+    return {}, []
+
+
+def _dedup(filas, claves):
+    vistos, out = set(), []
+    for f in filas:
+        k = tuple(f.get(c) for c in claves)
+        if k not in vistos:
+            vistos.add(k); out.append(f)
+    return out
+
+
 def modo_facturas(args):
-    filas = []
     if args.rnc:
-        print(f"▶ Facturas del RNC {args.rnc} (periodo={args.periodo})")
-        filas = facturas_por_rnc(args.rnc, args.periodo)
+        rncs = [{"rnc": args.rnc, "nombre": ""}]
     elif args.contrato:
-        print(f"▶ Facturas del contrato {args.contrato}")
-        filas = facturas_por_contrato(args.contrato)
+        filas = [f for f in facturas_por_contrato(args.contrato) if f["comprobante_fiscal"]]
+        n = sb_upsert("infopago_facturas", _dedup(filas, ["comprobante_fiscal", "contrato"]),
+                      "comprobante_fiscal,contrato")
+        print(f"✅ {n} facturas guardadas"); return
     elif args.desde_contratos:
-        print(f"▶ Recorriendo contratos_adjudicados de Supabase (limit {args.limit})")
-        contratos = sb_select(
-            "contratos_adjudicados",
-            f"select=codigo_contrato&order=fecha_contrato.desc&limit={args.limit}"
-        )
-        codigos = [c.get("codigo_contrato") for c in contratos if c.get("codigo_contrato")]
-        print(f"  {len(codigos)} contratos a consultar")
-        for i, cod in enumerate(codigos, 1):
-            fs = facturas_por_contrato(cod)
-            if fs:
-                filas += fs
-                print(f"  [{i}/{len(codigos)}] {cod}: {len(fs)} facturas")
-            if i % 50 == 0:
-                n = sb_upsert("infopago_facturas",
-                              [f for f in filas if f["comprobante_fiscal"]],
-                              "comprobante_fiscal,contrato")
-                print(f"  💾 lote guardado: {n}")
-                filas = []
+        # Empresas con más contratos primero (empresas_estado tiene el RNC)
+        print(f"▶ Tomando {args.limit} empresas de empresas_estado (más activas primero)")
+        rncs = sb_select("empresas_estado",
+                         f"select=rnc,nombre&rnc=not.is.null&order=total_contratos.desc.nullslast&limit={args.limit}")
     else:
         print("✖ Indica --rnc, --contrato o --desde-contratos"); return
 
-    filas = [f for f in filas if f["comprobante_fiscal"]]
-    n = sb_upsert("infopago_facturas", filas, "comprobante_fiscal,contrato")
-    print(f"✅ {n} facturas guardadas en infopago_facturas")
+    tot_fact, tot_contr = 0, 0
+    for i, e in enumerate(rncs, 1):
+        rnc = (e.get("rnc") or "").strip()
+        if not rnc:
+            continue
+        prov, contratos = _contratos_de_rnc(rnc)
+        if not contratos:
+            continue
+        # Guardar vínculo proveedor ↔ contratos
+        pc = [{
+            "rnc": rnc,
+            "rpe": pick(prov, "rpe"),
+            "razon_social": pick(prov, "razonSocial") or e.get("nombre"),
+            "estado_rpe": pick(prov, "estadoRPE"),
+            "monto_total_contratado": pick(prov, "montoTotalContratado"),
+            "contrato": c.get("contrato"),
+            "proceso_compra": c.get("procesoCompra"),
+            "notice_uid": c.get("noticeUID"),
+            "periodo": str(c.get("periodo") or ""),
+            "fecha_contrato": parse_fecha(c.get("fecha")),
+            "raw": c,
+        } for c in contratos if c.get("contrato")]
+        sb_upsert("infopago_proveedor_contratos", _dedup(pc, ["rnc", "contrato"]), "rnc,contrato")
+        tot_contr += len(pc)
+        # Facturas de los contratos más recientes (vienen ordenados desc)
+        filas = []
+        for c in contratos[:args.max_contratos]:
+            if c.get("contrato"):
+                filas += facturas_por_contrato(c["contrato"])
+        filas = [dict(f, rnc_proveedor=f["rnc_proveedor"] or rnc) for f in filas if f["comprobante_fiscal"]]
+        n = sb_upsert("infopago_facturas", _dedup(filas, ["comprobante_fiscal", "contrato"]),
+                      "comprobante_fiscal,contrato")
+        tot_fact += n
+        print(f"  [{i}/{len(rncs)}] {e.get('nombre') or rnc}: {len(pc)} contratos, {n} facturas")
+    print(f"✅ TOTAL: {tot_contr} contratos y {tot_fact} facturas guardadas")
 
 
 # ── MODO RANKING (campos reales confirmados del API) ───────────
@@ -351,10 +413,10 @@ def modo_trazabilidad(args):
         # Recorrer facturas ya cargadas que no tengan trazabilidad
         print("▶ Buscando facturas sin trazabilidad en Supabase...")
         facts = sb_select("infopago_facturas",
-                          f"select=comprobante_fiscal,contrato&fecha_pago=is.null&limit={args.limit}")
+                          f"select=comprobante_fiscal,contrato,estado&fecha_pago=is.null&limit={args.limit}")
         filas = []
         for i, f in enumerate(facts, 1):
-            filas += trazabilidad_factura(f["comprobante_fiscal"], f["contrato"])
+            filas += trazabilidad_factura(f["comprobante_fiscal"], f["contrato"], f.get("estado") or "Conciliado")
             if i % 25 == 0:
                 print(f"  [{i}/{len(facts)}]")
     n = sb_upsert("infopago_trazabilidad", filas, "comprobante_fiscal,contrato")
@@ -377,6 +439,7 @@ if __name__ == "__main__":
     ap.add_argument("--desde-contratos", action="store_true",
                     help="Recorrer contratos_adjudicados de Supabase")
     ap.add_argument("--limit", type=int, default=200)
+    ap.add_argument("--max-contratos", type=int, default=30, help="Máx. contratos por empresa a consultar facturas")
     ap.add_argument("--periodo", default="todos")
     ap.add_argument("--codes", help="unidadCompraCode separados por coma (ranking)")
     ap.add_argument("--nombre", default="CONSER", help="Nombre a buscar (modo proveedor)")
