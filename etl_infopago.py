@@ -158,17 +158,17 @@ def modo_explorar(rnc_prueba, contrato_prueba):
 
 # ── MODO FACTURAS ───────────────────────────────────────────────
 def normalizar_factura(f, contrato=None, rnc=None):
-    fecha_emision = parse_fecha(pick(f, "fechaEmision", "fecha_emision", "fechaFactura", "fechaComprobante"))
-    fecha_pago = parse_fecha(pick(f, "fechaPago", "fecha_pago", "fechaConciliacion", "fechaDeposito"))
+    fecha_emision = parse_fecha(pick(f, "fechaRegistro", "fechaRegistroFacturaFiscal", "fechaEmision", "fechaFactura"))
+    fecha_pago = parse_fecha(pick(f, "fechaComprobanteConciliado", "fechaPago", "fechaConciliacion", "fechaComprobanteEntregado"))
     dias = None
     if fecha_emision and fecha_pago:
         dias = (datetime.fromisoformat(fecha_pago) - datetime.fromisoformat(fecha_emision)).days
     return {
         "comprobante_fiscal": pick(f, "comprobanteFiscal", "ncf", "comprobante", "numeroComprobante"),
         "contrato": pick(f, "contrato", "numeroContrato", "codigoContrato") or contrato,
-        "rnc_proveedor": pick(f, "rnc", "documentoIdentidad", "numeroDocumento", "rncProveedor") or rnc,
+        "rnc_proveedor": pick(f, "beneficiario", "rnc", "documentoIdentidad", "numeroDocumento", "rncProveedor") or rnc,
         "nombre_proveedor": pick(f, "proveedor", "nombreProveedor", "razonSocial"),
-        "institucion": pick(f, "institucion", "unidadCompra", "nombreInstitucion", "entidad"),
+        "institucion": pick(f, "institucion", "nombreUnidadCompra", "unidadCompra", "nombreInstitucion", "entidad"),
         "unidad_compra_code": pick(f, "unidadCompraCode", "codigoUnidadCompra"),
         "periodo": pick(f, "periodo", "anio", "ano"),
         "estado": pick(f, "estado", "estatus", "estadoPago"),
@@ -241,27 +241,124 @@ def modo_facturas(args):
     print(f"✅ {n} facturas guardadas en infopago_facturas")
 
 
-# ── MODO RANKING ────────────────────────────────────────────────
+# ── MODO RANKING (campos reales confirmados del API) ───────────
 def modo_ranking(args):
-    codes = [c.strip() for c in (args.codes or "").split(",") if c.strip()] or [""]
-    filas = []
-    for code in codes:
-        params = {"periodo": args.periodo}
-        if code:
-            params["unidadCompraCode"] = code
-        print(f"▶ Ranking periodo={args.periodo} unidadCompraCode={code or '(global)'}")
-        data = api_get("RankingInstitucional/GetRankingFacturasPagadasByInstitucion", params)
+    """Descarga el ranking completo de instituciones (203 aprox., paginado)."""
+    filas, page = [], 1
+    while True:
+        data = api_get("RankingInstitucional/GetRankingFacturasPagadasByInstitucion",
+                       {"periodo": args.periodo, "pageNumber": page, "pageSize": 50})
         time.sleep(SLEEP)
         if data is None:
-            continue
+            break
+        regs = data.get("registros", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+        total_paginas = data.get("totalPaginas") if isinstance(data, dict) else None
+        if not regs:
+            break
+        for r in regs:
+            filas.append({
+                "periodo": str(pick(r, "periodo") or args.periodo),
+                "unidad_compra_code": pick(r, "unidadCompraCode") or "",
+                "institucion": pick(r, "nombreUnidadCompra", "institucion"),
+                "mediana_dias_pago": pick(r, "medianaDiasPago"),
+                "promedio_dias_pago": pick(r, "promedioDiasPago"),
+                "moda_dias_pago": pick(r, "modaDiasPago"),
+                "cantidad_facturas": pick(r, "cantidadFacturas"),
+                "porc_pagos_20_dias": pick(r, "porcPagos20Dias"),
+                "porc_pagos_40_dias": pick(r, "porcPagos40Dias"),
+                "porc_pagos_60_dias": pick(r, "porcPagos60Dias"),
+                "porc_fuera_plazo": pick(r, "porcFueraPlazo"),
+                "monto_total_pagado": pick(r, "montoTotalPagado"),
+                "raw": r,
+            })
+        print(f"  página {page}: {len(regs)} instituciones (total acumulado: {len(filas)})")
+        # Condiciones de parada: última página o el API ignora la paginación
+        if total_paginas and page >= total_paginas:
+            break
+        if len(regs) < 10:
+            break
+        if page > 1 and filas[-1]["unidad_compra_code"] == filas[len(filas)-len(regs)-1]["unidad_compra_code"]:
+            break  # misma data repetida → el API ignoró pageNumber
+        page += 1
+        if page > 60:
+            break
+    # Dedup por (periodo, code) por si hubo repetidos
+    vistos, unicas = set(), []
+    for f in filas:
+        k = (f["periodo"], f["unidad_compra_code"])
+        if k not in vistos:
+            vistos.add(k); unicas.append(f)
+    n = sb_upsert("infopago_ranking_instituciones", unicas, "periodo,unidad_compra_code")
+    print(f"✅ {n} instituciones guardadas en infopago_ranking_instituciones")
+
+
+# ── MODO TRAZABILIDAD (roadmap por factura) ────────────────────
+# Etapas SIAFE confirmadas: preventivo → compromiso → facturaFiscal →
+# devengado → ordenPago → ordenamiento → comprobante → conciliado
+ROADMAP_PATH = os.environ.get("INFOPAGO_ROADMAP_PATH", "TrazabilidadPago/GetTrazabilidadPagoFacturas")
+
+def _roadmap_via_pagina(comprobante, contrato, estado="Conciliado"):
+    """Plan B garantizado: el roadmap viene embebido en el payload RSC de la
+    página de InfoPago (Next.js). Lo pedimos con header rsc:1 y extraemos el
+    objeto JSON que contiene numPreventivo."""
+    import re as _re
+    url = "https://infopago.dgcp.gob.do/trazabilidad-ciclos-pago/roadmap"
+    h = dict(HEADERS)
+    h["rsc"] = "1"
+    h["Referer"] = "https://infopago.dgcp.gob.do/trazabilidad-ciclos-pago"
+    try:
+        r = requests.get(url, params={"comprobanteFiscal": comprobante,
+                                      "contrato": contrato, "estado": estado},
+                         headers=h, timeout=TIMEOUT)
+        # El payload RSC trae el JSON con escapes; probar crudo y des-escapado
+        for texto in (r.text, r.text.replace('\\"', '"')):
+            m = _re.search(r'\{[^{}]*?"numPreventivo"[^{}]*?\}', texto)
+            if m:
+                try:
+                    return [json.loads(m.group(0))]
+                except json.JSONDecodeError:
+                    continue
+    except Exception as e:
+        print(f"  ⚠ roadmap página: {e}")
+    return []
+
+def trazabilidad_factura(comprobante, contrato, estado="Conciliado"):
+    # Vía 1: API directa (si el endpoint existe con este nombre)
+    data = api_get(ROADMAP_PATH, {"comprobanteFiscal": comprobante, "contrato": contrato})
+    time.sleep(SLEEP)
+    items = data if isinstance(data, list) else ([data] if data else [])
+    # Vía 2 (fallback garantizado): extraer del payload de la página
+    if not items:
+        items = _roadmap_via_pagina(comprobante, contrato, estado)
+        time.sleep(SLEEP)
+    filas = []
+    for r in items:
+        # Actualizar también la factura con fecha de pago real y días
+        fact = normalizar_factura(r, contrato=contrato)
+        if fact["comprobante_fiscal"]:
+            sb_upsert("infopago_facturas", [fact], "comprobante_fiscal,contrato")
         filas.append({
-            "periodo": str(args.periodo),
-            "unidad_compra_code": code or "GLOBAL",
-            "institucion": pick(data if isinstance(data, dict) else {}, "institucion", "nombreInstitucion"),
-            "raw": data,
+            "comprobante_fiscal": pick(r, "comprobanteFiscal") or comprobante,
+            "contrato": pick(r, "contrato") or contrato,
+            "etapas": r,
         })
-    n = sb_upsert("infopago_ranking_instituciones", filas, "periodo,unidad_compra_code")
-    print(f"✅ {n} registros de ranking guardados")
+    return filas
+
+def modo_trazabilidad(args):
+    if args.comprobante and args.contrato:
+        filas = trazabilidad_factura(args.comprobante, args.contrato)
+    else:
+        # Recorrer facturas ya cargadas que no tengan trazabilidad
+        print("▶ Buscando facturas sin trazabilidad en Supabase...")
+        facts = sb_select("infopago_facturas",
+                          f"select=comprobante_fiscal,contrato&fecha_pago=is.null&limit={args.limit}")
+        filas = []
+        for i, f in enumerate(facts, 1):
+            filas += trazabilidad_factura(f["comprobante_fiscal"], f["contrato"])
+            if i % 25 == 0:
+                print(f"  [{i}/{len(facts)}]")
+    n = sb_upsert("infopago_trazabilidad", filas, "comprobante_fiscal,contrato")
+    print(f"✅ {n} trazabilidades guardadas")
 
 
 # ── MODO PROVEEDOR (búsqueda/prueba) ────────────────────────────
@@ -274,7 +371,7 @@ def modo_proveedor(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="ETL InfoPago DGCP → Supabase")
     ap.add_argument("--explorar", action="store_true", help="Imprimir estructura real de cada endpoint")
-    ap.add_argument("--modo", choices=["facturas", "ranking", "proveedor"])
+    ap.add_argument("--modo", choices=["facturas", "ranking", "proveedor", "trazabilidad"])
     ap.add_argument("--rnc", help="RNC del proveedor")
     ap.add_argument("--contrato", help="Código de contrato (ej. CAASD-2025-00188)")
     ap.add_argument("--desde-contratos", action="store_true",
@@ -283,6 +380,7 @@ if __name__ == "__main__":
     ap.add_argument("--periodo", default="todos")
     ap.add_argument("--codes", help="unidadCompraCode separados por coma (ranking)")
     ap.add_argument("--nombre", default="CONSER", help="Nombre a buscar (modo proveedor)")
+    ap.add_argument("--comprobante", help="Comprobante fiscal (modo trazabilidad)")
     args = ap.parse_args()
 
     if args.explorar:
@@ -294,5 +392,7 @@ if __name__ == "__main__":
         modo_ranking(args)
     elif args.modo == "proveedor":
         modo_proveedor(args)
+    elif args.modo == "trazabilidad":
+        modo_trazabilidad(args)
     else:
         ap.print_help()
