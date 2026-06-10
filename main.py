@@ -434,12 +434,13 @@ def listar_procesos(
     solo_activos: bool = Query(True, description="Solo procesos abiertos"),
     institucion: str = Query(None, description="Filtrar por nombre de institución"),
     familia_unspsc: str = Query(None, description="Filtrar por código de familia UNSPSC"),
+    orden: str = Query("publicacion", description="Orden: cierre, publicacion o monto"),
 ):
     """Lista procesos con filtros."""
     try:
         # ── Caché: generar clave única por combinación de parámetros ──
         cache_key = _hashlib.md5(
-            f"{page}{limit}{objeto}{modalidad}{unidad_compra}{monto_min}{monto_max}{busqueda}{solo_activos}{institucion}{familia_unspsc}".encode()
+            f"{page}{limit}{objeto}{modalidad}{unidad_compra}{monto_min}{monto_max}{busqueda}{solo_activos}{institucion}{familia_unspsc}{orden}".encode()
         ).hexdigest()
         ahora = time.time()
         if cache_key in _cache_procesos:
@@ -529,14 +530,22 @@ def listar_procesos(
                 query = query.in_("codigo_proceso", codigos_finales[:500])
             else:
                 # Búsqueda de texto → titulo, descripcion, codigo_proceso
-                query = query.or_(f"titulo.ilike.%{busqueda}%,descripcion.ilike.%{busqueda}%,codigo_proceso.ilike.%{busqueda}%")
+                # Sanear caracteres que rompen la sintaxis or_ de PostgREST
+                busq_safe = busqueda.replace(",", " ").replace("(", " ").replace(")", " ").strip()
+                query = query.or_(f"titulo.ilike.%{busq_safe}%,descripcion.ilike.%{busq_safe}%,codigo_proceso.ilike.%{busq_safe}%")
 
         if institucion:
             query = query.ilike("unidad_compra", f"%{institucion}%")
 
-        # Paginación
+        # Paginación y ordenamiento (whitelist)
         offset = (page - 1) * limit
-        query = query.order("fecha_publicacion", desc=True)
+        if orden == "cierre":
+            # Procesos que cierran primero arriba; sin fecha de cierre al final
+            query = query.order("fecha_fin_recepcion_ofertas", desc=False, nullsfirst=False)
+        elif orden == "monto":
+            query = query.order("monto_estimado", desc=True, nullsfirst=False)
+        else:
+            query = query.order("fecha_publicacion", desc=True)
         query = query.range(offset, offset + limit - 1)
 
         result = query.execute()
