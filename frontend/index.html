@@ -2248,7 +2248,8 @@ body {
 .mercado-chip { flex-shrink: 0; padding: 8px 16px; border-radius: var(--r-full); border: 1.5px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; font-family: var(--font-body); }
 .mercado-chip.active { background: var(--green-dim); border-color: var(--green); color: var(--green); }
 /* Barra de categorías móvil: TODAS las opciones visibles (wrap), sin scroll horizontal */
-#mercado-chips-mobile { display: none; flex-wrap: wrap; gap: 7px; padding: 10px 16px 12px; border-bottom: 1px solid var(--border); background: var(--bg); }
+#mercado-chips-mobile { display: none; flex-wrap: nowrap; gap: 7px; padding: 10px 16px 12px; border-bottom: 1px solid var(--border); background: var(--bg); overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+#mercado-chips-mobile::-webkit-scrollbar { display: none; }
 #mercado-chips-mobile .mercado-chip { flex-shrink: 0; padding: 7px 13px; font-size: 11.5px; }
 @media (max-width: 900px) {
   #mercado-chips-mobile { display: flex; }
@@ -2430,6 +2431,10 @@ body {
 
 /* ── Sugerencias de búsqueda ── */
 .mercado-suggestions { position: absolute; top: calc(100% - 2px); left: 16px; right: 16px; background: var(--surface2); border: 1.5px solid var(--green); border-top: none; border-radius: 0 0 var(--r-md) var(--r-md); z-index: 50; max-height: 200px; overflow-y: auto; display: none; }
+#mercado-topbar-search .mercado-suggestions { left: 0; right: 0; }
+.mercado-sug-item { padding: 10px 14px; font-size: 13px; color: var(--text); cursor: pointer; border-bottom: 1px solid var(--border); }
+.mercado-sug-item:last-child { border-bottom: none; }
+.mercado-sug-item:hover { background: var(--green-dim); }
 .mercado-suggestions.visible { display: block; }
 .mercado-sug-item { padding: 10px 14px; font-size: 13px; color: var(--text2); cursor: pointer; border-bottom: 1px solid var(--border); font-family: var(--font-body); transition: background .1s; font-weight: 500; }
 .mercado-sug-item:last-child { border-bottom: none; }
@@ -6328,6 +6333,7 @@ function navDashboardTap() {
 // ── NAV ──
 function switchTab2(tab) {
   window._lastActiveTab = tab;
+  _pushNavState({ tab });
   const allTabs = ['dashboard','detalle','perfil','seguimiento','mercado','alertas','analisis','reportes','calendario','inteligencia'];
   allTabs.forEach(t => {
     const el = document.getElementById(`tab-${t}`);
@@ -6335,7 +6341,13 @@ function switchTab2(tab) {
   });
   if (tab==='seguimiento') cargarSeguimiento();
   if (tab==='mercado')     cargarMercado();
-  if (tab==='inteligencia') icRenderEstado('Busca una empresa por nombre o RNC para ver su historial de contratos con el Estado.');
+  if (tab==='inteligencia') {
+    // FIX: solo resetear el mensaje si no hay resultados ni dashboard visibles
+    const dash = document.getElementById('ic-dashboard');
+    const resC = document.getElementById('ic-resultados');
+    const hayContenido = (dash && dash.style.display !== 'none') || (resC && resC.innerHTML.trim());
+    if (!hayContenido) icRenderEstado('Busca una empresa por nombre o RNC para ver su historial de contratos con el Estado.');
+  }
   if (tab==='perfil')      cargarHistorialAnalisis();
   if (tab==='alertas')     cargarAlertas();
   if (tab==='analisis')    cargarAnalisisTab();
@@ -6356,6 +6368,43 @@ function switchTab2(tab) {
   };
   if(dsbMap[tab]) document.getElementById(dsbMap[tab])?.classList.add('active');
 }
+
+// ── NAVEGACIÓN CON BOTÓN ATRÁS (History API) ─────────────────────────────
+// FIX: antes la app no manejaba el historial; el gesto/flecha atrás sacaba
+// al usuario de la vista actual y lo mandaba a la página principal.
+let _navFromPop = false;
+
+function _pushNavState(state) {
+  if (_navFromPop) return;
+  try {
+    const hash = '#' + (state.view ? `${state.tab}/${state.view}` : state.tab);
+    const cur = history.state;
+    if (!cur || !cur.tab) {
+      history.replaceState(state, '', hash);
+    } else if (cur.tab === state.tab && cur.view === state.view && cur.id === state.id) {
+      // Mismo estado: no duplicar entradas en el historial
+    } else {
+      history.pushState(state, '', hash);
+    }
+  } catch(e) {}
+}
+
+window.addEventListener('popstate', (ev) => {
+  const st = ev.state;
+  if (!st || !st.tab) return;
+  _navFromPop = true;
+  try {
+    switchTab2(st.tab);
+    if (st.tab === 'inteligencia') {
+      if (st.view === 'dashboard' && st.id) {
+        icVerDashboard(st.id);
+      } else {
+        icMostrarResultados();
+      }
+    }
+  } catch(e) {} 
+  _navFromPop = false;
+});
 
 // ── FILTROS ACTIVOS (chips removibles en topbar) ──────────────────────────
 function actualizarFiltrosActivos() {
@@ -6911,7 +6960,7 @@ async function _tryRefreshToken() {
 }
 
 (async function iniciarApp() {
-  console.log('%c🟢 LicitacionLab BUILD v11 · ocid-resuelto', 'color:#16a34a;font-weight:bold');
+  console.log('%c🟢 LicitacionLab BUILD v12 · nav-historial+buscador-mercado', 'color:#16a34a;font-weight:bold');
   _hydratarSesionDesdeCookies();
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
@@ -7873,6 +7922,45 @@ function setMercadoView(v) {
 
 function aplicarFiltrosMercado() { cargarMercado(); }
 
+// ── Buscador Mercado: debounce + sugerencias (FIX: estas funciones no existían) ──
+let _mercadoDebounce = null;
+let _mercadoProvsCache = [];
+
+function debouncarMercado() {
+  clearTimeout(_mercadoDebounce);
+  _mercadoDebounce = setTimeout(() => { actualizarSugerenciasMercado(); cargarMercado(); }, 350);
+}
+
+function mostrarSugerencias() { actualizarSugerenciasMercado(); }
+
+function ocultarSugerencias() {
+  const box = document.getElementById('mercado-suggestions');
+  if (box) box.classList.remove('visible');
+}
+
+function actualizarSugerenciasMercado() {
+  const box = document.getElementById('mercado-suggestions');
+  const q = (document.getElementById('mercado-busqueda')?.value || '').trim().toLowerCase();
+  if (!box) return;
+  if (q.length < 2 || !_mercadoProvsCache.length) { box.classList.remove('visible'); return; }
+  const matches = _mercadoProvsCache
+    .filter(p => (p.nombre_empresa || '').toLowerCase().includes(q))
+    .slice(0, 6);
+  if (!matches.length) { box.classList.remove('visible'); return; }
+  box.innerHTML = matches.map(p => `<div class="mercado-sug-item">${sanitize(p.nombre_empresa)}</div>`).join('');
+  box.querySelectorAll('.mercado-sug-item').forEach((el, i) => {
+    el.onmousedown = () => seleccionarSugerenciaMercado(matches[i].nombre_empresa || '');
+  });
+  box.classList.add('visible');
+}
+
+function seleccionarSugerenciaMercado(nombre) {
+  const inp = document.getElementById('mercado-busqueda');
+  if (inp) inp.value = nombre;
+  ocultarSugerencias();
+  cargarMercado();
+}
+
 // Filtro por chip en la barra móvil del Mercado (sincroniza con los checkboxes)
 function filtrarChipMercado(btn) {
   const cont  = document.getElementById('mercado-chips-mobile');
@@ -8101,6 +8189,9 @@ async function cargarMercado() {
     const data = await res.json();
     let provs  = data.proveedores || [];
 
+    // Cache para sugerencias del buscador (solo cuando no hay búsqueda activa)
+    if (!busqueda && provs.length) _mercadoProvsCache = provs;
+
     // Filtrar por zonas adicionales si hay más de una marcada
     if (zonaChecks.length > 1) {
       provs = provs.filter(p =>
@@ -8152,7 +8243,9 @@ async function contactarProveedor(proveedorId, tipo, numero) {
       body: JSON.stringify({ proveedor_id: proveedorId, tipo_contacto: tipo })
     });
   } catch(e) {}
-  // Abrir WhatsApp
+  // FIX: solo abrir WhatsApp si el contacto es por WhatsApp.
+  // Antes el botón "Llamar" (enlace tel:) también abría wa.me.
+  if (tipo !== 'whatsapp') return;
   const num = numero.replace(/\D/g, '');
   const msg = encodeURIComponent('Hola, los contacto desde LicitacionLab. ¿Pueden enviarme cotización?');
   window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
@@ -9608,9 +9701,15 @@ function icRenderResultados(lista) {
     </div>`).join('');
 }
 
+let _icUltimosResultadosHTML = '';
+
 async function icVerDashboard(id) {
-  document.getElementById('ic-resultados').innerHTML = '';
-  document.getElementById('ic-resultados').style.display = 'none';
+  const resCont = document.getElementById('ic-resultados');
+  // FIX: guardar los resultados de búsqueda para poder volver a ellos
+  if (resCont && resCont.innerHTML.trim()) _icUltimosResultadosHTML = resCont.innerHTML;
+  _pushNavState({ tab: 'inteligencia', view: 'dashboard', id });
+  resCont.innerHTML = '';
+  resCont.style.display = 'none';
   // Ocultar sección win/loss mientras carga nuevo dashboard
   const wlSec = document.getElementById('ic-winloss-section');
   if (wlSec) wlSec.style.display = 'none';
@@ -9841,13 +9940,23 @@ async function icVerDashboardPorRnc(rnc) {
   }
 }
 
+function icMostrarResultados() {
+  const dash = document.getElementById('ic-dashboard');
+  const res  = document.getElementById('ic-resultados');
+  if (dash) dash.style.display = 'none';
+  if (res) {
+    res.style.display = 'block';
+    // FIX: restaurar los resultados de la búsqueda anterior (antes se borraban)
+    if (_icUltimosResultadosHTML) res.innerHTML = _icUltimosResultadosHTML;
+  }
+  icRenderEstado(_icUltimosResultadosHTML ? '' : 'Busca una empresa por nombre o RNC para ver su historial.');
+}
+
 function icVolverBusqueda() {
-  document.getElementById('ic-dashboard').style.display = 'none';
-  document.getElementById('ic-resultados').style.display = 'block';
-  document.getElementById('ic-resultados').innerHTML = '';
-  icRenderEstado('Busca una empresa por nombre o RNC para ver su historial.');
-  const inp = document.getElementById('ic-search-input');
-  if (inp) { inp.value = ''; inp.focus(); }
+  // Si el estado actual del historial es el dashboard, usar back() para
+  // mantener consistencia con la flecha atrás del navegador/PWA
+  if (history.state && history.state.view === 'dashboard') { history.back(); return; }
+  icMostrarResultados();
 }
 // ════════════════════════════════════════════════════════════
 </script>
