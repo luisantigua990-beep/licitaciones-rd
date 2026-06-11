@@ -373,6 +373,51 @@ app.include_router(get_ofertas_router())
 app.include_router(get_agente6_router())
 
 
+
+# ── Semáforo de Pago por institución (InfoPago DGCP) ─────────────
+@app.get("/api/instituciones/semaforo")
+async def semaforo_institucion(nombre: str):
+    """Devuelve el historial de pagos de la institución (ranking oficial DGCP).
+    Match flexible: prueba el nombre completo y luego sus palabras significativas."""
+    if not nombre or len(nombre.strip()) < 3:
+        return {"encontrado": False}
+
+    def _buscar(patron, periodo):
+        try:
+            r = (supabase.table("infopago_ranking_instituciones")
+                 .select("periodo,institucion,mediana_dias_pago,promedio_dias_pago,"
+                         "cantidad_facturas,porc_pagos_20_dias,porc_pagos_40_dias,"
+                         "porc_pagos_60_dias,porc_fuera_plazo,monto_total_pagado")
+                 .eq("periodo", periodo)
+                 .ilike("institucion", f"%{patron}%")
+                 .order("cantidad_facturas", desc=True)
+                 .limit(1).execute())
+            return r.data[0] if r.data else None
+        except Exception:
+            return None
+
+    stop = {"de", "del", "la", "el", "los", "las", "y", "para", "nacional", "general"}
+    nombre_limpio = nombre.strip()
+    palabras = [p for p in nombre_limpio.replace(",", " ").split() if len(p) > 3 and p.lower() not in stop]
+
+    fila = None
+    for periodo in ("2026", "2025"):
+        fila = _buscar(nombre_limpio, periodo)
+        if not fila and palabras:
+            # Probar con las 2 palabras más distintivas (las más largas)
+            for palabra in sorted(palabras, key=len, reverse=True)[:2]:
+                fila = _buscar(palabra, periodo)
+                if fila:
+                    break
+        if fila:
+            break
+
+    if not fila:
+        return {"encontrado": False}
+    fila["encontrado"] = True
+    fila["institucion_match"] = fila.pop("institucion", None)
+    return fila
+
 @app.get("/health")
 def health_check():
     """Health check para Railway — verifica que los hilos críticos estén vivos."""
