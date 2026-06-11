@@ -22,7 +22,7 @@ on:
 jobs:
   etl:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 30
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -35,9 +35,9 @@ jobs:
 
       - run: pip install requests
 
-      # Rápido (~6s). Solo semanal en automático (lunes) o manual.
+      # Rápido (~6s)
       - name: Ranking de instituciones 2026
-        if: ${{ inputs.modo == 'todo' || inputs.modo == 'ranking' }}
+        if: ${{ inputs.modo == 'todo' || inputs.modo == 'ranking' || github.event_name == 'schedule' }}
         run: python etl_infopago.py --modo ranking --periodo 2026
 
       - name: Ranking de instituciones 2025
@@ -50,19 +50,55 @@ jobs:
         if: ${{ inputs.modo == 'todo' || inputs.modo == 'resolver-rnc' || github.event_name == 'schedule' }}
         run: python etl_infopago.py --modo resolver-rnc --limit 100
 
-      # NUEVO: descubre los contratos InfoPago de cada empresa.
+      # Descubre los contratos InfoPago de cada empresa.
       # Incremental: salta empresas con infopago_contratos_at marcado.
       - name: Contratos por proveedor
         if: ${{ inputs.modo == 'todo' || inputs.modo == 'contratos' || github.event_name == 'schedule' }}
         run: python etl_infopago.py --modo contratos --limit 100 --budget-min 12
 
-      # Facturas reales: FacturaFiscal/GetFacturasContrato, contrato por contrato.
-      # Incremental: salta contratos con facturas_check_at marcado.
-      # (GetComprobantesFiscalesProveedores quedó descartado: devuelve tipos B15/E45, no facturas.)
-      - name: Facturas desde contratos adjudicados
-        if: ${{ inputs.modo == 'todo' || inputs.modo == 'facturas' || github.event_name == 'schedule' }}
-        run: python etl_infopago.py --modo facturas --desde-contratos --limit 3000 --budget-min 22
+  # Facturas reales: FacturaFiscal/GetFacturasContrato, contrato por contrato.
+  # 5 workers en paralelo, cada uno con su grupo disjunto (hash del contrato).
+  # Incremental: saltan contratos con facturas_check_at marcado.
+  facturas:
+    needs: etl
+    if: ${{ !cancelled() && (inputs.modo == 'todo' || inputs.modo == 'facturas' || github.event_name == 'schedule') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ["1/5", "2/5", "3/5", "4/5", "5/5"]
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
+
+      - name: Facturas (shard ${{ matrix.shard }})
+        run: python etl_infopago.py --modo facturas --desde-contratos --limit 3000 --budget-min 42 --shard "${{ matrix.shard }}"
+
+  trazabilidad:
+    needs: facturas
+    if: ${{ !cancelled() && (inputs.modo == 'todo' || inputs.modo == 'trazabilidad' || github.event_name == 'schedule') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install requests
 
       - name: Trazabilidad de pagos
-        if: ${{ inputs.modo == 'todo' || inputs.modo == 'trazabilidad' || github.event_name == 'schedule' }}
         run: python etl_infopago.py --modo trazabilidad --limit 50
