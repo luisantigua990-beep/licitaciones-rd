@@ -59,9 +59,9 @@ jobs:
   # Facturas reales: FacturaFiscal/GetFacturasContrato, contrato por contrato.
   # 5 workers en paralelo, cada uno con su grupo disjunto (hash del contrato).
   # Incremental: saltan contratos con facturas_check_at marcado.
-  facturas:
+  facturas-y-trazabilidad:
     needs: etl
-    if: ${{ !cancelled() && (inputs.modo == 'todo' || inputs.modo == 'facturas' || github.event_name == 'schedule') }}
+    if: ${{ !cancelled() && (inputs.modo == 'todo' || inputs.modo == 'facturas' || inputs.modo == 'trazabilidad' || github.event_name == 'schedule') }}
     runs-on: ubuntu-latest
     timeout-minutes: 50
     strategy:
@@ -81,24 +81,11 @@ jobs:
       - run: pip install requests
 
       - name: Facturas (shard ${{ matrix.shard }})
-        run: python etl_infopago.py --modo facturas --desde-contratos --limit 3000 --budget-min 42 --shard "${{ matrix.shard }}"
+        if: ${{ inputs.modo == 'todo' || inputs.modo == 'facturas' || github.event_name == 'schedule' }}
+        run: python etl_infopago.py --modo facturas --desde-contratos --limit 3000 --budget-min 28 --shard "${{ matrix.shard }}"
 
-  trazabilidad:
-    needs: facturas
-    if: ${{ !cancelled() && (inputs.modo == 'todo' || inputs.modo == 'trazabilidad' || github.event_name == 'schedule') }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - run: pip install requests
-
-      - name: Trazabilidad de pagos
-        run: python etl_infopago.py --modo trazabilidad --limit 50
+      # Fecha de pago real por factura. Mismo reparto por shard.
+      # Incremental: salta facturas con trazabilidad_check_at marcado.
+      - name: Trazabilidad (shard ${{ matrix.shard }})
+        if: ${{ !cancelled() && (inputs.modo == 'todo' || inputs.modo == 'trazabilidad' || github.event_name == 'schedule') }}
+        run: python etl_infopago.py --modo trazabilidad --limit 1500 --budget-min 12 --shard "${{ matrix.shard }}"
