@@ -2882,47 +2882,35 @@ html { background: var(--color-bg, #0A0A0A); }
       <button onclick="cerrarPricing();switchTab('register')" style="width:100%;margin-top:12px;padding:10px;background:var(--bg);border:1.5px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body)">Empezar gratis</button>
     </div>
 
-    <!-- Plan Competidor -->
-    <div style="background:var(--bg2);border:1.5px solid var(--green-border);border-radius:14px;padding:16px;margin-bottom:10px;position:relative;overflow:hidden">
-      <div style="position:absolute;top:10px;right:12px;background:var(--green);color:#fff;font-size:9px;font-weight:800;padding:3px 8px;border-radius:20px;letter-spacing:.06em">POPULAR</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div>
-          <div style="font-size:14px;font-weight:800;color:var(--green)">Competidor</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">Para empresas activas en licitaciones</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:18px;font-weight:800;color:var(--text)">RD$1,500<span style="font-size:11px;font-weight:500;color:var(--text2)">/mes</span></div>
-        </div>
+    <!-- Plan PRO (precios reales Pagadito) -->
+    <div style="background:var(--bg2);border:1.5px solid var(--green-border);border-radius:14px;padding:16px;position:relative;overflow:hidden">
+      <div style="position:absolute;top:10px;right:12px;background:var(--green);color:#fff;font-size:9px;font-weight:800;padding:3px 8px;border-radius:20px;letter-spacing:.06em">PRO</div>
+      <div style="margin-bottom:10px">
+        <div style="font-size:14px;font-weight:800;color:var(--green)">LicitacionLab PRO</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px">Acceso completo para empresas activas en licitaciones</div>
       </div>
-      <div style="font-size:11px;color:var(--text2);line-height:1.7">
-        ✓ Todo lo de Explorador<br>
-        ✓ Análisis automático de pliegos<br>
+      <div style="font-size:11px;color:var(--text2);line-height:1.7;margin-bottom:12px">
+        ✓ Análisis automático de pliegos con IA<br>
         ✓ Seguimiento ilimitado de procesos<br>
         ✓ Alertas 7, 3, 1 y 0 días antes<br>
+        ✓ Inteligencia competitiva (Empresas)<br>
         ✓ Detección de procesos dirigidos (Ley 47-25)
       </div>
-      <button onclick="cerrarPricing();switchTab('register')" style="width:100%;margin-top:12px;padding:10px;background:linear-gradient(135deg,var(--green-dark),var(--green));border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body)">Comenzar prueba gratis</button>
-    </div>
-
-    <!-- Plan Ganador -->
-    <div style="background:var(--bg2);border:1.5px solid var(--border);border-radius:14px;padding:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div>
-          <div style="font-size:14px;font-weight:800;color:var(--amber)">Ganador</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px">Para empresas que quieren ganar más</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--text)">Mensual</span>
+          <span style="font-size:14px;font-weight:800;color:var(--text)">US$37<span style="font-size:10px;font-weight:500;color:var(--text2)">/mes</span></span>
         </div>
-        <div style="text-align:right">
-          <div style="font-size:18px;font-weight:800;color:var(--text)">RD$3,500<span style="font-size:11px;font-weight:500;color:var(--text2)">/mes</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--text)">Semestral <span style="font-size:9px;font-weight:800;color:var(--green)">AHORRA 10%</span></span>
+          <span style="font-size:14px;font-weight:800;color:var(--text)">US$200<span style="font-size:10px;font-weight:500;color:var(--text2)">/6 meses</span></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg);border:1.5px solid var(--green-border);border-radius:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--text)">Anual <span style="font-size:9px;font-weight:800;color:var(--green)">AHORRA 14%</span></span>
+          <span style="font-size:14px;font-weight:800;color:var(--text)">US$380<span style="font-size:10px;font-weight:500;color:var(--text2)">/año</span></span>
         </div>
       </div>
-      <div style="font-size:11px;color:var(--text2);line-height:1.7">
-        ✓ Todo lo de Competidor<br>
-        ✓ Preparación asistida de propuestas<br>
-        ✓ Análisis de competencia e historial<br>
-        ✓ Soporte prioritario directo con experto<br>
-        ✓ Acceso a Mercado de Proveedores
-      </div>
-      <button onclick="cerrarPricing();switchTab('register')" style="width:100%;margin-top:12px;padding:10px;background:var(--bg);border:1.5px solid var(--amber);border-radius:8px;color:var(--amber);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body)">Contactar para activar</button>
+      <button onclick="cerrarPricing();switchTab('register')" style="width:100%;padding:10px;background:linear-gradient(135deg,var(--green-dark),var(--green));border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body)">Crear cuenta y suscribirme</button>
     </div>
 
     <div style="text-align:center;margin-top:14px;font-size:11px;color:var(--muted)">Sin compromisos · Cancela cuando quieras</div>
@@ -2989,6 +2977,10 @@ html { background: var(--color-bg, #0A0A0A); }
       </button>
     </div>
     <div class="ll-drawer__footer">
+      <button class="ll-btn ll-btn--ghost ll-btn--block" onclick="abrirModalPlanes();closeDrawer()" style="justify-content:flex-start;gap:12px;padding:12px 8px;margin-bottom:6px;border:1px solid #16A34A;color:#16A34A;">
+        <span style="font-size:16px;">⭐</span>
+        <div style="text-align:left;"><div class="ll-body" style="font-weight:700;color:#16A34A;">Plan PRO</div><div class="ll-caption" style="color:#94a3b8;">Suscribirte a LicitacionLab</div></div>
+      </button>
       <button class="ll-btn ll-btn--danger-ghost ll-btn--block" onclick="logout()">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Cerrar sesión
@@ -3070,7 +3062,10 @@ html { background: var(--color-bg, #0A0A0A); }
         <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         Mi Perfil
       </button>
-      <button class="ll-btn ll-btn--danger-ghost" style="width:100%;margin-top:6px;justify-content:flex-start;gap:8px;font-size:12px;" onclick="logout()">
+      <button onclick="abrirModalPlanes()" style="width:100%;margin-top:6px;margin-bottom:4px;padding:9px 12px;background:rgba(22,163,74,0.12);border:1px solid #16A34A;border-radius:8px;color:#16A34A;font-size:12px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:8px;">
+        ⭐ Plan PRO
+      </button>
+      <button class="ll-btn ll-btn--danger-ghost" style="width:100%;margin-top:2px;justify-content:flex-start;gap:8px;font-size:12px;" onclick="logout()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Cerrar sesión
       </button>
@@ -3230,7 +3225,13 @@ html { background: var(--color-bg, #0A0A0A); }
       <button class="btn-outline" style="margin-top:8px;border-color:var(--green-border);color:var(--green)" onclick="mostrarTutorial()">Ver tutorial</button>
     </div>
 
-    <div class="perfil-card">
+    <!-- ── SECCIÓN TU PLAN ── -->
+    <div class="perfil-card" id="perfil-plan-card">
+      <h2>Tu plan</h2>
+      <div id="perfil-plan-contenido">
+        <div style="font-size:13px;color:var(--muted);">Cargando...</div>
+      </div>
+    </div>
       <h2>Notificaciones</h2>
       <div class="toggle-row">
         <div class="toggle-info">
@@ -6523,7 +6524,7 @@ function switchTab2(tab) {
     const hayContenido = (dash && dash.style.display !== 'none') || (resC && resC.innerHTML.trim());
     if (!hayContenido) icRenderEstado('Busca una empresa por nombre o RNC para ver su historial de contratos con el Estado.');
   }
-  if (tab==='perfil')      cargarHistorialAnalisis();
+  if (tab==='perfil')      { cargarHistorialAnalisis(); cargarEstadoPlan(); }
   if (tab==='alertas')     cargarAlertas();
   if (tab==='analisis')    cargarAnalisisTab();
   if (tab==='reportes')    cargarReportes();
@@ -10708,6 +10709,139 @@ function icVolverBusqueda() {
 </div>
 
 <!-- modal obra eliminado — ahora inline -->
+
+<!-- ═══════════════════════════════════════════════
+     MODAL DE PLANES / PAGADITO
+════════════════════════════════════════════════ -->
+<div id="modalPlanes" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:var(--surface);border:1px solid var(--border2);border-radius:16px;max-width:420px;width:100%;padding:24px;max-height:90vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <h2 style="margin:0;font-size:18px;color:var(--text);font-family:Inter,sans-serif;">Elige tu plan</h2>
+      <button onclick="cerrarModalPlanes()" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1;">×</button>
+    </div>
+    <p style="margin:0 0 16px;font-size:12px;color:var(--text2);font-family:Inter,sans-serif;">Acceso completo a LicitacionLab. Pago seguro con Pagadito (Visa / Mastercard).</p>
+    <div id="listaPlanes"></div>
+    <p id="errorPago" style="display:none;margin:12px 0 0;font-size:12px;color:var(--red);font-family:Inter,sans-serif;"></p>
+  </div>
+</div>
+
+<script>
+// ── Pagadito: abrir/cerrar modal ─────────────────────────
+const PLAN_BADGES = { 6: 'AHORRA 10%', 12: 'AHORRA 14%' };
+
+async function abrirModalPlanes() {
+  document.getElementById('modalPlanes').style.display = 'flex';
+  const cont = document.getElementById('listaPlanes');
+  cont.innerHTML = '<p style="color:var(--text2);font-size:13px;font-family:Inter,sans-serif;">Cargando planes...</p>';
+  try {
+    const r = await fetch('/api/pagos/planes');
+    const { planes } = await r.json();
+    cont.innerHTML = planes.map(p => `
+      <div style="border:1px solid ${p.duracion_meses===12?'var(--green)':'var(--border)'};border-radius:12px;padding:16px;margin-bottom:10px;position:relative;">
+        ${PLAN_BADGES[p.duracion_meses] ? `<span style="position:absolute;top:-9px;right:12px;background:var(--green);color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;">${PLAN_BADGES[p.duracion_meses]}</span>` : ''}
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <p style="margin:0;font-size:15px;font-weight:700;color:var(--text);font-family:Inter,sans-serif;">${p.nombre}</p>
+            <p style="margin:2px 0 0;font-size:12px;color:var(--text2);font-family:Inter,sans-serif;">US$ ${parseFloat(p.precio).toFixed(0)} / ${p.duracion_meses===1?'mes':p.duracion_meses+' meses'}</p>
+          </div>
+          <button onclick="pagarPlan(${p.id},this)"
+            style="background:var(--green);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;font-family:Inter,sans-serif;">
+            Elegir
+          </button>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    cont.innerHTML = '<p style="color:var(--red);font-size:13px;font-family:Inter,sans-serif;">Error cargando planes. Intenta de nuevo.</p>';
+  }
+}
+
+function cerrarModalPlanes() {
+  document.getElementById('modalPlanes').style.display = 'none';
+}
+
+// ── Iniciar pago ─────────────────────────────────────────
+async function pagarPlan(planId, btn) {
+  const err = document.getElementById('errorPago');
+  err.style.display = 'none';
+  btn.disabled = true; btn.textContent = 'Procesando...';
+  try {
+    // Usa el mismo token que toda la app (localStorage 'sb_token')
+    const token = localStorage.getItem('sb_token');
+    if (!token) {
+      err.textContent = 'Inicia sesión para suscribirte.';
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Elegir';
+      return;
+    }
+    const r = await fetch('/api/pagos/crear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ plan_id: planId })
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Error creando el pago');
+    localStorage.setItem('ll_pago_pendiente', data.pago_id);
+    window.location.href = data.url_pago; // → pantalla de pago Pagadito
+  } catch(e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Elegir';
+  }
+}
+
+// ── Revisar retorno desde Pagadito (?pago=exitoso|fallido…) ──
+// ── Estado del plan en Mi Perfil ────────────────────────
+async function cargarEstadoPlan() {
+  const cont = document.getElementById('perfil-plan-contenido');
+  if (!cont) return;
+  const token = localStorage.getItem('sb_token');
+  if (!token) {
+    cont.innerHTML = '<div style="font-size:13px;color:var(--muted);">Inicia sesión para ver tu plan.</div>';
+    return;
+  }
+  try {
+    const r = await fetch('/api/pagos/mi-suscripcion', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const d = await r.json();
+    if (d.activa) {
+      cont.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+          <span style="background:#16A34A;color:#fff;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;">PRO</span>
+          <span style="font-size:14px;font-weight:700;color:var(--text);">Plan ${d.plan}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">Vence: <strong style="color:var(--text);">${new Date(d.fecha_vencimiento).toLocaleDateString('es-DO',{day:'2-digit',month:'short',year:'numeric'})}</strong></div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">Días restantes: <strong style="color:#16A34A;">${d.dias_restantes}</strong></div>
+        <button onclick="abrirModalPlanes()" style="padding:9px 18px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:8px;color:var(--green);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-body);">Renovar / Cambiar plan</button>`;
+    } else {
+      cont.innerHTML = `
+        <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">No tienes una suscripción activa.</div>
+        <button onclick="abrirModalPlanes()" style="padding:10px 20px;background:#16A34A;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:var(--font-body);">⭐ Ver planes PRO</button>`;
+    }
+  } catch(e) {
+    cont.innerHTML = '<div style="font-size:13px;color:var(--muted);">No se pudo cargar el estado del plan.</div>';
+  }
+}
+
+function revisarRetornoPago() {
+  const params = new URLSearchParams(window.location.search);
+  const resultado = params.get('pago');
+  if (!resultado) return;
+  history.replaceState({}, '', window.location.pathname);
+  const msgs = {
+    exitoso:   ['✅ ¡Pago confirmado!', 'Tu suscripción ya está activa.'],
+    pendiente: ['⏳ Pago en verificación', 'Te activaremos automáticamente al confirmarse (máx. 72h).'],
+    fallido:   ['❌ Pago no completado', 'El pago fue cancelado o rechazado. Puedes intentarlo de nuevo.'],
+    error:     ['⚠️ No pudimos verificar el pago', 'Si pagaste, el sistema reverifica automáticamente. Contáctanos por WhatsApp si persiste.']
+  };
+  const [titulo, cuerpo] = msgs[resultado] || msgs.error;
+  mostrarToast ? mostrarToast(titulo + ' ' + cuerpo) : alert(titulo + '\n\n' + cuerpo);
+  if (resultado === 'exitoso') localStorage.removeItem('ll_pago_pendiente');
+}
+
+// Ejecutar al cargar (detecta si viene de Pagadito)
+revisarRetornoPago();
+</script>
 
 </body>
 </html>
