@@ -9795,8 +9795,11 @@ async function cargarSemaforoPago(institucion) {
   if (!el) return;
   if (!institucion) { el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">Institución no identificada.</div>'; return; }
   try {
-    const r = await fetch('/api/instituciones/semaforo?nombre=' + encodeURIComponent(institucion));
-    if (!r.ok) throw new Error();
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 12000);
+    const r = await fetch('/api/instituciones/semaforo?nombre=' + encodeURIComponent(institucion), { signal: ctl.signal });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' — el backend aún no tiene el endpoint del semáforo. Verifica que main.py esté actualizado en Railway.');
     const d = await r.json();
     if (!d || !d.encontrado) {
       el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">Sin historial de pagos publicado por la DGCP para esta institución.</div>';
@@ -9832,7 +9835,8 @@ async function cargarSemaforoPago(institucion) {
       </div>
       <div style="font-size:11px;color:var(--muted);line-height:1.6;">Basado en <b style="color:var(--text);">${fmt(d.cantidad_facturas)}</b> facturas analizadas por la DGCP (InfoPago) · Monto pagado: <b style="color:var(--text);">RD$${fmt(d.monto_total_pagado)}</b>${d.institucion_match ? ` · Institución: ${d.institucion_match}` : ''}</div>`;
   } catch(e) {
-    el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">No se pudo cargar el historial de pagos.</div>';
+    const msg = e.name === 'AbortError' ? 'El servidor tardó demasiado en responder. Intenta de nuevo.' : (e.message || 'No se pudo cargar el historial de pagos.');
+    el.innerHTML = `<div style="font-size:13px;color:var(--muted);padding:8px 0;">${msg} <button onclick="cargarSemaforoPago('${(institucion||'').replace(/'/g,"\\'")}')" style="margin-left:8px;background:none;border:1px solid var(--border);border-radius:6px;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;padding:4px 10px;">Reintentar</button></div>`;
   }
 }
 
