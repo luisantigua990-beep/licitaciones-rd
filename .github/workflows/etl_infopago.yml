@@ -12,11 +12,12 @@ on:
           - todo
           - ranking
           - resolver-rnc
+          - contratos
           - facturas
           - trazabilidad
-  # Automático: todos los lunes a las 6:00 AM (hora RD)
+  # Automático: todos los días a las 6:00 AM (hora RD)
   schedule:
-    - cron: "0 10 * * 1"
+    - cron: "0 10 * * *"
 
 jobs:
   etl:
@@ -34,24 +35,33 @@ jobs:
 
       - run: pip install requests
 
+      # Rápido (~6s). Solo semanal en automático (lunes) o manual.
       - name: Ranking de instituciones 2026
-        if: ${{ inputs.modo == 'todo' || inputs.modo == 'ranking' || github.event_name == 'schedule' }}
+        if: ${{ inputs.modo == 'todo' || inputs.modo == 'ranking' }}
         run: python etl_infopago.py --modo ranking --periodo 2026
 
       - name: Ranking de instituciones 2025
         if: ${{ inputs.modo == 'todo' || inputs.modo == 'ranking' }}
         run: python etl_infopago.py --modo ranking --periodo 2025
 
-      # NUEVO: empresas_estado.rnc es el RPE, no el RNC.
-      # Este paso resuelve el RNC real (9/11 dígitos) vía InfoPago
-      # GetReferenciaProveedor y lo cachea en empresas_estado.rnc_real.
+      # empresas_estado.rnc es el RPE; esto resuelve Id InfoPago + RNC real.
+      # Incremental: solo toma empresas con infopago_id NULL.
       - name: Resolver RNCs reales (RPE → RNC)
-        if: ${{ inputs.modo == 'todo' || inputs.modo == 'resolver-rnc' || inputs.modo == 'facturas' || github.event_name == 'schedule' }}
-        run: python etl_infopago.py --modo resolver-rnc --limit 150
+        if: ${{ inputs.modo == 'todo' || inputs.modo == 'resolver-rnc' || github.event_name == 'schedule' }}
+        run: python etl_infopago.py --modo resolver-rnc --limit 100
 
+      # NUEVO: descubre los contratos InfoPago de cada empresa.
+      # Incremental: salta empresas con infopago_contratos_at marcado.
+      - name: Contratos por proveedor
+        if: ${{ inputs.modo == 'todo' || inputs.modo == 'contratos' || github.event_name == 'schedule' }}
+        run: python etl_infopago.py --modo contratos --limit 100 --budget-min 12
+
+      # Facturas reales: FacturaFiscal/GetFacturasContrato, contrato por contrato.
+      # Incremental: salta contratos con facturas_check_at marcado.
+      # (GetComprobantesFiscalesProveedores quedó descartado: devuelve tipos B15/E45, no facturas.)
       - name: Facturas desde contratos adjudicados
         if: ${{ inputs.modo == 'todo' || inputs.modo == 'facturas' || github.event_name == 'schedule' }}
-        run: python etl_infopago.py --modo facturas --desde-contratos --limit 100
+        run: python etl_infopago.py --modo facturas --desde-contratos --limit 3000 --budget-min 22
 
       - name: Trazabilidad de pagos
         if: ${{ inputs.modo == 'todo' || inputs.modo == 'trazabilidad' || github.event_name == 'schedule' }}
