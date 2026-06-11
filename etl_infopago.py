@@ -116,7 +116,7 @@ def sb_select(tabla, query, max_filas=None):
     m = _re_lim.search(r"[&?]limit=(\d+)", query)
     if m:
         max_filas = max_filas or int(m.group(1))
-        query = _re_lim.sub("", query).lstrip("&")
+        query = _re_lim.sub(r"[&?]limit=\d+", "", query).lstrip("&")
     url = f"{SUPABASE_URL}/rest/v1/{tabla}?{query}"
     filas, offset, paso = [], 0, 1000
     while True:
