@@ -113,6 +113,25 @@ def sb_select(tabla, query):
     return r.json() if r.status_code == 200 else []
 
 
+def _deadline(args):
+    """Devuelve el instante límite si se pasó --budget-min, o None."""
+    mins = getattr(args, "budget_min", 0) or 0
+    return (time.monotonic() + mins * 60) if mins > 0 else None
+
+
+def _vencido(dl):
+    return dl is not None and time.monotonic() >= dl
+
+
+def _marcar_contratos(contratos):
+    """Checkpoint: marca contratos ya consultados para no repetirlos."""
+    if not contratos:
+        return
+    lista = ",".join(f'"{c}"' for c in contratos)
+    sb_patch("infopago_proveedor_contratos", f"contrato=in.({lista})",
+             {"facturas_check_at": datetime.utcnow().isoformat()})
+
+
 def sb_patch(tabla, filtro, cambios):
     url = f"{SUPABASE_URL}/rest/v1/{tabla}?{filtro}"
     h = {
@@ -197,27 +216,6 @@ def normalizar_factura(f, contrato=None, rnc=None):
         "dias_pago": dias,
         "raw": f,
     }
-
-
-def facturas_por_id(infopago_id, rnc=None, periodo=""):
-    """Comprobantes del proveedor. Body confirmado (DevTools):
-    {"id": <Id interno>, "periodo": "", "pageNumber": N, "pageSize": M}"""
-    filas, page = [], 1
-    while True:
-        data = api_post("TrazabilidadPago/GetComprobantesFiscalesProveedores",
-                        {"id": infopago_id, "periodo": periodo,
-                         "pageNumber": page, "pageSize": 50})
-        time.sleep(SLEEP)
-        items = data if isinstance(data, list) else (pick(data or {}, "items", "lista", "comprobantes", "data", "registros") or [])
-        if not items:
-            break
-        filas += [normalizar_factura(f, rnc=rnc) for f in items]
-        if len(items) < 50:
-            break
-        page += 1
-        if page > 100:  # tope de seguridad
-            break
-    return filas
 
 
 def facturas_por_contrato(contrato):
@@ -367,54 +365,31 @@ def modo_resolver_rnc(args):
         sys.exit(1)
 
 
-def modo_facturas(args):
-    if args.rnc:
-        iid, doc = _match_referencia(_referencia_proveedor("rnc", args.rnc))
-        if not iid:
-            print(f"✖ No se encontró el proveedor en InfoPago para RNC {args.rnc}")
-            sys.exit(1)
-        rncs = [{"infopago_id": iid, "rnc": doc or args.rnc, "nombre": ""}]
-    elif args.contrato:
-        filas = [f for f in facturas_por_contrato(args.contrato) if f["comprobante_fiscal"]]
-        n = sb_upsert("infopago_facturas", _dedup(filas, ["comprobante_fiscal", "contrato"]),
-                      "comprobante_fiscal,contrato")
-        print(f"✅ {n} facturas guardadas"); return
-    elif args.desde_contratos:
-        # Empresas con más contratos primero. OJO: la columna "rnc" es el RPE;
-        # el Id interno de InfoPago (infopago_id) lo pobla --modo resolver-rnc.
-        print(f"▶ Tomando {args.limit} empresas con infopago_id (más activas primero)")
-        regs = sb_select("empresas_estado",
-                         f"select=rnc,rnc_real,infopago_id,nombre&infopago_id=not.is.null&order=total_contratos.desc.nullslast&limit={args.limit}")
-        rncs = [{"infopago_id": r.get("infopago_id"), "rnc": r.get("rnc_real"),
-                 "rpe": r.get("rnc"), "nombre": r.get("nombre")} for r in regs]
-        if not rncs:
-            print("✖ Ninguna empresa tiene infopago_id. Corre primero: --modo resolver-rnc")
-            sys.exit(1)
-    else:
-        print("✖ Indica --rnc, --contrato o --desde-contratos"); return
-
-    tot_fact, tot_contr = 0, 0
-    for i, e in enumerate(rncs, 1):
+def modo_contratos(args):
+    """Descubre los contratos InfoPago de cada empresa con infopago_id.
+    Incremental: salta empresas con infopago_contratos_at ya marcado."""
+    dl = _deadline(args)
+    print(f"\u25b6 Contratos InfoPago de hasta {args.limit} empresas pendientes (m\u00e1s activas primero)")
+    regs = sb_select("empresas_estado",
+                     "select=id,rnc,rnc_real,infopago_id,nombre"
+                     "&infopago_id=not.is.null&infopago_contratos_at=is.null"
+                     f"&order=total_contratos.desc.nullslast&limit={args.limit}")
+    if not regs:
+        print("\u2705 Sin empresas pendientes \u2014 todas tienen sus contratos cargados")
+        return
+    tot, hechas = 0, 0
+    for i, e in enumerate(regs, 1):
+        if _vencido(dl):
+            print(f"\u23f1 Presupuesto de tiempo agotado tras {hechas} empresas \u2014 contin\u00faa en la pr\u00f3xima corrida")
+            break
         iid = e.get("infopago_id")
-        rnc = (e.get("rnc") or "").strip()
-        if not iid:
-            continue
         prov, contratos = _contratos_por_id(iid)
-        rnc = rnc or _solo_digitos(pick(prov, "numeroDocumento", "documentoIdentidad", "rnc")) or str(iid)
-        # Facturas directas del proveedor (un solo flujo paginado, más completo
-        # que ir contrato por contrato)
-        filas = [f for f in facturas_por_id(iid, rnc=rnc) if f["comprobante_fiscal"]]
-        filas = [dict(f, rnc_proveedor=f["rnc_proveedor"] or rnc) for f in filas]
-        n = sb_upsert("infopago_facturas", _dedup(filas, ["comprobante_fiscal", "contrato"]),
-                      "comprobante_fiscal,contrato")
-        tot_fact += n
-        if not contratos:
-            print(f"  [{i}/{len(rncs)}] {e.get('nombre') or rnc}: 0 contratos, {n} facturas")
-            continue
-        # Guardar vínculo proveedor ↔ contratos
+        rnc = ((e.get("rnc_real") or "").strip()
+               or _solo_digitos(pick(prov, "numeroDocumento", "documentoIdentidad", "rnc"))
+               or str(iid))
         pc = [{
             "rnc": rnc,
-            "rpe": pick(prov, "rpe") or e.get("rpe"),
+            "rpe": pick(prov, "rpe") or e.get("rnc"),
             "razon_social": pick(prov, "razonSocial") or e.get("nombre"),
             "estado_rpe": pick(prov, "estadoRPE"),
             "monto_total_contratado": pick(prov, "montoTotalContratado"),
@@ -425,13 +400,82 @@ def modo_facturas(args):
             "fecha_contrato": parse_fecha(c.get("fecha")),
             "raw": c,
         } for c in contratos if c.get("contrato")]
-        sb_upsert("infopago_proveedor_contratos", _dedup(pc, ["rnc", "contrato"]), "rnc,contrato")
-        tot_contr += len(pc)
-        print(f"  [{i}/{len(rncs)}] {e.get('nombre') or rnc}: {len(pc)} contratos, {n} facturas")
-    print(f"✅ TOTAL: {tot_contr} contratos y {tot_fact} facturas guardadas")
-    if tot_fact == 0 and tot_contr == 0:
-        print("✖ Carga vacía — marcando el job como fallido para que GitHub lo muestre en rojo")
-        sys.exit(1)
+        if pc:
+            sb_upsert("infopago_proveedor_contratos", _dedup(pc, ["rnc", "contrato"]), "rnc,contrato")
+        # Checkpoint por empresa (aunque tenga 0 contratos, para no reintentar siempre)
+        sb_patch("empresas_estado", f"id=eq.{e['id']}",
+                 {"infopago_contratos_at": datetime.utcnow().isoformat()})
+        tot += len(pc); hechas += 1
+        print(f"  [{i}/{len(regs)}] {e.get('nombre') or rnc}: {len(pc)} contratos")
+    print(f"\u2705 TOTAL: {tot} contratos guardados de {hechas} empresas")
+
+
+def modo_facturas(args):
+    if args.rnc:
+        # Un solo proveedor: resolver Id, traer sus contratos y las facturas de cada uno
+        iid, doc = _match_referencia(_referencia_proveedor("rnc", args.rnc))
+        if not iid:
+            print(f"\u2716 No se encontr\u00f3 el proveedor en InfoPago para RNC {args.rnc}")
+            sys.exit(1)
+        prov, contratos = _contratos_por_id(iid)
+        rnc = doc or args.rnc
+        tot = 0
+        for c in contratos[: args.max_contratos or len(contratos)]:
+            num = c.get("contrato")
+            if not num:
+                continue
+            filas = [f for f in facturas_por_contrato(num) if f["comprobante_fiscal"]]
+            filas = [dict(f, rnc_proveedor=f["rnc_proveedor"] or rnc) for f in filas]
+            tot += sb_upsert("infopago_facturas",
+                             _dedup(filas, ["comprobante_fiscal", "contrato"]),
+                             "comprobante_fiscal,contrato")
+        print(f"\u2705 {tot} facturas guardadas de {len(contratos)} contratos")
+        return
+
+    if args.contrato:
+        filas = [f for f in facturas_por_contrato(args.contrato) if f["comprobante_fiscal"]]
+        n = sb_upsert("infopago_facturas", _dedup(filas, ["comprobante_fiscal", "contrato"]),
+                      "comprobante_fiscal,contrato")
+        print(f"\u2705 {n} facturas guardadas"); return
+
+    if not args.desde_contratos:
+        print("\u2716 Indica --rnc, --contrato o --desde-contratos"); return
+
+    # ── Flujo principal: contrato por contrato desde infopago_proveedor_contratos ──
+    # (GetComprobantesFiscalesProveedores devuelve TIPOS de comprobante, no facturas;
+    #  la fuente real es FacturaFiscal/GetFacturasContrato, 1 request por contrato.)
+    dl = _deadline(args)
+    print(f"\u25b6 Facturas de hasta {args.limit} contratos pendientes (periodos recientes primero)")
+    pend = sb_select("infopago_proveedor_contratos",
+                     "select=contrato,rnc,razon_social&facturas_check_at=is.null"
+                     f"&order=periodo.desc.nullslast&limit={args.limit}")
+    if not pend:
+        print("\u2705 Sin contratos pendientes \u2014 todo al d\u00eda")
+        return
+    tot, hechos, lote = 0, 0, []
+    for i, c in enumerate(pend, 1):
+        if _vencido(dl):
+            print(f"\u23f1 Presupuesto de tiempo agotado tras {hechos} contratos \u2014 contin\u00faa en la pr\u00f3xima corrida")
+            break
+        num = c.get("contrato")
+        if not num:
+            continue
+        filas = [f for f in facturas_por_contrato(num) if f["comprobante_fiscal"]]
+        filas = [dict(f,
+                      rnc_proveedor=f["rnc_proveedor"] or c.get("rnc"),
+                      nombre_proveedor=f["nombre_proveedor"] or c.get("razon_social"))
+                 for f in filas]
+        if filas:
+            tot += sb_upsert("infopago_facturas",
+                             _dedup(filas, ["comprobante_fiscal", "contrato"]),
+                             "comprobante_fiscal,contrato")
+        lote.append(num); hechos += 1
+        if len(lote) >= 50:
+            _marcar_contratos(lote); lote = []
+        if i % 100 == 0:
+            print(f"  [{i}/{len(pend)}] {tot} facturas acumuladas")
+    _marcar_contratos(lote)
+    print(f"\u2705 TOTAL: {tot} facturas guardadas de {hechos} contratos consultados")
 
 
 # ── MODO RANKING (campos reales confirmados del API) ───────────
@@ -564,12 +608,14 @@ def modo_proveedor(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="ETL InfoPago DGCP → Supabase")
     ap.add_argument("--explorar", action="store_true", help="Imprimir estructura real de cada endpoint")
-    ap.add_argument("--modo", choices=["facturas", "ranking", "proveedor", "trazabilidad", "resolver-rnc"])
+    ap.add_argument("--modo", choices=["facturas", "contratos", "ranking", "proveedor", "trazabilidad", "resolver-rnc"])
     ap.add_argument("--rnc", help="RNC del proveedor")
     ap.add_argument("--contrato", help="Código de contrato (ej. CAASD-2025-00188)")
     ap.add_argument("--desde-contratos", action="store_true",
                     help="Recorrer contratos_adjudicados de Supabase")
     ap.add_argument("--limit", type=int, default=200)
+    ap.add_argument("--budget-min", type=float, default=0,
+                    help="Minutos máx. de trabajo; al agotarse para limpio y guarda checkpoint (0 = sin límite)")
     ap.add_argument("--max-contratos", type=int, default=30, help="Máx. contratos por empresa a consultar facturas")
     ap.add_argument("--periodo", default="todos")
     ap.add_argument("--codes", help="unidadCompraCode separados por coma (ranking)")
@@ -581,6 +627,8 @@ if __name__ == "__main__":
         modo_explorar(args.rnc or "130723354", args.contrato or "CAASD-2025-00188")
     elif args.modo == "resolver-rnc":
         modo_resolver_rnc(args)
+    elif args.modo == "contratos":
+        modo_contratos(args)
     elif args.modo == "facturas":
         modo_facturas(args)
     elif args.modo == "ranking":
@@ -592,3 +640,4 @@ if __name__ == "__main__":
         modo_trazabilidad(args)
     else:
         ap.print_help()
+      
