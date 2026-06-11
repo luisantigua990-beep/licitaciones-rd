@@ -107,11 +107,36 @@ def sb_upsert(tabla, filas, on_conflict):
     return len(filas)
 
 
-def sb_select(tabla, query):
-    url = f"{SUPABASE_URL}/rest/v1/{tabla}?{query}"
+def sb_select(tabla, query, max_filas=None):
+    """SELECT paginado: PostgREST corta en ~1000 filas por request, así que
+    se itera con header Range hasta agotar resultados o llegar a max_filas."""
     h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    r = requests.get(url, headers=h, timeout=60)
-    return r.json() if r.status_code == 200 else []
+    # El limit del query (si viene) define el máximo total deseado
+    import re as _re_lim
+    m = _re_lim.search(r"[&?]limit=(\d+)", query)
+    if m:
+        max_filas = max_filas or int(m.group(1))
+        query = _re_lim.sub("", query).lstrip("&")
+    url = f"{SUPABASE_URL}/rest/v1/{tabla}?{query}"
+    filas, offset, paso = [], 0, 1000
+    while True:
+        if max_filas is not None:
+            restan = max_filas - len(filas)
+            if restan <= 0:
+                break
+            paso_actual = min(paso, restan)
+        else:
+            paso_actual = paso
+        hh = dict(h, Range=f"{offset}-{offset + paso_actual - 1}")
+        r = requests.get(url, headers=hh, timeout=60)
+        if r.status_code not in (200, 206):
+            break
+        lote = r.json()
+        filas.extend(lote)
+        if len(lote) < paso_actual:
+            break
+        offset += paso_actual
+    return filas
 
 
 def _parse_shard(s):
