@@ -23,6 +23,7 @@ import os
 import sys
 import json
 import time
+import hashlib
 import argparse
 from datetime import datetime
 
@@ -111,6 +112,26 @@ def sb_select(tabla, query):
     h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     r = requests.get(url, headers=h, timeout=60)
     return r.json() if r.status_code == 200 else []
+
+
+def _parse_shard(s):
+    """'2/5' → (1, 5): este worker procesa el grupo 2 de 5 (índice 0-based)."""
+    if not s:
+        return None
+    idx, total = s.split("/")
+    idx, total = int(idx), int(total)
+    if not (1 <= idx <= total):
+        print(f"✖ --shard inválido: {s} (formato N/M, 1 ≤ N ≤ M)"); sys.exit(1)
+    return idx - 1, total
+
+
+def _es_mi_shard(clave, shard):
+    """Reparto estable por hash: shards paralelos nunca tocan el mismo contrato."""
+    if not shard:
+        return True
+    idx, total = shard
+    h = int(hashlib.md5(str(clave).encode()).hexdigest()[:8], 16)
+    return h % total == idx
 
 
 def _deadline(args):
@@ -445,10 +466,16 @@ def modo_facturas(args):
     # (GetComprobantesFiscalesProveedores devuelve TIPOS de comprobante, no facturas;
     #  la fuente real es FacturaFiscal/GetFacturasContrato, 1 request por contrato.)
     dl = _deadline(args)
-    print(f"\u25b6 Facturas de hasta {args.limit} contratos pendientes (periodos recientes primero)")
+    shard = _parse_shard(args.shard)
+    etiqueta = f" [shard {args.shard}]" if shard else ""
+    print(f"\u25b6 Facturas de hasta {args.limit} contratos pendientes (periodos recientes primero){etiqueta}")
+    # Con shards: se piden limit×M filas y cada worker filtra las suyas por hash,
+    # así los M workers cubren el mismo universo sin pisarse.
+    techo = args.limit * (shard[1] if shard else 1)
     pend = sb_select("infopago_proveedor_contratos",
                      "select=contrato,rnc,razon_social&facturas_check_at=is.null"
-                     f"&order=periodo.desc.nullslast&limit={args.limit}")
+                     f"&order=periodo.desc.nullslast&limit={techo}")
+    pend = [c for c in pend if _es_mi_shard(c.get("contrato"), shard)][: args.limit]
     if not pend:
         print("\u2705 Sin contratos pendientes \u2014 todo al d\u00eda")
         return
@@ -616,6 +643,8 @@ if __name__ == "__main__":
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--budget-min", type=float, default=0,
                     help="Minutos máx. de trabajo; al agotarse para limpio y guarda checkpoint (0 = sin límite)")
+    ap.add_argument("--shard", default=None,
+                    help="Reparto para corridas paralelas, formato N/M (ej: 2/5). Cada shard procesa un grupo disjunto de contratos.")
     ap.add_argument("--max-contratos", type=int, default=30, help="Máx. contratos por empresa a consultar facturas")
     ap.add_argument("--periodo", default="todos")
     ap.add_argument("--codes", help="unidadCompraCode separados por coma (ranking)")
@@ -640,4 +669,3 @@ if __name__ == "__main__":
         modo_trazabilidad(args)
     else:
         ap.print_help()
-      
