@@ -87,7 +87,7 @@ def crear_pago(body: CrearPagoRequest, authorization: str | None = Header(defaul
         raise HTTPException(404, "Plan no encontrado")
     plan = plan_q.data[0]
 
-    ern = f"LL-{user_id[:8]}-{int(time.time())}"
+    ern = f"LL-{user_id[:8]}-{int(time.time() * 1000)}"
 
     pago_ins = _sb_admin.table("pagos").insert({
         "user_id": user_id,
