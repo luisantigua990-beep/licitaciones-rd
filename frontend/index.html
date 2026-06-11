@@ -2689,6 +2689,19 @@ html { background: var(--color-bg, #0A0A0A); }
   flex-shrink: 0;
 }
 
+/* ── Opciones de plan (modal Pagadito): hover y selección ── */
+.plan-opcion { border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:10px; position:relative; cursor:pointer; transition:border-color .15s, background .15s, transform .15s, box-shadow .15s; }
+.plan-opcion:hover, .plan-opcion:focus-within { border-color:var(--green); background:var(--green-dim, rgba(22,163,74,.08)); transform:translateY(-1px); box-shadow:0 4px 14px rgba(22,163,74,.12); }
+.plan-opcion--popular { border-color:var(--green); }
+.plan-opcion .plan-btn { background:var(--green); color:#fff; border:none; border-radius:8px; padding:10px 18px; font-size:13px; font-weight:800; cursor:pointer; font-family:Inter,sans-serif; transition:filter .15s; }
+.plan-opcion:hover .plan-btn { filter:brightness(1.12); }
+.plan-btn:disabled { opacity:.65; cursor:wait; }
+
+/* ── Fix móvil PWA: Empresas y Mercado quedaban debajo del navbar ── */
+@media (max-width: 899px) {
+  #tab-inteligencia, #tab-mercado { top: calc(58px + env(safe-area-inset-top, 0px)) !important; }
+}
+
 </style>
 <!-- Aplicar tema inmediatamente para evitar flash blanco -->
 <script>
@@ -6163,7 +6176,7 @@ async function verDetalle(codigo) {
   // ── ESTADO ANÁLISIS BANNER ──
   let estadoAnalisisBanner = '';
   // Cargar participantes en background (no bloquea el render)
-  cargarParticipantesProceso(p.codigo_proceso);
+  cargarSemaforoPago(p.unidad_compra);
 
   if (['procesando','pendiente','pendiente_analisis'].includes(analisis?.estado)) {
     estadoAnalisisBanner = `<div class="analisis-procesando">
@@ -6256,8 +6269,7 @@ async function verDetalle(codigo) {
           <button class="detalle-tab-btn"        id="dtab-btn-plazos"    onclick="cambiarTabDetalle('${codigo}','plazos')">Plazos</button>
           <button class="detalle-tab-btn"        id="dtab-btn-docs"      onclick="cambiarTabDetalle('${codigo}','docs')">Artículos${artsBadge}</button>
           <button class="detalle-tab-btn"        id="dtab-btn-score"     onclick="cambiarTabDetalle('${codigo}','score')">¿Vale la pena?${scoreBadge}</button>
-          <button class="detalle-tab-btn"        id="dtab-btn-participantes" onclick="cambiarTabDetalle('${codigo}','participantes')">Participantes</button>
-          <button class="detalle-tab-btn"        id="dtab-btn-oferta"    onclick="cambiarTabDetalle('${codigo}','oferta')">💰 Precio</button>
+          <button class="detalle-tab-btn"        id="dtab-btn-semaforo"  onclick="cambiarTabDetalle('${codigo}','semaforo')">🚦 Pago</button>
         </div>
 
         <!-- TAB: RESUMEN -->
@@ -6323,26 +6335,16 @@ async function verDetalle(codigo) {
           ${renderTabScore(analisis, p)}
         </div>
 
-        <!-- TAB: PARTICIPANTES -->\n        <div class="detalle-tab-panel" id="dtab-panel-participantes">
+        <!-- TAB: SEMÁFORO DE PAGO -->
+        <div class="detalle-tab-panel" id="dtab-panel-semaforo">
           <div class="ll-card" style="margin-bottom:12px;">
             <div class="ll-card__header">
-              <h2 class="ll-card__title">Participantes del proceso</h2>
-              <span id="dtab-participantes-badge" class="ll-chip" style="font-size:11px;"></span>
+              <h2 class="ll-card__title">🚦 ¿Esta institución paga a tiempo?</h2>
             </div>
             <div class="ll-card__body">
-              <div id="dtab-participantes-content">
-                <div style="font-size:13px;color:var(--muted);padding:12px 0;">Cargando participantes...</div>
+              <div id="dtab-semaforo-content">
+                <div style="font-size:13px;color:var(--muted);padding:12px 0;">Consultando historial de pagos (InfoPago DGCP)...</div>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- TAB: PRECIO INTELIGENTE -->
-        <div class="detalle-tab-panel" id="dtab-panel-oferta">
-          <div id="dtab-oferta-content">
-            <div style="padding:32px;text-align:center;">
-              <div class="spinner" style="margin:0 auto 12px;"></div>
-              <div style="font-size:13px;color:var(--muted);">Analizando historial de contratos similares...</div>
             </div>
           </div>
         </div>
@@ -9788,6 +9790,52 @@ let _icChartM = null;
 const IC_API = API + '/api/v1/proveedores';
 
 
+async function cargarSemaforoPago(institucion) {
+  const el = document.getElementById('dtab-semaforo-content');
+  if (!el) return;
+  if (!institucion) { el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">Institución no identificada.</div>'; return; }
+  try {
+    const r = await fetch('/api/instituciones/semaforo?nombre=' + encodeURIComponent(institucion));
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (!d || !d.encontrado) {
+      el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">Sin historial de pagos publicado por la DGCP para esta institución.</div>';
+      return;
+    }
+    const med = Math.round(d.mediana_dias_pago ?? d.promedio_dias_pago ?? 0);
+    const color = med <= 30 ? '#16A34A' : med <= 60 ? '#EAB308' : '#DC2626';
+    const verdicto = med <= 30 ? 'Paga rápido' : med <= 60 ? 'Paga con demora moderada' : 'Paga lento';
+    const fmt = n => (n==null ? '—' : Number(n).toLocaleString('es-DO', {maximumFractionDigits:0}));
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
+        <div style="width:54px;height:54px;border-radius:50%;background:${color}1a;border:2.5px solid ${color};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <span style="font-size:17px;font-weight:900;color:${color};font-family:var(--font-mono,monospace);">${med}</span>
+        </div>
+        <div>
+          <div style="font-size:15px;font-weight:800;color:${color};">${verdicto}</div>
+          <div style="font-size:12px;color:var(--muted);">Mediana: <b style="color:var(--text);">${med} días</b> para pagar una factura · Periodo ${d.periodo}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;">
+          <div style="font-size:16px;font-weight:800;color:var(--text);font-family:var(--font-mono,monospace);">${fmt(d.porc_pagos_20_dias)}%</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">en ≤20 días</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;">
+          <div style="font-size:16px;font-weight:800;color:var(--text);font-family:var(--font-mono,monospace);">${fmt(d.porc_pagos_60_dias)}%</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">en ≤60 días</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center;">
+          <div style="font-size:16px;font-weight:800;color:${(d.porc_fuera_plazo||0)>30?'#DC2626':'var(--text)'};font-family:var(--font-mono,monospace);">${fmt(d.porc_fuera_plazo)}%</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;">fuera de plazo</div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.6;">Basado en <b style="color:var(--text);">${fmt(d.cantidad_facturas)}</b> facturas analizadas por la DGCP (InfoPago) · Monto pagado: <b style="color:var(--text);">RD$${fmt(d.monto_total_pagado)}</b>${d.institucion_match ? ` · Institución: ${d.institucion_match}` : ''}</div>`;
+  } catch(e) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">No se pudo cargar el historial de pagos.</div>';
+  }
+}
+
 async function cargarParticipantesProceso(codigo) {
   const el    = document.getElementById('dtab-participantes-content');
   const badge = document.getElementById('dtab-participantes-badge');
@@ -10737,17 +10785,14 @@ async function abrirModalPlanes() {
     const r = await fetch('/api/pagos/planes');
     const { planes } = await r.json();
     cont.innerHTML = planes.map(p => `
-      <div style="border:1px solid ${p.duracion_meses===12?'var(--green)':'var(--border)'};border-radius:12px;padding:16px;margin-bottom:10px;position:relative;">
+      <div class="plan-opcion ${p.duracion_meses===12?'plan-opcion--popular':''}" onclick="pagarPlan(${p.id}, this.querySelector('.plan-btn'))">
         ${PLAN_BADGES[p.duracion_meses] ? `<span style="position:absolute;top:-9px;right:12px;background:var(--green);color:#fff;font-size:10px;font-weight:800;padding:2px 8px;border-radius:6px;">${PLAN_BADGES[p.duracion_meses]}</span>` : ''}
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
             <p style="margin:0;font-size:15px;font-weight:700;color:var(--text);font-family:Inter,sans-serif;">${p.nombre}</p>
             <p style="margin:2px 0 0;font-size:12px;color:var(--text2);font-family:Inter,sans-serif;">US$ ${parseFloat(p.precio).toFixed(0)} / ${p.duracion_meses===1?'mes':p.duracion_meses+' meses'}</p>
           </div>
-          <button onclick="pagarPlan(${p.id},this)"
-            style="background:var(--green);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;font-family:Inter,sans-serif;">
-            Elegir
-          </button>
+          <button class="plan-btn" onclick="event.stopPropagation();pagarPlan(${p.id},this)">Elegir</button>
         </div>
       </div>`).join('');
   } catch(e) {
@@ -10760,7 +10805,18 @@ function cerrarModalPlanes() {
 }
 
 // ── Iniciar pago ─────────────────────────────────────────
+let _pagoEnCurso = false;
+// Al volver de Pagadito con el botón atrás (bfcache), restaurar los botones
+window.addEventListener('pageshow', (e) => {
+  if (e.persisted) {
+    _pagoEnCurso = false;
+    document.querySelectorAll('.plan-btn').forEach(b => { b.disabled = false; b.textContent = 'Elegir'; });
+  }
+});
+
 async function pagarPlan(planId, btn) {
+  if (_pagoEnCurso) return;            // evita doble click / doble pago
+  _pagoEnCurso = true;
   const err = document.getElementById('errorPago');
   err.style.display = 'none';
   btn.disabled = true; btn.textContent = 'Procesando...';
@@ -10771,6 +10827,7 @@ async function pagarPlan(planId, btn) {
       err.textContent = 'Inicia sesión para suscribirte.';
       err.style.display = 'block';
       btn.disabled = false; btn.textContent = 'Elegir';
+      _pagoEnCurso = false;
       return;
     }
     const r = await fetch('/api/pagos/crear', {
@@ -10786,6 +10843,7 @@ async function pagarPlan(planId, btn) {
     err.textContent = e.message;
     err.style.display = 'block';
     btn.disabled = false; btn.textContent = 'Elegir';
+    _pagoEnCurso = false;
   }
 }
 
