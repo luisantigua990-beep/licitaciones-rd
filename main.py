@@ -396,19 +396,27 @@ async def semaforo_institucion(nombre: str):
         except Exception:
             return None
 
+    def _sin_acentos(s):
+        tabla = str.maketrans("áéíóúÁÉÍÓÚñÑ", "aeiouAEIOUnN")
+        return s.translate(tabla)
+
     stop = {"de", "del", "la", "el", "los", "las", "y", "para", "nacional", "general"}
     nombre_limpio = nombre.strip()
     palabras = [p for p in nombre_limpio.replace(",", " ").split() if len(p) > 3 and p.lower() not in stop]
+    # Patrones: nombre completo y las 2 palabras más distintivas, cada uno con y sin acentos
+    candidatos = [nombre_limpio] + sorted(palabras, key=len, reverse=True)[:2]
+    patrones = []
+    for c in candidatos:
+        for v in (c, _sin_acentos(c)):
+            if v not in patrones:
+                patrones.append(v)
 
     fila = None
     for periodo in ("2026", "2025"):
-        fila = _buscar(nombre_limpio, periodo)
-        if not fila and palabras:
-            # Probar con las 2 palabras más distintivas (las más largas)
-            for palabra in sorted(palabras, key=len, reverse=True)[:2]:
-                fila = _buscar(palabra, periodo)
-                if fila:
-                    break
+        for patron in patrones:
+            fila = _buscar(patron, periodo)
+            if fila:
+                break
         if fila:
             break
 
