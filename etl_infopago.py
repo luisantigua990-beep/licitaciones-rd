@@ -611,15 +611,41 @@ def _roadmap_via_pagina(comprobante, contrato, estado="Conciliado"):
         print(f"  ⚠ roadmap página: {e}")
     return []
 
+_TRAZ_DIAG_IMPRESO = False
+
 def trazabilidad_factura(comprobante, contrato, estado="Conciliado"):
-    # Vía 1: API directa (si el endpoint existe con este nombre)
+    global _TRAZ_DIAG_IMPRESO
+    # Vía 1: API directa
     data = api_get(ROADMAP_PATH, {"comprobanteFiscal": comprobante, "contrato": contrato})
     time.sleep(SLEEP)
     items = data if isinstance(data, list) else ([data] if data else [])
-    # Vía 2 (fallback garantizado): extraer del payload de la página
+    # Vía 2: extraer del payload RSC de la página
     if not items:
         items = _roadmap_via_pagina(comprobante, contrato, estado)
         time.sleep(SLEEP)
+    # Diagnóstico: la primera vez que ambas vías fallen, mostrar qué responde el API
+    if not items and not _TRAZ_DIAG_IMPRESO:
+        _TRAZ_DIAG_IMPRESO = True
+        print(f"  🔎 DIAGNÓSTICO trazabilidad ({comprobante} / {contrato}):")
+        try:
+            url1 = f"{BASE}/{ROADMAP_PATH}"
+            r1 = requests.get(url1, params={"comprobanteFiscal": comprobante, "contrato": contrato},
+                              headers=HEADERS, timeout=TIMEOUT)
+            print(f"     Vía 1 GET {ROADMAP_PATH} → HTTP {r1.status_code}: {r1.text[:300]}")
+            r1b = requests.post(url1, json={"comprobanteFiscal": comprobante, "contrato": contrato},
+                                headers=HEADERS, timeout=TIMEOUT)
+            print(f"     Vía 1 POST → HTTP {r1b.status_code}: {r1b.text[:300]}")
+        except Exception as e:
+            print(f"     Vía 1 error: {e}")
+        try:
+            h = dict(HEADERS); h["rsc"] = "1"
+            r2 = requests.get("https://infopago.dgcp.gob.do/trazabilidad-ciclos-pago/roadmap",
+                              params={"comprobanteFiscal": comprobante, "contrato": contrato, "estado": estado},
+                              headers=h, timeout=TIMEOUT)
+            print(f"     Vía 2 página → HTTP {r2.status_code}, {len(r2.text)} chars, contiene numPreventivo: {'numPreventivo' in r2.text}")
+            print(f"     Muestra: {r2.text[:300]}")
+        except Exception as e:
+            print(f"     Vía 2 error: {e}")
     filas = []
     for r in items:
         # Actualizar también la factura con fecha de pago real y días
@@ -633,21 +659,50 @@ def trazabilidad_factura(comprobante, contrato, estado="Conciliado"):
         })
     return filas
 
+def _marcar_trazabilidad(claves):
+    """Checkpoint: marca facturas (comprobante,contrato) ya consultadas."""
+    if not claves:
+        return
+    lista = ",".join(f'"{c}"' for c, _ in claves)
+    sb_patch("infopago_facturas", f"comprobante_fiscal=in.({lista})",
+             {"trazabilidad_check_at": datetime.utcnow().isoformat()})
+
+
 def modo_trazabilidad(args):
     if args.comprobante and args.contrato:
         filas = trazabilidad_factura(args.comprobante, args.contrato)
-    else:
-        # Recorrer facturas ya cargadas que no tengan trazabilidad
-        print("▶ Buscando facturas sin trazabilidad en Supabase...")
-        facts = sb_select("infopago_facturas",
-                          f"select=comprobante_fiscal,contrato,estado&fecha_pago=is.null&limit={args.limit}")
-        filas = []
-        for i, f in enumerate(facts, 1):
-            filas += trazabilidad_factura(f["comprobante_fiscal"], f["contrato"], f.get("estado") or "Conciliado")
-            if i % 25 == 0:
-                print(f"  [{i}/{len(facts)}]")
-    n = sb_upsert("infopago_trazabilidad", filas, "comprobante_fiscal,contrato")
-    print(f"✅ {n} trazabilidades guardadas")
+        n = sb_upsert("infopago_trazabilidad", filas, "comprobante_fiscal,contrato")
+        print(f"✅ {n} trazabilidades guardadas")
+        return
+
+    dl = _deadline(args)
+    shard = _parse_shard(args.shard)
+    etiqueta = f" [shard {args.shard}]" if shard else ""
+    print(f"▶ Trazabilidad de hasta {args.limit} facturas pendientes (recientes y Conciliadas primero){etiqueta}")
+    techo = args.limit * (shard[1] if shard else 1)
+    facts = sb_select("infopago_facturas",
+                      "select=comprobante_fiscal,contrato,estado&trazabilidad_check_at=is.null"
+                      "&estado=eq.Conciliado"
+                      f"&order=fecha_emision.desc.nullslast&limit={techo}")
+    facts = [f for f in facts if _es_mi_shard(f"{f['comprobante_fiscal']}|{f['contrato']}", shard)][: args.limit]
+    if not facts:
+        print("✅ Sin facturas pendientes de trazabilidad")
+        return
+    tot, hechas, lote = 0, 0, []
+    for i, f in enumerate(facts, 1):
+        if _vencido(dl):
+            print(f"⏱ Presupuesto agotado tras {hechas} facturas — continúa en la próxima corrida")
+            break
+        filas = trazabilidad_factura(f["comprobante_fiscal"], f["contrato"], f.get("estado") or "Conciliado")
+        if filas:
+            tot += sb_upsert("infopago_trazabilidad", filas, "comprobante_fiscal,contrato")
+        lote.append((f["comprobante_fiscal"], f["contrato"])); hechas += 1
+        if len(lote) >= 50:
+            _marcar_trazabilidad(lote); lote = []
+        if i % 100 == 0:
+            print(f"  [{i}/{len(facts)}] {tot} trazabilidades acumuladas")
+    _marcar_trazabilidad(lote)
+    print(f"✅ TOTAL: {tot} trazabilidades de {hechas} facturas consultadas")
 
 
 # ── MODO PROVEEDOR (búsqueda/prueba) ────────────────────────────
