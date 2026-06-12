@@ -659,6 +659,76 @@ def trazabilidad_factura(comprobante, contrato, estado="Conciliado"):
         })
     return filas
 
+def modo_explorar_trazabilidad(args):
+    """Descubre el endpoint real de trazabilidad: descarga la pagina Next.js,
+    extrae rutas de API de sus chunks JS y prueba los candidatos en vivo."""
+    import re
+    base_pagina = "https://infopago.dgcp.gob.do"
+    comprobante = args.comprobante or "E450000001341"
+    contrato = args.contrato or "MAP-2026-00047"
+    print(f"> Explorando endpoints de trazabilidad con factura {comprobante} / {contrato}")
+
+    # 1) HTML de la pagina de trazabilidad
+    r = requests.get(f"{base_pagina}/trazabilidad-ciclos-pago", headers=HEADERS, timeout=TIMEOUT)
+    html = r.text
+    print(f"  Pagina: HTTP {r.status_code}, {len(html)} chars")
+
+    # 2) Localizar y descargar los chunks JS (ahi viven las rutas del API)
+    chunks = sorted(set(re.findall(r"static/chunks/[\w\-.]+?\.js", html)))
+    print(f"  {len(chunks)} chunks JS referenciados")
+    corpus = html
+    for ch in chunks[:50]:
+        try:
+            rj = requests.get(f"{base_pagina}/_next/{ch}", headers=HEADERS, timeout=TIMEOUT)
+            if rj.status_code == 200:
+                corpus += "\n" + rj.text
+        except Exception:
+            pass
+        time.sleep(0.1)
+    print(f"  Corpus total: {len(corpus):,} chars")
+
+    # 3) Extraer candidatos de rutas de API (sin delimitadores de comillas para evitar ruido de escape)
+    rutas_api = set(re.findall(r"api/[A-Za-z0-9_/\-]{3,80}", corpus))
+    rutas_get = set(re.findall(r"[A-Za-z]{3,40}/(?:Get|Post|Consultar|Buscar)[A-Za-z0-9]{3,60}", corpus))
+    candidatos = sorted(set(c.rstrip("/") for c in (rutas_api | rutas_get)))
+    print(f"\n  [{len(candidatos)}] rutas de API encontradas en el codigo:")
+    for c in candidatos:
+        print(f"     {c}")
+
+    # 4) Contexto alrededor de menciones de trazabilidad (revela nombres de parametros)
+    vistos = 0
+    for m in re.finditer(r"[Tt]razabilidad", corpus):
+        frag = corpus[max(0, m.start() - 120): m.start() + 180].replace("\n", " ")
+        print(f"\n  CONTEXTO: ...{frag}...")
+        vistos += 1
+        if vistos >= 8:
+            break
+
+    # 5) Probar candidatos priorizados contra la factura conocida
+    claves = ("raza", "iclo", "ago", "actur", "oadmap", "reventivo", "omprobante")
+    prioritarios = [c for c in candidatos if any(k in c for k in claves)] or candidatos
+    print(f"\n  Probando {min(len(prioritarios), 20)} candidatos (las lineas con *** son las buenas):")
+    params = {"comprobanteFiscal": comprobante, "contrato": contrato}
+    for cand in prioritarios[:20]:
+        path = cand.lstrip("/")
+        if path.startswith("api/"):
+            path = path[4:]
+        for metodo in ("GET", "POST"):
+            try:
+                url = f"{BASE}/{path}"
+                if metodo == "GET":
+                    rr = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
+                else:
+                    rr = requests.post(url, json=params, headers=HEADERS, timeout=TIMEOUT)
+                cuerpo = (rr.text or "").strip()
+                marca = "***" if rr.status_code == 200 and len(cuerpo) > 4 else "   "
+                print(f"   {marca} {metodo} {path} -> HTTP {rr.status_code}, {len(cuerpo)} chars: {cuerpo[:200]}")
+            except Exception as e:
+                print(f"       {metodo} {path} -> error: {e}")
+            time.sleep(0.2)
+    print("\nOK Exploracion completa - busca las lineas con ***")
+
+
 def _marcar_trazabilidad(claves):
     """Checkpoint: marca facturas (comprobante,contrato) ya consultadas."""
     if not claves:
@@ -715,7 +785,7 @@ def modo_proveedor(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="ETL InfoPago DGCP → Supabase")
     ap.add_argument("--explorar", action="store_true", help="Imprimir estructura real de cada endpoint")
-    ap.add_argument("--modo", choices=["facturas", "contratos", "ranking", "proveedor", "trazabilidad", "resolver-rnc"])
+    ap.add_argument("--modo", choices=["facturas", "contratos", "ranking", "proveedor", "trazabilidad", "resolver-rnc", "explorar-trazabilidad"])
     ap.add_argument("--rnc", help="RNC del proveedor")
     ap.add_argument("--contrato", help="Código de contrato (ej. CAASD-2025-00188)")
     ap.add_argument("--desde-contratos", action="store_true",
@@ -738,6 +808,8 @@ if __name__ == "__main__":
         modo_resolver_rnc(args)
     elif args.modo == "contratos":
         modo_contratos(args)
+    elif args.modo == "explorar-trazabilidad":
+        modo_explorar_trazabilidad(args)
     elif args.modo == "facturas":
         modo_facturas(args)
     elif args.modo == "ranking":
