@@ -2782,7 +2782,7 @@ html { background: var(--color-bg, #0A0A0A); }
       <div style="text-align:center;margin-top:16px;">
         <button onclick="switchTab('recovery')" style="background:none;border:none;color:var(--color-text-subtle);font-size:12px;cursor:pointer;font-family:var(--font-sans);text-decoration:underline;padding:0;">Olvidé mi contraseña</button>
       </div>
-      <div style="text-align:center;margin-top:10px;color:var(--color-text-subtle);font-size:10px;opacity:.6;">build v6 · empresas-fix</div>
+      <div style="text-align:center;margin-top:10px;color:var(--color-text-subtle);font-size:10px;opacity:.6;">build v8 · semaforo-fix</div>
     </div>
 
     <!-- Form registro -->
@@ -6176,6 +6176,7 @@ async function verDetalle(codigo) {
   // ── ESTADO ANÁLISIS BANNER ──
   let estadoAnalisisBanner = '';
   // Cargar participantes en background (no bloquea el render)
+  window._semaforoInst = p.unidad_compra;
   cargarSemaforoPago(p.unidad_compra);
 
   if (['procesando','pendiente','pendiente_analisis'].includes(analisis?.estado)) {
@@ -6269,7 +6270,7 @@ async function verDetalle(codigo) {
           <button class="detalle-tab-btn"        id="dtab-btn-plazos"    onclick="cambiarTabDetalle('${codigo}','plazos')">Plazos</button>
           <button class="detalle-tab-btn"        id="dtab-btn-docs"      onclick="cambiarTabDetalle('${codigo}','docs')">Artículos${artsBadge}</button>
           <button class="detalle-tab-btn"        id="dtab-btn-score"     onclick="cambiarTabDetalle('${codigo}','score')">¿Vale la pena?${scoreBadge}</button>
-          <button class="detalle-tab-btn"        id="dtab-btn-semaforo"  onclick="cambiarTabDetalle('${codigo}','semaforo')">🚦 Pago</button>
+          <button class="detalle-tab-btn"        id="dtab-btn-semaforo"  onclick="cambiarTabDetalle('${codigo}','semaforo');cargarSemaforoPago(window._semaforoInst)">🚦 Pago</button>
         </div>
 
         <!-- TAB: RESUMEN -->
@@ -9790,9 +9791,14 @@ let _icChartM = null;
 const IC_API = API + '/api/v1/proveedores';
 
 
-async function cargarSemaforoPago(institucion) {
+async function cargarSemaforoPago(institucion, intento = 0) {
   const el = document.getElementById('dtab-semaforo-content');
-  if (!el) return;
+  if (!el) {
+    // El panel aún no está en el DOM: reintentar hasta 10 veces (3s en total)
+    if (intento < 10) setTimeout(() => cargarSemaforoPago(institucion, intento + 1), 300);
+    return;
+  }
+  if (el.dataset.cargado === '1') return;  // ya está pintado, no repetir
   if (!institucion) { el.innerHTML = '<div style="font-size:13px;color:var(--muted);padding:8px 0;">Institución no identificada.</div>'; return; }
   try {
     const ctl = new AbortController();
@@ -9834,6 +9840,7 @@ async function cargarSemaforoPago(institucion) {
         </div>
       </div>
       <div style="font-size:11px;color:var(--muted);line-height:1.6;">Basado en <b style="color:var(--text);">${fmt(d.cantidad_facturas)}</b> facturas analizadas por la DGCP (InfoPago) · Monto pagado: <b style="color:var(--text);">RD$${fmt(d.monto_total_pagado)}</b>${d.institucion_match ? ` · Institución: ${d.institucion_match}` : ''}</div>`;
+    el.dataset.cargado = '1';
   } catch(e) {
     const msg = e.name === 'AbortError' ? 'El servidor tardó demasiado en responder. Intenta de nuevo.' : (e.message || 'No se pudo cargar el historial de pagos.');
     el.innerHTML = `<div style="font-size:13px;color:var(--muted);padding:8px 0;">${msg} <button onclick="cargarSemaforoPago('${(institucion||'').replace(/'/g,"\\'")}')" style="margin-left:8px;background:none;border:1px solid var(--border);border-radius:6px;color:var(--green);font-size:12px;font-weight:700;cursor:pointer;padding:4px 10px;">Reintentar</button></div>`;
