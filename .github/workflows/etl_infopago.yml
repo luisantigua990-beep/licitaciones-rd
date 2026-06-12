@@ -15,6 +15,7 @@ on:
           - contratos
           - facturas
           - trazabilidad
+          - explorar-trazabilidad
   # Automático: todos los días a las 6:00 AM (hora RD)
   schedule:
     - cron: "0 10 * * *"
@@ -52,6 +53,10 @@ jobs:
 
       # Descubre los contratos InfoPago de cada empresa.
       # Incremental: salta empresas con infopago_contratos_at marcado.
+      - name: Explorar endpoint de trazabilidad
+        if: ${{ inputs.modo == 'explorar-trazabilidad' }}
+        run: python etl_infopago.py --modo explorar-trazabilidad
+
       - name: Contratos por proveedor
         if: ${{ inputs.modo == 'todo' || inputs.modo == 'contratos' || github.event_name == 'schedule' }}
         run: python etl_infopago.py --modo contratos --limit 100 --budget-min 12
