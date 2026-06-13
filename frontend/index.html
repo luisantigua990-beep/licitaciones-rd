@@ -2,6 +2,32 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<script>
+/* ── ANTI-FLASH DE LOGIN ───────────────────────────────────────────────
+   Detecta sesión guardada de forma síncrona ANTES del primer paint.
+   Si hay sb_user (localStorage o cookie), oculta #screen-auth y muestra
+   #screen-app vía clase en <html>, evitando el flash de pantalla login.
+   El bootstrap async después confirma/refresca el token normalmente. */
+(function(){
+  try {
+    var u = null;
+    try { u = localStorage.getItem('sb_user'); } catch(e) {}
+    if (!u) {
+      var m = document.cookie.match(/(?:^|;\s*)sb_user=([^;]+)/);
+      if (m) { try { u = decodeURIComponent(m[1]); } catch(e) { u = m[1]; } }
+    }
+    if (u && u.length > 10) {
+      document.documentElement.classList.add('ll-has-session');
+    }
+  } catch(e){}
+})();
+</script>
+<style>
+/* Oculta pantalla auth y muestra app durante el primer paint si hay sesión.
+   Las clases dinámicas .active siguen funcionando normal después. */
+html.ll-has-session #screen-auth { display: none !important; }
+html.ll-has-session #screen-app { display: flex !important; }
+</style>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#1B7444">
 <meta name="description" content="Monitorea licitaciones públicas de la República Dominicana en tiempo real. Análisis de pliegos, alertas de fechas y seguimiento de procesos del portal DGCP.">
@@ -2326,9 +2352,11 @@ body {
 .prov-logo-placeholder { width: 56px; height: 56px; border-radius: var(--r-md); background: var(--green-dim); border: 1px solid var(--green-border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; font-weight: 900; color: var(--green); font-family: var(--font-display); letter-spacing: -1px; }
 .prov-info { flex: 1; min-width: 0; }
 .prov-nombre { font-size: 14px; font-weight: 800; color: var(--text); line-height: 1.3; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-.prov-verificado { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; color: var(--green); font-weight: 800; background: var(--green-dim); border-radius: 6px; padding: 2px 6px; }
+.prov-verificado { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: #fff; font-weight: 800; background: linear-gradient(135deg, #1B7444, #16a34a); border-radius: var(--r-full); padding: 3px 9px; box-shadow: 0 1px 3px rgba(22, 163, 74, .25); }
+.prov-verificado svg { width: 11px; height: 11px; }
 .prov-tipo-badge { font-size: 10px; font-weight: 800; padding: 3px 9px; border-radius: var(--r-full); letter-spacing: .05em; text-transform: uppercase; margin-top: 3px; display: inline-block; }
 .prov-tipo-materiales   { background: #DBEAFE; color: #1D4ED8; }
+.prov-tipo-otros        { background: #EDE9FE; color: #6D28D9; }
 .prov-tipo-equipos      { background: #FEF3C7; color: #D97706; }
 .prov-tipo-mano_obra    { background: #D1FAE5; color: #065F46; }
 .prov-tipo-servicios    { background: #EDE9FE; color: #6D28D9; }
@@ -3109,7 +3137,7 @@ html { background: var(--color-bg, #0A0A0A); }
       <div class="dash-topbar__search-row">
         <div class="dash-topbar__search-wrap">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input class="dash-topbar__search-input" type="text" id="busqueda" placeholder="Buscar por número, entidad, UNSPSC..." oninput="debounceSearch();toggleClearBtn()" autocomplete="off">
+          <input class="dash-topbar__search-input" type="search" id="busqueda" name="ll-busqueda-licitaciones" placeholder="Buscar por número, entidad, UNSPSC..." oninput="debounceSearch();toggleClearBtn()" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="search" data-form-type="other" data-lpignore="true" data-1p-ignore>
           <button class="dash-search-clear" id="btn-clear-busqueda" onclick="limpiarBusqueda()" style="position:absolute;right:42px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px;display:none;">✕</button>
           <button class="ll-btn ll-btn--ghost ll-btn--icon" id="btn-filtros-avanzados" onclick="toggleFiltrosAvanzados()" aria-label="Filtros" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
@@ -3774,9 +3802,10 @@ html { background: var(--color-bg, #0A0A0A); }
       <div style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Inteligencia Competitiva</div>
       <div style="display:flex;gap:8px;">
         <div style="flex:1;position:relative;">
-          <input id="ic-search-input" type="text" placeholder="Busca por nombre o RNC..."
+          <input id="ic-search-input" type="search" name="ll-busqueda-empresas" placeholder="Busca por nombre o RNC..."
             style="width:100%;padding:10px 14px 10px 38px;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r-md);color:var(--text);font-family:var(--font-body);font-size:14px;outline:none;"
-            oninput="icDebounce()" onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'">
+            oninput="icDebounce()" onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--border)'"
+            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="search" data-form-type="other" data-lpignore="true" data-1p-ignore>
           <svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);pointer-events:none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </div>
         <button onclick="icBuscar()" style="padding:0 16px;background:var(--green);color:#fff;border:none;border-radius:var(--r-md);font-size:13px;font-weight:800;cursor:pointer;font-family:var(--font-body);white-space:nowrap;">Buscar</button>
@@ -3993,8 +4022,16 @@ html { background: var(--color-bg, #0A0A0A); }
         <button class="pf-tipo-btn" data-tipo="mano_obra" onclick="seleccionarTipo(this)">Mano de obra</button>
         <button class="pf-tipo-btn" data-tipo="servicios" onclick="seleccionarTipo(this)">Servicios técnicos</button>
         <button class="pf-tipo-btn" data-tipo="subcontratista" style="grid-column:1/-1" onclick="seleccionarTipo(this)">Subcontratista especializado</button>
+        <button class="pf-tipo-btn" data-tipo="otros" style="grid-column:1/-1" onclick="seleccionarTipo(this)">Otros (especifica)</button>
       </div>
       <input type="hidden" id="pf-tipo" value="">
+      <!-- Aparece solo cuando se elige "Otros" -->
+      <div id="pf-tipo-otros-wrap" style="display:none;margin-top:10px">
+        <input type="text" id="pf-tipo-otros" maxlength="40" placeholder="¿Qué tipo de proveedor? Ej: Transporte, Topografía..."
+          autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false"
+          style="width:100%;padding:10px 14px;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r-md);color:var(--text);font-size:14px;outline:none;box-sizing:border-box">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Tu categoría queda guardada como sugerencia para revisar.</div>
+      </div>
     </div>
 
     <!-- Subcategorías — aparecen según el tipo -->
@@ -4017,9 +4054,11 @@ html { background: var(--color-bg, #0A0A0A); }
 
     <!-- RNC con verificación -->
     <div class="form-field">
-      <label>RNC — requerido para verificación</label>
+      <label>RNC — verificación automática contra DGII</label>
       <div class="rnc-wrap">
-        <input type="text" id="pf-rnc" placeholder="000-00000-0" oninput="resetRncStatus()">
+        <input type="text" id="pf-rnc" placeholder="000-00000-0" inputmode="numeric"
+          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+          oninput="resetRncStatus()" onblur="autoVerificarRNC()">
         <button class="rnc-verify-btn" onclick="verificarRNC()">Verificar</button>
       </div>
       <div class="rnc-status" id="rnc-status"></div>
@@ -4377,6 +4416,7 @@ function logout() {
   _delCookie('sb_refresh_token');
   _delCookie('sb_user');
   currentUser = null;
+  document.documentElement.classList.remove('ll-has-session');
   document.getElementById('screen-app').classList.remove('active');
   document.getElementById('screen-auth').classList.add('active');
 }
@@ -8208,6 +8248,7 @@ const _PROV_TIPO_LABEL = {
   mano_obra: 'Mano de obra',
   servicios: 'Servicios',
   subcontratista: 'Subcontratista',
+  otros: 'Otros',
 };
 
 function _provStars(rating) {
@@ -8251,7 +8292,7 @@ function renderProveedores(provs) {
 
     // Verificado
     const verif = p.verificado
-      ? `<span class="prov-verificado">✓ Verificado</span>`
+      ? `<span class="prov-verificado" title="RNC verificado contra DGII"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>Verificado</span>`
       : '';
 
     // Tipo badge
@@ -8441,6 +8482,19 @@ function seleccionarTipo(btn) {
   btn.classList.add('selected');
   document.getElementById('pf-tipo').value = btn.dataset.tipo;
   pfSubcatsSeleccionadas = [];
+  // Mostrar el input "Otros" solo cuando se elige esa categoría
+  const otrosWrap = document.getElementById('pf-tipo-otros-wrap');
+  if (otrosWrap) {
+    if (btn.dataset.tipo === 'otros') {
+      otrosWrap.style.display = 'block';
+      const inp = document.getElementById('pf-tipo-otros');
+      if (inp) setTimeout(() => inp.focus(), 50);
+    } else {
+      otrosWrap.style.display = 'none';
+      const inp = document.getElementById('pf-tipo-otros');
+      if (inp) inp.value = '';
+    }
+  }
   renderSubcats(btn.dataset.tipo);
 }
 
@@ -8540,7 +8594,7 @@ async function verificarRNC() {
     const data = await res.json();
     if (data && data.nombre) {
       rncVerificado = true;
-      st.textContent = `Verificado: ${data.nombre}`;
+      st.textContent = `✓ Verificado: ${data.nombre}`;
       st.className = 'rnc-status ok';
       // Pre-llenar el nombre si está vacío
       const nomInput = document.getElementById('pf-nombre');
@@ -8552,6 +8606,17 @@ async function verificarRNC() {
   } catch(e) {
     st.textContent = 'Error al consultar DGII. Continúa sin verificar.';
     st.className = 'rnc-status err';
+  }
+}
+
+// Verificación automática al salir del campo RNC (si hay 9 u 11 dígitos)
+async function autoVerificarRNC() {
+  const inp = document.getElementById('pf-rnc');
+  if (!inp) return;
+  const rnc = inp.value.replace(/[-\s]/g, '').trim();
+  // Solo dispara si tiene la longitud exacta de RNC dominicano y aún no se verificó
+  if ((rnc.length === 9 || rnc.length === 11) && /^\d+$/.test(rnc) && !rncVerificado) {
+    await verificarRNC();
   }
 }
 
@@ -8573,13 +8638,15 @@ function previsualizarLogo(input) {
 function abrirFormProveedor() {
   try {
   // Reset completo del form
-  ['pf-nombre','pf-descripcion','pf-whatsapp','pf-rnc','pf-email','pf-direccion','pf-horario','pf-instagram','pf-facebook','pf-website','pf-latitud','pf-longitud'].forEach(id => {
+  ['pf-nombre','pf-descripcion','pf-whatsapp','pf-rnc','pf-email','pf-direccion','pf-horario','pf-instagram','pf-facebook','pf-website','pf-latitud','pf-longitud','pf-tipo-otros'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
   document.querySelectorAll('.pf-tipo-btn').forEach(b => b.classList.remove('selected'));
   const pfTipo = document.getElementById('pf-tipo');
   if (pfTipo) pfTipo.value = '';
+  const tipoOtrosWrap = document.getElementById('pf-tipo-otros-wrap');
+  if (tipoOtrosWrap) tipoOtrosWrap.style.display = 'none';
   const subcatsWrap = document.getElementById('pf-subcats-wrap');
   if (subcatsWrap) subcatsWrap.classList.remove('visible');
   document.querySelectorAll('#zonas-panel .zona-pill').forEach(p => p.classList.remove('selected'));
@@ -8688,6 +8755,7 @@ async function enviarRegistroProveedor() {
   const nombre = document.getElementById('pf-nombre').value.trim();
   const tipo   = document.getElementById('pf-tipo').value;
   const wa     = document.getElementById('pf-whatsapp').value.trim();
+  const tipoOtros = (document.getElementById('pf-tipo-otros')?.value || '').trim();
 
   if (!nombre || !tipo || !wa) {
     msg.style.display = 'block';
@@ -8695,6 +8763,16 @@ async function enviarRegistroProveedor() {
     msg.style.color = '#DC2626';
     msg.textContent = 'Completa: nombre, tipo de proveedor y WhatsApp';
     document.getElementById('mercado-form-sheet').scrollTop = 0;
+    return;
+  }
+
+  // Si eligió "Otros", exige que escriba qué tipo
+  if (tipo === 'otros' && !tipoOtros) {
+    msg.style.display = 'block';
+    msg.style.background = '#FEE2E2';
+    msg.style.color = '#DC2626';
+    msg.textContent = 'Especifica qué tipo de proveedor eres (campo "Otros")';
+    document.getElementById('pf-tipo-otros')?.focus();
     return;
   }
 
@@ -8713,19 +8791,29 @@ async function enviarRegistroProveedor() {
     const lat = parseFloat(document.getElementById('pf-latitud').value) || null;
     const lng = parseFloat(document.getElementById('pf-longitud').value) || null;
 
+    // Si tipo es "otros", añade el texto libre a categorias y a descripcion
+    const descripcionBase = document.getElementById('pf-descripcion').value.trim();
+    const descripcionFinal = (tipo === 'otros' && tipoOtros)
+      ? (descripcionBase ? `[${tipoOtros}] ${descripcionBase}` : `[${tipoOtros}]`)
+      : descripcionBase;
+    const categoriasFinal = (tipo === 'otros' && tipoOtros)
+      ? [...pfSubcatsSeleccionadas, tipoOtros]
+      : pfSubcatsSeleccionadas;
+
     const res = await fetch(`${API}/api/mercado/proveedores`, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         nombre_empresa:  nombre,
         tipo,
-        descripcion:     document.getElementById('pf-descripcion').value.trim(),
+        tipo_otros:      tipo === 'otros' ? tipoOtros : null,
+        descripcion:     descripcionFinal,
         whatsapp:        wa,
         telefono:        wa,
         rnc:             document.getElementById('pf-rnc').value.trim(),
         email_contacto:  document.getElementById('pf-email').value.trim(),
         zona_geografica: zonas,
-        categorias:      pfSubcatsSeleccionadas,
+        categorias:      categoriasFinal,
         rnc_verificado:  rncVerificado,
         logo_base64:     pfLogoBase64,
         direccion:       document.getElementById('pf-direccion').value.trim(),
