@@ -4411,11 +4411,14 @@ async def registrar_proveedor(request: Request):
             if not data.get(field):
                 raise HTTPException(status_code=400, detail=f"Campo requerido: {field}")
 
-        tipos_validos = ["materiales", "equipos", "mano_obra", "servicios", "subcontratista"]
+        tipos_validos = ["materiales", "equipos", "mano_obra", "servicios", "subcontratista", "otros"]
         if data["tipo"] not in tipos_validos:
             raise HTTPException(status_code=400, detail="Tipo de proveedor inválido")
 
         categorias = data.pop("categorias", [])
+
+        # El usuario marca como verificado si confirmó el RNC contra DGII.
+        rnc_verif = bool(data.get("rnc_verificado"))
 
         proveedor_data = {
             "nombre_empresa":  data.get("nombre_empresa"),
@@ -4426,6 +4429,8 @@ async def registrar_proveedor(request: Request):
             "telefono":        data.get("telefono"),
             "whatsapp":        data.get("whatsapp") or data.get("telefono"),
             "email_contacto":  data.get("email_contacto"),
+            "rnc_verificado":  rnc_verif,
+            "verificado":      rnc_verif,   # un RNC validado contra DGII = proveedor verificado
             # Campos enriquecidos (vía scraper o registro manual extendido)
             "logo_url":        data.get("logo_url"),
             "website":         data.get("website"),
