@@ -584,7 +584,7 @@ def modo_ranking(args):
 # ── MODO TRAZABILIDAD (roadmap por factura) ────────────────────
 # Etapas SIAFE confirmadas: preventivo → compromiso → facturaFiscal →
 # devengado → ordenPago → ordenamiento → comprobante → conciliado
-ROADMAP_PATH = os.environ.get("INFOPAGO_ROADMAP_PATH", "TrazabilidadPago/GetTrazabilidadPagoFacturas")
+ROADMAP_PATH = os.environ.get("INFOPAGO_ROADMAP_PATH", "TrazabilidadPago/GetCicloPago")
 
 def _roadmap_via_pagina(comprobante, contrato, estado="Conciliado"):
     """Plan B garantizado: el roadmap viene embebido en el payload RSC de la
@@ -614,47 +614,41 @@ def _roadmap_via_pagina(comprobante, contrato, estado="Conciliado"):
 _TRAZ_DIAG_IMPRESO = False
 
 def trazabilidad_factura(comprobante, contrato, estado="Conciliado"):
+    """Endpoint real confirmado vía DevTools:
+       GET /api/TrazabilidadPago/GetCicloPago?contrato=X&ComprobanteFiscal=Y
+       Nota: ComprobanteFiscal lleva C mayúscula (case-sensitive)."""
     global _TRAZ_DIAG_IMPRESO
-    # Vía 1: API directa
-    data = api_get(ROADMAP_PATH, {"comprobanteFiscal": comprobante, "contrato": contrato})
+    data = api_get(ROADMAP_PATH, {"contrato": contrato, "ComprobanteFiscal": comprobante})
     time.sleep(SLEEP)
-    items = data if isinstance(data, list) else ([data] if data else [])
-    # Vía 2: extraer del payload RSC de la página
-    if not items:
-        items = _roadmap_via_pagina(comprobante, contrato, estado)
-        time.sleep(SLEEP)
-    # Diagnóstico: la primera vez que ambas vías fallen, mostrar qué responde el API
-    if not items and not _TRAZ_DIAG_IMPRESO:
+
+    # Logging verbose la primera vez: ver el JSON crudo para confirmar estructura
+    if not _TRAZ_DIAG_IMPRESO:
         _TRAZ_DIAG_IMPRESO = True
-        print(f"  🔎 DIAGNÓSTICO trazabilidad ({comprobante} / {contrato}):")
+        print(f"  🔎 PRIMER ROADMAP ({comprobante} / {contrato}):")
+        print(f"     Tipo respuesta: {type(data).__name__}")
         try:
-            url1 = f"{BASE}/{ROADMAP_PATH}"
-            r1 = requests.get(url1, params={"comprobanteFiscal": comprobante, "contrato": contrato},
-                              headers=HEADERS, timeout=TIMEOUT)
-            print(f"     Vía 1 GET {ROADMAP_PATH} → HTTP {r1.status_code}: {r1.text[:300]}")
-            r1b = requests.post(url1, json={"comprobanteFiscal": comprobante, "contrato": contrato},
-                                headers=HEADERS, timeout=TIMEOUT)
-            print(f"     Vía 1 POST → HTTP {r1b.status_code}: {r1b.text[:300]}")
+            print(f"     JSON crudo (primeros 3000 chars): {json.dumps(data, ensure_ascii=False)[:3000]}")
         except Exception as e:
-            print(f"     Vía 1 error: {e}")
-        try:
-            h = dict(HEADERS); h["rsc"] = "1"
-            r2 = requests.get("https://infopago.dgcp.gob.do/trazabilidad-ciclos-pago/roadmap",
-                              params={"comprobanteFiscal": comprobante, "contrato": contrato, "estado": estado},
-                              headers=h, timeout=TIMEOUT)
-            print(f"     Vía 2 página → HTTP {r2.status_code}, {len(r2.text)} chars, contiene numPreventivo: {'numPreventivo' in r2.text}")
-            print(f"     Muestra: {r2.text[:300]}")
-        except Exception as e:
-            print(f"     Vía 2 error: {e}")
+            print(f"     No serializable: {e} | repr: {repr(data)[:1500]}")
+
+    # El API .NET típicamente envuelve en {operation, message, data}
+    if isinstance(data, dict) and "data" in data:
+        payload = data["data"]
+    else:
+        payload = data
+    items = payload if isinstance(payload, list) else ([payload] if payload else [])
+
     filas = []
     for r in items:
-        # Actualizar también la factura con fecha de pago real y días
+        if not isinstance(r, dict):
+            continue
+        # Actualizar la factura con fecha de pago real y días (si se puede normalizar)
         fact = normalizar_factura(r, contrato=contrato)
-        if fact["comprobante_fiscal"]:
+        if fact.get("comprobante_fiscal"):
             sb_upsert("infopago_facturas", [fact], "comprobante_fiscal,contrato")
         filas.append({
-            "comprobante_fiscal": pick(r, "comprobanteFiscal") or comprobante,
-            "contrato": pick(r, "contrato") or contrato,
+            "comprobante_fiscal": pick(r, "comprobanteFiscal", "ComprobanteFiscal") or comprobante,
+            "contrato": pick(r, "contrato", "Contrato") or contrato,
             "etapas": r,
         })
     return filas
