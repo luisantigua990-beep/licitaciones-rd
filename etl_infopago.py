@@ -791,6 +791,54 @@ def modo_explorar_trazabilidad(args):
             sample = line.replace('\\"', '"').replace('\\n', ' ')[:600]
             print(f"  RSC[{i}]: {sample}")
 
+    # ── INSPECCIÓN PROFUNDA DEL RSC PAYLOAD (donde realmente viven los datos del roadmap) ──
+    if r_rsc is not None and r_rsc.status_code == 200:
+        rsc_text = r_rsc.text
+        print("\n  === RSC payload puro (header rsc:1) — primeros 8000 chars ===")
+        print(rsc_text[:8000])
+        print("  === fin de la muestra RSC ===\n")
+
+        # Buscar palabras clave de etapas SIAFE en cualquier formato (case-insensitive)
+        print("  === Búsqueda en RSC payload (case-insensitive) ===")
+        claves = ["preventivo", "compromiso", "devengado", "ordenpago", "ordenamiento",
+                  "conciliado", "factura", "etapa", "monto", "fecha", "ciclo", "trazabilidad",
+                  "roadmap", "tramite", "estado", "solicit", "aprob"]
+        for clave in claves:
+            ocs = [m.start() for m in re.finditer(clave, rsc_text, re.IGNORECASE)]
+            if ocs:
+                pos = ocs[0]
+                frag = rsc_text[max(0, pos-150): pos+300].replace("\n", " ")
+                print(f"  '{clave}' x{len(ocs)} | ctx: ...{frag}...")
+
+        # Buscar TODAS las URLs absolutas (no solo bajo /api)
+        urls_abs = set(re.findall(r"https?://[a-zA-Z0-9._-]+/[a-zA-Z0-9_/.-]{3,150}", rsc_text))
+        print(f"\n  URLs absolutas en RSC ({len(urls_abs)}):")
+        for u in sorted(urls_abs)[:30]:
+            print(f"     {u}")
+
+        # Patrones más amplios: fetch, axios, useSWR
+        fetchs = re.findall(r'fetch\(["\'`]([^"\'`]+)["\'`]', rsc_text)
+        axios = re.findall(r'axios\.(?:get|post|put|delete)\(["\'`]([^"\'`]+)["\'`]', rsc_text)
+        if fetchs:
+            print(f"  fetch() URLs: {fetchs[:15]}")
+        if axios:
+            print(f"  axios calls: {axios[:15]}")
+
+    # Si tenemos corpus de chunks del roadmap, repetir búsqueda amplia ahí también
+    if r_rm is not None and r_rm.status_code == 200 and 'corpus2' in dir():
+        print("\n  === Búsqueda amplia en corpus de chunks del roadmap ===")
+        fetchs_c = set(re.findall(r'fetch\(["\'`]([^"\'`]+)["\'`]', corpus2))
+        axios_c = set(re.findall(r'axios\.(?:get|post|put|delete)\(["\'`]([^"\'`]+)["\'`]', corpus2))
+        backticks = set(re.findall(r'`(/[a-zA-Z][^`]{2,150})`', corpus2))
+        # URLs literales que empiezan con / o api/
+        slash_urls = set(re.findall(r'["\'`](/?[Aa]pi/[A-Za-z0-9_/\-]{3,80})["\'`]', corpus2))
+        traza_urls = set(re.findall(r'["\'`]([A-Za-z]{4,30}[Pp]ago/[A-Za-z]{3,40})["\'`]', corpus2))
+        print(f"  fetch(): {len(fetchs_c)} → {list(fetchs_c)[:20]}")
+        print(f"  axios:   {len(axios_c)} → {list(axios_c)[:20]}")
+        print(f"  /api/*:  {len(slash_urls)} → {list(slash_urls)[:20]}")
+        print(f"  *Pago/*: {len(traza_urls)} → {list(traza_urls)[:20]}")
+        print(f"  template: {len(backticks)} → {list(backticks)[:15]}")
+
     print("\nOK Exploracion completa - busca las lineas con *** y los CONTEXTO del roadmap")
 
 
