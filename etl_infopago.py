@@ -726,7 +726,72 @@ def modo_explorar_trazabilidad(args):
             except Exception as e:
                 print(f"       {metodo} {path} -> error: {e}")
             time.sleep(0.2)
-    print("\nOK Exploracion completa - busca las lineas con ***")
+    # ── NUEVO: explorar específicamente la página /roadmap donde viven los datos ──
+    print("\n=== Inspeccionando página /trazabilidad-ciclos-pago/roadmap ===")
+    roadmap_url = f"{base_pagina}/trazabilidad-ciclos-pago/roadmap"
+    qs = {"comprobanteFiscal": comprobante, "contrato": contrato, "estado": "Conciliado"}
+
+    # 1) HTML normal
+    try:
+        r_rm = requests.get(roadmap_url, params=qs, headers=HEADERS, timeout=TIMEOUT)
+        print(f"  GET roadmap → HTTP {r_rm.status_code}, {len(r_rm.text):,} chars")
+    except Exception as e:
+        r_rm = None
+        print(f"  GET roadmap → error: {e}")
+
+    # 2) HTML con header rsc:1 (cómo Next.js sirve el RSC payload puro)
+    try:
+        h_rsc = dict(HEADERS); h_rsc["rsc"] = "1"
+        h_rsc["Referer"] = f"{base_pagina}/trazabilidad-ciclos-pago"
+        r_rsc = requests.get(roadmap_url, params=qs, headers=h_rsc, timeout=TIMEOUT)
+        print(f"  GET roadmap + rsc:1 → HTTP {r_rsc.status_code}, {len(r_rsc.text):,} chars")
+    except Exception as e:
+        r_rsc = None
+        print(f"  GET roadmap + rsc:1 → error: {e}")
+
+    # 3) Buscar chunks JS específicos del roadmap y agregar al corpus para detectar APIs
+    if r_rm is not None and r_rm.status_code == 200:
+        html_rm = r_rm.text
+        chunks_rm = sorted(set(re.findall(r"static/chunks/[\w\-./]+?\.js", html_rm)))
+        nuevos = [c for c in chunks_rm if c not in chunks]
+        print(f"  {len(chunks_rm)} chunks en roadmap ({len(nuevos)} nuevos respecto a /trazabilidad-ciclos-pago)")
+        corpus2 = html_rm
+        for ch in nuevos[:30]:
+            try:
+                rj = requests.get(f"{base_pagina}/_next/{ch}", headers=HEADERS, timeout=TIMEOUT)
+                if rj.status_code == 200:
+                    corpus2 += "\n" + rj.text
+            except Exception:
+                pass
+            time.sleep(0.1)
+        rutas2 = set(re.findall(r"api/[A-Za-z0-9_/\-]{3,80}", corpus2)) | \
+                 set(re.findall(r"[A-Za-z]{3,40}/(?:Get|Post|Consultar|Buscar)[A-Za-z0-9]{3,60}", corpus2))
+        nuevas_rutas = sorted(rutas2 - set(candidatos))
+        print(f"\n  [{len(nuevas_rutas)}] rutas NUEVAS encontradas en chunks del roadmap:")
+        for c in nuevas_rutas:
+            print(f"     {c}")
+
+        # 4) Buscar el payload de datos del roadmap dentro del HTML (Next.js inyecta JSON con __next_f.push)
+        print("\n  === Búsqueda de datos del roadmap embebidos en el HTML ===")
+        claves_etapas = ["numPreventivo", "preventivo", "compromiso", "ordenPago", "ordenamiento",
+                         "devengado", "conciliado", "Trazabilidad", "etapas", "ciclo"]
+        for clave in claves_etapas:
+            ocurrencias = [m.start() for m in re.finditer(clave, html_rm)]
+            if ocurrencias:
+                print(f"  '{clave}' aparece {len(ocurrencias)} veces. Primera ocurrencia, contexto:")
+                pos = ocurrencias[0]
+                frag = html_rm[max(0, pos-200): pos+400].replace("\n", " ")
+                print(f"     ...{frag}...")
+
+        # 5) Volcar el RSC payload (las líneas con __next_f.push) — ahí debería estar el JSON con los datos
+        rsc_lines = re.findall(r'self\.__next_f\.push\(\[1,"([^"]{20,3000})"', html_rm)
+        print(f"\n  __next_f.push con datos: {len(rsc_lines)} líneas encontradas")
+        for i, line in enumerate(rsc_lines[:8]):
+            # Des-escapar para legibilidad
+            sample = line.replace('\\"', '"').replace('\\n', ' ')[:600]
+            print(f"  RSC[{i}]: {sample}")
+
+    print("\nOK Exploracion completa - busca las lineas con *** y los CONTEXTO del roadmap")
 
 
 def _marcar_trazabilidad(claves):
