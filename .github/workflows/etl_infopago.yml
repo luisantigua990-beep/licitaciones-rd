@@ -68,7 +68,7 @@ jobs:
     needs: etl
     if: ${{ !cancelled() && (inputs.modo == 'todo' || inputs.modo == 'facturas' || inputs.modo == 'trazabilidad' || github.event_name == 'schedule') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 55
     strategy:
       fail-fast: false
       matrix:
@@ -91,6 +91,12 @@ jobs:
 
       # Fecha de pago real por factura. Mismo reparto por shard.
       # Incremental: salta facturas con trazabilidad_check_at marcado.
+      # En modo `trazabilidad`, facturas se salta → todo el job (50+min) va a trazabilidad.
       - name: Trazabilidad (shard ${{ matrix.shard }})
         if: ${{ !cancelled() && (inputs.modo == 'todo' || inputs.modo == 'trazabilidad' || github.event_name == 'schedule') }}
-        run: python etl_infopago.py --modo trazabilidad --limit 1500 --budget-min 12 --shard "${{ matrix.shard }}"
+        run: |
+          if [ "${{ inputs.modo }}" = "trazabilidad" ]; then
+            python etl_infopago.py --modo trazabilidad --limit 6000 --budget-min 45 --shard "${{ matrix.shard }}"
+          else
+            python etl_infopago.py --modo trazabilidad --limit 1500 --budget-min 12 --shard "${{ matrix.shard }}"
+          fi
