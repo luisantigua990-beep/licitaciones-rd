@@ -597,6 +597,12 @@ body {
 .drawer-theme-track.on { background: var(--green); }
 .drawer-theme-track::after { content: ''; position: absolute; width: 20px; height: 20px; background: #fff; border-radius: 50%; top: 3px; left: 3px; transition: transform .25s cubic-bezier(.4,0,.2,1); box-shadow: 0 1px 4px rgba(0,0,0,.3); }
 .drawer-theme-track.on::after { transform: translateX(18px); }
+/* Toggle reutilizable (usado en drawer móvil y sidebar desktop). Misma animación iOS-style. */
+.ll-toggle { -webkit-appearance: none; appearance: none; width: 44px; height: 26px; background: var(--border2); border-radius: 13px; position: relative; cursor: pointer; transition: background .25s; flex-shrink: 0; border: none; padding: 0; outline: none; }
+.ll-toggle.on { background: var(--green); }
+.ll-toggle::after { content: ''; position: absolute; width: 20px; height: 20px; background: #fff; border-radius: 50%; top: 3px; left: 3px; transition: transform .25s cubic-bezier(.4,0,.2,1); box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+.ll-toggle.on::after { transform: translateX(18px); }
+.ll-toggle:active::after { width: 22px; }  /* feedback al tocar */
 
 /* ── LAYOUT ── */
 .main { padding: 16px; max-width: 600px; margin: 0 auto; }
@@ -2033,6 +2039,17 @@ body {
 .intereses-status { font-size: 12px; color: var(--green); margin-top: 8px; min-height: 18px; }
 
 /* ── SEGUIMIENTO ── */
+/* ── MOMENTUM SCROLL iOS — activa la inercia nativa en pantallas con scroll vertical
+   Sin esto, iOS Safari hace scroll JS bloqueante que se siente lento al entrar
+   a una pantalla nueva. Con esto, el toque y el scroll se sienten nativos. ── */
+#tab-seguimiento, #tab-detalle, #tab-perfil, #tab-dashboard, #tab-mercado,
+.mercado-form-sheet, .drawer-section, .drawer, #screen-auth, #screen-app,
+.modal-content, .ll-drawer__body, .onb-step {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  transform: translate3d(0, 0, 0);  /* fuerza GPU layer, evita re-paint al scrollear */
+}
+
 #tab-seguimiento { position: absolute; inset: 0; overflow-y: auto; padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); display: none; }
 .seg-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -2613,13 +2630,16 @@ html { background: var(--color-bg, #0A0A0A); }
   background: var(--surface);
   border-top: 1px solid var(--border2);
   z-index: 100;
-  padding-bottom: env(safe-area-inset-bottom, 0);
-  height: 60px;
+  /* La altura total incluye el safe-area, así el fondo del nav cubre la zona del Home Indicator
+     y los items se distribuyen de forma uniforme. */
+  height: calc(60px + env(safe-area-inset-bottom, 0px));
 }
 .ll-bottom-nav__item {
   flex: 1; display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 4px; padding: 8px 4px;
+  gap: 4px;
+  padding: 8px 4px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   background: none; border: none;
   color: var(--muted); font-size: 10px; font-weight: 600;
   cursor: pointer; transition: color .2s;
