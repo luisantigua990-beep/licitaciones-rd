@@ -2757,7 +2757,136 @@ html { background: var(--color-bg, #0A0A0A); }
 
 /* ── Fix móvil PWA: Empresas y Mercado quedaban debajo del navbar ── */
 @media (max-width: 899px) {
-  #tab-inteligencia, #tab-mercado { top: calc(58px + env(safe-area-inset-top, 0px)) !important; }
+  #tab-inteligencia, #tab-mercado, #tab-semaforo { top: calc(58px + env(safe-area-inset-top, 0px)) !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/* SEMÁFORO DE PAGO                                                            */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+#tab-semaforo { font-family: var(--font-body); color: var(--text); }
+#tab-semaforo * { box-sizing: border-box; }
+
+.sp-info-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: var(--r-sm); cursor: pointer; font-size: 11px; font-family: var(--font-body); transition: all .15s; }
+.sp-info-btn:hover { background: var(--surface2); color: var(--text); }
+
+.sp-disclaimer { display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px; background: rgba(251, 191, 36, .08); border: 1px solid rgba(251, 191, 36, .25); border-radius: var(--r-sm); font-size: 12px; color: var(--muted); margin-bottom: 18px; line-height: 1.55; }
+.sp-disclaimer strong { color: var(--text); font-weight: 700; }
+
+.sp-search-wrap { position: relative; margin-bottom: 20px; }
+.sp-search { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--r-md); padding: 11px 16px; transition: border-color .15s; }
+.sp-search:focus-within { border-color: var(--green); }
+.sp-search-icon { color: var(--muted); flex-shrink: 0; }
+.sp-search input { flex: 1; border: none; background: transparent; outline: none; font-size: 14px; color: var(--text); padding: 0; font-family: var(--font-body); }
+.sp-clear { width: 22px; height: 22px; border: none; background: var(--surface2); color: var(--muted); border-radius: 50%; cursor: pointer; font-size: 14px; line-height: 1; }
+.sp-clear:hover { background: var(--border); }
+
+.sp-suggestions { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: 0 8px 24px rgba(0, 0, 0, .15); max-height: 320px; overflow-y: auto; z-index: 50; margin: 0; padding: 4px; list-style: none; }
+.sp-suggestions li { padding: 9px 12px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px; transition: background .1s; }
+.sp-suggestions li:hover { background: var(--surface2); }
+.sp-sug-name { font-weight: 600; font-size: 13px; color: var(--text); }
+.sp-sug-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+.sp-empty { text-align: center; padding: 48px 16px; color: var(--muted); }
+.sp-empty-icon { font-size: 40px; margin-bottom: 14px; }
+.sp-empty h2 { margin: 0 0 8px; font-size: 16px; color: var(--text); font-weight: 700; font-family: var(--font-body); }
+.sp-empty p { margin: 0 auto; font-size: 13px; max-width: 420px; line-height: 1.6; }
+
+.sp-loading { text-align: center; padding: 48px 16px; color: var(--muted); }
+.sp-spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--green); border-radius: 50%; margin: 0 auto 12px; animation: sp-spin 0.8s linear infinite; }
+@keyframes sp-spin { to { transform: rotate(360deg); } }
+
+.sp-summary-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 20px; margin-bottom: 18px; }
+.sp-summary-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+.sp-summary-name { margin: 0 0 4px; font-size: 16px; font-weight: 800; color: var(--text); font-family: var(--font-body); letter-spacing: -0.2px; }
+.sp-summary-sub { margin: 0; font-size: 12px; color: var(--muted); }
+.sp-semaforo-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.sp-semaforo-pill .sp-dot { width: 9px; height: 9px; border-radius: 50%; }
+.sp-semaforo-verde { background: rgba(22,163,74,.12); color: #16A34A; }
+.sp-semaforo-verde .sp-dot { background: #16A34A; }
+.sp-semaforo-amarillo { background: rgba(245,158,11,.12); color: #D97706; }
+.sp-semaforo-amarillo .sp-dot { background: #F59E0B; }
+.sp-semaforo-rojo { background: rgba(239,68,68,.12); color: #DC2626; }
+.sp-semaforo-rojo .sp-dot { background: #EF4444; }
+.sp-semaforo-gris { background: var(--surface2); color: var(--muted); }
+.sp-semaforo-gris .sp-dot { background: var(--muted); }
+
+.sp-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.sp-metric { background: var(--bg2); border-radius: var(--r-sm); padding: 12px 14px; border: 1px solid var(--border); }
+.sp-metric-label { margin: 0 0 6px; font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.sp-metric-value { margin: 0; font-size: 22px; font-weight: 800; color: var(--text); line-height: 1.05; font-family: var(--font-body); letter-spacing: -0.5px; }
+.sp-metric-sub { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+.sp-metric-value.is-warn { color: #D97706; }
+.sp-metric-value.is-danger { color: #DC2626; }
+
+.sp-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.sp-filters-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.sp-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.sp-pill { padding: 5px 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; font-family: var(--font-body); }
+.sp-pill:hover { background: var(--surface2); }
+.sp-pill.active { background: var(--green); color: #fff; border-color: var(--green); }
+
+.sp-section-title { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.sp-section-title h3 { margin: 0; font-size: 14px; font-weight: 800; color: var(--text); font-family: var(--font-body); letter-spacing: -0.2px; }
+.sp-list-count { font-size: 11px; color: var(--muted); }
+
+.sp-facturas { display: flex; flex-direction: column; gap: 10px; }
+.sp-factura { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md); padding: 14px 16px; transition: border-color .15s; }
+.sp-factura:hover { border-color: var(--border2); }
+.sp-factura-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.sp-factura-id { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.sp-factura-inst { margin: 0; font-size: 11px; color: var(--muted); }
+.sp-factura-right { text-align: right; }
+.sp-factura-monto { margin: 0 0 4px; font-size: 14px; font-weight: 800; color: var(--text); font-family: var(--font-body); }
+.sp-estado-badge { display: inline-block; font-size: 10px; padding: 2px 7px; border-radius: 5px; font-weight: 700; letter-spacing: .02em; }
+.sp-estado-conciliado { background: rgba(22,163,74,.15); color: #16A34A; }
+.sp-estado-entregado { background: rgba(59,130,246,.15); color: #2563EB; }
+.sp-estado-orden_pago { background: rgba(14,165,233,.15); color: #0891B2; }
+.sp-estado-devengado { background: rgba(245,158,11,.15); color: #D97706; }
+.sp-estado-registrada { background: var(--surface2); color: var(--muted); }
+.sp-estado-anulado { background: rgba(239,68,68,.15); color: #DC2626; }
+
+.sp-pipeline { display: flex; align-items: center; gap: 3px; margin: 12px 0 8px; }
+.sp-pipe-step { flex: 1; height: 22px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #fff; font-weight: 700; min-width: 0; overflow: hidden; letter-spacing: .02em; }
+.sp-pipe-step.done { background: #16A34A; }
+.sp-pipe-step.current { background: #F59E0B; animation: sp-pulse 2s ease-in-out infinite; }
+.sp-pipe-step.current.is-late { background: #EF4444; animation: none; }
+.sp-pipe-step.pending { background: var(--bg2); border: 1px dashed var(--border); color: var(--muted); }
+@keyframes sp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
+
+.sp-factura-meta { display: flex; align-items: center; gap: 14px; font-size: 11px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
+.sp-factura-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.sp-estimate { color: #3b82f6 !important; font-weight: 700; }
+.sp-estimate.is-late { color: #DC2626 !important; }
+.sp-estimate.is-ok { color: #16A34A !important; }
+
+.sp-pagination { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 18px; padding: 16px 0; }
+.sp-pagination button { padding: 6px 14px; border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: var(--r-sm); font-size: 12px; cursor: pointer; font-family: var(--font-body); font-weight: 600; }
+.sp-pagination button:hover:not(:disabled) { background: var(--surface2); }
+.sp-pagination button:disabled { opacity: .4; cursor: not-allowed; }
+#sp-page-info { font-size: 12px; color: var(--muted); }
+
+.sp-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.sp-modal-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.55); }
+.sp-modal-content { position: relative; background: var(--surface); border-radius: var(--r-md); max-width: 540px; width: 100%; max-height: 88vh; overflow-y: auto; padding: 28px; box-shadow: 0 20px 50px rgba(0,0,0,.3); border: 1px solid var(--border); }
+.sp-modal-close { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; border: none; background: var(--surface2); color: var(--text); border-radius: 50%; cursor: pointer; font-size: 16px; line-height: 1; }
+.sp-modal-content h2 { margin: 0 0 14px; font-size: 18px; color: var(--text); font-family: var(--font-body); font-weight: 800; }
+.sp-modal-content h3 { margin: 18px 0 6px; font-size: 13px; font-weight: 800; color: var(--text); font-family: var(--font-body); }
+.sp-modal-content p { margin: 0 0 8px; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.sp-modal-content ul, .sp-modal-content ol { margin: 4px 0 8px; padding-left: 20px; font-size: 13px; line-height: 1.7; color: var(--muted); }
+.sp-modal-content li { margin-bottom: 4px; }
+.sp-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+.sp-dot-verde { background: #16A34A; }
+.sp-dot-amarillo { background: #F59E0B; }
+.sp-dot-rojo { background: #EF4444; }
+.sp-dot-gris { background: var(--muted); }
+.sp-btn-primary { margin-top: 20px; width: 100%; padding: 11px; background: var(--green); color: #fff; border: none; border-radius: var(--r-sm); font-size: 13px; font-weight: 800; cursor: pointer; font-family: var(--font-body); }
+.sp-btn-primary:hover { filter: brightness(1.08); }
+
+@media (max-width: 640px) {
+  .sp-summary-card { padding: 16px; }
+  .sp-metric-value { font-size: 18px; }
+  .sp-pipe-step { font-size: 0; }
+  .sp-factura { padding: 12px 14px; }
 }
 
 </style>
@@ -3046,6 +3175,10 @@ html { background: var(--color-bg, #0A0A0A); }
         <span style="font-size:16px;">○</span>
         <div style="text-align:left;"><div class="ll-body" style="font-weight:600;">Mi Perfil</div><div class="ll-caption ll-u-text-subtle">Cuenta y notificaciones</div></div>
       </button>
+      <button class="ll-btn ll-btn--ghost" style="width:100%;justify-content:flex-start;gap:12px;padding:12px 8px;" onclick="switchTab2('semaforo');closeDrawer()">
+        <span style="font-size:16px;">🚦</span>
+        <div style="text-align:left;"><div class="ll-body" style="font-weight:600;">Semáforo de Pago <span style="background:rgba(59,130,246,.15);color:#3b82f6;font-size:9px;padding:1px 6px;border-radius:5px;font-weight:700;margin-left:4px;">BETA</span></div><div class="ll-caption ll-u-text-subtle">Estado de pagos InfoPago</div></div>
+      </button>
     </div>
     <div class="ll-drawer__footer">
       <button class="ll-btn ll-btn--ghost ll-btn--block" onclick="abrirModalPlanes();closeDrawer()" style="justify-content:flex-start;gap:12px;padding:12px 8px;margin-bottom:6px;border:1px solid #16A34A;color:#16A34A;">
@@ -3111,6 +3244,11 @@ html { background: var(--color-bg, #0A0A0A); }
     <button class="dsb-nav-item" id="dsb-nav-inteligencia" onclick="switchTab2('inteligencia')">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <span>Empresas</span>
+    </button>
+    <button class="dsb-nav-item" id="dsb-nav-semaforo" onclick="switchTab2('semaforo')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="20" rx="2"/><circle cx="12" cy="7" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="17" r="1.5"/></svg>
+      <span>Semáforo de Pago</span>
+      <span class="dsb-nav-badge" style="background:rgba(59,130,246,.15);color:#3b82f6;font-size:9px;padding:1px 6px;border-radius:6px;font-weight:700;">BETA</span>
     </button>
     
     
@@ -3968,7 +4106,135 @@ html { background: var(--color-bg, #0A0A0A); }
 
     </div><!-- /ic-dashboard -->
   </div><!-- /tab-inteligencia -->
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!-- TAB: SEMÁFORO DE PAGO                                                   -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div id="tab-semaforo" style="position:absolute;inset:0;overflow-y:auto;padding-bottom:calc(76px + env(safe-area-inset-bottom, 0px));display:none;z-index:1;">
+
+    <!-- Header sticky -->
+    <div style="padding:20px 20px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);padding-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);">🚦 Semáforo de Pago</span>
+          <span style="font-size:9px;padding:2px 7px;background:rgba(59,130,246,.15);color:#3b82f6;border-radius:5px;font-weight:800;letter-spacing:.05em;">BETA</span>
+        </div>
+        <button class="sp-info-btn" type="button" onclick="spShowDisclaimer()" aria-label="¿Cómo funciona?">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span>¿Cómo funciona?</span>
+        </button>
+      </div>
+    </div>
+
+    <div style="padding:14px 20px 20px;">
+
+      <!-- Disclaimer banner -->
+      <div class="sp-disclaimer" role="note">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink:0;margin-top:2px;color:#d97706;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>Datos <strong>aproximados</strong> basados en <strong>InfoPago</strong> (Tesorería Nacional). Las estimaciones de tiempo restante se calculan con el historial real de cada institución. La información se actualiza periódicamente conforme InfoPago publica nuevos registros.</span>
+      </div>
+
+      <!-- Buscador -->
+      <div class="sp-search-wrap">
+        <div class="sp-search">
+          <svg class="sp-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="sp-search-input" type="search" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="search" placeholder="Buscar empresa por nombre o RNC…" data-lpignore="true" data-1p-ignore />
+          <button id="sp-clear-btn" class="sp-clear" type="button" aria-label="Limpiar" style="display:none">×</button>
+        </div>
+        <ul id="sp-suggestions" class="sp-suggestions" style="display:none;" role="listbox"></ul>
+      </div>
+
+      <!-- Estado inicial -->
+      <div id="sp-empty" class="sp-empty">
+        <div class="sp-empty-icon">🔍</div>
+        <h2>Busca una empresa para ver su semáforo</h2>
+        <p>Escribe el nombre o RNC de cualquier proveedor del Estado y mira en qué etapa están sus facturas y cuánto tardan en pagarle.</p>
+      </div>
+
+      <!-- Loading -->
+      <div id="sp-loading" class="sp-loading" style="display:none;">
+        <div class="sp-spinner"></div>
+        <p>Consultando InfoPago…</p>
+      </div>
+
+      <!-- Resultado -->
+      <div id="sp-result" style="display:none;">
+        <div id="sp-summary" class="sp-summary-card"></div>
+
+        <div class="sp-filters">
+          <span class="sp-filters-label">Filtrar:</span>
+          <div id="sp-filter-pills" class="sp-pills"></div>
+        </div>
+
+        <div class="sp-section-title">
+          <h3 id="sp-list-title">Facturas</h3>
+          <span id="sp-list-count" class="sp-list-count"></span>
+        </div>
+        <div id="sp-facturas" class="sp-facturas"></div>
+
+        <div id="sp-pagination" class="sp-pagination" style="display:none;">
+          <button id="sp-prev" type="button">← Anteriores</button>
+          <span id="sp-page-info"></span>
+          <button id="sp-next" type="button">Siguientes →</button>
+        </div>
+      </div>
+
+      <!-- Sin resultados -->
+      <div id="sp-no-results" class="sp-empty" style="display:none;">
+        <div class="sp-empty-icon">😔</div>
+        <h2>No encontramos esta empresa en InfoPago</h2>
+        <p>Es posible que no tenga facturas registradas en Tesorería Nacional o el nombre no coincide exactamente.</p>
+      </div>
+
+    </div>
+
+  </div><!-- /tab-semaforo -->
+
   </div><!-- /tabs-wrapper -->
+
+  <!-- Modal disclaimer del Semáforo (fuera de tabs-wrapper para que el overlay cubra todo) -->
+  <div id="sp-modal" class="sp-modal" style="display:none;" role="dialog" aria-labelledby="sp-modal-title">
+    <div class="sp-modal-backdrop" onclick="spCloseDisclaimer()"></div>
+    <div class="sp-modal-content">
+      <button class="sp-modal-close" onclick="spCloseDisclaimer()" aria-label="Cerrar">×</button>
+      <h2 id="sp-modal-title">Cómo funciona el Semáforo de Pago</h2>
+
+      <h3>📊 Fuente de datos</h3>
+      <p>Los datos provienen del sistema <strong>InfoPago</strong> de la Tesorería Nacional de República Dominicana. Se actualizan periódicamente vía nuestro ETL automatizado conforme InfoPago publica nuevos registros.</p>
+
+      <h3>🚦 Cómo se calcula el color del semáforo</h3>
+      <ul>
+        <li><span class="sp-dot sp-dot-verde"></span> <strong>Verde — Le pagan rápido:</strong> promedio ≤ 35 días</li>
+        <li><span class="sp-dot sp-dot-amarillo"></span> <strong>Amarillo — Pago normal:</strong> 36 a 60 días</li>
+        <li><span class="sp-dot sp-dot-rojo"></span> <strong>Rojo — Le pagan lento:</strong> más de 60 días</li>
+        <li><span class="sp-dot sp-dot-gris"></span> <strong>Gris — Datos insuficientes:</strong> menos de 5 facturas</li>
+      </ul>
+
+      <h3>⏱️ Las estimaciones son aproximadas</h3>
+      <p>Cuando una factura está en proceso, mostramos un estimado de cuántos días le faltan para pagarse, basado en la <strong>mediana histórica</strong> de pagos de esa institución específica. <strong>No es una garantía</strong> — cada caso puede variar según prioridades internas, disponibilidad presupuestaria y otros factores.</p>
+
+      <h3>📋 Etapas del pipeline de InfoPago</h3>
+      <p>Las facturas pasan por 7 etapas:</p>
+      <ol>
+        <li><strong>Registrada</strong> — Factura fiscal recibida</li>
+        <li><strong>Preventivo</strong> — Reserva presupuestaria</li>
+        <li><strong>Compromiso</strong> — Compromiso formal</li>
+        <li><strong>Devengado</strong> — Obligación reconocida</li>
+        <li><strong>Orden de pago</strong> — Aprobada para pagar</li>
+        <li><strong>Entregada</strong> — Comprobante entregado</li>
+        <li><strong>Conciliada</strong> — Pago completado ✅</li>
+      </ol>
+
+      <h3>⚠️ Limitaciones</h3>
+      <ul>
+        <li>InfoPago solo publica trazabilidad detallada de facturas ya conciliadas.</li>
+        <li>Aproximadamente 50% de las facturas históricas no tienen RNC del proveedor — el match es por nombre.</li>
+        <li>Los datos del Estado dominicano pueden tener retrasos de publicación.</li>
+      </ul>
+
+      <button class="sp-btn-primary" onclick="spCloseDisclaimer()">Entendido</button>
+    </div>
+  </div>
 
   <nav class="ll-bottom-nav">
     <button class="ll-bottom-nav__item is-active" id="nav-dashboard" onclick="navDashboardTap()">
@@ -6584,7 +6850,7 @@ function navDashboardTap() {
 function switchTab2(tab) {
   window._lastActiveTab = tab;
   _pushNavState({ tab });
-  const allTabs = ['dashboard','detalle','perfil','seguimiento','mercado','alertas','analisis','reportes','calendario','inteligencia'];
+  const allTabs = ['dashboard','detalle','perfil','seguimiento','mercado','alertas','analisis','reportes','calendario','inteligencia','semaforo'];
   allTabs.forEach(t => {
     const el = document.getElementById(`tab-${t}`);
     if (el) el.style.display = t === tab ? 'block' : 'none';
@@ -6603,6 +6869,7 @@ function switchTab2(tab) {
   if (tab==='analisis')    cargarAnalisisTab();
   if (tab==='reportes')    cargarReportes();
   if (tab==='calendario')  cargarCalendario();
+  if (tab==='semaforo')    { if (typeof spInit === 'function') spInit(); }
   // Bottom-nav (móvil)
   document.querySelectorAll('.ll-bottom-nav__item').forEach(b => b.classList.remove('is-active'));
   const navMap = { 'dashboard':'nav-dashboard','perfil':'nav-perfil','seguimiento':'nav-seguimiento','mercado':'nav-mercado','inteligencia':'nav-inteligencia' };
@@ -6614,6 +6881,7 @@ function switchTab2(tab) {
     'seguimiento':'dsb-nav-seguimiento','mercado':'dsb-nav-mercado',
     'analisis':'dsb-nav-analisis',
     'inteligencia':'dsb-nav-inteligencia',
+    'semaforo':'dsb-nav-semaforo',
     'reportes':'dsb-nav-reportes','calendario':'dsb-nav-calendario'
   };
   if(dsbMap[tab]) document.getElementById(dsbMap[tab])?.classList.add('active');
@@ -11030,6 +11298,380 @@ function revisarRetornoPago() {
 
 // Ejecutar al cargar (detecta si viene de Pagadito)
 revisarRetornoPago();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<!-- SEMÁFORO DE PAGO — JavaScript                                               -->
+<!-- ═══════════════════════════════════════════════════════════════════════════ -->
+<script>
+(function () {
+  'use strict';
+
+  const SP_PAGE_SIZE = 20;
+
+  const spState = {
+    selectedEmpresa: null,
+    currentFilter: null,
+    currentPage: 0,
+    suggestionsTimer: null,
+    abortCtrl: null,
+    initialized: false,
+  };
+
+  // ─── Llamada a RPC de Supabase (usa el patrón existente del proyecto) ───
+  async function spRpc(fnName, params) {
+    const token = localStorage.getItem('sb_token') || '';
+    const url = `${SUPABASE_URL}/rest/v1/rpc/${fnName}`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON_KEY,
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    if (spState.abortCtrl) {
+      try { spState.abortCtrl.abort(); } catch(e) {}
+    }
+    spState.abortCtrl = new AbortController();
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(params),
+      signal: spState.abortCtrl.signal,
+    });
+    if (!res.ok) throw new Error(`RPC ${fnName} falló: ${res.status}`);
+    return res.json();
+  }
+
+  const spFmt = {
+    money: (n) => {
+      if (n == null || isNaN(n)) return 'RD$ 0';
+      const v = Number(n);
+      if (Math.abs(v) >= 1e9) return `RD$ ${(v / 1e9).toFixed(2)}MM`;
+      if (Math.abs(v) >= 1e6) return `RD$ ${(v / 1e6).toFixed(2)}M`;
+      if (Math.abs(v) >= 1e3) return `RD$ ${(v / 1e3).toFixed(1)}K`;
+      return `RD$ ${Math.round(v).toLocaleString('es-DO')}`;
+    },
+    moneyFull: (n) => {
+      if (n == null || isNaN(n)) return 'RD$ 0';
+      return `RD$ ${Number(n).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    },
+    num: (n) => n == null ? '0' : Number(n).toLocaleString('es-DO'),
+    date: (s) => {
+      if (!s) return '—';
+      try {
+        const d = new Date(s);
+        return d.toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' });
+      } catch(e) { return '—'; }
+    },
+  };
+
+  function spEscape(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // ─── Búsqueda + Autocomplete ───
+  function spOnSearchInput(e) {
+    const q = e.target.value.trim();
+    const clearBtn = document.getElementById('sp-clear-btn');
+    if (clearBtn) clearBtn.style.display = q ? 'block' : 'none';
+    clearTimeout(spState.suggestionsTimer);
+
+    if (q.length < 2) {
+      const ul = document.getElementById('sp-suggestions');
+      if (ul) ul.style.display = 'none';
+      return;
+    }
+    spState.suggestionsTimer = setTimeout(() => spFetchSuggestions(q), 280);
+  }
+
+  async function spFetchSuggestions(q) {
+    try {
+      const results = await spRpc('buscar_empresas_infopago', { p_query: q, p_limit: 8 });
+      spRenderSuggestions(results || []);
+    } catch (err) {
+      if (err.name !== 'AbortError') console.error('[Semaforo] Sugerencias:', err);
+    }
+  }
+
+  function spRenderSuggestions(items) {
+    const ul = document.getElementById('sp-suggestions');
+    if (!ul) return;
+    if (!items.length) { ul.style.display = 'none'; return; }
+    ul.innerHTML = items.map(it => `
+      <li role="option" data-nombre="${spEscape(it.nombre_proveedor)}" data-rnc="${spEscape(it.rnc_proveedor || '')}">
+        <span style="min-width:0;flex:1;">
+          <span class="sp-sug-name">${spEscape(it.nombre_proveedor)}</span>
+          ${it.rnc_proveedor ? `<span class="sp-sug-meta" style="display:block;margin-top:2px">RNC ${spEscape(it.rnc_proveedor)}</span>` : ''}
+        </span>
+        <span class="sp-sug-meta">${spFmt.num(it.total_facturas)} fact · ${spFmt.money(it.monto_total)}</span>
+      </li>
+    `).join('');
+    ul.style.display = 'block';
+    ul.querySelectorAll('li').forEach(li => {
+      li.addEventListener('click', () => {
+        spSelectEmpresa({ nombre: li.dataset.nombre, rnc: li.dataset.rnc });
+      });
+    });
+  }
+
+  function spClearSearch() {
+    const input = document.getElementById('sp-search-input');
+    if (input) input.value = '';
+    const clearBtn = document.getElementById('sp-clear-btn');
+    if (clearBtn) clearBtn.style.display = 'none';
+    const ul = document.getElementById('sp-suggestions');
+    if (ul) ul.style.display = 'none';
+    document.getElementById('sp-result').style.display = 'none';
+    document.getElementById('sp-no-results').style.display = 'none';
+    document.getElementById('sp-empty').style.display = 'block';
+    spState.selectedEmpresa = null;
+  }
+
+  // ─── Carga de empresa ───
+  async function spSelectEmpresa(empresa) {
+    spState.selectedEmpresa = empresa;
+    spState.currentFilter = null;
+    spState.currentPage = 0;
+    document.getElementById('sp-search-input').value = empresa.nombre;
+    document.getElementById('sp-suggestions').style.display = 'none';
+    document.getElementById('sp-empty').style.display = 'none';
+    document.getElementById('sp-no-results').style.display = 'none';
+    document.getElementById('sp-result').style.display = 'none';
+    document.getElementById('sp-loading').style.display = 'block';
+
+    try {
+      const [resumenArr, facturas] = await Promise.all([
+        spRpc('resumen_pago_empresa', { p_nombre: empresa.nombre }),
+        spRpc('facturas_empresa_pipeline', {
+          p_nombre: empresa.nombre,
+          p_estado: null,
+          p_institucion: null,
+          p_limit: SP_PAGE_SIZE,
+          p_offset: 0,
+        }),
+      ]);
+      const resumen = resumenArr && resumenArr[0];
+      if (!resumen) { spShowNoResults(); return; }
+      spRenderSummary(resumen);
+      spRenderFilters(resumen);
+      spRenderFacturas(facturas || []);
+      document.getElementById('sp-loading').style.display = 'none';
+      document.getElementById('sp-result').style.display = 'block';
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      console.error('[Semaforo] Cargar empresa:', err);
+      document.getElementById('sp-loading').style.display = 'none';
+      spShowNoResults();
+    }
+  }
+
+  function spShowNoResults() {
+    document.getElementById('sp-loading').style.display = 'none';
+    document.getElementById('sp-no-results').style.display = 'block';
+  }
+
+  // ─── Render del resumen ejecutivo ───
+  function spRenderSummary(r) {
+    const semClass = `sp-semaforo-${r.semaforo}`;
+    const pctConciliadas = r.total_facturas ? Math.round((r.facturas_conciliadas * 100) / r.total_facturas) : 0;
+    const enProcesoClass = r.facturas_en_proceso > 0 ? 'is-warn' : '';
+
+    document.getElementById('sp-summary').innerHTML = `
+      <div class="sp-summary-head">
+        <div style="min-width:0;flex:1;">
+          <h2 class="sp-summary-name">${spEscape(r.nombre_proveedor)}${r.rnc_proveedor ? ` <span style="font-weight:500;font-size:12px;color:var(--muted)">· RNC ${spEscape(r.rnc_proveedor)}</span>` : ''}</h2>
+          <p class="sp-summary-sub">${spFmt.num(r.total_instituciones)} instituciones contratantes · Histórico desde ${spFmt.date(r.primera_factura)}</p>
+        </div>
+        <div class="sp-semaforo-pill ${semClass}">
+          <span class="sp-dot"></span>
+          <span>${spEscape(r.semaforo_label)}</span>
+        </div>
+      </div>
+      <div class="sp-metrics">
+        <div class="sp-metric">
+          <p class="sp-metric-label">Días promedio</p>
+          <p class="sp-metric-value">${r.dias_pago_promedio != null ? r.dias_pago_promedio : '—'}</p>
+          <p class="sp-metric-sub">${r.dias_pago_mediana != null ? `mediana ${r.dias_pago_mediana} días` : 'sin datos'}</p>
+        </div>
+        <div class="sp-metric">
+          <p class="sp-metric-label">Total pagado</p>
+          <p class="sp-metric-value">${spFmt.money(r.monto_total_pagado)}</p>
+          <p class="sp-metric-sub">${spFmt.num(r.facturas_conciliadas)} fact. conciliadas</p>
+        </div>
+        <div class="sp-metric">
+          <p class="sp-metric-label">En proceso</p>
+          <p class="sp-metric-value ${enProcesoClass}">${spFmt.num(r.facturas_en_proceso)}</p>
+          <p class="sp-metric-sub">${spFmt.money(r.monto_en_proceso)}</p>
+        </div>
+        <div class="sp-metric">
+          <p class="sp-metric-label">Total facturas</p>
+          <p class="sp-metric-value">${spFmt.num(r.total_facturas)}</p>
+          <p class="sp-metric-sub">${pctConciliadas}% conciliadas</p>
+        </div>
+      </div>
+    `;
+  }
+
+  // ─── Render de filtros ───
+  function spRenderFilters(r) {
+    const pills = [
+      { key: null, label: `Todas (${spFmt.num(r.total_facturas)})` },
+      { key: 'en_proceso', label: `En proceso (${spFmt.num(r.facturas_en_proceso)})` },
+      { key: 'Conciliado', label: `Conciliadas (${spFmt.num(r.facturas_conciliadas)})` },
+      { key: 'ANULADO', label: `Anuladas (${spFmt.num(r.facturas_anuladas)})` },
+    ];
+    document.getElementById('sp-filter-pills').innerHTML = pills.map(p => `
+      <button class="sp-pill ${spState.currentFilter === p.key ? 'active' : ''}" data-key="${p.key === null ? '' : p.key}" type="button">${p.label}</button>
+    `).join('');
+    document.querySelectorAll('#sp-filter-pills .sp-pill').forEach(btn => {
+      btn.addEventListener('click', () => {
+        spState.currentFilter = btn.dataset.key || null;
+        spState.currentPage = 0;
+        document.querySelectorAll('#sp-filter-pills .sp-pill').forEach(b => b.classList.toggle('active', b === btn));
+        spLoadFacturas();
+      });
+    });
+  }
+
+  // ─── Render facturas ───
+  async function spLoadFacturas() {
+    if (!spState.selectedEmpresa) return;
+    let estadoFilter = null;
+    if (spState.currentFilter === 'Conciliado') estadoFilter = 'Conciliado';
+    else if (spState.currentFilter === 'ANULADO') estadoFilter = 'ANULADO';
+    try {
+      const facturas = await spRpc('facturas_empresa_pipeline', {
+        p_nombre: spState.selectedEmpresa.nombre,
+        p_estado: estadoFilter,
+        p_institucion: null,
+        p_limit: SP_PAGE_SIZE,
+        p_offset: spState.currentPage * SP_PAGE_SIZE,
+      });
+      let lista = facturas || [];
+      if (spState.currentFilter === 'en_proceso') {
+        lista = lista.filter(f => f.estado !== 'Conciliado' && f.estado !== 'ANULADO');
+      }
+      spRenderFacturas(lista);
+    } catch (err) {
+      if (err.name !== 'AbortError') console.error('[Semaforo] Cargar facturas:', err);
+    }
+  }
+
+  function spRenderFacturas(facturas) {
+    const container = document.getElementById('sp-facturas');
+    const titleEl = document.getElementById('sp-list-title');
+    const countEl = document.getElementById('sp-list-count');
+
+    titleEl.textContent = spState.currentFilter === 'en_proceso' ? 'Facturas en proceso'
+      : spState.currentFilter === 'Conciliado' ? 'Facturas conciliadas'
+      : spState.currentFilter === 'ANULADO' ? 'Facturas anuladas'
+      : 'Todas las facturas';
+
+    if (!facturas.length) {
+      container.innerHTML = `<div class="sp-empty" style="padding:24px"><p>No hay facturas en esta categoría.</p></div>`;
+      countEl.textContent = '';
+      document.getElementById('sp-pagination').style.display = 'none';
+      return;
+    }
+    countEl.textContent = `Mostrando ${facturas.length}`;
+    container.innerHTML = facturas.map(f => spFacturaCard(f)).join('');
+  }
+
+  function spFacturaCard(f) {
+    const labels = ['Reg', 'Prev', 'Comp', 'Deveng', 'Orden', 'Entreg', 'Concil'];
+    const completadas = f.etapas_completadas || 0;
+    const isAnulada = f.estado === 'ANULADO';
+    const diasEnPipeline = f.fecha_emision ? Math.floor((Date.now() - new Date(f.fecha_emision).getTime()) / 86400000) : null;
+    const isLate = !isAnulada && f.estado !== 'Conciliado' && (f.dias_estimados_restantes === 0 || (diasEnPipeline !== null && diasEnPipeline > 60));
+
+    const pipelineHtml = labels.map((label, i) => {
+      const stepNum = i + 1;
+      let cls = 'pending';
+      if (isAnulada) { cls = 'pending'; }
+      else if (stepNum < completadas) { cls = 'done'; }
+      else if (stepNum === completadas) { cls = `current${isLate ? ' is-late' : ''}`; }
+      return `<div class="sp-pipe-step ${cls}" title="${label}">${label}</div>`;
+    }).join('');
+
+    let estimateHtml = '';
+    if (f.estado === 'Conciliado') {
+      estimateHtml = `<span class="sp-estimate is-ok">✓ Pagada en ${f.dias_pago || '?'} días</span>`;
+    } else if (isAnulada) {
+      estimateHtml = `<span style="color:#DC2626;font-weight:700;">Anulada</span>`;
+    } else if (isLate && diasEnPipeline) {
+      estimateHtml = `<span class="sp-estimate is-late">⚠ ${diasEnPipeline} días — sobre el promedio</span>`;
+    } else if (f.dias_estimados_restantes != null && f.dias_estimados_restantes > 0) {
+      estimateHtml = `<span class="sp-estimate">≈ ${f.dias_estimados_restantes} días estimados restantes</span>`;
+    } else if (f.dias_estimados_restantes === 0 && diasEnPipeline !== null) {
+      estimateHtml = `<span class="sp-estimate">Próxima a pagarse</span>`;
+    }
+
+    return `
+      <article class="sp-factura">
+        <div class="sp-factura-head">
+          <div style="min-width:0;flex:1;">
+            <p class="sp-factura-id">${spEscape(f.comprobante_fiscal || '—')}${f.contrato ? ` · ${spEscape(f.contrato)}` : ''}</p>
+            <p class="sp-factura-inst">${spEscape(f.institucion || 'Institución sin identificar')}</p>
+          </div>
+          <div class="sp-factura-right">
+            <p class="sp-factura-monto">${spFmt.moneyFull(f.monto)}</p>
+            <span class="sp-estado-badge sp-estado-${f.etapa_actual}">${spEscape(f.etapa_actual_label)}</span>
+          </div>
+        </div>
+        <div class="sp-pipeline" aria-label="Etapa actual: ${spEscape(f.etapa_actual_label)}">
+          ${pipelineHtml}
+        </div>
+        <div class="sp-factura-meta">
+          <span>📅 ${spFmt.date(f.fecha_emision)}</span>
+          ${diasEnPipeline !== null && !isAnulada ? `<span>⏱ ${diasEnPipeline} días en pipeline</span>` : ''}
+          ${estimateHtml}
+        </div>
+      </article>
+    `;
+  }
+
+  // ─── Modal disclaimer ───
+  window.spShowDisclaimer = function () {
+    const modal = document.getElementById('sp-modal');
+    if (modal) {
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+  };
+  window.spCloseDisclaimer = function () {
+    const modal = document.getElementById('sp-modal');
+    if (modal) {
+      modal.style.display = 'none';
+      document.body.style.overflow = '';
+    }
+  };
+
+  // ─── INIT (llamado desde switchTab2) ───
+  window.spInit = function () {
+    if (spState.initialized) return;
+    const input = document.getElementById('sp-search-input');
+    const clearBtn = document.getElementById('sp-clear-btn');
+    if (input) {
+      input.addEventListener('input', spOnSearchInput);
+      input.addEventListener('focus', () => { input.style.borderColor = 'var(--green)'; });
+    }
+    if (clearBtn) clearBtn.addEventListener('click', spClearSearch);
+    // Cerrar sugerencias al hacer clic afuera
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.sp-search-wrap')) {
+        const ul = document.getElementById('sp-suggestions');
+        if (ul) ul.style.display = 'none';
+      }
+    });
+    // ESC cierra modal
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') window.spCloseDisclaimer();
+    });
+    spState.initialized = true;
+  };
+})();
 </script>
 
 </body>
