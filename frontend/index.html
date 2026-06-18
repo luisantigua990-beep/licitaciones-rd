@@ -1260,44 +1260,34 @@ body {
   /* Ocultar drawer mobile */
   .drawer-overlay, .ll-drawer { display: none !important; }
 
-  /* Layout principal: sidebar + contenido (CSS Grid - más confiable que flex) */
-  #screen-app {
-    display: grid !important;
-    grid-template-columns: 220px 1fr !important;
-    grid-template-rows: 1fr !important;
-    flex-direction: unset !important;
+  /* Layout principal desktop: sidebar fixed + contenido con padding
+     (approach explicito: el sidebar NO compite por espacio en flex/grid,
+      simplemente flota fijo y el wrapper de tabs se corre con padding-left) */
+  html.ll-has-session #screen-app {
+    flex-direction: row !important;
     align-items: stretch !important;
-    overflow: hidden !important;
+    padding-left: 220px !important;
+    box-sizing: border-box !important;
   }
   #desk-sidebar {
     display: flex !important;
-    position: relative !important;
-    z-index: 100 !important;
-    flex-shrink: 0;
-    grid-column: 1 !important;
-    grid-row: 1 !important;
-    width: auto !important;
-    min-width: 0;
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 220px !important;
+    z-index: 100;
+    height: 100vh;
   }
   #tabs-wrapper {
-    grid-column: 2 !important;
-    grid-row: 1 !important;
-    flex: unset !important;
+    flex: 1 1 auto;
     min-width: 0;
+    width: 100%;
     overflow: hidden;
     position: relative;
     contain: layout;
     isolation: isolate;
     z-index: 1;
-  }
-  /* Los elementos mobile-only no deben ocupar columnas del grid */
-  #screen-app > .ll-navbar,
-  #screen-app > #ptr-indicator,
-  #screen-app > .drawer-overlay,
-  #screen-app > .drawer,
-  #screen-app > .ll-drawer {
-    display: none !important;
-    grid-column: unset !important;
   }
 
   /* Dashboard cards más grandes */
@@ -1332,7 +1322,7 @@ body {
 
   /* Sidebar más ancho */
   #desk-sidebar { width: 260px !important; }
-  #screen-app { grid-template-columns: 260px 1fr !important; }
+  html.ll-has-session #screen-app { padding-left: 260px !important; }
   .dsb-nav-item { font-size: 14px !important; padding: 11px 22px !important; }
   .dsb-brand-name { font-size: 15px !important; }
   .dsb-section-label { font-size: 11px !important; padding: 18px 22px 8px !important; }
