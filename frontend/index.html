@@ -1260,25 +1260,44 @@ body {
   /* Ocultar drawer mobile */
   .drawer-overlay, .ll-drawer { display: none !important; }
 
-  /* Layout principal: sidebar + contenido */
+  /* Layout principal: sidebar + contenido (CSS Grid - más confiable que flex) */
   #screen-app {
-    flex-direction: row !important;
+    display: grid !important;
+    grid-template-columns: 220px 1fr !important;
+    grid-template-rows: 1fr !important;
+    flex-direction: unset !important;
     align-items: stretch !important;
+    overflow: hidden !important;
   }
   #desk-sidebar {
     display: flex !important;
-    position: relative;
-    z-index: 100;
+    position: relative !important;
+    z-index: 100 !important;
     flex-shrink: 0;
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: auto !important;
+    min-width: 0;
   }
   #tabs-wrapper {
-    flex: 1 1 0;
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    flex: unset !important;
     min-width: 0;
     overflow: hidden;
     position: relative;
     contain: layout;
     isolation: isolate;
     z-index: 1;
+  }
+  /* Los elementos mobile-only no deben ocupar columnas del grid */
+  #screen-app > .ll-navbar,
+  #screen-app > #ptr-indicator,
+  #screen-app > .drawer-overlay,
+  #screen-app > .drawer,
+  #screen-app > .ll-drawer {
+    display: none !important;
+    grid-column: unset !important;
   }
 
   /* Dashboard cards más grandes */
@@ -1313,6 +1332,7 @@ body {
 
   /* Sidebar más ancho */
   #desk-sidebar { width: 260px !important; }
+  #screen-app { grid-template-columns: 260px 1fr !important; }
   .dsb-nav-item { font-size: 14px !important; padding: 11px 22px !important; }
   .dsb-brand-name { font-size: 15px !important; }
   .dsb-section-label { font-size: 11px !important; padding: 18px 22px 8px !important; }
