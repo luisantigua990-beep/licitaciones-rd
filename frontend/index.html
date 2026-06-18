@@ -169,7 +169,7 @@ body {
 .screen.active { display: flex; }
 /* Auth screen necesita scroll propio */
 #screen-auth.active { overflow-y: auto; }
-#tabs-wrapper { flex: 1; position: relative; overflow: clip; min-height: 0; }
+#tabs-wrapper { flex: 1 1 0; position: relative; overflow: clip; min-height: 0; min-width: 0; contain: layout; isolation: isolate; }
 
 /* ── AUTH SCREEN ── */
 #screen-auth {
@@ -1263,14 +1263,22 @@ body {
   /* Layout principal: sidebar + contenido */
   #screen-app {
     flex-direction: row !important;
+    align-items: stretch !important;
   }
   #desk-sidebar {
     display: flex !important;
+    position: relative;
+    z-index: 100;
+    flex-shrink: 0;
   }
   #tabs-wrapper {
-    flex: 1;
+    flex: 1 1 0;
     min-width: 0;
     overflow: hidden;
+    position: relative;
+    contain: layout;
+    isolation: isolate;
+    z-index: 1;
   }
 
   /* Dashboard cards más grandes */
@@ -3963,7 +3971,7 @@ html { background: var(--color-bg, #0A0A0A); }
   </div>
 
   <!-- ── TAB: INTELIGENCIA COMPETITIVA ── -->
-  <div id="tab-inteligencia" style="position:absolute;inset:0;overflow-y:auto;padding-bottom:calc(76px + env(safe-area-inset-bottom, 0px));display:none;z-index:1;">
+  <div id="tab-inteligencia" style="position:absolute;inset:0;overflow-y:auto;padding-bottom:calc(76px + env(safe-area-inset-bottom, 0px));display:none;">
 
     <!-- Header -->
     <div style="padding:20px 20px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);padding-bottom:14px;">
@@ -6850,10 +6858,21 @@ function navDashboardTap() {
 function switchTab2(tab) {
   window._lastActiveTab = tab;
   _pushNavState({ tab });
+  // FIX: blur del elemento activo (evita que un input enfocado en el tab anterior
+  // bloquee la navegación, especialmente en el tab Empresas/Inteligencia).
+  try { document.activeElement && document.activeElement.blur && document.activeElement.blur(); } catch(e){}
   const allTabs = ['dashboard','detalle','perfil','seguimiento','mercado','alertas','analisis','reportes','calendario','inteligencia','semaforo'];
   allTabs.forEach(t => {
     const el = document.getElementById(`tab-${t}`);
-    if (el) el.style.display = t === tab ? 'block' : 'none';
+    if (!el) return;
+    if (t === tab) {
+      // setProperty con 'important' gana sobre cualquier style inline residual
+      el.style.setProperty('display', 'block', 'important');
+      // Reset scroll del tab que se abre para no aterrizar a mitad
+      try { el.scrollTop = 0; } catch(e){}
+    } else {
+      el.style.setProperty('display', 'none', 'important');
+    }
   });
   if (tab==='seguimiento') cargarSeguimiento();
   if (tab==='mercado')     cargarMercado();
