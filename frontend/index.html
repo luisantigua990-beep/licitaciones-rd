@@ -1273,22 +1273,40 @@ body {
     z-index: 100 !important;
     height: 100vh !important;
   }
+  /* IMPORTANTE: el HTML tiene los tabs en DOS lugares distintos:
+     - dashboard/perfil/detalle estan DENTRO de #tabs-wrapper
+     - seguimiento/inteligencia/semaforo/mercado cuelgan directo de #screen-app
+     Por eso posicionamos AMBOS grupos por separado en left:220px. */
+
+  /* Grupo 1: el wrapper (contiene dashboard/perfil/detalle) */
   #tabs-wrapper {
-    position: static !important;
+    position: absolute !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    left: 220px !important;
+    right: 0 !important;
+    width: auto !important;
+    height: auto !important;
     flex: unset !important;
     min-width: 0;
+    overflow: hidden;
   }
-  /* Cada tab arranca despues del sidebar (left:220px) en vez de inset:0 */
+  /* Tabs dentro del wrapper: inset:0 relativo al wrapper (ya offseteado) */
   html.ll-has-session #tab-dashboard,
   html.ll-has-session #tab-detalle,
-  html.ll-has-session #tab-perfil,
+  html.ll-has-session #tab-perfil {
+    top: 0 !important; bottom: 0 !important;
+    left: 0 !important; right: 0 !important;
+    width: auto !important; height: auto !important;
+  }
+  /* Grupo 2: tabs sueltos en screen-app: se offsetean ellos mismos a left:220px */
   html.ll-has-session #tab-seguimiento,
   html.ll-has-session #tab-mercado,
   html.ll-has-session #tab-inteligencia,
   html.ll-has-session #tab-semaforo {
-    left: 220px !important;
-    right: 0 !important;
-    width: auto !important;
+    top: 0 !important; bottom: 0 !important;
+    left: 220px !important; right: 0 !important;
+    width: auto !important; height: auto !important;
   }
 
   /* Dashboard cards más grandes */
@@ -1323,9 +1341,7 @@ body {
 
   /* Sidebar más ancho */
   #desk-sidebar { width: 260px !important; }
-  html.ll-has-session #tab-dashboard,
-  html.ll-has-session #tab-detalle,
-  html.ll-has-session #tab-perfil,
+  #tabs-wrapper { left: 260px !important; }
   html.ll-has-session #tab-seguimiento,
   html.ll-has-session #tab-mercado,
   html.ll-has-session #tab-inteligencia,
