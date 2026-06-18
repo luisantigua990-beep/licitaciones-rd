@@ -1260,9 +1260,9 @@ body {
   /* Ocultar drawer mobile */
   .drawer-overlay, .ll-drawer { display: none !important; }
 
-  /* Layout principal desktop: AMBOS sidebar y tabs-wrapper son position:fixed
-     con coordenadas explicitas. Esto elimina cualquier dependencia de flex,
-     padding o cascade — es 100% bulletproof. */
+  /* Layout principal desktop: sidebar fixed a la izquierda.
+     Los #tab-* (position:absolute; inset:0) se reposicionan abajo con left
+     explicito porque su offsetParent resuelve a #screen-app, no a #tabs-wrapper. */
   #desk-sidebar {
     display: flex !important;
     position: fixed !important;
@@ -1274,19 +1274,21 @@ body {
     height: 100vh !important;
   }
   #tabs-wrapper {
-    position: fixed !important;
-    top: 0 !important;
-    left: 220px !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: auto !important;
-    height: auto !important;
+    position: static !important;
     flex: unset !important;
     min-width: 0;
-    overflow: hidden;
-    contain: layout;
-    isolation: isolate;
-    z-index: 1 !important;
+  }
+  /* Cada tab arranca despues del sidebar (left:220px) en vez de inset:0 */
+  html.ll-has-session #tab-dashboard,
+  html.ll-has-session #tab-detalle,
+  html.ll-has-session #tab-perfil,
+  html.ll-has-session #tab-seguimiento,
+  html.ll-has-session #tab-mercado,
+  html.ll-has-session #tab-inteligencia,
+  html.ll-has-session #tab-semaforo {
+    left: 220px !important;
+    right: 0 !important;
+    width: auto !important;
   }
 
   /* Dashboard cards más grandes */
@@ -1321,7 +1323,15 @@ body {
 
   /* Sidebar más ancho */
   #desk-sidebar { width: 260px !important; }
-  #tabs-wrapper { left: 260px !important; }
+  html.ll-has-session #tab-dashboard,
+  html.ll-has-session #tab-detalle,
+  html.ll-has-session #tab-perfil,
+  html.ll-has-session #tab-seguimiento,
+  html.ll-has-session #tab-mercado,
+  html.ll-has-session #tab-inteligencia,
+  html.ll-has-session #tab-semaforo {
+    left: 260px !important;
+  }
   .dsb-nav-item { font-size: 14px !important; padding: 11px 22px !important; }
   .dsb-brand-name { font-size: 15px !important; }
   .dsb-section-label { font-size: 11px !important; padding: 18px 22px 8px !important; }
