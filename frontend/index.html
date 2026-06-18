@@ -11373,7 +11373,10 @@ revisarRetornoPago();
   };
 
   // ─── Llamada a RPC de Supabase (usa el patrón existente del proyecto) ───
-  async function spRpc(fnName, params) {
+  // useAbort=true SOLO para las sugerencias mientras se escribe (cancela la
+  // peticion anterior). Las cargas de detalle (resumen + facturas) corren en
+  // Promise.all y NO deben abortarse entre si, por eso useAbort=false ahi.
+  async function spRpc(fnName, params, useAbort = false) {
     const token = localStorage.getItem('sb_token') || '';
     const url = `${SUPABASE_URL}/rest/v1/rpc/${fnName}`;
     const headers = {
@@ -11382,17 +11385,21 @@ revisarRetornoPago();
     };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    if (spState.abortCtrl) {
-      try { spState.abortCtrl.abort(); } catch(e) {}
-    }
-    spState.abortCtrl = new AbortController();
-
-    const res = await fetch(url, {
+    const fetchOpts = {
       method: 'POST',
       headers,
       body: JSON.stringify(params),
-      signal: spState.abortCtrl.signal,
-    });
+    };
+
+    if (useAbort) {
+      if (spState.abortCtrl) {
+        try { spState.abortCtrl.abort(); } catch(e) {}
+      }
+      spState.abortCtrl = new AbortController();
+      fetchOpts.signal = spState.abortCtrl.signal;
+    }
+
+    const res = await fetch(url, fetchOpts);
     if (!res.ok) throw new Error(`RPC ${fnName} falló: ${res.status}`);
     return res.json();
   }
@@ -11442,7 +11449,7 @@ revisarRetornoPago();
 
   async function spFetchSuggestions(q) {
     try {
-      const results = await spRpc('buscar_empresas_infopago', { p_query: q, p_limit: 8 });
+      const results = await spRpc('buscar_empresas_infopago', { p_query: q, p_limit: 8 }, true);
       spRenderSuggestions(results || []);
     } catch (err) {
       if (err.name !== 'AbortError') console.error('[Semaforo] Sugerencias:', err);
