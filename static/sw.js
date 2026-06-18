@@ -1,4 +1,4 @@
-const CACHE_NAME = 'licitacionlab-v11';
+const CACHE_NAME = 'licitacionlab-v12';
 const CACHE_URLS = [
   '/',
   '/frontend/index.html',
