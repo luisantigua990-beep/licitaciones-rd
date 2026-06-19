@@ -523,7 +523,8 @@ body {
   box-shadow: var(--shadow-lg);
 }
 .drawer.open { transform: translateX(0); }
-.drawer-header {
+.drawer-header,
+.ll-drawer__header {
   padding: 20px 20px 16px;
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
@@ -546,7 +547,8 @@ body {
 }
 .drawer-close:hover { background: var(--surface2); color: var(--text); }
 
-.drawer-user {
+.drawer-user,
+.ll-drawer__user {
   margin: 16px 20px;
   padding: 14px;
   background: var(--bg2);
@@ -566,7 +568,8 @@ body {
 .drawer-user-role { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .drawer-dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; box-shadow: 0 0 8px var(--green); flex-shrink: 0; }
 
-.drawer-section { padding: 0 12px; flex: 1; overflow-y: auto; }
+.drawer-section,
+.ll-drawer__section { padding: 0 12px; flex: 1; overflow-y: auto; min-height: 0; }
 .drawer-item {
   display: flex; align-items: center; gap: 12px;
   padding: 11px 12px;
@@ -586,10 +589,13 @@ body {
 .drawer-item-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
 .drawer-divider { height: 1px; background: var(--border); margin: 6px 12px; }
 
-.drawer-footer {
+.drawer-footer,
+.ll-drawer__footer {
   padding: 16px 20px;
   padding-bottom: max(16px,env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--surface);
 }
 .drawer-logout {
   width: 100%; padding: 12px;
