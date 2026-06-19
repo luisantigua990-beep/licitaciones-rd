@@ -523,6 +523,12 @@ body {
   box-shadow: var(--shadow-lg);
 }
 .drawer.open { transform: translateX(0); }
+
+/* Cuando el drawer del menú está abierto, ocultar la tab bar inferior:
+   evita que tape el footer del drawer (Plan PRO + Cerrar sesión) y elimina
+   el gap visual entre el último item del drawer y la tab bar nativa. */
+body.drawer-open .ll-bottom-nav,
+body.drawer-open .bottom-nav { display: none !important; }
 .drawer-header,
 .ll-drawer__header {
   padding: 20px 20px 16px;
@@ -4617,11 +4623,13 @@ function toggleTheme() {
 function openDrawer() {
   document.getElementById('drawer').classList.add('open');
   document.getElementById('drawer-overlay').classList.add('visible');
+  document.body.classList.add('drawer-open');
   document.body.style.overflow = 'hidden';
 }
 function closeDrawer() {
   document.getElementById('drawer').classList.remove('open');
   document.getElementById('drawer-overlay').classList.remove('visible');
+  document.body.classList.remove('drawer-open');
   document.body.style.overflow = '';
 }
 document.addEventListener('keydown', e => { if(e.key==='Escape') closeDrawer(); });
