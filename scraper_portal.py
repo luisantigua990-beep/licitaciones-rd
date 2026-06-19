@@ -88,16 +88,32 @@ def raspar_portal():
     procesos = []
     rows = soup.select("table tr")
 
+    # ── Diagnóstico (para detectar cuándo el portal cambia su HTML) ──
+    _stats = {
+        "http_status": resp.status_code,
+        "html_len": len(resp.text or ""),
+        "rows_totales": len(rows),
+        "rows_con_DO": 0,
+        "rows_descartadas_cols_lt_9": 0,
+        "primer_textos_no_DO": None,
+    }
+
     for row in rows:
         cols = row.find_all("td")
         if len(cols) < 9:
+            _stats["rows_descartadas_cols_lt_9"] += 1
             continue
 
         textos = [c.get_text(strip=True) for c in cols]
 
         # Verificar que la primera columna sea "DO" (República Dominicana)
         if textos[0] != "DO":
+            if _stats["primer_textos_no_DO"] is None and len(textos) >= 3:
+                # Guardar primer ejemplo para ver qué llegó (útil si cambió el formato)
+                _stats["primer_textos_no_DO"] = [t[:30] for t in textos[:5]]
             continue
+
+        _stats["rows_con_DO"] += 1
 
         referencia = textos[2].strip()
         if not referencia or referencia == "Referencia":
@@ -176,7 +192,10 @@ def raspar_portal():
             "notice_uid": notice_uid,  # campo temporal para log
         })
 
-    print(f"🌐 Portal: {len(procesos)} procesos encontrados")
+    _stats["procesos_parseados"] = len(procesos)
+    raspar_portal._ultimas_stats = _stats   # exponer para ejecutar_scraper_portal
+
+    print(f"🌐 Portal: {len(procesos)} procesos encontrados | stats={_stats}")
     return procesos
 
 
@@ -951,8 +970,13 @@ def ejecutar_scraper_portal():
     print(f"\n🌐 Scraper Portal | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     procesos = raspar_portal()
+    stats = getattr(raspar_portal, "_ultimas_stats", {})
     if not procesos:
-        print("📭 Sin procesos en el portal")
+        print(f"📭 Sin procesos en el portal | stats={stats}")
+        registrar_cron_log("scraper_portal", "ok", {
+            "procesos_revisados": 0, "procesos_nuevos": 0,
+            "diagnostico": stats
+        }, int((time.time()-t0)*1000))
         return []
 
     codigos = [p["codigo_proceso"] for p in procesos]
