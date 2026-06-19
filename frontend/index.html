@@ -2896,13 +2896,52 @@ html { background: var(--color-bg, #0A0A0A); }
 .sp-estado-registrada { background: var(--surface2); color: var(--muted); }
 .sp-estado-anulado { background: rgba(239,68,68,.15); color: #DC2626; }
 
-.sp-pipeline { display: flex; align-items: center; gap: 3px; margin: 12px 0 8px; }
-.sp-pipe-step { flex: 1; height: 22px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #fff; font-weight: 700; min-width: 0; overflow: hidden; letter-spacing: .02em; }
+.sp-pipeline { display: flex; align-items: center; gap: 3px; margin: 12px 0 8px; position: relative; }
+.sp-pipe-step { flex: 1; height: 22px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #fff; font-weight: 700; min-width: 0; letter-spacing: .02em; position: relative; cursor: help; user-select: none; }
+.sp-pipe-step > .sp-pipe-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
 .sp-pipe-step.done { background: #16A34A; }
 .sp-pipe-step.current { background: #F59E0B; animation: sp-pulse 2s ease-in-out infinite; }
 .sp-pipe-step.current.is-late { background: #EF4444; animation: none; }
 .sp-pipe-step.pending { background: var(--bg2); border: 1px dashed var(--border); color: var(--muted); }
 @keyframes sp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .72; } }
+
+/* Tooltip custom (hover desktop + tap móvil) */
+.sp-pipe-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+  width: max-content;
+  max-width: 240px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: .01em;
+  text-align: left;
+  box-shadow: 0 8px 20px rgba(0,0,0,.35);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .12s ease, visibility .12s ease;
+  z-index: 50;
+  white-space: normal;
+}
+.sp-pipe-tip strong { display: block; font-size: 11px; font-weight: 800; margin-bottom: 3px; color: #fff; letter-spacing: .02em; }
+.sp-pipe-tip::after {
+  content: ''; position: absolute; top: 100%; left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #0f172a;
+}
+@media (hover: hover) {
+  .sp-pipe-step:hover .sp-pipe-tip { opacity: 1; visibility: visible; }
+}
+.sp-pipe-step.is-open .sp-pipe-tip { opacity: 1; visibility: visible; }
 
 .sp-factura-meta { display: flex; align-items: center; gap: 14px; font-size: 11px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
 .sp-factura-meta span { display: inline-flex; align-items: center; gap: 4px; }
@@ -2936,7 +2975,8 @@ html { background: var(--color-bg, #0A0A0A); }
 @media (max-width: 640px) {
   .sp-summary-card { padding: 16px; }
   .sp-metric-value { font-size: 18px; }
-  .sp-pipe-step { font-size: 0; }
+  .sp-pipe-step > .sp-pipe-label { font-size: 0; padding: 0; }
+  .sp-pipe-tip { max-width: 200px; font-size: 11px; }
   .sp-factura { padding: 12px 14px; }
 }
 
@@ -11868,6 +11908,17 @@ revisarRetornoPago();
     container.innerHTML = facturas.map(f => spFacturaCard(f)).join('');
   }
 
+  // Definiciones técnicas de las etapas SIAFE (tooltip pipeline)
+  const SP_ETAPAS_DEF = {
+    'Reg':    { titulo: 'Registrada',     desc: 'Factura fiscal recibida y registrada por la entidad contratante en el SIAFE.' },
+    'Prev':   { titulo: 'Preventivo',     desc: 'Reserva preventiva del crédito presupuestario antes de comprometer el gasto.' },
+    'Comp':   { titulo: 'Compromiso',     desc: 'Compromiso formal del gasto. Afecta el presupuesto y reserva los fondos.' },
+    'Deveng': { titulo: 'Devengado',      desc: 'Reconocimiento de la obligación tras la conformidad del bien o servicio recibido.' },
+    'Orden':  { titulo: 'Orden de Pago',  desc: 'Orden de pago emitida y aprobada por la Tesorería Nacional (TN).' },
+    'Entreg': { titulo: 'Entregada',      desc: 'Comprobante de pago entregado al proveedor (transferencia o cheque).' },
+    'Concil': { titulo: 'Conciliada',     desc: 'Pago cobrado y conciliado bancariamente. Ciclo de pago cerrado.' }
+  };
+
   function spFacturaCard(f) {
     const labels = ['Reg', 'Prev', 'Comp', 'Deveng', 'Orden', 'Entreg', 'Concil'];
     const completadas = f.etapas_completadas || 0;
@@ -11881,7 +11932,11 @@ revisarRetornoPago();
       if (isAnulada) { cls = 'pending'; }
       else if (stepNum < completadas) { cls = 'done'; }
       else if (stepNum === completadas) { cls = `current${isLate ? ' is-late' : ''}`; }
-      return `<div class="sp-pipe-step ${cls}" title="${label}">${label}</div>`;
+      const def = SP_ETAPAS_DEF[label] || { titulo: label, desc: '' };
+      return `<div class="sp-pipe-step ${cls}" data-etapa="${label}" onclick="spToggleEtapaTip(event, this)">
+        <span class="sp-pipe-label">${label}</span>
+        <span class="sp-pipe-tip" role="tooltip"><strong>${def.titulo}</strong>${spEscape(def.desc)}</span>
+      </div>`;
     }).join('');
 
     let estimateHtml = '';
@@ -11936,6 +11991,17 @@ revisarRetornoPago();
       document.body.style.overflow = '';
     }
   };
+
+  // ─── Tooltip etapas (tap móvil) ───
+  window.spToggleEtapaTip = function (ev, el) {
+    ev.stopPropagation();
+    const wasOpen = el.classList.contains('is-open');
+    document.querySelectorAll('.sp-pipe-step.is-open').forEach(s => s.classList.remove('is-open'));
+    if (!wasOpen) el.classList.add('is-open');
+  };
+  document.addEventListener('click', function () {
+    document.querySelectorAll('.sp-pipe-step.is-open').forEach(s => s.classList.remove('is-open'));
+  });
 
   // ─── INIT (llamado desde switchTab2) ───
   window.spInit = function () {
