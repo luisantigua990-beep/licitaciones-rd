@@ -29,7 +29,13 @@ from google.genai import types
 SUPABASE_URL       = os.environ["SUPABASE_URL"]
 SUPABASE_KEY       = os.environ["SUPABASE_KEY"]
 GEMINI_API_KEY     = os.environ.get("GEMINI_API_KEY", "")
-AGENT_SECRET       = os.environ.get("AGENT_SECRET", "licitacionlab-growth-2026")
+AGENT_SECRET       = os.environ.get("AGENT_SECRET")  # SIN default: debe venir de Railway
+# Defensa: si no está configurado, usar un valor imposible de adivinar
+# para que NINGUNA petición pase la validación 'header != AGENT_SECRET'.
+if not AGENT_SECRET:
+    import uuid as _uuid
+    print("⚠️ AGENT_SECRET no configurado en Railway — endpoints del closer quedarán bloqueados")
+    AGENT_SECRET = _uuid.uuid4().hex + _uuid.uuid4().hex
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "817596333")
 ZAPI_INSTANCE_ID   = os.environ.get("ZAPI_INSTANCE_ID", "")
