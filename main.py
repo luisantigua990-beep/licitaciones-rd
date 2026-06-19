@@ -130,6 +130,21 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # MONITOR AUTOMÁTICO EN SEGUNDO PLANO
 # ============================================
 
+# Heartbeats de los loops (para /health diagnóstico)
+LOOP_HEARTBEATS = {
+    "monitor_api":   {"last_run": None, "last_error": None, "runs": 0},
+    "scraper":       {"last_run": None, "last_error": None, "runs": 0},
+    "nurturing":     {"last_run": None, "last_error": None, "runs": 0},
+    "pendientes":    {"last_run": None, "last_error": None, "runs": 0},
+    "etl_contratos": {"last_run": None, "last_error": None, "runs": 0},
+}
+
+def _hb(name: str, error: str = None):
+    LOOP_HEARTBEATS[name]["last_run"] = datetime.utcnow().isoformat()
+    LOOP_HEARTBEATS[name]["runs"] += 1
+    if error:
+        LOOP_HEARTBEATS[name]["last_error"] = error[:300]
+
 def monitor_loop():
     """Ejecuta el monitor de la API DGCP cada 8 horas (ciclo del Data Warehouse)."""
     INTERVALO_HORAS = 8
@@ -137,8 +152,10 @@ def monitor_loop():
         try:
             print(f"\n⏰ Ejecutando monitor API DGCP...")
             ejecutar_monitor()
+            _hb("monitor_api")
         except Exception as e:
             print(f"❌ Error en monitor API: {e}")
+            _hb("monitor_api", error=str(e))
 
         print(f"💤 Próxima sincronización API en {INTERVALO_HORAS} horas...")
         time.sleep(INTERVALO_HORAS * 3600)
@@ -168,10 +185,15 @@ def scraper_loop():
             hilo.join(timeout=TIMEOUT_SCRAPER)
             if hilo.is_alive():
                 print(f"⚠️ Scraper portal timeout ({TIMEOUT_SCRAPER}s) — saltando ciclo")
+                _hb("scraper", error=f"timeout {TIMEOUT_SCRAPER}s")
             elif error[0]:
                 print(f"❌ Error en scraper portal: {error[0]}")
+                _hb("scraper", error=str(error[0]))
+            else:
+                _hb("scraper")
         except Exception as e:
             print(f"❌ Error en scraper portal: {e}")
+            _hb("scraper", error=str(e))
 
         time.sleep(INTERVALO_MINUTOS * 60)
 
@@ -244,8 +266,10 @@ def reprocesar_pendientes_loop():
                     except Exception as e:
                         print(f"❌ Error reprocesando {pid}: {e}")
                     time.sleep(10)
+            _hb("pendientes")
         except Exception as e:
             print(f"❌ Error en loop reprocesar_pendientes: {e}")
+            _hb("pendientes", error=str(e))
         time.sleep(30 * 60)  # 30 minutos
 
 
@@ -257,8 +281,10 @@ def nurturing_loop():
             inicio = time.time()
             ejecutar_nurturing()
             print(f"✅ Nurturing completado en {time.time()-inicio:.1f}s")
+            _hb("nurturing")
         except Exception as e:
             print(f"❌ Error en nurturing: {e}")
+            _hb("nurturing", error=str(e))
         time.sleep(24 * 3600)
 
 
@@ -279,8 +305,10 @@ def etl_contratos_loop():
             hasta = datetime.now().strftime("%Y-%m-%d")
             print(f"\n⏰ ETL Contratos adjudicados: {desde} → {hasta}")
             run_etl(desde, hasta, modo="incremental")
+            _hb("etl_contratos")
         except Exception as e:
             print(f"❌ Error en ETL contratos: {e}")
+            _hb("etl_contratos", error=str(e))
         time.sleep(24 * 3600)  # cada 24 horas
 
 
@@ -288,27 +316,27 @@ def etl_contratos_loop():
 async def lifespan(app: FastAPI):
     """Inicia el monitor API y el scraper en tiempo real al arrancar."""
     # Monitor API DGCP (cada 8h, enriquece con UNSPSC)
-    hilo_monitor = threading.Thread(target=monitor_loop, daemon=True)
+    hilo_monitor = threading.Thread(target=monitor_loop, daemon=True, name="monitor_loop")
     hilo_monitor.start()
     print("✅ Monitor API DGCP iniciado (cada 8 horas)")
 
     # Scraper portal transaccional (cada 3 min, tiempo real)
-    hilo_scraper = threading.Thread(target=scraper_loop, daemon=True)
+    hilo_scraper = threading.Thread(target=scraper_loop, daemon=True, name="scraper_loop")
     hilo_scraper.start()
     print("✅ Scraper portal en tiempo real iniciado (cada 3 minutos)")
 
     # Nurturing de emails (una vez al día)
-    hilo_nurturing = threading.Thread(target=nurturing_loop, daemon=True)
+    hilo_nurturing = threading.Thread(target=nurturing_loop, daemon=True, name="nurturing_loop")
     hilo_nurturing.start()
     print("✅ Nurturing de emails iniciado (cada 24 horas)")
 
     # Reproceso automático de pliegos pendiente_analisis (cada 30 min)
-    hilo_pendientes = threading.Thread(target=reprocesar_pendientes_loop, daemon=True)
+    hilo_pendientes = threading.Thread(target=reprocesar_pendientes_loop, daemon=True, name="reprocesar_pendientes_loop")
     hilo_pendientes.start()
     print("✅ Reproceso de pliegos pendientes iniciado (cada 30 minutos)")
 
     # ETL contratos adjudicados (cada 24h)
-    hilo_etl = threading.Thread(target=etl_contratos_loop, daemon=True)
+    hilo_etl = threading.Thread(target=etl_contratos_loop, daemon=True, name="etl_contratos_loop")
     hilo_etl.start()
     print("✅ ETL contratos adjudicados iniciado (cada 24 horas)")
 
@@ -428,12 +456,17 @@ async def semaforo_institucion(nombre: str):
 
 @app.get("/health")
 def health_check():
-    """Health check para Railway — verifica que los hilos críticos estén vivos."""
-    hilos_vivos = {t.name: t.is_alive() for t in threading.enumerate()}
+    """Health check para Railway — verifica hilos críticos + heartbeats de loops."""
+    nombres_loops = {"monitor_loop", "scraper_loop", "nurturing_loop",
+                     "reprocesar_pendientes_loop", "etl_contratos_loop"}
+    todos = threading.enumerate()
+    loops_vivos = {t.name: t.is_alive() for t in todos if t.name in nombres_loops or any(n in (t.name or "") for n in nombres_loops)}
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "threads": len(threading.enumerate()),
+        "threads_total": len(todos),
+        "loops_vivos": loops_vivos,
+        "heartbeats": LOOP_HEARTBEATS,
     }
 
 
