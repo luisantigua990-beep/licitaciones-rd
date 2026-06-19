@@ -15,7 +15,10 @@ from supabase import create_client
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Backend puro: usamos service_role para INSERT/UPDATE en tablas con RLS estricto
+# (procesos, articulos_proceso, system_config, cron_log). Fallback a anon si la
+# variable no existe en el entorno (no debería pasar en Railway).
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
 API_BASE_URL = "https://datosabiertos.dgcp.gob.do/api-dgcp/v1"
 

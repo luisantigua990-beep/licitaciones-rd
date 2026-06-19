@@ -23,7 +23,9 @@ from supabase import create_client
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Backend puro: usamos service_role para INSERT en procesos, articulos_proceso,
+# cron_log (todas con RLS estricto). Mismo patron que etl_contratos_adjudicados.py.
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
 PORTAL_URL = (
     "https://comunidad.comprasdominicana.gob.do/Public/Tendering/"
