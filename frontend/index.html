@@ -10,6 +10,14 @@
    El bootstrap async después confirma/refresca el token normalmente. */
 (function(){
   try {
+    // Si venimos de un enlace de recuperación de contraseña, NO activar sesión:
+    // hay que mostrar la pantalla para crear la contraseña nueva.
+    var h = window.location.hash || '';
+    var s = window.location.search || '';
+    if ((h.indexOf('access_token') !== -1 && h.indexOf('type=recovery') !== -1) ||
+        s.indexOf('recovery=1') !== -1) {
+      return;
+    }
     var u = null;
     try { u = localStorage.getItem('sb_user'); } catch(e) {}
     if (!u) {
@@ -2993,7 +3001,7 @@ html { background: var(--color-bg, #0A0A0A); }
     <div class="ll-divider" style="margin:20px 0;"></div>
 
     <!-- Tabs -->
-    <div class="ll-tabs" style="width:100%;display:flex;margin-bottom:22px;">
+    <div class="ll-tabs" id="auth-tabs-bar" style="width:100%;display:flex;margin-bottom:22px;">
       <button class="ll-tab is-active" style="flex:1;" onclick="switchTab('login')">Iniciar sesión</button>
       <button class="ll-tab" style="flex:1;" onclick="switchTab('register')">Registrarse</button>
     </div>
@@ -3049,7 +3057,26 @@ html { background: var(--color-bg, #0A0A0A); }
         <input class="ll-input" type="email" id="recovery-email" placeholder="tu@empresa.com" onkeydown="if(event.key==='Enter')sendRecovery()">
       </div>
       <button class="ll-btn ll-btn--primary ll-btn--block" onclick="sendRecovery()" id="btn-recovery">Enviar enlace</button>
-      <div id="recovery-result" style="display:none;margin-top:14px;padding:12px 14px;border-radius:8px;font-size:13px;font-weight:600;text-align:center;"></div>
+    </div>
+
+    <!-- Form nueva contraseña (cuando el usuario vuelve desde el link del correo) -->
+    <div id="form-newpassword" style="display:none;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+        <span class="ll-body" style="font-weight:600;">Crea tu nueva contraseña</span>
+      </div>
+      <p class="ll-body-sm" style="margin-bottom:16px;line-height:1.5;">
+        Escribe una contraseña nueva para tu cuenta. Debe tener al menos 6 caracteres.
+      </p>
+      <div class="ll-field" style="margin-bottom:14px;">
+        <label class="ll-field__label">Nueva contraseña</label>
+        <input class="ll-input" type="password" id="newpass-1" placeholder="••••••••" autocomplete="new-password">
+      </div>
+      <div class="ll-field" style="margin-bottom:20px;">
+        <label class="ll-field__label">Repite la contraseña</label>
+        <input class="ll-input" type="password" id="newpass-2" placeholder="••••••••" autocomplete="new-password" onkeydown="if(event.key==='Enter')guardarNuevaPassword()">
+      </div>
+      <button class="ll-btn ll-btn--primary ll-btn--block" onclick="guardarNuevaPassword()" id="btn-newpass">Guardar contraseña</button>
+      <div id="newpass-result" style="display:none;margin-top:14px;padding:12px 14px;border-radius:8px;font-size:13px;font-weight:600;text-align:center;"></div>
     </div>
 
     <div id="auth-msg" class="auth-msg"></div>
@@ -4822,9 +4849,14 @@ function switchTab(tab) {
   document.getElementById('form-login').style.display     = tab === 'login'    ? 'block' : 'none';
   document.getElementById('form-register').style.display  = tab === 'register' ? 'block' : 'none';
   document.getElementById('form-recovery').style.display  = tab === 'recovery' ? 'block' : 'none';
+  const fnp = document.getElementById('form-newpassword');
+  if (fnp) fnp.style.display = tab === 'newpassword' ? 'block' : 'none';
   document.querySelectorAll('.auth-tab').forEach((t, i) => {
     t.classList.toggle('active', (i===0 && tab==='login') || (i===1 && tab==='register'));
   });
+  // En modo "nueva contraseña" ocultamos los tabs login/registro para no confundir
+  const tabsBar = document.getElementById('auth-tabs-bar');
+  if (tabsBar) tabsBar.style.display = (tab === 'newpassword') ? 'none' : 'flex';
   document.getElementById('auth-msg').className = 'auth-msg';
   const rr = document.getElementById('recovery-result');
   if (rr) { rr.style.display = 'none'; rr.textContent = ''; }
@@ -4847,10 +4879,14 @@ async function sendRecovery() {
   btn.textContent = 'Enviando...';
 
   try {
+    // redirect_to: a dónde vuelve el usuario tras click en el link del correo.
+    // Añadimos ?recovery=1 para detectar el regreso aunque el token venga como
+    // 'code' (flujo PKCE) en vez de hash. DEBE estar en la lista blanca de Supabase.
+    const redirectTo = window.location.origin + window.location.pathname + '?recovery=1';
     const res = await fetch(`${SUPABASE_URL}/auth/v1/recover`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
-      body: JSON.stringify({ email })
+      body: JSON.stringify({ email, redirect_to: redirectTo })
     });
 
     btn.disabled = false;
@@ -7617,6 +7653,198 @@ async function _abrirProcesoDeNotificacion() {
   const codigo = _procesoNotifPendiente;
   _procesoNotifPendiente = null;  // limpiar para no repetir
   await verDetalle(codigo);
+}
+
+// ── RECUPERAR CONTRASEÑA ──
+// Cuando el usuario hace click en el link del correo, Supabase lo regresa a la app.
+// Según la configuración, el token puede llegar de 3 formas distintas:
+//   A) Hash:  #access_token=...&type=recovery         (implicit flow)
+//   B) Query: ?recovery=1  + hash con access_token     (nuestro marcador)
+//   C) Query: ?code=XXXXX                              (PKCE flow nuevo)
+// Detectamos las 3 ANTES de que la app trate esto como login normal.
+let _recoveryToken = null;
+
+function _entrarModoRecovery() {
+  // Borrar cualquier rastro de sesión vieja
+  try { localStorage.removeItem('sb_user'); localStorage.removeItem('sb_token'); } catch(e) {}
+  try {
+    document.cookie = 'sb_user=; Max-Age=0; path=/';
+    document.cookie = 'sb_token=; Max-Age=0; path=/';
+  } catch(e) {}
+  document.documentElement.classList.remove('ll-has-session');
+  const _mostrar = () => {
+    try {
+      const auth = document.getElementById('screen-auth');
+      const app  = document.getElementById('screen-app');
+      if (app)  app.classList.remove('active');
+      if (auth) auth.classList.add('active');
+      if (typeof switchTab === 'function') switchTab('newpassword');
+    } catch(e) { console.error('recovery UI error:', e); }
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _mostrar);
+  } else {
+    _mostrar();
+  }
+}
+
+(async function detectarRecovery() {
+  try {
+    const hash   = window.location.hash || '';
+    const search = window.location.search || '';
+    const hashParams   = new URLSearchParams(hash.replace(/^#/, ''));
+    const queryParams  = new URLSearchParams(search);
+
+    const hashType  = hashParams.get('type');
+    const hashToken = hashParams.get('access_token');
+    const code      = queryParams.get('code');
+    const marcador  = queryParams.get('recovery');
+    const errDesc   = hashParams.get('error_description') || queryParams.get('error_description');
+
+    // Si el link expiró, Supabase manda error en vez de token
+    if (errDesc && (marcador === '1' || hashType === 'recovery')) {
+      window.history.replaceState({}, '', window.location.pathname);
+      _entrarModoRecovery();
+      setTimeout(() => {
+        const out = document.getElementById('newpass-result');
+        if (out) {
+          out.style.display = 'block';
+          out.style.background = 'var(--red-dim)';
+          out.style.color = 'var(--red)';
+          out.textContent = 'El enlace expiró o ya se usó. Solicita uno nuevo.';
+        }
+      }, 300);
+      return;
+    }
+
+    // CASO A y B: token viene en el hash
+    if (hashToken && (hashType === 'recovery' || marcador === '1')) {
+      _recoveryToken = hashToken;
+      window.history.replaceState({}, '', window.location.pathname);
+      _entrarModoRecovery();
+      return;
+    }
+
+    // CASO C: flujo PKCE — viene ?code=XXX y hay que intercambiarlo por un token
+    if (code && marcador === '1') {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=pkce`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+          body: JSON.stringify({ auth_code: code })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.access_token) {
+          _recoveryToken = data.access_token;
+        }
+      } catch(e) { console.error('pkce exchange error:', e); }
+      window.history.replaceState({}, '', window.location.pathname);
+      _entrarModoRecovery();
+      if (!_recoveryToken) {
+        setTimeout(() => {
+          const out = document.getElementById('newpass-result');
+          if (out) {
+            out.style.display = 'block';
+            out.style.background = 'var(--red-dim)';
+            out.style.color = 'var(--red)';
+            out.textContent = 'No se pudo validar el enlace. Solicita uno nuevo.';
+          }
+        }, 300);
+      }
+      return;
+    }
+
+    // CASO C alternativo: ?code= sin marcador, pero sin sesión activa.
+    // Puede ser un recovery con Site URL sin parámetro. Lo tratamos como recovery
+    // solo si NO hay sesión previa (para no interferir con OAuth de Google).
+    if (code && !marcador) {
+      const tieneSesion = (() => {
+        try { return !!localStorage.getItem('sb_token'); } catch(e) { return false; }
+      })();
+      if (!tieneSesion) {
+        try {
+          const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=pkce`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+            body: JSON.stringify({ auth_code: code })
+          });
+          const data = await res.json().catch(() => ({}));
+          // Solo entrar a modo recovery si el token es de tipo recovery
+          if (res.ok && data.access_token) {
+            try {
+              const payload = JSON.parse(atob(data.access_token.split('.')[1]));
+              // amr/aal no siempre indican recovery; en duda, mostramos el form igual
+            } catch(e) {}
+            _recoveryToken = data.access_token;
+            window.history.replaceState({}, '', window.location.pathname);
+            _entrarModoRecovery();
+          }
+        } catch(e) { /* si falla, seguir flujo normal */ }
+      }
+    }
+  } catch(e) { console.error('detectarRecovery error:', e); }
+})();
+
+async function guardarNuevaPassword() {
+  const p1  = document.getElementById('newpass-1').value;
+  const p2  = document.getElementById('newpass-2').value;
+  const out = document.getElementById('newpass-result');
+  const btn = document.getElementById('btn-newpass');
+
+  const showErr = (msg) => {
+    out.style.display = 'block';
+    out.style.background = 'var(--red-dim)';
+    out.style.color = 'var(--red)';
+    out.textContent = msg;
+  };
+
+  if (!p1 || p1.length < 6) { showErr('La contraseña debe tener al menos 6 caracteres.'); return; }
+  if (p1 !== p2)            { showErr('Las contraseñas no coinciden.'); return; }
+  if (!_recoveryToken)      { showErr('El enlace expiró. Solicita uno nuevo.'); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${_recoveryToken}`,
+      },
+      body: JSON.stringify({ password: p1 })
+    });
+
+    btn.disabled = false;
+    btn.textContent = 'Guardar contraseña';
+
+    if (res.ok) {
+      _recoveryToken = null;
+      out.style.display = 'block';
+      out.style.background = 'var(--green-dim)';
+      out.style.color = 'var(--green)';
+      out.textContent = '✅ Contraseña actualizada. Ya puedes iniciar sesión.';
+      document.getElementById('newpass-1').value = '';
+      document.getElementById('newpass-2').value = '';
+      // Volver al login tras 2 segundos
+      setTimeout(() => { if (typeof switchTab === 'function') switchTab('login'); }, 2000);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      const msg = (data?.msg || data?.error_description || '').toLowerCase();
+      if (msg.includes('expired') || msg.includes('invalid')) {
+        showErr('El enlace expiró. Solicita uno nuevo desde "Olvidé mi contraseña".');
+      } else if (msg.includes('same') || msg.includes('different from')) {
+        showErr('La nueva contraseña no puede ser igual a la anterior.');
+      } else {
+        showErr('No se pudo actualizar. Intenta de nuevo.');
+      }
+    }
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Guardar contraseña';
+    showErr('Error de conexión. Intenta de nuevo.');
+  }
 }
 
 
