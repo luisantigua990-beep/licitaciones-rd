@@ -20,6 +20,15 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from supabase import create_client
 
+# Puente de interés profundo: dispara análisis + email a usuarios con interés
+# que coincide con el proceso. Import defensivo: si el módulo no está, el
+# scraper sigue funcionando normal (solo no se hace el análisis por interés).
+try:
+    from notificador_interes_profundo import procesar_interes_profundo
+except Exception as _e_nip:
+    procesar_interes_profundo = None
+    print(f"⚠️ notificador_interes_profundo no disponible: {_e_nip}")
+
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -1029,6 +1038,15 @@ def ejecutar_scraper_portal():
         # 3. Notificar solo a usuarios con intereses coincidentes
         n = notificar_proceso_inmediato(proceso, articulos)
         total_notificaciones += n
+
+        # 3b. Interés profundo: a los usuarios cuyo interés (categorías/texto libre)
+        # coincide con este proceso, dispara análisis profundo + email. Defensivo:
+        # cualquier fallo aquí NO interrumpe el ciclo del scraper.
+        if procesar_interes_profundo is not None:
+            try:
+                procesar_interes_profundo(proceso, articulos, supabase_admin)
+            except Exception as _e_ip:
+                print(f"   ⚠️ interés profundo no fatal: {_e_ip}")
 
         monto = proceso.get("monto_estimado")
         monto_str = f"RD${monto:,.0f}" if monto else "N/A"
