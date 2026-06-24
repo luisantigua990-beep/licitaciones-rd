@@ -12,6 +12,8 @@ Variables de entorno nuevas en Railway:
     PAGADITO_WSK=<wsk de 32 caracteres>
     PAGADITO_SANDBOX=true        # cambiar a false en producción
     CRON_SECRET=<cualquier string secreto>
+    RESEND_API_KEY=<ya la tienes configurada para otros emails>
+    RESEND_FROM=LicitacionLab <notificaciones@licitacionlab.com>
 
 Seguridad: /crear y /verificar requieren el access_token de Supabase
 (el mismo session.access_token que ya tiene la PWA) en el header
@@ -21,6 +23,7 @@ así NADIE puede crear pagos ni consultar pagos de otro usuario.
 
 import os
 import time
+import requests
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Request, Header
@@ -37,6 +40,8 @@ from pagadito import (
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+FROM_EMAIL = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
 
 _sb_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # escribe pagos/suscripciones (bypassa RLS)
 _pg = PagaditoClient()
@@ -215,6 +220,9 @@ def _verificar_y_activar(token: str) -> str:
         "referencia_pg": referencia,
         "fecha_transaccion": fecha_trans,
     }).eq("id", pago["id"]).execute()
+    pago["estado"] = estado
+    pago["referencia_pg"] = referencia
+    pago["fecha_transaccion"] = fecha_trans
 
     if estado in ESTADOS_FINALES_OK:
         _activar_suscripcion(pago)
@@ -225,6 +233,57 @@ def _verificar_y_activar(token: str) -> str:
         return "fallido"
     print(f"⏳ Pago en proceso ({estado}): {pago['ern']}")
     return "pendiente"
+
+
+def _enviar_confirmacion_pago(pago: dict, plan: dict):
+    """
+    Envía el email de confirmación de compra exigido por Pagadito (observación
+    de certificación: debe incluir el Número de Aprobación / referencia).
+    No lanza excepción si falla — un email caído no debe tumbar la activación.
+    """
+    if not RESEND_API_KEY:
+        print("   ⚠️ RESEND_API_KEY no configurada — email de confirmación omitido")
+        return
+
+    try:
+        user_resp = _sb_admin.auth.admin.get_user_by_id(pago["user_id"])
+        to_email = user_resp.user.email
+    except Exception as e:
+        print(f"   ⚠️ No se pudo obtener email del usuario {pago['user_id'][:8]}: {e}")
+        return
+
+    if not to_email:
+        return
+
+    fecha = pago.get("fecha_transaccion") or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a2420;">
+      <h2 style="color: #1a2420;">¡Pago confirmado!</h2>
+      <p>Gracias por tu compra en <strong>LicitacionLab</strong>. Aquí el detalle de tu transacción:</p>
+      <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+        <tr><td style="padding: 6px 0; color: #555;">Plan</td><td style="padding: 6px 0; text-align: right;"><strong>{plan['nombre']}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #555;">Monto</td><td style="padding: 6px 0; text-align: right;"><strong>{pago['moneda']} {pago['monto']}</strong></td></tr>
+        <tr><td style="padding: 6px 0; color: #555;">Fecha</td><td style="padding: 6px 0; text-align: right;">{fecha}</td></tr>
+        <tr><td style="padding: 6px 0; color: #555;">Referencia (ERN)</td><td style="padding: 6px 0; text-align: right;">{pago['ern']}</td></tr>
+        <tr><td style="padding: 6px 0; color: #555;">Número de Aprobación Pagadito</td><td style="padding: 6px 0; text-align: right;"><strong>{pago.get('referencia_pg', '')}</strong></td></tr>
+      </table>
+      <p style="font-size: 13px; color: #888;">Conserva este correo como comprobante de tu pago.</p>
+    </div>
+    """
+
+    try:
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={"from": FROM_EMAIL, "to": [to_email], "subject": "Confirmación de pago — LicitacionLab", "html": html},
+            timeout=20,
+        )
+        if resp.status_code in (200, 201):
+            print(f"   ✉️ Email de confirmación enviado a {to_email}")
+        else:
+            print(f"   ⚠️ Resend error {resp.status_code}: {resp.text[:150]}")
+    except Exception as e:
+        print(f"   ⚠️ Resend error: {e}")
 
 
 def _activar_suscripcion(pago: dict):
@@ -251,6 +310,8 @@ def _activar_suscripcion(pago: dict):
         "fecha_vencimiento": vencimiento.isoformat(),
         "activa": True,
     }).execute()
+
+    _enviar_confirmacion_pago(pago, plan)
 
 
 # ══════════════════════════════════════════════════════════════
