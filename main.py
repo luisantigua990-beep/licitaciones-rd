@@ -2231,17 +2231,67 @@ INSTRUCCIONES IMPORTANTES:
 
 1. Identifica el tipo de proceso: Obras, Bienes, Servicios o Consultoría.
 
-2. Las "alertas_fraude" deben ser hallazgos REALES de indicadores de manipulación, NO restricciones
-   normales de participación. Busca específicamente:
-   - Requisitos desproporcionados que limitan competencia artificialmente (Art. 14, 47-25)
-   - Especificaciones técnicas diseñadas para un proveedor específico
-   - Plazos de presentación muy cortos sin justificación
-   - Criterios de evaluación subjetivos o con pesos inusuales
-   - Exigencia de marcas, modelos o proveedores específicos sin justificación técnica
-   - Requisitos de experiencia con montos exactos que solo una empresa puede cumplir
-   - Contrataciones directas disfrazadas de licitación (Art. 146, 47-25)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. REGLA FUNDAMENTAL SOBRE alertas_fraude — LEE ESTO PRIMERO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-3. Las "restricciones_participacion" son las condiciones normales de elegibilidad del pliego.
+Las "alertas_fraude" son ÚNICAMENTE indicadores de que el proceso está siendo manipulado para
+favorecer a un proveedor específico o excluir competencia legítima. NO son requisitos normales
+del pliego aunque parezcan exigentes.
+
+LO QUE JAMÁS DEBE SER UNA ALERTA (cosas normales exigidas por ley o práctica estándar):
+   ✗ Garantía de Seriedad de Oferta (exigida por ley, monto entre 1-5% es normal)
+   ✗ Garantía de Fiel Cumplimiento (exigida por ley)
+   ✗ Garantía de Anticipo (exigida por ley cuando hay anticipo)
+   ✗ Compromiso Ético / Declaración de Integridad (exigido por ley)
+   ✗ Registro Mercantil, RNC, cédula del representante (documentos legales básicos)
+   ✗ Inscripción en el RNCE (Registro Nacional de Contratistas del Estado) — obligatorio por ley
+   ✗ No estar en el Registro de Proveedores Inhabilitados
+   ✗ No tener deudas con el Estado / DGII / TSS
+   ✗ Declaración jurada de no parentesco con funcionarios
+   ✗ Experiencia mínima proporcional al monto del contrato (ver test de proporcionalidad abajo)
+   ✗ Personal técnico con títulos y registros profesionales acordes al tipo de obra/servicio
+   ✗ Plazos de presentación que cumplen los mínimos legales (Licitación Pública: ≥ 30 días; Comparación: ≥ 7 días; Menor Cuantía: ≥ 5 días)
+   ✗ Exigencia de estados financieros auditados para contratos grandes
+   ✗ Metodología de trabajo o plan de ejecución para servicios y obras
+
+SÍ SON SEÑALES REALES DE ALERTA (indicadores de manipulación basados en casos reales RD):
+   ✓ Especificaciones técnicas que mencionan marca, modelo, número de serie o proveedor específico
+     sin incluir la cláusula "o equivalente" (viola Art. 14 y Art. 63, Ley 47-25)
+   ✓ Requisito de experiencia previa EXCLUSIVAMENTE con esa misma institución contratante
+   ✓ Monto mínimo de contratos anteriores equivalente al 80-100% del monto licitado (solo 1-2
+     empresas en RD podrían cumplirlo), sin justificación técnica
+   ✓ Plazo de presentación INFERIOR al mínimo legal para esa modalidad, sin circular de justificación
+   ✓ Criterios de evaluación con puntajes que suman más de 100 o con pesos no publicados
+   ✓ Criterio de "puntos por visita previa a instalaciones" que favorece a quien ya opera el contrato
+   ✓ Requerir certificaciones de organismos muy específicos que solo una empresa posee en RD
+   ✓ División artificial de un contrato grande en varios pequeños para evadir licitación pública
+     (fraccionamiento, viola Art. 9, Ley 47-25)
+   ✓ Requisito de que el personal clave haya trabajado PREVIAMENTE con la entidad contratante
+   ✓ Especificaciones de dimensiones, voltajes, frecuencias u otros parámetros técnicos tan
+     exactos que corresponden a un modelo específico sin justificación operacional
+   ✓ Exigir que los equipos sean de determinado año de fabricación muy reciente (ej: 2023 o más
+     nuevo) sin justificación técnica, cuando años anteriores son técnicamente válidos
+   ✓ Índices financieros (liquidez, endeudamiento, patrimonio) completamente desproporcionados
+     al monto del contrato: p.ej., exigir patrimonio neto de 5x el valor del contrato
+   ✓ Plazo de ejecución imposible para el alcance del trabajo descrito (favorece al que ya tiene
+     todo preparado de antemano)
+   ✓ Criterios de evaluación que mezclan precio con puntos subjetivos sin metodología clara,
+     o donde el precio tiene peso menor al 30% en procesos de bienes estándar
+
+TEST DE PROPORCIONALIDAD para experiencia (aplícalo antes de decidir si es alerta):
+   • Contratos similares requeridos: es NORMAL pedir 2-5 contratos del mismo tipo completados.
+     Es SOSPECHOSO pedir más de 10, o pedir montos individuales > 75% del valor del proceso.
+   • Años de experiencia: es NORMAL pedir 3-10 años según la complejidad. Es SOSPECHOSO pedir
+     más de 15 años para servicios o bienes estándar.
+   • Período de referencia: es NORMAL exigir que sean de los últimos 5-10 años. Es SOSPECHOSO
+     pedir que sean EXCLUSIVAMENTE del último año o de un período muy corto.
+   • Sector: es NORMAL pedir experiencia en el mismo sector (obras viales, salud, IT). Es
+     SOSPECHOSO pedir experiencia con un cliente específico o en una región geográfica exacta.
+
+3. Las "restricciones_participacion" son las condiciones normales de elegibilidad del pliego
+   (inhabilitaciones legales, requisitos de capacidad proporcionales, conflictos de interés
+   definidos por ley). NO pongas aquí cosas que ya van en alertas_fraude.
 
 4. REGLA CRÍTICA SOBRE "es_subsanable":
    - Lógica: si el pliego dice explícitamente "No subsanable" → es_subsanable=FALSE.
@@ -2380,31 +2430,43 @@ Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes
 }
 
 CRITERIOS PARA score_base (0-100) — INSTRUCCIÓN OBLIGATORIA:
-El score_base mide qué tan viable y limpio es el proceso para un oferente calificado del sector.
-Empieza en 100 y descuenta según estas reglas:
+El score_base mide qué tan transparente y competitivo es el proceso. NO mide qué tan difícil
+es cumplir los requisitos. Un proceso puede ser muy exigente y aun así tener score alto si
+los requisitos son proporcionales y legítimos.
 
-DESCUENTOS POR IRREGULARIDADES (alertas_fraude):
+Empieza en 100 y descuenta SOLO por las siguientes causas REALES:
+
+DESCUENTOS POR INDICADORES DE MANIPULACIÓN (alertas_fraude confirmadas):
   - Cada alerta de riesgo Alto:   -15 puntos
-  - Cada alerta de riesgo Medio:  -7  puntos
-  - Cada alerta de riesgo Bajo:   -3  puntos
+  - Cada alerta de riesgo Medio:  -8  puntos
+  - Cada alerta de riesgo Bajo:   -4  puntos
 
-DESCUENTOS ADICIONALES POR FACTORES DEL PROCESO:
-  - Plazo de presentación < 5 días hábiles:         -10 puntos
-  - Plazo de presentación entre 5-10 días hábiles:  -5  puntos
-  - Especificaciones dirigidas a marca/proveedor:   -15 puntos (independiente de las alertas)
-  - Criterios de evaluación sin ponderación clara:  -8  puntos
-  - Cronograma incompleto (faltan fechas clave):    -5  puntos
-  - Requisitos financieros desproporcionados al monto: -10 puntos
+DESCUENTOS ADICIONALES POR FACTORES OBJETIVOS (solo si aplican):
+  - Plazo de presentación INFERIOR al mínimo legal de esa modalidad: -12 puntos
+  - Especificaciones con marca/modelo específico SIN cláusula "o equivalente": -15 puntos
+  - Criterios de evaluación sin tabla de ponderación publicada: -8 puntos
+  - Fraccionamiento evidente del contrato (varios procesos simultáneos del mismo tipo): -10 puntos
+  - Cronograma sin fecha de apertura de ofertas ni acto de adjudicación: -5 puntos
+  - Requisito de experiencia exclusiva con esa institución: -10 puntos
+  - Índices financieros > 3x el valor del contrato en patrimonio exigido: -8 puntos
+
+NO DESCONTAR POR ESTAS CAUSAS (son normales y legales):
+  ✗ Exigencia de garantías (seriedad, cumplimiento, anticipo) — es ley
+  ✗ Documentos legales estándar (RNC, Registro Mercantil, RNCE) — es ley
+  ✗ Número de proyectos similares proporcional al contrato
+  ✗ Requisitos de personal técnico con títulos acordes al sector
+  ✗ Plazos que cumplen el mínimo legal aunque parezcan cortos
+  ✗ Índices financieros razonables (liquidez > 1, endeudamiento < 80%, patrimonio 0.5-1x contrato)
 
 BONIFICACIONES:
-  - Proceso sin ninguna alerta de fraude:     +5 puntos
-  - Cronograma completo con todas las fechas: +3 puntos
-  - Requisitos claros y proporcionales:       +2 puntos
+  - Proceso sin ninguna alerta de fraude confirmada:  +5 puntos
+  - Cronograma completo con todas las fechas clave:   +3 puntos
+  - Metodología de evaluación publicada y clara:      +2 puntos
 
 El score_base NUNCA puede ser mayor a 100 ni menor a 5.
 Redondea al entero más cercano.
-En "faltas_graves" incluye SOLO las irregularidades que descuentan más de 10 puntos en total,
-descritas en una línea corta. Si no hay faltas graves, devuelve un array vacío [].
+En "faltas_graves" incluye SOLO las irregularidades que descuentan 10+ puntos en total
+(indicadores reales de manipulación, no requisitos exigentes). Array vacío [] si no hay.
 """
 
 
