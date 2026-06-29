@@ -33,12 +33,14 @@ from scraper_rnce import run_prospector
 # ── Config ───────────────────────────────────────────
 SUPABASE_URL      = os.environ["SUPABASE_URL"]
 SUPABASE_KEY      = os.environ["SUPABASE_KEY"]
+SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
 CLAUDE_KEY        = os.environ["ANTHROPIC_API_KEY"]
 AGENT_SECRET      = os.environ.get("AGENT_SECRET", "licitacionlab-growth-2026")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", os.environ.get("TELEGRAM_BOT_TOKEN", ""))
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "817596333")
 
 supabase          = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase_admin    = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)   # service_role → sin restricciones RLS
 agentes_router    = APIRouter(prefix="/api/agentes", tags=["agentes"])
 social_router     = APIRouter(prefix="/agente-social", tags=["Agente Social"])
 
@@ -749,7 +751,7 @@ def obtener_contexto(tipo: str) -> dict:
             from datetime import timedelta
 
             # Procesos ya usados hoy en social_log (evitar repetir)
-            ya_usados = supabase.table("social_log") \
+            ya_usados = supabase_admin.table("social_log") \
                 .select("codigo_proceso") \
                 .gte("created_at", datetime.utcnow().date().isoformat()) \
                 .not_.is_("codigo_proceso", "null") \
@@ -760,7 +762,7 @@ def obtener_contexto(tipo: str) -> dict:
             ]
 
             # Contar posts de licitaciones activas generados hoy para calcular turno 3/1
-            conteo_hoy = supabase.table("social_log") \
+            conteo_hoy = supabase_admin.table("social_log") \
                 .select("id", count="exact") \
                 .eq("tipo_contenido", "licitaciones_activas") \
                 .gte("created_at", datetime.utcnow().date().isoformat()) \
@@ -998,14 +1000,14 @@ async def _enviar_slides_diferido(post_id: int, imagenes_b64: list, delay_seg: i
     """
     try:
         await asyncio.sleep(delay_seg)
-        r = supabase.table("social_log").select("carrusel_enviado_at") \
+        r = supabase_admin.table("social_log").select("carrusel_enviado_at") \
             .eq("id", post_id).single().execute()
         if r.data and r.data.get("carrusel_enviado_at"):
             print(f"[Social] Slides del post {post_id} ya enviados — omitiendo respaldo")
             return
         enviadas = await enviar_carrusel_telegram(imagenes_b64, post_id)
         if enviadas:
-            supabase.table("social_log").update({
+            supabase_admin.table("social_log").update({
                 "carrusel_enviado_at": datetime.utcnow().isoformat()
             }).eq("id", post_id).execute()
             print(f"[Social] Respaldo automático: {enviadas} slides del post {post_id} enviados")
@@ -1077,7 +1079,7 @@ async def generar_posts_sociales(
                 "codigo_proceso":  contexto.get("_codigo_proceso"),
                 "created_at":      datetime.utcnow().isoformat()
             }
-            result = supabase.table("social_log").insert(post_data).execute()
+            result = supabase_admin.table("social_log").insert(post_data).execute()
             post_id = result.data[0]["id"] if result.data else None
 
             posts_generados.append({
@@ -1116,7 +1118,7 @@ async def generar_posts_sociales(
             "created_at":      datetime.utcnow().isoformat()
         }
 
-        result = supabase.table("social_log").insert(post_data).execute()
+        result = supabase_admin.table("social_log").insert(post_data).execute()
         post_id = result.data[0]["id"] if result.data else None
 
         posts_generados.append({
@@ -1146,7 +1148,7 @@ async def enviar_carrusel_endpoint(
     if x_agent_secret != AGENT_SECRET:
         raise HTTPException(status_code=401, detail="No autorizado")
 
-    result = supabase.table("social_log").select("imagenes_extra, tipo_contenido, carrusel_enviado_at").eq("id", post_id).single().execute()
+    result = supabase_admin.table("social_log").select("imagenes_extra, tipo_contenido, carrusel_enviado_at").eq("id", post_id).single().execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Post no encontrado")
 
@@ -1167,7 +1169,7 @@ async def enviar_carrusel_endpoint(
     enviadas = await enviar_carrusel_telegram(imagenes_completas, post_id)
 
     if enviadas:
-        supabase.table("social_log").update({
+        supabase_admin.table("social_log").update({
             "carrusel_enviado_at": datetime.utcnow().isoformat()
         }).eq("id", post_id).execute()
 
@@ -1189,14 +1191,14 @@ async def publicar_post(
     if x_agent_secret != AGENT_SECRET:
         raise HTTPException(status_code=401, detail="No autorizado")
 
-    result = supabase.table("social_log").select("*").eq("id", post_id).single().execute()
+    result = supabase_admin.table("social_log").select("*").eq("id", post_id).single().execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Post no encontrado")
 
     post = result.data
     mock_ig_post_id = f"MOCK_{post_id}_{int(datetime.now().timestamp())}"
 
-    supabase.table("social_log").update({
+    supabase_admin.table("social_log").update({
         "estado":       "publicado",
         "ig_post_id":   mock_ig_post_id,
         "publicado_at": datetime.utcnow().isoformat()
@@ -1219,7 +1221,7 @@ async def rechazar_post(
     if x_agent_secret != AGENT_SECRET:
         raise HTTPException(status_code=401, detail="No autorizado")
 
-    supabase.table("social_log").update({
+    supabase_admin.table("social_log").update({
         "estado":     "rechazado",
         "updated_at": datetime.utcnow().isoformat()
     }).eq("id", post_id).execute()
