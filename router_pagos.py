@@ -320,7 +320,12 @@ def _activar_suscripcion(pago: dict):
 # ══════════════════════════════════════════════════════════════
 @pagos_router.post("/cron/reverificar")
 def cron_reverificar(request: Request):
-    if request.headers.get("X-Cron-Secret") != os.getenv("CRON_SECRET", ""):
+    cron_secret = os.getenv("CRON_SECRET", "")
+    if not cron_secret:
+        # Sin CRON_SECRET configurado en Railway el endpoint queda cerrado
+        # (evita que un header vacío pase la comparación "" == "")
+        raise HTTPException(500, "CRON_SECRET no configurado")
+    if request.headers.get("X-Cron-Secret") != cron_secret:
         raise HTTPException(403, "No autorizado")
 
     pendientes = _sb_admin.table("pagos").select("token_pagadito") \
