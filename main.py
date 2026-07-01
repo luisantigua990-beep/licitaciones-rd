@@ -1923,7 +1923,7 @@ def mis_analisis(request: Request, user_id: str = Query(...)):
 
         # 2. Traer análisis completados para esos procesos
         analisis = supabase_admin.table("analisis_pliego") \
-            .select("proceso_id,estado,creado_en,actualizado_en,resultado") \
+            .select("proceso_id,estado,creado_en,actualizado_en,resumen_ejecutivo") \
             .in_("proceso_id", codigos) \
             .order("actualizado_en", desc=True) \
             .execute()
@@ -1941,15 +1941,8 @@ def mis_analisis(request: Request, user_id: str = Query(...)):
         resultado = []
         for a in analisis.data:
             proc = proc_map.get(a["proceso_id"], {})
-            # Extraer resumen del resultado JSON si existe
-            resumen = None
-            if a.get("resultado"):
-                try:
-                    import json as _json
-                    r = _json.loads(a["resultado"]) if isinstance(a["resultado"], str) else a["resultado"]
-                    resumen = r.get("resumen") or r.get("recomendacion") or r.get("conclusion")
-                except Exception:
-                    pass
+            # El resumen vive directo en la columna resumen_ejecutivo
+            resumen = a.get("resumen_ejecutivo")
             resultado.append({
                 "proceso_id": a["proceso_id"],
                 "titulo": proc.get("titulo", a["proceso_id"]),
