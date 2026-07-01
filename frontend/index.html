@@ -15,7 +15,8 @@
     var h = window.location.hash || '';
     var s = window.location.search || '';
     if ((h.indexOf('access_token') !== -1 && h.indexOf('type=recovery') !== -1) ||
-        s.indexOf('recovery=1') !== -1) {
+        s.indexOf('recovery=1') !== -1 ||
+        (s.indexOf('token_hash=') !== -1 && s.indexOf('type=recovery') !== -1)) {
       return;
     }
     var u = null;
@@ -7753,6 +7754,8 @@ function _entrarModoRecovery() {
     const hashToken = hashParams.get('access_token');
     const code      = queryParams.get('code');
     const marcador  = queryParams.get('recovery');
+    const tokenHash = queryParams.get('token_hash') || hashParams.get('token_hash');
+    const typeParam = queryParams.get('type') || hashType;
     const errDesc   = hashParams.get('error_description') || queryParams.get('error_description');
 
     // Si el link expiró, Supabase manda error en vez de token
@@ -7768,6 +7771,39 @@ function _entrarModoRecovery() {
           out.textContent = 'El enlace expiró o ya se usó. Solicita uno nuevo.';
         }
       }, 300);
+      return;
+    }
+
+    // CASO 0 (PREFERIDO): token_hash + type=recovery.
+    // Es el patrón agnóstico al flujo (funciona en PKCE o implicit) porque
+    // /verify devuelve el access_token directo, sin necesidad de code_verifier.
+    // La plantilla del correo debe apuntar a:
+    //   {{ .SiteURL }}/?recovery=1&token_hash={{ .TokenHash }}&type=recovery
+    if (tokenHash && typeParam === 'recovery') {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+          body: JSON.stringify({ type: 'recovery', token_hash: tokenHash })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.access_token) {
+          _recoveryToken = data.access_token;
+        }
+      } catch(e) { console.error('verify token_hash error:', e); }
+      window.history.replaceState({}, '', window.location.pathname);
+      _entrarModoRecovery();
+      if (!_recoveryToken) {
+        setTimeout(() => {
+          const out = document.getElementById('newpass-result');
+          if (out) {
+            out.style.display = 'block';
+            out.style.background = 'var(--red-dim)';
+            out.style.color = 'var(--red)';
+            out.textContent = 'El enlace expiró o ya se usó. Solicita uno nuevo.';
+          }
+        }, 300);
+      }
       return;
     }
 
