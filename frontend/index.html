@@ -44,7 +44,7 @@ html:not(.ll-has-session) .ll-bottom-nav,
 html:not(.ll-has-session) .bottom-nav,
 html:not(.ll-has-session) #desk-sidebar { display: none !important; }
 </style>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#1B7444">
 <meta name="description" content="Monitorea licitaciones públicas de la República Dominicana en tiempo real. Análisis de pliegos, alertas de fechas y seguimiento de procesos del portal DGCP.">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -3005,6 +3005,13 @@ html { background: var(--color-bg, #0A0A0A); }
 <!-- LicitacionLab Design System v2 (overlay) -->
 <link rel="stylesheet" href="/frontend/css/licitacionlab-tokens.css">
 <link rel="stylesheet" href="/frontend/css/licitacionlab-components.css">
+<style>
+/* ── Fix accesibilidad: se habilitó zoom de página (viewport sin user-scalable=no).
+   Para que iOS no haga auto-zoom al enfocar inputs, en móvil los campos usan 16px. ── */
+@media (max-width: 767px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+</style>
 </head>
 <body class="ll-app">
 
@@ -3073,7 +3080,6 @@ html { background: var(--color-bg, #0A0A0A); }
       <div style="text-align:center;margin-top:16px;">
         <button onclick="switchTab('recovery')" style="background:none;border:none;color:var(--color-text-subtle);font-size:12px;cursor:pointer;font-family:var(--font-sans);text-decoration:underline;padding:0;">Olvidé mi contraseña</button>
       </div>
-      <div style="text-align:center;margin-top:10px;color:var(--color-text-subtle);font-size:10px;opacity:.6;">build v8 · semaforo-fix</div>
     </div>
 
     <!-- Form registro -->
