@@ -51,9 +51,26 @@ class PagaditoClient:
         self.uid = uid or os.environ["PAGADITO_UID"]
         self.wsk = wsk or os.environ["PAGADITO_WSK"]
         if sandbox is None:
-            sandbox = os.environ.get("PAGADITO_SANDBOX", "true").lower() == "true"
+            raw = os.environ.get("PAGADITO_SANDBOX")
+            if raw is None:
+                print("⚠️ PAGADITO_SANDBOX no está definida en Railway — usando SANDBOX por seguridad")
+                sandbox = True
+            else:
+                sandbox = raw.strip().lower() == "true"
+        self.sandbox = sandbox
         self.base_url = SANDBOX_URL if sandbox else PRODUCTION_URL
         self.timeout = timeout
+        self._log_ambiente()
+
+    def _log_ambiente(self):
+        """Banner en logs de Railway para saber de un vistazo a qué ambiente apunta."""
+        amb = "🟡 SANDBOX (sandbox-connect.pagadito.com)" if self.sandbox \
+              else "🟢 PRODUCCIÓN (connect.pagadito.com)"
+        uid_mask = f"{self.uid[:8]}...{self.uid[-4:]}" if len(self.uid) >= 12 else "(uid corto?)"
+        print("═" * 44)
+        print(f"💳 PAGADITO → {amb}")
+        print(f"   UID: {uid_mask}")
+        print("═" * 44)
 
     # ------------------------------------------------------------------
     def _post(self, endpoint: str, payload: dict) -> dict:
