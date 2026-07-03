@@ -3613,6 +3613,12 @@ html { background: var(--color-bg, #0A0A0A); }
       <div class="section-label" style="margin-top:14px">Otro interés (texto libre)</div>
       <input class="filter-input" type="text" id="interes-texto-libre" placeholder='Ej: "plantas de tratamiento de agua" o "toldos y carpas"' style="width:100%" onchange="guardarIntereses()">
 
+      <div class="section-label" style="margin-top:14px">Análisis automático</div>
+      <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:10px;border:1px solid var(--border);border-radius:var(--r-sm)">
+        <input type="checkbox" id="interes-auto-analisis" onchange="guardarIntereses()">
+        <span>🤖 Cuando llegue un proceso que coincida con mis intereses: <strong>seguirlo, analizarlo con IA y enviarme el análisis</strong> automáticamente. <span style="color:var(--muted)">(Consume análisis de tu plan)</span></span>
+      </label>
+
       <div class="section-label" style="margin-top:14px">Rango de monto (RD$, opcional)</div>
       <div style="display:flex;gap:8px">
         <input class="filter-input" type="number" id="interes-monto-min" placeholder="Mínimo" style="width:50%" onchange="guardarIntereses()">
@@ -5788,7 +5794,8 @@ async function guardarIntereses() {
         categorias_interes: categoriasInteresSel,
         texto_libre_interes: textoLibre,
         umbral_monto_min: montoMin,
-        umbral_monto_max: montoMax
+        umbral_monto_max: montoMax,
+        analisis_automatico: document.getElementById('interes-auto-analisis')?.checked || false
       })
     });
     const st = document.getElementById('intereses-status');
@@ -5823,6 +5830,8 @@ async function cargarInteresesGuardados() {
         if (mn && p.umbral_monto_min != null) mn.value = p.umbral_monto_min;
         const mx = document.getElementById('interes-monto-max');
         if (mx && p.umbral_monto_max != null) mx.value = p.umbral_monto_max;
+        const aa = document.getElementById('interes-auto-analisis');
+        if (aa) aa.checked = p.analisis_automatico === true;
         if (Array.isArray(p.categorias_unspsc) && p.categorias_unspsc.length) {
           familiasPerfil = p.categorias_unspsc.map(c =>
             typeof c === 'object' ? {codigo:c.codigo, nombre:c.nombre||c.codigo} : {codigo:String(c), nombre:String(c)});
@@ -8328,20 +8337,30 @@ async function cargarSeguimiento() {
       return;
     }
 
-    // 2. Traer los procesos correspondientes
-    const codigos = segs.map(s => s.proceso_codigo).join(',');
-    const procesos = await sbRest(
-      `procesos?codigo_proceso=in.(${codigos})&select=codigo_proceso,titulo,unidad_compra,monto_estimado,modalidad,objeto_proceso,url,fecha_publicacion,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda,fecha_suscripcion`
-    );
+    // 2. Traer los procesos correspondientes — EN LOTES de 50.
+    // Con cientos de seguimientos, un solo in.() genera una URL gigante que el
+    // servidor rechaza (414) y la lista quedaba vacía o en error.
+    const todosCodigos = segs.map(s => s.proceso_codigo);
+    const SELECT_PROC = 'select=codigo_proceso,titulo,unidad_compra,monto_estimado,modalidad,objeto_proceso,url,fecha_publicacion,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda,fecha_suscripcion';
+    let procesos = [];
+    for (let i = 0; i < todosCodigos.length; i += 50) {
+      const lote = todosCodigos.slice(i, i + 50).join(',');
+      try {
+        const parte = await sbRest(`procesos?codigo_proceso=in.(${lote})&${SELECT_PROC}`);
+        if (Array.isArray(parte)) procesos = procesos.concat(parte);
+      } catch(e) { console.warn('Lote de procesos falló:', e); }
+    }
 
     // 3. Traer plazos_clave del análisis — una sola llamada bulk
     const analisisMap = {};
     try {
-      const codigos_bulk = segs.map(s => s.proceso_codigo).join(',');
-      const resPlazos = await fetch(`${API}/api/plazos-bulk?codigos=${encodeURIComponent(codigos_bulk)}`);
-      if (resPlazos.ok) {
-        const plazosData = await resPlazos.json();
-        Object.assign(analisisMap, plazosData);
+      for (let i = 0; i < todosCodigos.length; i += 50) {
+        const lote = todosCodigos.slice(i, i + 50).join(',');
+        const resPlazos = await fetch(`${API}/api/plazos-bulk?codigos=${encodeURIComponent(lote)}`);
+        if (resPlazos.ok) {
+          const plazosData = await resPlazos.json();
+          Object.assign(analisisMap, plazosData);
+        }
       }
     } catch(e) { /* silencioso — las fechas base del scraper igual se muestran */ }
 
