@@ -3629,15 +3629,6 @@ html { background: var(--color-bg, #0A0A0A); }
       <div class="intereses-status" id="intereses-status"></div>
     </div>
 
-    <!-- Historial de análisis -->
-    <div class="perfil-card">
-      <h2>Historial de análisis</h2>
-      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Análisis de pliegos de los procesos que sigues.</p>
-      <div id="historial-analisis-lista">
-        <div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">Cargando...</div>
-      </div>
-    </div>
-
     <!-- Contactar soporte — al final del perfil -->
     <div class="perfil-card" style="padding:16px 20px">
       <button onclick="window.open('https://wa.me/18098154457?text=Hola,%20necesito%20ayuda%20con%20LicitacionLab','_blank')" style="width:100%;padding:14px;border-radius:var(--r-md);background:#25D366;border:none;color:#fff;font-family:var(--font-body);font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
@@ -7116,7 +7107,7 @@ function switchTab2(tab) {
     const hayContenido = (dash && dash.style.display !== 'none') || (resC && resC.innerHTML.trim());
     if (!hayContenido) icRenderEstado('Busca una empresa por nombre o RNC para ver su historial de contratos con el Estado.');
   }
-  if (tab==='perfil')      { cargarHistorialAnalisis(); cargarEstadoPlan(); }
+  if (tab==='perfil')      { cargarEstadoPlan(); }
   if (tab==='alertas')     cargarAlertas();
   if (tab==='analisis')    cargarAnalisisTab();
   if (tab==='reportes')    cargarReportes();
