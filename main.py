@@ -2109,6 +2109,8 @@ async def actualizar_intereses(request: Request, payload: dict):
             data_perfil["umbral_monto_min"] = payload.get("umbral_monto_min")
         if "umbral_monto_max" in payload:
             data_perfil["umbral_monto_max"] = payload.get("umbral_monto_max")
+        if "analisis_automatico" in payload:
+            data_perfil["analisis_automatico"] = bool(payload.get("analisis_automatico"))
         if data_perfil:
             try:
                 existente = supabase_admin.table("perfiles_empresa") \
@@ -2132,7 +2134,7 @@ def obtener_intereses(request: Request, user_id: str = Query(...)):
     try:
         res = supabase_admin.table("perfiles_empresa") \
             .select("rubros, categorias_unspsc, categorias_interes, texto_libre_interes, "
-                    "umbral_monto_min, umbral_monto_max") \
+                    "umbral_monto_min, umbral_monto_max, analisis_automatico") \
             .eq("user_id", user_id).execute()
         return {"intereses": res.data[0] if res.data else None}
     except Exception as e:
@@ -4489,7 +4491,7 @@ async def guardar_perfil_empresa(request: Request):
             "especialidades", "obras_representativas", "patrimonio_neto",
             "plazo_maximo_dias", "alertas_whatsapp", "alertas_push",
             "umbral_monto_min", "umbral_monto_max", "rubros", "categorias_unspsc",
-            "email_empresa", "categorias_interes", "texto_libre_interes",
+            "email_empresa", "categorias_interes", "texto_libre_interes", "analisis_automatico",
         }
         data = {k: v for k, v in data.items() if k in COLUMNAS_PERFIL}
 
