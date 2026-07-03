@@ -2075,10 +2075,68 @@ async def admin_etl_contratos(
 @app.put("/api/notificaciones/intereses")
 @limiter.limit("20/minute")
 async def actualizar_intereses(request: Request, payload: dict):
+    """
+    Guarda los intereses de notificación del usuario.
+    La fuente de verdad para el FILTRO de notificaciones es perfiles_empresa
+    (rubros, categorias_unspsc, categorias_interes, texto_libre_interes,
+    umbral_monto_min/max). user_subscriptions.intereses_rubros se mantiene
+    solo por compatibilidad.
+    """
     endpoint = payload.get("endpoint")
-    rubros = payload.get("rubros", [])
-    supabase_admin.table("user_subscriptions").update({"intereses_rubros": rubros}).eq("endpoint", endpoint).execute()
+    user_id  = payload.get("user_id")
+    rubros   = payload.get("rubros", [])
+
+    # Compatibilidad: espejo en la suscripción del dispositivo
+    if endpoint:
+        try:
+            supabase_admin.table("user_subscriptions").update(
+                {"intereses_rubros": rubros}).eq("endpoint", endpoint).execute()
+        except Exception as e:
+            print(f"⚠️ intereses: no se pudo actualizar user_subscriptions: {e}")
+
+    # Fuente de verdad: perfil de empresa (aplica a push + email en todos los dispositivos)
+    if user_id:
+        data_perfil = {}
+        if "rubros" in payload:
+            data_perfil["rubros"] = rubros
+        if "familias" in payload:
+            data_perfil["categorias_unspsc"] = payload.get("familias") or []
+        if "categorias_interes" in payload:
+            data_perfil["categorias_interes"] = payload.get("categorias_interes") or []
+        if "texto_libre_interes" in payload:
+            data_perfil["texto_libre_interes"] = (payload.get("texto_libre_interes") or "").strip()
+        if "umbral_monto_min" in payload:
+            data_perfil["umbral_monto_min"] = payload.get("umbral_monto_min")
+        if "umbral_monto_max" in payload:
+            data_perfil["umbral_monto_max"] = payload.get("umbral_monto_max")
+        if data_perfil:
+            try:
+                existente = supabase_admin.table("perfiles_empresa") \
+                    .select("id").eq("user_id", user_id).execute()
+                if existente.data:
+                    supabase_admin.table("perfiles_empresa") \
+                        .update(data_perfil).eq("user_id", user_id).execute()
+                else:
+                    data_perfil["user_id"] = user_id
+                    supabase_admin.table("perfiles_empresa").insert(data_perfil).execute()
+            except Exception as e:
+                print(f"⚠️ intereses: no se pudo actualizar perfiles_empresa: {e}")
+
     return {"ok": True}
+
+
+@app.get("/api/notificaciones/intereses")
+@limiter.limit("30/minute")
+def obtener_intereses(request: Request, user_id: str = Query(...)):
+    """Devuelve los intereses guardados en el perfil del usuario."""
+    try:
+        res = supabase_admin.table("perfiles_empresa") \
+            .select("rubros, categorias_unspsc, categorias_interes, texto_libre_interes, "
+                    "umbral_monto_min, umbral_monto_max") \
+            .eq("user_id", user_id).execute()
+        return {"intereses": res.data[0] if res.data else None}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/notificaciones/enviar-prueba")
@@ -2246,6 +2304,12 @@ LO QUE JAMÁS DEBE SER UNA ALERTA (cosas normales exigidas por ley o práctica e
    ✗ Plazos de presentación que cumplen los mínimos legales (Licitación Pública: ≥ 30 días; Comparación: ≥ 7 días; Menor Cuantía: ≥ 5 días)
    ✗ Exigencia de estados financieros auditados para contratos grandes
    ✗ Metodología de trabajo o plan de ejecución para servicios y obras
+   ✗ Pólizas y seguros exigidos (responsabilidad civil, todo riesgo construcción, seguro del
+     personal, seguro de vehículos/equipos) — son práctica estándar y protección legítima
+   ✗ Carta de intención o línea de crédito bancaria proporcional al contrato
+   ✗ Visita al sitio obligatoria anunciada en el cronograma con antelación razonable
+   ✗ Presentación de muestras o fichas técnicas en procesos de bienes
+   ✗ Certificaciones de calidad genéricas y ampliamente disponibles (ISO 9001, INDOCAL, registro sanitario)
 
 SÍ SON SEÑALES REALES DE ALERTA (indicadores de manipulación basados en casos reales RD):
    ✓ Especificaciones técnicas que mencionan marca, modelo, número de serie o proveedor específico
@@ -2270,6 +2334,20 @@ SÍ SON SEÑALES REALES DE ALERTA (indicadores de manipulación basados en casos
      todo preparado de antemano)
    ✓ Criterios de evaluación que mezclan precio con puntos subjetivos sin metodología clara,
      o donde el precio tiene peso menor al 30% en procesos de bienes estándar
+
+REGLA DE OBJETIVIDAD — PRESUNCIÓN DE LEGALIDAD (OBLIGATORIA):
+Todo requisito del pliego se PRESUME legal y legítimo. Para emitir una alerta_fraude deben
+cumplirse LOS TRES requisitos a la vez:
+   (1) El hallazgo corresponde EXACTAMENTE a uno de los indicadores de la lista de arriba
+       (no a algo "parecido" ni a tu criterio subjetivo de que "parece exigente").
+   (2) Puedes citar el artículo ESPECÍFICO de la Ley 47-25 o del Reglamento (Decreto 52-26)
+       que estaría siendo vulnerado. Si no puedes identificar la norma concreta, NO es alerta.
+   (3) Puedes citar TEXTUALMENTE (entre comillas) el fragmento del pliego que constituye el
+       hallazgo, indicando la sección o numeral donde aparece.
+Si falta cualquiera de los tres, el hallazgo NO va en alertas_fraude. En caso de duda, NO
+alertar: es preferible un análisis con 0 alertas a una alerta falsa que asuste al oferente
+sin fundamento. El campo "articulo_ley" es OBLIGATORIO en cada alerta (nunca N/A) y el campo
+"hallazgo" debe incluir la cita textual del pliego con su sección.
 
 TEST DE PROPORCIONALIDAD para experiencia (aplícalo antes de decidir si es alerta):
    • Contratos similares requeridos: es NORMAL pedir 2-5 contratos del mismo tipo completados.
@@ -2316,6 +2394,11 @@ TEST DE PROPORCIONALIDAD para experiencia (aplícalo antes de decidir si es aler
    - tecnica: metodología, cronograma, experiencia en proyectos, fichas técnicas, RPE/RNCE, certificaciones
    - financiera: estados financieros, balance general, declaración ISR, índices financieros, líneas de crédito
 
+6.b PROCESOS POR LOTES: si el pliego divide el proceso en LOTES con requisitos distintos
+   (experiencia, personal, equipos o garantías diferentes por lote), indícalo claramente en
+   cada requisito afectado con el formato "Lote X: ..." y menciona en el resumen_ejecutivo
+   cuántos lotes hay y si se puede ofertar a uno o varios.
+
 7. EXPERIENCIA DE LA EMPRESA — extrae con MÁXIMO DETALLE:
    - Años de experiencia mínimos exigidos a la empresa
    - Cantidad y tipo de proyectos/contratos similares requeridos (ej: "3 contratos de obras viales > RD$50M")
@@ -2347,8 +2430,8 @@ Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes
     {
       "riesgo": "Alto|Medio|Bajo",
       "categoria": "Requisito desproporcional|Especificación dirigida|Plazo sospechoso|Criterio subjetivo|Conflicto de interés|Otro",
-      "hallazgo": "Descripción específica del indicador con referencia a la sección del pliego",
-      "articulo_ley": "Artículo de la Ley 47-25 que podría estar siendo vulnerado (si aplica)"
+      "hallazgo": "Descripción del indicador + cita textual del pliego entre comillas + sección/numeral donde aparece",
+      "articulo_ley": "OBLIGATORIO: Artículo específico de la Ley 47-25 o del Reglamento (Decreto 52-26) vulnerado. Si no puedes citarlo, elimina la alerta"
     }
   ],
   "restricciones_participacion": [
@@ -2415,6 +2498,10 @@ Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes
     "razon": "Por qué es difícil o fácil para una empresa mediana del sector",
     "recomendacion": "Participar solo|Participar en consorcio|Evaluar con cuidado|No recomendado",
     "score_base": 75,
+    "score_desglose": [
+      {"concepto": "Base", "puntos": 100},
+      {"concepto": "Descripción exacta de cada descuento o bonificación aplicada", "puntos": -15}
+    ],
     "faltas_graves": [
       "Descripción concisa de cada violación a la ley o principio que reduce el score (solo si existen)"
     ]
@@ -2457,6 +2544,13 @@ BONIFICACIONES:
 
 El score_base NUNCA puede ser mayor a 100 ni menor a 5.
 Redondea al entero más cercano.
+
+VERIFICACIÓN OBLIGATORIA DEL SCORE: el campo "score_desglose" debe listar la base (100),
+cada descuento y cada bonificación con sus puntos exactos según las tablas de arriba, y la
+suma de todos los puntos del desglose DEBE ser igual a score_base. Cada descuento del
+desglose debe corresponder a una alerta_fraude emitida o a un factor objetivo verificable.
+Si el desglose no cuadra con el score, corrígelo antes de responder. PROHIBIDO inventar
+descuentos que no estén en las tablas o descontar por requisitos exigentes pero legales.
 En "faltas_graves" incluye SOLO las irregularidades que descuentan 10+ puntos en total
 (indicadores reales de manipulación, no requisitos exigentes). Array vacío [] si no hay.
 """
@@ -4384,7 +4478,7 @@ async def guardar_perfil_empresa(request: Request):
             "especialidades", "obras_representativas", "patrimonio_neto",
             "plazo_maximo_dias", "alertas_whatsapp", "alertas_push",
             "umbral_monto_min", "umbral_monto_max", "rubros", "categorias_unspsc",
-            "email_empresa",
+            "email_empresa", "categorias_interes", "texto_libre_interes",
         }
         data = {k: v for k, v in data.items() if k in COLUMNAS_PERFIL}
 
