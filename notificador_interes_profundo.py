@@ -54,9 +54,12 @@ def _traer_usuarios_con_interes(supabase_admin):
     Si nadie tiene interés definido, devuelve [].
     """
     try:
+        # OPT-IN: solo usuarios que ACTIVARON el análisis automático desde la app.
+        # Nunca más comportamiento interno hardcodeado.
         resp = supabase_admin.table("perfiles_empresa") \
-            .select("user_id, categorias_interes, texto_libre_interes, alertas_email") \
+            .select("user_id, categorias_interes, texto_libre_interes, alertas_email, analisis_automatico") \
             .eq("alertas_email", True) \
+            .eq("analisis_automatico", True) \
             .execute()
     except Exception as e:
         print(f"⚠️ [interes_profundo] No se pudieron leer perfiles: {e}")
