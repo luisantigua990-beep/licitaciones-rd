@@ -1561,7 +1561,7 @@ async def solicitar_analisis_proceso(request: Request, codigo_proceso: str, back
         supabase_admin.table("analisis_pliego").upsert({
             "proceso_id": codigo_proceso,
             "estado": "pendiente"
-        }).execute()
+        }, on_conflict="proceso_id").execute()
 
         # Encolar con semáforo igual que el webhook
         async def _analizar_con_semaforo():
@@ -3586,79 +3586,90 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
         
         # 1. TOMAR EL LOCK ATÓMICO — solo UNA instancia puede pasar
         #
-        # Estrategia:
-        #   a) Intentar INSERT con ON CONFLICT (proceso_id) DO UPDATE solo si estado no es
-        #      'procesando' ni 'completado'. Si la fila no existía, la crea. Si existía en
-        #      estado pendiente/error, la toma. Si estaba procesando/completado, NO actualiza
-        #      y devuelve la fila existente para que podamos detectarlo.
-        #
-        # Usamos SQL crudo via RPC para tener control total del ON CONFLICT.
-        from datetime import timezone as _tz2
-        _ahora = datetime.now(_tz2.utc).isoformat()
-        sql_lock = f"""
-            INSERT INTO analisis_pliego (proceso_id, estado, creado_en, actualizado_en)
-            VALUES ('{proceso_id}', 'procesando', '{_ahora}', '{_ahora}')
-            ON CONFLICT (proceso_id) DO UPDATE
-                SET estado = 'procesando', actualizado_en = '{_ahora}'
-                WHERE analisis_pliego.estado NOT IN ('procesando', 'completado')
-            RETURNING estado;
-        """
+        # Lock atómico real via RPC tomar_lock_analisis (requiere UNIQUE en proceso_id).
+        # Devuelve 'lock_tomado' o 'ocupado:<estado>'.
         try:
-            result_lock = supabase_admin.rpc("ejecutar_sql_lock", {"query": sql_lock}).execute()
-        except Exception:
-            result_lock = None
-
-        # Fallback si el RPC no existe: usar UPDATE condicional + verificación
-        # INSERT inicial si no hay fila, luego UPDATE condicional
-        _fila_existente = supabase_admin.table("analisis_pliego") \
-            .select("estado") \
-            .eq("proceso_id", proceso_id) \
-            .execute()
-
-        if not _fila_existente.data:
-            # No hay fila — crearla en estado procesando (primera vez)
-            supabase_admin.table("analisis_pliego").insert({
-                "proceso_id": proceso_id,
-                "estado": "procesando"
+            r_lock = supabase_admin.rpc("tomar_lock_analisis", {
+                "p_proceso_id": proceso_id,
+                "p_forzar": bool(forzar)
             }).execute()
-        else:
-            _estado_previo = _fila_existente.data[0].get("estado", "")
-            # sin_pliego = documento OLE2/.doc o formato no analizable — no reintentar jamás
-            if _estado_previo == "sin_pliego":
-                print(f"🚫 {proceso_id} está marcado como sin_pliego — abortando análisis")
-                return
-            if _estado_previo in ("procesando", "completado"):
-                # Si es forzar, ignorar cache y tomar el lock directamente
-                if forzar and _estado_previo == "completado":
-                    print(f"🔄 Forzando re-análisis de {proceso_id} (estado previo: completado)")
-                    supabase_admin.table("analisis_pliego").update({
-                        "estado": "procesando"
-                    }).eq("proceso_id", proceso_id).execute()
-                elif _estado_previo == "procesando":
-                    print(f"🔒 {proceso_id} ya procesando — saliendo para evitar duplicado")
+            lock_result = (r_lock.data or "") if isinstance(r_lock.data, str) else str(r_lock.data or "")
+        except Exception as e_lock:
+            print(f"⚠️ RPC tomar_lock_analisis falló ({e_lock}) — usando fallback condicional")
+            lock_result = None
+
+        if lock_result is not None:
+            if lock_result != "lock_tomado":
+                estado_previo = lock_result.split(":", 1)[1] if ":" in lock_result else ""
+                if estado_previo == "sin_pliego":
+                    print(f"🚫 {proceso_id} está marcado como sin_pliego — abortando análisis")
                     return
+                if estado_previo == "completado" and enviar_email:
+                    print(f"⚡ Cache hit tardío — {proceso_id} ya completado, enviando email.")
+                    _full = supabase_admin.table("analisis_pliego") \
+                        .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, tipo_proceso") \
+                        .eq("proceso_id", proceso_id) \
+                        .execute()
+                    _analisis_cacheado = _full.data[0] if _full.data else {}
+                    if _analisis_cacheado.get("checklist_categorizado") and not _analisis_cacheado.get("checklist_documentos"):
+                        _analisis_cacheado["checklist_documentos"] = _analisis_cacheado["checklist_categorizado"]
+                    enviar_email_analisis(proceso_id, _analisis_cacheado)
                 else:
-                    if _estado_previo == "completado" and enviar_email:
-                        print(f"⚡ Cache hit tardío — {proceso_id} ya completado, enviando email.")
-                        _full = supabase_admin.table("analisis_pliego") \
-                            .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, tipo_proceso") \
-                            .eq("proceso_id", proceso_id) \
-                            .execute()
-                        _analisis_cacheado = _full.data[0] if _full.data else {}
-                        if _analisis_cacheado.get("checklist_categorizado") and not _analisis_cacheado.get("checklist_documentos"):
-                            _analisis_cacheado["checklist_documentos"] = _analisis_cacheado["checklist_categorizado"]
-                        enviar_email_analisis(proceso_id, _analisis_cacheado)
-                    else:
-                        print(f"🔒 {proceso_id} ya en estado {_estado_previo!r} — saliendo para evitar duplicado")
+                    print(f"🔒 {proceso_id} ocupado (estado: {estado_previo!r}) — saliendo para evitar duplicado")
+                return
+            # lock_tomado → continuar con el análisis
+        else:
+            # ── FALLBACK (solo si el RPC no está disponible) ──────────────
+            _fila_existente = supabase_admin.table("analisis_pliego") \
+                .select("estado") \
+                .eq("proceso_id", proceso_id) \
+                .execute()
+
+            if not _fila_existente.data:
+                try:
+                    supabase_admin.table("analisis_pliego").insert({
+                        "proceso_id": proceso_id,
+                        "estado": "procesando"
+                    }).execute()
+                except Exception:
+                    # Otra instancia insertó primero (constraint único) — salir
+                    print(f"🔒 Race en insert — {proceso_id} tomado por otra instancia, saliendo")
                     return
             else:
-                # Tomar el lock: UPDATE solo si nadie más lo tomó
-                _lock2 = supabase_admin.table("analisis_pliego").update({
-                    "estado": "procesando"
-                }).eq("proceso_id", proceso_id).not_.in_("estado", ["procesando", "completado"]).execute()
-                if not _lock2.data:
-                    print(f"🔒 Race condition — {proceso_id} tomado por otra instancia, saliendo")
+                _estado_previo = _fila_existente.data[0].get("estado", "")
+                if _estado_previo == "sin_pliego":
+                    print(f"🚫 {proceso_id} está marcado como sin_pliego — abortando análisis")
                     return
+                if _estado_previo in ("procesando", "completado"):
+                    if forzar and _estado_previo == "completado":
+                        print(f"🔄 Forzando re-análisis de {proceso_id} (estado previo: completado)")
+                        supabase_admin.table("analisis_pliego").update({
+                            "estado": "procesando"
+                        }).eq("proceso_id", proceso_id).execute()
+                    elif _estado_previo == "procesando":
+                        print(f"🔒 {proceso_id} ya procesando — saliendo para evitar duplicado")
+                        return
+                    else:
+                        if _estado_previo == "completado" and enviar_email:
+                            print(f"⚡ Cache hit tardío — {proceso_id} ya completado, enviando email.")
+                            _full = supabase_admin.table("analisis_pliego") \
+                                .select("estado, checklist_categorizado, resumen_ejecutivo, evaluacion_competitividad, alertas_fraude, plazos_clave, restricciones_participacion, requisitos_experiencia, requisitos_financieros, garantias_exigidas, personal_y_equipos, tipo_proceso") \
+                                .eq("proceso_id", proceso_id) \
+                                .execute()
+                            _analisis_cacheado = _full.data[0] if _full.data else {}
+                            if _analisis_cacheado.get("checklist_categorizado") and not _analisis_cacheado.get("checklist_documentos"):
+                                _analisis_cacheado["checklist_documentos"] = _analisis_cacheado["checklist_categorizado"]
+                            enviar_email_analisis(proceso_id, _analisis_cacheado)
+                        else:
+                            print(f"🔒 {proceso_id} ya en estado {_estado_previo!r} — saliendo para evitar duplicado")
+                        return
+                else:
+                    _lock2 = supabase_admin.table("analisis_pliego").update({
+                        "estado": "procesando"
+                    }).eq("proceso_id", proceso_id).not_.in_("estado", ["procesando", "completado"]).execute()
+                    if not _lock2.data:
+                        print(f"🔒 Race condition — {proceso_id} tomado por otra instancia, saliendo")
+                        return
 
         # 2. SCRAPING Y EXTRACCIÓN DEL PDF
         # Si hay url_override (enmienda), usarla directamente sin buscar el pliego
@@ -3812,7 +3823,7 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
                         supabase_admin.table("analisis_pliego").upsert({
                             "proceso_id": proceso_id,
                             "estado": "pendiente_analisis"
-                        }).execute()
+                        }, on_conflict="proceso_id").execute()
                         print(f"⚠️ Gemini 503 persistente — {proceso_id} marcado como pendiente_analisis")
                         return
                 else:
@@ -3893,7 +3904,7 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
         supabase_admin.table("analisis_pliego").upsert({
             "proceso_id": proceso_id,
             "estado": estado_error
-        }).execute()
+        }, on_conflict="proceso_id").execute()
         if estado_error == "sin_pliego":
             print(f"🚫 {proceso_id} marcado como sin_pliego (OLE2/.doc — no reintentable)")
 
