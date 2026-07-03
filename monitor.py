@@ -476,6 +476,121 @@ def enriquecer_articulos_faltantes():
 # NOTIFICACIONES
 # ============================================
 
+# ============================================
+# FILTRO DE INTERESES PARA PUSH
+# ============================================
+# Regla de oro (igual que emails):
+#   - Usuario SIN filtros definidos en su perfil  -> recibe TODO por push.
+#   - Usuario CON filtros -> solo recibe push de lo que matchea.
+# Los filtros viven en perfiles_empresa: rubros, categorias_interes (amigables),
+# categorias_unspsc (codigos), texto_libre_interes, provincias, umbrales de monto.
+
+def _cargar_perfiles_por_usuario():
+    """Devuelve {user_id: perfil} con los campos de filtro de notificaciones."""
+    try:
+        resp = supabase_admin.table("perfiles_empresa").select(
+            "user_id, rubros, categorias_unspsc, categorias_interes, texto_libre_interes, "
+            "provincias, umbral_monto_min, umbral_monto_max, monto_minimo, monto_maximo, alertas_push"
+        ).execute()
+        return {str(p["user_id"]): p for p in (resp.data or []) if p.get("user_id")}
+    except Exception as e:
+        print(f"⚠️ No se pudieron leer perfiles para filtro push: {e}")
+        return {}
+
+
+def _codigos_unspsc_perfil(perfil) -> set:
+    """Extrae codigos UNSPSC del perfil (tolera lista de strings o de dicts)."""
+    out = set()
+    for item in (perfil.get("categorias_unspsc") or []):
+        codigo = item.get("codigo") if isinstance(item, dict) else item
+        if codigo:
+            out.add(str(codigo).strip())
+    return out
+
+
+def _perfil_tiene_filtros(perfil) -> bool:
+    return bool(
+        (perfil.get("rubros") or [])
+        or _codigos_unspsc_perfil(perfil)
+        or (perfil.get("categorias_interes") or [])
+        or (perfil.get("texto_libre_interes") or "").strip()
+        or (perfil.get("provincias") or [])
+        or perfil.get("umbral_monto_min") or perfil.get("umbral_monto_max")
+        or perfil.get("monto_minimo") or perfil.get("monto_maximo")
+    )
+
+
+def _perfil_matchea_proceso(perfil, proceso, codigos_proceso, proceso_cats, libres_match) -> bool:
+    """
+    Provincia y monto actuan como restricciones (AND).
+    La dimension tematica (rubros / categorias amigables / UNSPSC / texto libre)
+    matchea con OR entre ellas. Si el usuario no definio dimension tematica,
+    basta con pasar provincia y monto.
+    """
+    # ── Provincia (AND) ──
+    provs = [str(x).strip().lower() for x in (perfil.get("provincias") or [])]
+    prov_proc = (proceso.get("provincia") or "").strip().lower()
+    if provs and prov_proc and prov_proc not in provs:
+        return False
+
+    # ── Monto (AND) ──
+    monto = proceso.get("monto_estimado")
+    try:
+        monto = float(monto) if monto is not None else None
+    except (TypeError, ValueError):
+        monto = None
+    mmin = perfil.get("umbral_monto_min") or perfil.get("monto_minimo")
+    mmax = perfil.get("umbral_monto_max") or perfil.get("monto_maximo")
+    if monto is not None:
+        if mmin and monto < float(mmin):
+            return False
+        if mmax and monto > float(mmax):
+            return False
+
+    # ── Dimension tematica (OR interno) ──
+    rubros      = [str(r).strip().lower() for r in (perfil.get("rubros") or [])]
+    cats_perfil = set(perfil.get("categorias_interes") or [])
+    cods_perfil = _codigos_unspsc_perfil(perfil)
+    libre       = (perfil.get("texto_libre_interes") or "").strip()
+
+    if not (rubros or cats_perfil or cods_perfil or libre):
+        return True  # solo filtro por monto/provincia y ya paso
+
+    objeto = (proceso.get("objeto_proceso") or "").strip().lower()
+    if rubros and objeto and objeto in rubros:
+        return True
+    if cats_perfil and (cats_perfil & proceso_cats):
+        return True
+    if cods_perfil and codigos_proceso:
+        for cp in codigos_proceso:
+            for pref in cods_perfil:
+                if cp.startswith(pref):
+                    return True
+    if libre and libre in libres_match:
+        return True
+    return False
+
+
+def _articulos_de(codigo_proceso: str) -> list:
+    try:
+        r = supabase.table("articulos_proceso") \
+            .select("familia_unspsc, clase_unspsc, subclase_unspsc") \
+            .eq("codigo_proceso", codigo_proceso).execute()
+        return r.data or []
+    except Exception:
+        return []
+
+
+def _gemini_texto_simple(prompt: str) -> str:
+    """Wrapper minimo para el clasificador de texto libre."""
+    if not GEMINI_API_KEY:
+        return ""
+    from google import genai
+    cliente = genai.Client(api_key=GEMINI_API_KEY)
+    resp = cliente.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+    return (resp.text or "").strip()
+
+
 def notificar_procesos_nuevos(procesos_nuevos):
     if not procesos_nuevos:
         return
@@ -483,6 +598,11 @@ def notificar_procesos_nuevos(procesos_nuevos):
     try:
         from notifications import enviar_notificacion
         from pywebpush import WebPushException
+        try:
+            from clasificador_interes import clasificar_proceso, evaluar_texto_libre, _familias_del_proceso
+        except Exception as e:
+            clasificar_proceso = None
+            print(f"⚠️ clasificador_interes no disponible, push sin filtro: {e}")
 
         result = supabase_admin.table("user_subscriptions")            .select("*")            .eq("active", True)            .execute()
 
@@ -491,11 +611,21 @@ def notificar_procesos_nuevos(procesos_nuevos):
             print("ℹ️  Sin suscriptores activos para notificar")
             return
 
-        print(f"📋 {len(suscripciones)} suscriptores activos, {len(procesos_nuevos)} proceso(s) nuevo(s)")
+        perfiles = _cargar_perfiles_por_usuario()
+
+        print(f"📋 {len(suscripciones)} suscriptores activos, {len(procesos_nuevos)} proceso(s) nuevo(s), {len(perfiles)} perfil(es)")
 
         APP_URL = os.getenv("APP_URL", "https://app.licitacionlab.com")
         notificaciones_enviadas = 0
+        filtradas = 0
         errores = 0
+
+        # Textos libres distintos de usuarios suscritos (para 1 sola llamada Gemini por proceso)
+        libres_usuarios = set()
+        for sub in suscripciones:
+            p = perfiles.get(str(sub.get("user_id") or ""))
+            if p and (p.get("texto_libre_interes") or "").strip():
+                libres_usuarios.add(p["texto_libre_interes"].strip())
 
         for proceso in procesos_nuevos:
             titulo_proceso = proceso.get("titulo", "Nueva licitación")[:70]
@@ -505,7 +635,31 @@ def notificar_procesos_nuevos(procesos_nuevos):
             codigo         = proceso.get("codigo_proceso", "")
             url_proceso    = f"{APP_URL}?proceso={codigo}"
 
+            # Clasificacion del proceso: 1 sola vez, sirve para todos los usuarios
+            proceso_cats, codigos_proceso, libres_match = set(), set(), set()
+            if clasificar_proceso is not None:
+                try:
+                    articulos = _articulos_de(codigo)
+                    codigos_proceso = _familias_del_proceso(articulos)
+                    proceso_cats = clasificar_proceso(proceso, articulos)
+                    if libres_usuarios:
+                        libres_match = evaluar_texto_libre(proceso, list(libres_usuarios), _gemini_texto_simple)
+                except Exception as e:
+                    print(f"⚠️ Error clasificando {codigo}, push sin filtro para este proceso: {e}")
+
             for sub in suscripciones:
+                # ── FILTRO DE INTERESES ──
+                perfil = perfiles.get(str(sub.get("user_id") or ""))
+                if perfil:
+                    if perfil.get("alertas_push") is False:
+                        filtradas += 1
+                        continue
+                    if _perfil_tiene_filtros(perfil) and clasificar_proceso is not None:
+                        if not _perfil_matchea_proceso(perfil, proceso, codigos_proceso, proceso_cats, libres_match):
+                            filtradas += 1
+                            continue
+                # Sin perfil o sin filtros definidos -> recibe todo (regla de oro)
+
                 subscription_info = {
                     "endpoint": sub["endpoint"],
                     "keys": {"auth": sub["auth"], "p256dh": sub["p256dh"]}
@@ -535,7 +689,7 @@ def notificar_procesos_nuevos(procesos_nuevos):
                     errores += 1
                     print(f"❌ Error push inesperado: {type(e).__name__}: {str(e)[:120]}")
 
-        print(f"🔔 Push: {notificaciones_enviadas} enviadas, {errores} errores")
+        print(f"🔔 Push: {notificaciones_enviadas} enviadas, {filtradas} filtradas por intereses, {errores} errores")
 
     except Exception as e:
         import traceback
