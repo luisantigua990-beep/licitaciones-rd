@@ -3606,12 +3606,26 @@ html { background: var(--color-bg, #0A0A0A); }
         </label>
       </div>
 
-      <div class="section-label">Familias UNSPSC específicas</div>
+      <div class="section-label">Categorías de interés</div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">Elige tus rubros de negocio (ej. farmacia, construcción, catering). Solo te notificaremos procesos de estas categorías.</p>
+      <div class="rubros-grid" id="categorias-interes-grid" style="grid-template-columns:repeat(2,1fr)"></div>
+
+      <div class="section-label" style="margin-top:14px">Otro interés (texto libre)</div>
+      <input class="filter-input" type="text" id="interes-texto-libre" placeholder='Ej: "plantas de tratamiento de agua" o "toldos y carpas"' style="width:100%" onchange="guardarIntereses()">
+
+      <div class="section-label" style="margin-top:14px">Rango de monto (RD$, opcional)</div>
+      <div style="display:flex;gap:8px">
+        <input class="filter-input" type="number" id="interes-monto-min" placeholder="Mínimo" style="width:50%" onchange="guardarIntereses()">
+        <input class="filter-input" type="number" id="interes-monto-max" placeholder="Máximo" style="width:50%" onchange="guardarIntereses()">
+      </div>
+
+      <div class="section-label" style="margin-top:14px">Familias UNSPSC específicas</div>
       <div style="position:relative;margin-bottom:4px">
         <input class="filter-input" type="text" id="perfil-unspsc-text" placeholder="Buscar por nombre o código (ej: 72 o construcción)..." oninput="buscarUnspscPerfil()" autocomplete="off" style="width:100%">
         <div class="unspsc-dropdown" id="perfil-unspsc-dropdown"></div>
       </div>
       <div class="familias-tags" id="familias-seleccionadas"></div>
+      <p style="font-size:11px;color:var(--muted);margin:8px 0 0">Sin filtros seleccionados recibirás <strong>todos</strong> los procesos nuevos. Con filtros, solo los que coincidan (aplica a push y email en todos tus dispositivos).</p>
       <div class="intereses-status" id="intereses-status"></div>
     </div>
 
@@ -5723,29 +5737,116 @@ async function guardarNombrePerfil() {
   }
 }
 
+// Debe coincidir con las claves de CATEGORIAS en clasificador_interes.py (backend)
+const CATEGORIAS_INTERES = [
+  ['salud_farmacia',          'Salud, farmacia y laboratorio'],
+  ['construccion_obras',      'Construcción y obras'],
+  ['vehiculos_taller',        'Vehículos, talleres y lubricantes'],
+  ['combustibles',            'Combustibles'],
+  ['tecnologia',              'Tecnología e informática'],
+  ['alimentos',               'Alimentos y catering'],
+  ['mobiliario',              'Mobiliario y eq. de oficina'],
+  ['uniformes_textil',        'Uniformes y textiles'],
+  ['limpieza',                'Limpieza e higiene'],
+  ['papeleria',               'Papelería y útiles'],
+  ['servicios_profesionales', 'Serv. profesionales y consultoría'],
+  ['seguridad',               'Seguridad y vigilancia'],
+  ['energia_electricidad',    'Energía y electricidad'],
+];
+let categoriasInteresSel = JSON.parse(localStorage.getItem('categorias_interes') || '[]');
+
+function renderCategoriasInteres() {
+  const grid = document.getElementById('categorias-interes-grid');
+  if (!grid) return;
+  grid.innerHTML = CATEGORIAS_INTERES.map(([clave, nombre]) => `
+    <label class="rubro-chip" style="font-size:12px">
+      <input type="checkbox" id="cat-${clave}" value="${clave}" ${categoriasInteresSel.includes(clave)?'checked':''} onchange="toggleCategoriaInteres('${clave}')">
+      ${nombre}
+    </label>`).join('');
+}
+
+function toggleCategoriaInteres(clave) {
+  const el = document.getElementById(`cat-${clave}`);
+  if (el?.checked) { if (!categoriasInteresSel.includes(clave)) categoriasInteresSel.push(clave); }
+  else { categoriasInteresSel = categoriasInteresSel.filter(c => c !== clave); }
+  localStorage.setItem('categorias_interes', JSON.stringify(categoriasInteresSel));
+  guardarIntereses();
+}
+
 async function guardarIntereses() {
   const rubros = ['obras','bienes','servicios']
     .filter(r => document.getElementById(`interes-${r}`)?.checked)
     .map(r => r.charAt(0).toUpperCase()+r.slice(1));
-  const familias = familiasPerfil.map(f => f.codigo);
+  const familias   = familiasPerfil.map(f => ({codigo: f.codigo, nombre: f.nombre}));
+  const textoLibre = document.getElementById('interes-texto-libre')?.value.trim() || '';
+  const montoMinEl = document.getElementById('interes-monto-min')?.value;
+  const montoMaxEl = document.getElementById('interes-monto-max')?.value;
+  const montoMin   = montoMinEl ? parseFloat(montoMinEl) : null;
+  const montoMax   = montoMaxEl ? parseFloat(montoMaxEl) : null;
+
   localStorage.setItem('rubros_interes', JSON.stringify(rubros));
-  if (pushSubscription) {
+  localStorage.setItem('categorias_interes', JSON.stringify(categoriasInteresSel));
+
+  try {
     await fetch(`${API}/api/notificaciones/intereses`, {
       method:'PUT', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({endpoint: pushSubscription.endpoint, rubros, familias})
+      body: JSON.stringify({
+        endpoint: pushSubscription?.endpoint || null,
+        user_id: currentUser?.id || null,
+        rubros, familias,
+        categorias_interes: categoriasInteresSel,
+        texto_libre_interes: textoLibre,
+        umbral_monto_min: montoMin,
+        umbral_monto_max: montoMax
+      })
     });
+    const st = document.getElementById('intereses-status');
+    if(st){ st.textContent='Preferencias guardadas'; setTimeout(()=>{st.textContent=''},2000); }
+  } catch(e) {
+    const st = document.getElementById('intereses-status');
+    if(st){ st.textContent='Error al guardar — revisa tu conexión'; setTimeout(()=>{st.textContent=''},3000); }
   }
-  const st = document.getElementById('intereses-status');
-  if(st){ st.textContent='Preferencias guardadas'; setTimeout(()=>{st.textContent=''},2000); }
 }
 
-function cargarInteresesGuardados() {
+async function cargarInteresesGuardados() {
+  renderCategoriasInteres();
+  renderFamiliasPerfil();
+
+  // Fuente de verdad: el perfil en el servidor (sincroniza entre dispositivos)
+  if (currentUser?.id) {
+    try {
+      const res  = await fetch(`${API}/api/notificaciones/intereses?user_id=${currentUser.id}`);
+      const data = await res.json();
+      const p = data?.intereses;
+      if (p) {
+        (p.rubros || []).forEach(r => {
+          const el = document.getElementById(`interes-${String(r).toLowerCase()}`);
+          if (el) el.checked = true;
+        });
+        categoriasInteresSel = p.categorias_interes || [];
+        localStorage.setItem('categorias_interes', JSON.stringify(categoriasInteresSel));
+        renderCategoriasInteres();
+        const tl = document.getElementById('interes-texto-libre');
+        if (tl) tl.value = p.texto_libre_interes || '';
+        const mn = document.getElementById('interes-monto-min');
+        if (mn && p.umbral_monto_min != null) mn.value = p.umbral_monto_min;
+        const mx = document.getElementById('interes-monto-max');
+        if (mx && p.umbral_monto_max != null) mx.value = p.umbral_monto_max;
+        if (Array.isArray(p.categorias_unspsc) && p.categorias_unspsc.length) {
+          familiasPerfil = p.categorias_unspsc.map(c =>
+            typeof c === 'object' ? {codigo:c.codigo, nombre:c.nombre||c.codigo} : {codigo:String(c), nombre:String(c)});
+          localStorage.setItem('familias_interes', JSON.stringify(familiasPerfil));
+          renderFamiliasPerfil();
+        }
+        return;
+      }
+    } catch(e) { /* fallback localStorage abajo */ }
+  }
   const rubros = JSON.parse(localStorage.getItem('rubros_interes') || '[]');
   rubros.forEach(r => {
     const el = document.getElementById(`interes-${r.toLowerCase()}`);
     if (el) el.checked = true;
   });
-  renderFamiliasPerfil();
 }
 
 // ── DETALLE ──
