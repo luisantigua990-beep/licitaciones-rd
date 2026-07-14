@@ -219,7 +219,7 @@ Firma: Lonny Antigua | LicitacionLab | {APP_URL}"""
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}",
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}",
             json={"contents": [{"parts": [{"text": prompt}]}]}
         )
         resp.raise_for_status()
