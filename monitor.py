@@ -587,7 +587,7 @@ def _gemini_texto_simple(prompt: str) -> str:
         return ""
     from google import genai
     cliente = genai.Client(api_key=GEMINI_API_KEY)
-    resp = cliente.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+    resp = cliente.models.generate_content(model="gemini-2.5-flash", contents=prompt)
     return (resp.text or "").strip()
 
 
@@ -848,7 +848,7 @@ IMPACTO: [Alto/Medio/Bajo] — [Explicación breve de cómo afecta a los ofertan
 ACCIÓN REQUERIDA: [Qué debe hacer el ofertante con esta información]
 """
         resp = cliente.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=prompt
         )
         return resp.text.strip()
