@@ -82,6 +82,40 @@ def _email_de_usuario(user_id: str) -> str | None:
         return None
 
 
+# Familias UNSPSC (4 dígitos) asociadas a OBRAS/construcción
+_FAMS_OBRAS = {
+    "7210", "7211", "7212", "7213", "7214", "7215",  # construcción y mantenimiento
+    "3010", "3011", "3012", "3013", "3014", "3015", "3016", "3017", "3018", "3019",
+    "3022", "3026",  # materiales/estructuras
+    "8110",  # ingeniería profesional
+    "9512",  # obras civiles / terrenos
+}
+
+_KEYWORDS_RUBRO = {
+    "obras": ["construc", "obra", "remozamiento", "readecuaci", "adecuaci", "rehabilitaci",
+              "reconstrucci", "asfalt", "pavimenta", "drenaje", "alcantarill", "acueducto",
+              "edificaci", "infraestructura", "terminaci", "ampliaci", "verja", "muro",
+              "techado", "cancha", "polideportivo", "puente", "camino", "carretera"],
+    "servicios": ["servicio", "consultor", "mantenimiento", "alquiler", "contrataci",
+                  "supervis", "fiscalizaci", "transporte", "seguridad", "limpieza"],
+    "bienes": ["adquisici", "compra", "suministro", "materiales", "equipos"],
+}
+
+
+def _rubro_del_proceso(proceso: dict, fams_proceso: set | None) -> str:
+    """Infiere el rubro del proceso: 'obras', 'servicios' o 'bienes'."""
+    if fams_proceso and (fams_proceso & _FAMS_OBRAS):
+        return "obras"
+    texto = f"{proceso.get('titulo','')} {proceso.get('descripcion','')}".lower()
+    for kw in _KEYWORDS_RUBRO["obras"]:
+        if kw in texto:
+            return "obras"
+    for kw in _KEYWORDS_RUBRO["servicios"]:
+        if kw in texto:
+            return "servicios"
+    return "bienes"
+
+
 def encontrar_interesados(proceso: dict) -> list[dict]:
     """Devuelve [{email, razon_social, user_id}] de usuarios que matchean."""
     try:
@@ -124,14 +158,24 @@ def encontrar_interesados(proceso: dict) -> list[dict]:
             if mmax and monto > float(mmax):
                 continue
 
-        # ── Categorías UNSPSC (familia, 4 dígitos) ──
+        # ── Categorías UNSPSC (familia, 4 dígitos) — FILTRO ESTRICTO ──
         fams_perfil = _normalizar_codigos_unspsc(p.get("categorias_unspsc"))
-        if fams_perfil:
+        rubros_perfil = [str(r).strip().lower() for r in (p.get("rubros") or [])]
+
+        if fams_perfil or rubros_perfil:
             if fams_proceso is None:
                 fams_proceso = _obtener_unspsc_proceso(proceso["codigo_proceso"])
-            if fams_proceso and not (fams_perfil & fams_proceso):
+
+            match_unspsc = bool(fams_perfil and fams_proceso and (fams_perfil & fams_proceso))
+
+            # Rubro del proceso (obras / servicios / bienes) por UNSPSC o keywords
+            rubro_proc = _rubro_del_proceso(proceso, fams_proceso)
+            match_rubro = rubro_proc in rubros_perfil
+
+            # El usuario definió intereses: solo enviamos si hay match real.
+            # Sin artículos UNSPSC en el proceso, decide el rubro por keywords.
+            if not (match_unspsc or match_rubro):
                 continue
-            # Si el proceso no tiene artículos aún, no descartamos por UNSPSC
 
         email = (p.get("email_empresa") or "").strip() or _email_de_usuario(p["user_id"])
         if not email:
@@ -210,7 +254,7 @@ QUÉ SE LICITA: [1-2 oraciones claras]
 PARA QUIÉN ES IDEAL: [tipo de empresa que debería participar]
 DATO CLAVE: [lo más importante a saber: requisito, plazo corto, monto atractivo, etc.]
 """
-        resp = cliente.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        resp = cliente.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         texto = (resp.text or "").strip()
         return texto if texto else fallback
     except Exception as e:
