@@ -1371,7 +1371,7 @@ Top empresas que ganan este tipo de proceso:
 
 Análisis (4 oraciones, en español, sin markdown, sin asteriscos):"""
                 resp = cliente_gemini.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model="gemini-2.5-flash",
                     contents=prompt
                 )
                 narrativa = resp.text.strip()
