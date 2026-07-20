@@ -388,17 +388,17 @@ def _generar_imagen_portada_edu(titulo: str, subtitulo: str, categoria: str) -> 
         draw.text((x, y), linea, font=_font(F_MED, 36), fill=VERDE_TEXTO)
         y += 50
 
-    # Indicador DESLIZA con flecha
+    # Indicador DESLIZA con flecha (mas grande para mejor lectura)
     desliza = "DESLIZA  ▶"
-    bbox = draw.textbbox((0, 0), desliza, font=_font(F_BOLD, 30))
+    bbox = draw.textbbox((0, 0), desliza, font=_font(F_BOLD, 46))
     x_d = (W - (bbox[2] - bbox[0])) // 2
-    draw.text((x_d, int(H * 0.80) + 18), desliza, font=_font(F_BOLD, 30), fill=BLANCO)
+    draw.text((x_d, int(H * 0.80) + 4), desliza, font=_font(F_BOLD, 46), fill=BLANCO)
 
     # Logo LicitacionLab
     logo = "LicitacionLab"
     bbox = draw.textbbox((0, 0), logo, font=_font(F_BOLD, 32))
     x_l = (W - (bbox[2] - bbox[0])) // 2
-    draw.text((x_l, int(H * 0.80) + 62), logo, font=_font(F_BOLD, 32), fill=VERDE_CLARO)
+    draw.text((x_l, int(H * 0.80) + 68), logo, font=_font(F_BOLD, 32), fill=VERDE_CLARO)
 
     # Watermark EDU
     ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
