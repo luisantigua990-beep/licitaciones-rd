@@ -312,7 +312,7 @@ El caption debe:
 Responde SOLO en JSON:
 {{"titulo": "RESUMEN SEMANAL\\nLICITACIONES RD", "caption": "texto", "hashtags": "#licitaciones #construccionrd #dgcp #republicadominicana #licitacionlab"}}""",
 
-        "educativo": f"""Eres el social media manager de LicitacionLab, experto en licitaciones públicas de República Dominicana.
+        "educativo": f"""Eres consultor senior en compras públicas de República Dominicana con 15 años de experiencia práctica preparando ofertas, y el social media manager de LicitacionLab.
 
 Genera contenido educativo para un carrusel de Instagram sobre:
 TEMA: {datos_contexto.get('tema', 'Cómo participar en licitaciones públicas en RD')}
@@ -321,10 +321,19 @@ CATEGORÍA: {datos_contexto.get('categoria', 'general')}
 Decide cuántos puntos (entre 3 y 5) son necesarios para explicar bien el tema.
 Cada punto va en una imagen separada del carrusel.
 
-Reglas:
-- Lenguaje simple y directo para empresas dominicanas
-- Sin emojis en ningún campo
-- Cada punto debe ser autónomo y legible solo
+REGLAS DE PRECISIÓN (obligatorias):
+- El marco legal vigente es la Ley 47-25 de Compras y Contrataciones Públicas y su reglamento el Decreto 52-26. La Ley 340-06 fue derogada; NO la cites como vigente.
+- El órgano rector es la DGCP y el portal transaccional es el Portal Transaccional de Compras Dominicanas.
+- NO inventes números de artículos de ley, plazos en días, porcentajes de garantías ni montos de umbrales. Si no estás 100 por ciento seguro de una cifra exacta, expresa el concepto sin la cifra (por ejemplo "dentro del plazo que fije el pliego" en vez de un número inventado).
+- Términos correctos del proceso dominicano: RPE (Registro de Proveedores del Estado), Sobre A (oferta técnica) y Sobre B (oferta económica), pliego de condiciones, enmiendas, adendas, garantía de seriedad de la oferta, garantía de fiel cumplimiento, adjudicación, acto administrativo.
+- Todo lo que afirmes debe ser verificable en la práctica real de las licitaciones dominicanas.
+
+REGLAS DE INTERÉS:
+- Cada punto debe dar un dato accionable o un error común que cometen las empresas, no generalidades obvias.
+- Escribe como quien ya perdió y ganó licitaciones: concreto, directo, con consecuencia práctica ("si no haces X, te descalifican por Y").
+- Lenguaje simple para empresas dominicanas, sin tecnicismos innecesarios.
+- Sin emojis en ningún campo.
+- Cada punto debe ser autónomo y legible solo.
 
 Responde SOLO en JSON válido (sin backticks ni texto extra):
 {{
@@ -337,7 +346,25 @@ Responde SOLO en JSON válido (sin backticks ni texto extra):
   ],
   "caption": "Caption corto para Instagram: empieza con TIP LICITADOR: o SABIAS QUE, resume el tema, menciona LicitacionLab, sin emojis, máx 80 palabras",
   "hashtags": "#tiplicitador #licitaciones #dgcp #republicadominicana #licitacionlab #construccion"
-}}"""
+}}""",
+
+        "tips": f"""Eres consultor senior en compras públicas de República Dominicana con 15 años preparando ofertas ganadoras, y el social media manager de LicitacionLab.
+
+Genera un post de Instagram con 3 trucos prácticos y poco conocidos para ganar licitaciones públicas en RD.
+
+REGLAS DE PRECISIÓN (obligatorias):
+- Marco legal vigente: Ley 47-25 y Decreto 52-26. NO cites la Ley 340-06 como vigente.
+- NO inventes números de artículos, plazos exactos, porcentajes ni montos. Si no estás seguro de una cifra, expresa el concepto sin la cifra.
+- Usa términos reales del proceso dominicano: RPE, Sobre A, Sobre B, pliego de condiciones, enmiendas, garantías, subsanación.
+
+REGLAS DE CONTENIDO:
+- Los 3 trucos deben ser tácticos y específicos, del tipo que un consultor cobra por decir: errores que descalifican, cómo leer el pliego, qué revisar antes de ofertar, cómo prepararse para la subsanación, cómo detectar oportunidades antes que la competencia.
+- Nada de consejos genéricos tipo "prepárate bien" o "lee los requisitos".
+- Cada truco: título corto y explicación de 1-2 oraciones con la consecuencia práctica.
+- Sin emojis en ningún campo.
+
+Responde SOLO en JSON válido (sin backticks ni texto extra):
+{{"titulo": "3 TRUCOS\\nPARA LICITAR", "caption": "Caption que empieza con TRUCOS DEL LICITADOR: seguido de los 3 trucos numerados (1. 2. 3.) cada uno con su explicación breve, cierra mencionando que LicitacionLab detecta oportunidades automáticamente y CTA Regístrate gratis en https://app.licitacionlab.com/ — sin emojis, máximo 140 palabras", "hashtags": "#trucoslicitador #licitaciones #dgcp #republicadominicana #licitacionlab #construccion"}}"""
     }
 
     mensaje = client.messages.create(
@@ -604,6 +631,13 @@ def generar_imagen_post(tipo: str, datos_caption: dict) -> str:
         sector         = ctx.get("sector_top", "Infraestructura")
         campo3_label   = "PERÍODO"
         campo3_valor   = datetime.now().strftime("%d/%m/%Y")
+    elif tipo == "tips":
+        subtitulo_inst = "TRUCOS DEL LICITADOR"
+        codigo         = datetime.now().strftime("%d/%m/%Y")
+        monto          = "—"
+        sector         = "Estrategia"
+        campo3_label   = "CATEGORÍA"
+        campo3_valor   = "Trucos"
     else:  # educativo
         categoria_edu  = (ctx.get("categoria") or "general").upper()
         subtitulo_inst = "EDUCACIÓN · LICITACIONES RD"
@@ -900,6 +934,13 @@ def obtener_contexto(tipo: str) -> dict:
             "_codigo_proceso": None,
         }
 
+    elif tipo == "tips":
+        return {
+            "tema":      "Trucos prácticos para licitar",
+            "categoria": "trucos",
+            "_codigo_proceso": None,
+        }
+
     else:
         # ── EDUCATIVO: obtener tema real desde Supabase ──────────────────
         try:
@@ -1025,7 +1066,7 @@ async def generar_posts_sociales(
         raise HTTPException(status_code=401, detail="No autorizado")
 
     cantidad = max(1, min(req.cantidad, 3))
-    tipos_disponibles = ["licitaciones_activas", "analisis_semanal", "educativo"]
+    tipos_disponibles = ["licitaciones_activas", "analisis_semanal", "educativo", "tips"]
 
     if req.tipo_contenido == "rotativo":
         dia = datetime.now().weekday()
