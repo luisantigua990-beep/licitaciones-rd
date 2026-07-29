@@ -2468,6 +2468,42 @@ TEST DE PROPORCIONALIDAD para experiencia (aplícalo antes de decidir si es aler
     resultado ("ganará", "adjudicación segura"). El veredicto surge de los datos del
     pliego, nunca de opinión.
 
+12. CRITERIOS DE EVALUACIÓN — MATRIZ DE PUNTUACIÓN (extrae con máxima fidelidad):
+    Casi todos los pliegos incluyen una sección llamada "Criterios de Evaluación",
+    "Matriz de Evaluación", "Criterios de Calificación" o "Evaluación de Ofertas
+    Técnicas" con una TABLA que asigna puntos por cada requisito cumplido. DEBES
+    extraerla completa y textual.
+
+    Para CADA criterio de la tabla extrae:
+      • criterio      — nombre exacto según el pliego (ej: "Experiencia de la empresa")
+      • puntaje_maximo— puntos máximos que otorga ese criterio
+      • escala        — array con CADA nivel de la escala y sus puntos. Ejemplos del
+                        formato que verás en los pliegos y cómo capturarlo:
+                          "De 5 a 8 años: 10 puntos"      → {"condicion":"De 5 a 8 años","puntos":10}
+                          "Más de 8 años: 20 puntos"      → {"condicion":"Más de 8 años","puntos":20}
+                          "3 obras similares: 15 puntos"  → {"condicion":"3 obras similares","puntos":15}
+                          "Cumple / No cumple"            → {"condicion":"Cumple","puntos":<max>}
+                        Si el criterio es binario (cumple/no cumple) pon la escala con
+                        esos dos niveles. Si el pliego da una fórmula (ej: puntaje por
+                        precio), pon la fórmula textual como una sola condición.
+
+    Además extrae:
+      • metodologia          — cómo se evalúa (ej: "Cumple/No Cumple más puntuación
+                               técnica-económica 70/30")
+      • puntaje_minimo_tecnico — puntaje mínimo para pasar la evaluación técnica, si
+                               el pliego lo indica
+      • peso_tecnico / peso_economico — porcentajes si el pliego los define
+
+    REGLA ANTI-INVENTO: si el pliego NO trae matriz de puntuación (muchos procesos de
+    Comparación de Precios o Menor Cuantía evalúan solo Cumple/No Cumple), devuelve
+    criterios_evaluacion con "metodologia": "Cumple / No cumple — el pliego no
+    establece matriz de puntuación" y "criterios": []. JAMÁS inventes puntajes que
+    no aparezcan textualmente en el pliego. Los puntos deben ser números, no texto.
+
+    VERIFICACIÓN: la suma de los puntaje_maximo de todos los criterios debe dar el
+    total que indica el pliego (normalmente 100). Si tu extracción no suma eso,
+    revisa si omitiste algún criterio antes de responder.
+
 Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes ni después):
 {
   "tipo_proceso": "Obras|Bienes|Servicios|Consultoría",
@@ -2538,6 +2574,22 @@ Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes
     "legal": [{"documento": "Nombre exacto del documento", "es_subsanable": false, "nota": "Aclaraciones del pliego si las hay"}],
     "tecnica": [{"documento": "Nombre exacto del documento", "es_subsanable": false, "nota": ""}],
     "financiera": [{"documento": "Nombre exacto del documento", "es_subsanable": false, "nota": ""}]
+  },
+  "criterios_evaluacion": {
+    "metodologia": "Cómo se evalúan las ofertas según el pliego",
+    "peso_tecnico": "% de la oferta técnica o N/A",
+    "peso_economico": "% de la oferta económica o N/A",
+    "puntaje_minimo_tecnico": "Puntaje mínimo para pasar la técnica o N/A",
+    "criterios": [
+      {
+        "criterio": "Nombre exacto del criterio según el pliego",
+        "puntaje_maximo": 20,
+        "escala": [
+          {"condicion": "Nivel exacto según el pliego (ej: De 5 a 8 años)", "puntos": 10},
+          {"condicion": "Siguiente nivel (ej: Más de 8 años)", "puntos": 20}
+        ]
+      }
+    ]
   },
   "plazos_clave": {
     "visita_sitio": "DD/MM/YYYY HH:MM o N/A",
@@ -3435,6 +3487,78 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
 {paso_html}
 </table></div>"""
 
+    # Si el veredicto ya explica el análisis y la recomendación, la tarjeta de
+    # competitividad se limita a la puntuación — evita repetir lo mismo dos veces.
+    if veredicto_html:
+        razon_dif    = ""
+        recomendacion = ""
+
+    # ── Matriz de criterios de evaluación (email) ─────────    crit_ev = eval_comp.get("criterios_evaluacion") or {}
+    if isinstance(crit_ev, str):
+        try:
+            import json as _jc; crit_ev = _jc.loads(crit_ev)
+        except Exception:
+            crit_ev = {}
+    matriz_html = ""
+    if isinstance(crit_ev, dict):
+        meta_bits = []
+        for k, et in (("metodologia", "Metodología"), ("peso_tecnico", "Peso técnico"),
+                      ("peso_economico", "Peso económico"),
+                      ("puntaje_minimo_tecnico", "Mínimo técnico")):
+            v = crit_ev.get(k)
+            if v and str(v).strip().upper() not in ("N/A", "NA", ""):
+                meta_bits.append(f"<strong>{et}:</strong> {v}")
+        criterios_lst = crit_ev.get("criterios") or []
+        filas_m, total_m = "", 0
+        for c in criterios_lst:
+            if not isinstance(c, dict):
+                continue
+            try:
+                pm = float(c.get("puntaje_maximo") or 0); total_m += pm; pm_txt = f"{pm:g}"
+            except Exception:
+                pm_txt = str(c.get("puntaje_maximo") or "—")
+            escala = c.get("escala") or []
+            n = max(len(escala), 1)
+            for idx in range(n):
+                niv = escala[idx] if idx < len(escala) else {}
+                cond = niv.get("condicion", "Cumple / No cumple") if isinstance(niv, dict) else str(niv)
+                pts  = niv.get("puntos") if isinstance(niv, dict) else None
+                try:
+                    pts_txt = f"{float(pts):g}" if pts is not None else "—"
+                except Exception:
+                    pts_txt = str(pts)
+                celda_nombre = (f"<td rowspan='{n}' style='padding:7px 10px;font-size:12px;font-weight:bold;"
+                                f"color:#1e293b;border-bottom:1px solid #e5e7eb;vertical-align:top;'>{c.get('criterio','—')}</td>"
+                                ) if idx == 0 else ""
+                celda_max = (f"<td rowspan='{n}' style='padding:7px 10px;font-size:13px;font-weight:900;"
+                             f"color:#1565c0;text-align:center;border-bottom:1px solid #e5e7eb;vertical-align:middle;'>{pm_txt}</td>"
+                             ) if idx == 0 else ""
+                filas_m += (f"<tr>{celda_nombre}"
+                            f"<td style='padding:7px 10px;font-size:12px;color:#374151;border-bottom:1px solid #f3f4f6;'>{cond}</td>"
+                            f"<td style='padding:7px 10px;font-size:12px;font-weight:bold;color:#0f766e;text-align:center;border-bottom:1px solid #f3f4f6;'>{pts_txt}</td>"
+                            f"{celda_max}</tr>")
+        if filas_m:
+            total_row = (f"<tr style='background:#e3f2fd;'><td colspan='3' style='padding:8px 10px;font-size:12px;"
+                         f"font-weight:bold;color:#1e293b;'>PUNTAJE TOTAL</td>"
+                         f"<td style='padding:8px 10px;font-size:14px;font-weight:900;color:#1565c0;text-align:center;'>{total_m:g}</td></tr>"
+                         ) if total_m else ""
+            meta_html = (f"<p style='margin:0 0 8px;font-size:11px;color:#64748b;line-height:1.6;'>"
+                         f"{' · '.join(meta_bits)}</p>") if meta_bits else ""
+            matriz_html = (
+                f"<p style='margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;'>🎯 Criterios de evaluación y puntajes</p>"
+                f"{meta_html}"
+                f"<table width='100%' cellpadding='0' cellspacing='0' style='border:1px solid #bbdefb;border-radius:8px;overflow:hidden;border-collapse:collapse;'>"
+                f"<tr style='background:#1565c0;'>"
+                f"<th style='padding:7px 10px;font-size:11px;color:white;text-align:left;'>CRITERIO</th>"
+                f"<th style='padding:7px 10px;font-size:11px;color:white;text-align:left;'>ESCALA SEGÚN EL PLIEGO</th>"
+                f"<th style='padding:7px 10px;font-size:11px;color:white;text-align:center;'>PUNTOS</th>"
+                f"<th style='padding:7px 10px;font-size:11px;color:white;text-align:center;'>MÁX.</th></tr>"
+                f"{filas_m}{total_row}</table>")
+        elif meta_bits:
+            matriz_html = (f"<p style='margin:0 0 6px;font-size:13px;font-weight:bold;color:#1e293b;'>🎯 Criterios de evaluación</p>"
+                           f"<div style='background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;'>"
+                           f"<p style='margin:0;font-size:12px;color:#374151;line-height:1.6;'>{' · '.join(meta_bits)}</p></div>")
+
     # ── Plazos clave ──────────────────────────────────────
     plazos       = analisis.get("plazos_clave") or {}
     plazos_html  = ""
@@ -3632,6 +3756,8 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
   {'<tr><td style="padding:8px 28px;"><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><p style="margin:0;font-size:13px;font-weight:bold;color:#1e293b;">📊 Evaluación de competitividad</p><p style="margin:4px 0 0;font-size:12px;color:#64748b;">' + razon_dif + '</p></td><td style="text-align:right;vertical-align:top;">' + (f'<span style="background:{color_score};color:white;padding:6px 12px;border-radius:20px;font-size:18px;font-weight:900;">{score_base}/100</span><br>' if score_base is not None else '') + '<span style="background:' + color_dif + ';color:white;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:bold;">Dificultad: ' + dificultad + '</span><br><span style="font-size:11px;color:#64748b;display:block;margin-top:4px;">' + recomendacion + '</span></td></tr></table></div></td></tr>' if dificultad or score_base is not None else ''}
 
   {'<tr><td style="padding:4px 28px 8px;">' + veredicto_html + '</td></tr>' if veredicto_html else ''}
+
+  {'<tr><td style="padding:8px 28px;">' + matriz_html + '</td></tr>' if matriz_html else ''}
 
   {'<tr><td style="padding:8px 28px;"><div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;"><p style="margin:0 0 4px;font-size:14px;font-weight:800;color:#991b1b;">🚨 Irregularidades detectadas en este pliego</p><p style="margin:0 0 8px;font-size:11px;color:#9ca3af;">Cada alerta está citada con el artículo de la Ley 47-25 o Decreto 52-26 que estaría siendo vulnerado. Presunción de legalidad — verifique antes de impugnar.</p><table width="100%" style="border:1px solid #fee2e2;border-radius:8px;overflow:hidden;background:white;" cellpadding="0" cellspacing="0">' + alertas_html + '</table></div></td></tr>' if alertas_html else '<tr><td style="padding:8px 28px;"><div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:10px 14px;border-radius:8px;font-size:13px;color:#166534;">✅ Sin irregularidades detectadas bajo el marco de la Ley 47-25.</div></td></tr>'}
 
@@ -3977,6 +4103,7 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
             "evaluacion_competitividad":     {
                 **(datos_json.get("evaluacion_competitividad") or {}),
                 "veredicto":                 datos_json.get("veredicto") or {},
+                "criterios_evaluacion":      datos_json.get("criterios_evaluacion") or {},
             },
         }
         # Eliminar None para no sobreescribir datos existentes con NULL
@@ -4855,6 +4982,17 @@ async def comparar_documentos(request: Request, datos: ComparacionSchema):
 # Paleta PDF — definida como strings, convertida dentro de las funciones
 
 
+# Ancho útil real del PDF en puntos.
+# letter (8.5in) − márgenes de 0.65in a cada lado = 7.2in de frame, PERO el Frame de
+# reportlab reserva 6pt de padding interno en cada lado. Ignorar eso hacía que las
+# tablas sobresalieran 6pt por la derecha.
+_PDF_MARGEN = 0.65 * 72          # 46.8 pt
+_PDF_PAD_FRAME = 6               # padding interno del Frame, por lado
+_PDF_W = (8.5 * 72) - (_PDF_MARGEN * 2) - (_PDF_PAD_FRAME * 2)   # 506.4 pt
+_PDF_X0 = _PDF_MARGEN + _PDF_PAD_FRAME                            # 52.8 pt
+_PDF_X1 = _PDF_X0 + _PDF_W                                        # 559.2 pt
+
+
 def _pdf_styles():
     from reportlab.lib.colors import HexColor, white, black
     from reportlab.lib.units import inch
@@ -4885,6 +5023,14 @@ def _pdf_styles():
             fontName="Helvetica", leading=13, leftIndent=4),
         "pie": ParagraphStyle("pie", fontSize=7.5, textColor=HexColor("#90A4AE"),
             fontName="Helvetica", alignment=TA_CENTER, leading=10),
+        "th": ParagraphStyle("th", fontSize=8, textColor=white,
+            fontName="Helvetica-Bold", leading=11),
+        "td": ParagraphStyle("td", fontSize=8.5, textColor=HexColor("#212121"),
+            fontName="Helvetica", leading=12),
+        "td_b": ParagraphStyle("td_b", fontSize=8.5, textColor=HexColor("#212121"),
+            fontName="Helvetica-Bold", leading=12),
+        "pts": ParagraphStyle("pts", fontSize=9.5, textColor=HexColor("#1A5C2A"),
+            fontName="Helvetica-Bold", leading=12, alignment=TA_CENTER),
     }
 
 
@@ -4894,7 +5040,7 @@ def _pdf_seccion_bar(texto, story, styles, color=None):
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
     color = color or HexColor("#2E7D32")
-    t = Table([[Paragraph(texto, styles["seccion"])]], colWidths=[6.5 * inch])
+    t = Table([[Paragraph(texto, styles["seccion"])]], colWidths=[_PDF_W], hAlign='LEFT')
     t.setStyle(TableStyle([
         ("BACKGROUND",    (0,0),(-1,-1), color),
         ("TOPPADDING",    (0,0),(-1,-1), 7),
@@ -4914,7 +5060,7 @@ def _pdf_tarjeta(rows, story, styles, fondo=None):
     fondo = fondo or HexColor("#ECEFF1")
     data = [[Paragraph(lbl, styles["label"]), Paragraph(str(val or "—"), styles["valor"])]
             for lbl, val in rows]
-    t = Table(data, colWidths=[1.6*inch, 4.9*inch])
+    t = Table(data, colWidths=[_PDF_W*0.25, _PDF_W*0.75], hAlign='LEFT')
     t.setStyle(TableStyle([
         ("BACKGROUND",    (0,0),(-1,-1), fondo),
         ("ROWBACKGROUNDS",(0,0),(-1,-1), [fondo, white]),
@@ -4929,11 +5075,264 @@ def _pdf_tarjeta(rows, story, styles, fondo=None):
     story.append(Spacer(1, 8))
 
 
-def _pdf_lista(items, story, styles, tipo="normal"):
-    from reportlab.lib.colors import HexColor, white, black
+def _pdf_matriz_evaluacion(crit_ev, story, styles):
+    """Dibuja la matriz de criterios de evaluación con sus puntajes."""
+    from reportlab.lib.colors import HexColor, white
     from reportlab.lib.units import inch
-    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, KeepTogether
+
+    if not isinstance(crit_ev, dict):
+        return
+    criterios = crit_ev.get("criterios") or []
+    meta_rows = []
+    for clave, etiqueta in (("metodologia", "METODOLOGÍA"),
+                            ("peso_tecnico", "PESO TÉCNICO"),
+                            ("peso_economico", "PESO ECONÓMICO"),
+                            ("puntaje_minimo_tecnico", "MÍNIMO TÉCNICO")):
+        v = crit_ev.get(clave)
+        if v and str(v).strip().upper() not in ("N/A", "NA", ""):
+            meta_rows.append((etiqueta, str(v)))
+
+    if not criterios and not meta_rows:
+        return
+
+    _pdf_seccion_bar("🎯  CRITERIOS DE EVALUACIÓN Y PUNTAJES", story, styles,
+                     color=HexColor("#1565C0"))
+
+    if meta_rows:
+        _pdf_tarjeta(meta_rows, story, styles, fondo=HexColor("#E3F2FD"))
+
+    if not criterios:
+        story.append(Paragraph(
+            "El pliego no establece una matriz de puntuación; la evaluación es por "
+            "cumplimiento (Cumple / No cumple).", styles["body"]))
+        story.append(Spacer(1, 6))
+        return
+
+    encabezado = [
+        Paragraph("CRITERIO", styles["th"]),
+        Paragraph("ESCALA SEGÚN EL PLIEGO", styles["th"]),
+        Paragraph("PUNTOS", styles["th"]),
+        Paragraph("MÁX.", styles["th"]),
+    ]
+    data = [encabezado]
+    estilos_tabla = [
+        ("BACKGROUND",    (0,0),(-1,0), HexColor("#1565C0")),
+        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+        ("ALIGN",         (2,0),(3,-1), "CENTER"),
+        ("TOPPADDING",    (0,0),(-1,-1), 5),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 5),
+        ("LEFTPADDING",   (0,0),(-1,-1), 7),
+        ("RIGHTPADDING",  (0,0),(-1,-1), 7),
+        ("GRID",          (0,0),(-1,-1), 0.25, HexColor("#BBDEFB")),
+        ("BOX",           (0,0),(-1,-1), 0.6, HexColor("#1565C0")),
+    ]
+
+    fila = 1
+    total_max = 0
+    for c in criterios:
+        if not isinstance(c, dict):
+            continue
+        nombre = c.get("criterio") or "—"
+        escala = c.get("escala") or []
+        try:
+            pmax = float(c.get("puntaje_maximo") or 0)
+            total_max += pmax
+            pmax_txt = f"{pmax:g}"
+        except Exception:
+            pmax_txt = str(c.get("puntaje_maximo") or "—")
+
+        if not escala:
+            data.append([
+                Paragraph(nombre, styles["td_b"]),
+                Paragraph("Cumple / No cumple", styles["td"]),
+                Paragraph("—", styles["td"]),
+                Paragraph(pmax_txt, styles["pts"]),
+            ])
+            estilos_tabla.append(("BACKGROUND", (0,fila),(-1,fila),
+                                  white if fila % 2 else HexColor("#F5F9FE")))
+            fila += 1
+            continue
+
+        primera = fila
+        for idx, niv in enumerate(escala):
+            if isinstance(niv, dict):
+                cond = niv.get("condicion") or "—"
+                pts  = niv.get("puntos")
+            else:
+                cond, pts = str(niv), None
+            try:
+                pts_txt = f"{float(pts):g}" if pts is not None else "—"
+            except Exception:
+                pts_txt = str(pts)
+            data.append([
+                Paragraph(nombre if idx == 0 else "", styles["td_b"]),
+                Paragraph(str(cond), styles["td"]),
+                Paragraph(pts_txt, styles["pts"]),
+                Paragraph(pmax_txt if idx == 0 else "", styles["pts"]),
+            ])
+            estilos_tabla.append(("BACKGROUND", (0,fila),(-1,fila),
+                                  white if primera % 2 else HexColor("#F5F9FE")))
+            fila += 1
+        # Fusionar la celda del nombre y del máximo a lo alto de su escala
+        if len(escala) > 1:
+            estilos_tabla.append(("SPAN", (0,primera),(0,fila-1)))
+            estilos_tabla.append(("SPAN", (3,primera),(3,fila-1)))
+            estilos_tabla.append(("VALIGN", (0,primera),(0,fila-1), "TOP"))
+
+    if total_max > 0:
+        data.append([
+            Paragraph("PUNTAJE TOTAL", styles["td_b"]),
+            Paragraph("", styles["td"]),
+            Paragraph("", styles["td"]),
+            Paragraph(f"{total_max:g}", styles["pts"]),
+        ])
+        estilos_tabla.append(("BACKGROUND", (0,fila),(-1,fila), HexColor("#E3F2FD")))
+        estilos_tabla.append(("SPAN", (0,fila),(2,fila)))
+        estilos_tabla.append(("LINEABOVE", (0,fila),(-1,fila), 1, HexColor("#1565C0")))
+
+    t = Table(data, colWidths=[_PDF_W*0.27, _PDF_W*0.46, _PDF_W*0.135, _PDF_W*0.135], repeatRows=1, hAlign='LEFT')
+    t.setStyle(TableStyle(estilos_tabla))
+    story.append(t)
+    story.append(Spacer(1, 8))
+
+
+def _pdf_etiqueta_legible(clave: str) -> str:
+    """Convierte 'anos_experiencia_empresa' → 'Años experiencia empresa'."""
+    mapa = {
+        "anos_experiencia_empresa": "Años de experiencia de la empresa",
+        "contratos_similares":      "Contratos similares requeridos",
+        "sector_especialidad":      "Sector / especialidad",
+        "periodo_referencia":       "Período de referencia",
+        "ambito":                   "Ámbito (estatal/privado)",
+        "montos_facturados":        "Facturación mínima",
+        "obras_similares":          "Obras similares",
+        "indice_liquidez":          "Índice de liquidez",
+        "indice_endeudamiento":     "Índice de endeudamiento",
+        "patrimonio_minimo":        "Patrimonio mínimo",
+        "visita_sitio":             "Visita al sitio",
+        "consultas":                "Cierre de consultas",
+        "presentacion_ofertas":     "Presentación de ofertas",
+        "apertura_ofertas":         "Apertura de ofertas",
+        "vigencia_oferta_dias":     "Vigencia de la oferta (días)",
+        "otros":                    "Otros requisitos",
+    }
+    if clave in mapa:
+        return mapa[clave]
+    return clave.replace("_", " ").strip().capitalize()
+
+
+def _pdf_texto_item(item) -> str:
+    """Convierte un item (dict o str) en una línea legible. Nunca devuelve repr()."""
+    if not isinstance(item, dict):
+        return str(item)
+
+    # Alerta de fraude
+    if "hallazgo" in item or "riesgo" in item:
+        partes = []
+        riesgo = item.get("riesgo")
+        cat    = item.get("categoria")
+        if riesgo or cat:
+            cab = " · ".join(x for x in [f"Riesgo {riesgo}" if riesgo else None, cat] if x)
+            partes.append(f"<b>{cab}</b>")
+        if item.get("hallazgo"):
+            partes.append(str(item["hallazgo"]))
+        if item.get("articulo_ley") and str(item["articulo_ley"]).upper() not in ("N/A", "NA", ""):
+            partes.append(f"<i>Norma: {item['articulo_ley']}</i>")
+        return "<br/>".join(partes)
+
+    # Personal clave
+    if "posicion" in item:
+        detalles = []
+        for k in ("titulo", "anos_experiencia_general", "anos_experiencia_especifica",
+                  "registro_profesional", "dedicacion", "nota"):
+            v = item.get(k)
+            if v and str(v).strip().upper() not in ("N/A", "NA", "NO ESPECIFICADO", ""):
+                if k == "anos_experiencia_general":   v = f"{v} años exp. general"
+                elif k == "anos_experiencia_especifica": v = f"{v} años exp. específica"
+                elif k == "registro_profesional":     v = f"Registro: {v}"
+                elif k == "dedicacion":               v = f"Dedicación: {v}"
+                detalles.append(str(v))
+        sub = item.get("es_subsanable")
+        tag = " [No subsanable]" if sub is False else ""
+        return f"<b>{item['posicion']}</b>{tag}" + (f"<br/>{' · '.join(detalles)}" if detalles else "")
+
+    # Equipo
+    if "equipo" in item:
+        detalles = []
+        if item.get("cantidad"):          detalles.append(f"Cantidad: {item['cantidad']}")
+        for k, pre in (("especificaciones", ""), ("antiguedad_maxima", "Máx. antigüedad: "),
+                       ("modalidad", "")):
+            v = item.get(k)
+            if v and str(v).strip().upper() not in ("N/A", "NA", "CUALQUIERA", "NO ESPECIFICADO", ""):
+                detalles.append(f"{pre}{v}")
+        return f"<b>{item['equipo']}</b>" + (f"<br/>{' · '.join(detalles)}" if detalles else "")
+
+    # Garantía
+    if "tipo" in item and "monto_o_porcentaje" in item:
+        sub = item.get("es_subsanable")
+        tag = " [No subsanable]" if sub is False else ""
+        return f"<b>{item['tipo']}</b>: {item['monto_o_porcentaje']}{tag}"
+
+    # Documento / restricción genérica
+    txt = (item.get("documento") or item.get("descripcion") or item.get("texto")
+           or item.get("tipo") or "")
+    if not txt:
+        # Último recurso: mostrar pares clave-valor legibles, nunca repr()
+        pares = [f"{_pdf_etiqueta_legible(k)}: {v}" for k, v in item.items()
+                 if v and str(v).strip().upper() not in ("N/A", "NA", "")]
+        return " · ".join(pares) if pares else "—"
+    sub   = item.get("es_subsanable")
+    tag   = " [Subsanable]" if sub is True else " [No subsanable]" if sub is False else ""
+    nota  = item.get("nota") or item.get("detalle") or ""
+    return f"<b>{txt}</b>{tag}" + (f"<br/>{nota}" if nota else "")
+
+
+def _pdf_lista(items, story, styles, tipo="normal"):
+    from reportlab.lib.colors import HexColor, white
+    from reportlab.lib.units import inch
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+
+    if not items:
+        return
+
+    # Un DICT plano (experiencia, financieros, plazos) va como tabla etiqueta/valor,
+    # no como lista — antes se iteraba y salían las LLAVES en vez de los valores.
+    if isinstance(items, dict):
+        # Caso especial: personal_y_equipos trae dos arrays anidados
+        if "personal_clave" in items or "equipos_minimos" in items:
+            if items.get("personal_clave"):
+                _pdf_lista(items["personal_clave"], story, styles, tipo="normal")
+            if items.get("equipos_minimos"):
+                _pdf_lista(items["equipos_minimos"], story, styles, tipo="normal")
+            return
+
+        filas = []
+        for k, v in items.items():
+            if v is None or str(v).strip() == "" or str(v).strip().upper() in ("N/A", "NA"):
+                continue
+            if isinstance(v, (list, dict)):
+                v = _pdf_texto_item(v) if isinstance(v, dict) else " · ".join(str(x) for x in v)
+            filas.append([
+                Paragraph(_pdf_etiqueta_legible(str(k)), styles["item_normal"]),
+                Paragraph(str(v), styles["item_normal"]),
+            ])
+        if not filas:
+            return
+        t = Table(filas, colWidths=[_PDF_W*0.34, _PDF_W*0.66], hAlign='LEFT')
+        t.setStyle(TableStyle([
+            ("VALIGN",         (0,0),(-1,-1), "TOP"),
+            ("TOPPADDING",     (0,0),(-1,-1), 5),
+            ("BOTTOMPADDING",  (0,0),(-1,-1), 5),
+            ("LEFTPADDING",    (0,0),(-1,-1), 8),
+            ("RIGHTPADDING",   (0,0),(-1,-1), 8),
+            ("ROWBACKGROUNDS", (0,0),(-1,-1), [white, HexColor("#F5F7FA")]),
+            ("LINEBELOW",      (0,0),(-1,-2), 0.25, HexColor("#E5E7EB")),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 6))
+        return
+
     iconos = {
         "alerta": ("🔴 ", styles["item_alerta"]),
         "warn":   ("⚠️ ", styles["item_warn"]),
@@ -4943,23 +5342,16 @@ def _pdf_lista(items, story, styles, tipo="normal"):
     icono_txt, estilo = iconos.get(tipo, iconos["normal"])
     data = []
     for item in items:
-        if isinstance(item, dict):
-            txt   = item.get("descripcion") or item.get("documento") or item.get("texto") or str(item)
-            nota  = item.get("nota") or item.get("detalle") or ""
-            sub   = item.get("es_subsanable")
-            s_tag = (" [Subsanable]" if sub is True else " [No subsanable]" if sub is False else "")
-            linea = f"{icono_txt}{txt}{s_tag}"
-            if nota:
-                linea += f"\n   {nota}"
-        else:
-            linea = f"{icono_txt}{item}"
-        data.append([Paragraph(linea, estilo)])
+        texto = _pdf_texto_item(item)
+        if not texto or texto == "—":
+            continue
+        data.append([Paragraph(f"{icono_txt}{texto}", estilo)])
     if not data:
         return
-    t = Table(data, colWidths=[6.5*inch])
+    t = Table(data, colWidths=[_PDF_W], hAlign='LEFT')
     t.setStyle(TableStyle([
-        ("TOPPADDING",    (0,0),(-1,-1), 3),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 3),
+        ("TOPPADDING",    (0,0),(-1,-1), 5),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 5),
         ("LEFTPADDING",   (0,0),(-1,-1), 8),
         ("RIGHTPADDING",  (0,0),(-1,-1), 8),
         ("ROWBACKGROUNDS",(0,0),(-1,-1), [white, HexColor("#F9FBE7")]),
@@ -5008,7 +5400,7 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
         [Paragraph("ANÁLISIS DE PLIEGO", styles["tit_header"])],
         [Paragraph(f"{proceso.get('codigo_proceso','')} · {proceso.get('unidad_compra','')}", styles["sub_header"])],
         [Paragraph(f"Generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} · LicitacionLab", styles["sub_header"])],
-    ], colWidths=[6.5*inch])
+    ], colWidths=[_PDF_W], hAlign='LEFT')
     header_t.setStyle(TableStyle([
         ("BACKGROUND",    (0,0),(-1,-1), HexColor("#1A5C2A")),
         ("TOPPADDING",    (0,0),(0,0),   16),
@@ -5049,13 +5441,25 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
     # Evaluación de competitividad
     comp = analisis.get("evaluacion_competitividad") or {}
     if comp:
+        # ¿Hay veredicto? Entonces él carga el análisis y la recomendación,
+        # y esta tarjeta se limita a la puntuación para no repetir.
+        _ver_previo = comp.get("veredicto") or {}
+        if isinstance(_ver_previo, str):
+            try:
+                import json as _jvp0; _ver_previo = _jvp0.loads(_ver_previo)
+            except Exception:
+                _ver_previo = {}
+        _hay_veredicto = isinstance(_ver_previo, dict) and bool(
+            _ver_previo.get("dictamen") or _ver_previo.get("le_conviene_si"))
+
         _pdf_seccion_bar("📊  EVALUACIÓN DE COMPETITIVIDAD", story, styles, color=HexColor("#1565C0"))
         rows = []
         if comp.get("score_base") is not None:
             rows.append(("PUNTUACIÓN", f"{comp['score_base']}/100"))
         if comp.get("nivel_dificultad"): rows.append(("DIFICULTAD",    comp["nivel_dificultad"]))
-        if comp.get("razon"):            rows.append(("ANÁLISIS",      comp["razon"]))
-        if comp.get("recomendacion"):    rows.append(("RECOMENDACIÓN", comp["recomendacion"]))
+        if not _hay_veredicto:
+            if comp.get("razon"):         rows.append(("ANÁLISIS",      comp["razon"]))
+            if comp.get("recomendacion"): rows.append(("RECOMENDACIÓN", comp["recomendacion"]))
         # Retrocompatibilidad con campos viejos
         if not rows:
             if comp.get("nivel"):        rows.append(("NIVEL",         comp["nivel"]))
@@ -5096,7 +5500,7 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
             tabla_ver = Table([[
                 _celda_lista("LE CONVIENE SI…", ver_pdf.get("le_conviene_si"), "#047857"),
                 _celda_lista("COMPITE EN DESVENTAJA SI…", ver_pdf.get("desventaja_si"), "#B45309"),
-            ]], colWidths=[3.25*inch, 3.25*inch])
+            ]], colWidths=[_PDF_W*0.5, _PDF_W*0.5], hAlign='LEFT')
             tabla_ver.setStyle(TableStyle([
                 ("BACKGROUND",    (0,0),(-1,-1), bg_pdf),
                 ("VALIGN",        (0,0),(-1,-1), "TOP"),
@@ -5113,6 +5517,9 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
             if ver_pdf.get("proximo_paso"):
                 _pdf_tarjeta([("PRÓXIMO PASO", ver_pdf["proximo_paso"])], story, styles,
                              fondo=HexColor("#F1F5F9"))
+
+        # ── Matriz de criterios de evaluación ────────────────────
+        _pdf_matriz_evaluacion(comp.get("criterios_evaluacion") or {}, story, styles)
         if comp.get("faltas_graves"):
             faltas = comp["faltas_graves"]
             if faltas:
@@ -5145,10 +5552,18 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
         _pdf_seccion_bar("🔒  GARANTÍAS EXIGIDAS", story, styles)
         _pdf_lista(analisis["garantias_exigidas"], story, styles, tipo="normal")
 
-    # Personal y equipos
-    if analisis.get("personal_y_equipos"):
+    # Personal clave y equipos — secciones separadas
+    pe = analisis.get("personal_y_equipos") or {}
+    if isinstance(pe, dict):
+        if pe.get("personal_clave"):
+            _pdf_seccion_bar("👷  PERSONAL CLAVE REQUERIDO", story, styles)
+            _pdf_lista(pe["personal_clave"], story, styles, tipo="normal")
+        if pe.get("equipos_minimos"):
+            _pdf_seccion_bar("🚜  EQUIPOS Y MAQUINARIA MÍNIMOS", story, styles)
+            _pdf_lista(pe["equipos_minimos"], story, styles, tipo="normal")
+    elif pe:
         _pdf_seccion_bar("👷  PERSONAL Y EQUIPOS REQUERIDOS", story, styles)
-        _pdf_lista(analisis["personal_y_equipos"], story, styles, tipo="normal")
+        _pdf_lista(pe, story, styles, tipo="normal")
 
     # Checklist de documentos
     checklist = analisis.get("checklist_categorizado") or {}
@@ -5164,7 +5579,7 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
                 continue
             sub_t = Table([[Paragraph(f"  {nombre_sec}", ParagraphStyle(
                 "sub_cl", fontSize=9.5, textColor=HexColor("#1A5C2A"), fontName="Helvetica-Bold"
-            ))]], colWidths=[6.5*inch])
+            ))]], colWidths=[_PDF_W], hAlign='LEFT')
             sub_t.setStyle(TableStyle([
                 ("BACKGROUND",    (0,0),(-1,-1), HexColor("#E8F5E9")),
                 ("TOPPADDING",    (0,0),(-1,-1), 4),
@@ -5182,7 +5597,7 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
                 if nota:
                     linea += f"\n     {nota}"
                 cl_data.append([Paragraph(linea, styles["item_normal"])])
-            cl_t = Table(cl_data, colWidths=[6.5*inch])
+            cl_t = Table(cl_data, colWidths=[_PDF_W], hAlign='LEFT')
             cl_t.setStyle(TableStyle([
                 ("TOPPADDING",    (0,0),(-1,-1), 4),
                 ("BOTTOMPADDING", (0,0),(-1,-1), 4),
@@ -5207,7 +5622,21 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
         styles["pie"]
     ))
 
-    doc.build(story)
+    def _pie_pagina(canvas, doc_):
+        """Pie con numeración en TODAS las páginas, alineado al ancho del contenido."""
+        canvas.saveState()
+        y = 0.42 * inch
+        canvas.setStrokeColor(HexColor("#CFD8DC"))
+        canvas.setLineWidth(0.5)
+        canvas.line(_PDF_X0, y + 14, _PDF_X1, y + 14)
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(HexColor("#90A4AE"))
+        canvas.drawString(_PDF_X0, y, "LicitacionLab · app.licitacionlab.com")
+        canvas.drawCentredString((_PDF_X0 + _PDF_X1) / 2, y, str(proceso.get("codigo_proceso", "")))
+        canvas.drawRightString(_PDF_X1, y, f"Página {canvas.getPageNumber()}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=_pie_pagina, onLaterPages=_pie_pagina)
     buf.seek(0)
     return buf.read()
 
