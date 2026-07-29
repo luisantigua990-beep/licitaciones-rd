@@ -8309,10 +8309,41 @@ function renderSegCard(item) {
     </div>` : ''}
     <div style="display:flex;gap:8px;margin-top:10px;">
       <button class="ll-btn ll-btn--secondary" style="flex:1;" onclick="verDetalle('${codigo}')">Ver detalle</button>
+      <button class="ll-btn ll-btn--ghost" id="pdfbtn-${codigo}" title="Descargar análisis en PDF" onclick="descargarPdfAnalisis('${codigo}')">📄 PDF</button>
       <button class="ll-btn ll-btn--ghost" onclick="abrirModalEstado('${codigo}','${estado}')">Estado</button>
       <button class="ll-btn ll-btn--danger-ghost ll-btn--icon" onclick="quitarSeguimiento('${codigo}')">✕</button>
     </div>
   </div>`;
+}
+
+async function descargarPdfAnalisis(codigo) {
+  haptic(12);
+  const btn = document.getElementById(`pdfbtn-${codigo}`);
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.innerHTML = '⏳'; btn.disabled = true; }
+  try {
+    const res = await fetch(`${API}/analisis/${encodeURIComponent(codigo)}/pdf`);
+    if (res.status === 404) {
+      mostrarToast('El análisis aún no está listo. Ábrelo en "Ver detalle" para generarlo.');
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `Analisis_${codigo.replace(/[\/\s]/g, '-')}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    mostrarToast('Análisis descargado');
+  } catch (e) {
+    console.error('Error descargando PDF:', e);
+    mostrarToast('No se pudo descargar el PDF. Intenta de nuevo.');
+  } finally {
+    if (btn) { btn.innerHTML = original; btn.disabled = false; }
+  }
 }
 
 async function cargarSeguimiento() {
