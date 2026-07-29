@@ -2424,10 +2424,61 @@ TEST DE PROPORCIONALIDAD para experiencia (aplícalo antes de decidir si es aler
    - Si debe ser propio o puede ser alquilado/comprometido
    - Capacidad o potencia mínima si se especifica
 
+10. REGLA ANTI-VACÍOS (OBLIGATORIA):
+    PROHIBIDO devolver "N/A", "n/a", null, cadena vacía o dejar sin llenar los objetos
+    requisitos_experiencia, requisitos_financieros, personal_y_equipos.personal_clave y
+    personal_y_equipos.equipos_minimos. Si el pliego SÍ lo exige, extrae el dato exacto con
+    su cita textual. Si el pliego NO lo exige o guarda silencio, escribe literalmente
+    "No especificado en el pliego" en ese campo. Si el pliego lo exceptúa, escribe
+    "Exceptuado por el pliego — ver [sección]". El objetivo es que el oferente vea SIEMPRE
+    los cuatro bloques renderizados, aunque algunas filas digan "No especificado".
+
+11. VEREDICTO — dictamen consultivo estructurado, SIN inventar nada:
+    Llena el objeto "veredicto" con estos campos, todos derivados de lo que YA extrajiste
+    del pliego (score_base, alertas_fraude, requisitos_experiencia, requisitos_financieros,
+    personal_y_equipos, garantias_exigidas). Prohibido inventar requisitos que no estén
+    en el pliego.
+
+    • nivel_confianza — elige UNO según esta tabla, sin excepciones:
+        "CONFIABLE"  → score_base ≥ 75 Y ninguna alerta de riesgo Alto
+        "EVALUAR"    → score_base entre 50 y 74, O hay alertas de riesgo Medio
+        "REVISAR"    → score_base < 50, O hay al menos una alerta de riesgo Alto
+
+    • dictamen — UNA oración que resuma si el proceso respeta la libre competencia.
+      Ejemplos: "Proceso confiable — sin irregularidades que comprometan la libre
+      competencia." / "Dos especificaciones dirigidas restringen la competencia; evalúe
+      antes de invertir tiempo en la oferta."
+
+    • le_conviene_si — array de 3 a 5 strings. Cada uno describe una condición REAL
+      del pliego que, si la empresa la cumple, la pone en buena posición. Máximo 12
+      palabras cada uno, redactados en tercera persona ("Ya ejecutó...", "Tiene...",
+      "Dispone de..."). Deben salir de los requisitos que extrajiste, con cifras exactas.
+
+    • desventaja_si — array de 3 a 5 strings. El espejo: condiciones bajo las cuales la
+      empresa competiría en desventaja. Mismo formato y extensión. No son amenazas ni
+      alarmismo: son el reverso de los requisitos exigidos.
+
+    • proximo_paso — UNA oración accionable señalando el requisito NO subsanable o el
+      plazo más crítico que el oferente debe verificar primero. Ejemplo: "Confirme la
+      disponibilidad del Ing. Sanitario antes de comprar el pliego — es el único
+      requisito NO subsanable que puede descalificarlo de entrada."
+
+    TONO: perito asesorando, no vendedor. Prohibido: signos de exclamación, mayúsculas
+    gritadas, "oportunidad única", "no te lo pierdas", urgencia artificial, promesas de
+    resultado ("ganará", "adjudicación segura"). El veredicto surge de los datos del
+    pliego, nunca de opinión.
+
 Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto antes ni después):
 {
   "tipo_proceso": "Obras|Bienes|Servicios|Consultoría",
   "resumen_ejecutivo": "2-3 oraciones describiendo qué se contrata, por cuánto y aspectos más relevantes para un oferente",
+  "veredicto": {
+    "nivel_confianza": "CONFIABLE|EVALUAR|REVISAR",
+    "dictamen": "Una oración sobre si el proceso respeta la libre competencia",
+    "le_conviene_si": ["3 a 5 condiciones reales del pliego, máx 12 palabras cada una"],
+    "desventaja_si": ["3 a 5 condiciones espejo, máx 12 palabras cada una"],
+    "proximo_paso": "Una oración accionable sobre el requisito NO subsanable o plazo más crítico"
+  },
   "alertas_fraude": [
     {
       "riesgo": "Alto|Medio|Bajo",
@@ -3322,6 +3373,68 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
     color_dif    = {"Alta": "#dc2626", "Media": "#d97706", "Baja": "#16a34a"}.get(dificultad, "#6b7280")
     color_score  = "#16a34a" if score_base and score_base >= 70 else "#d97706" if score_base and score_base >= 45 else "#dc2626"
 
+    # ── Veredicto consultivo (dos columnas) ───────────────
+    ver = analisis.get("evaluacion_competitividad", {}).get("veredicto") or {}
+    if isinstance(ver, str):
+        try:
+            import json as _jv; ver = _jv.loads(ver)
+        except Exception:
+            ver = {}
+    veredicto_html = ""
+    if isinstance(ver, dict) and (ver.get("dictamen") or ver.get("le_conviene_si")):
+        nivel = (ver.get("nivel_confianza") or "EVALUAR").upper()
+        estilos_nivel = {
+            "CONFIABLE": ("#059669", "✓ CONFIABLE", "#ecfdf5", "#d1fae5", "#047857", "#064e3b"),
+            "EVALUAR":   ("#d97706", "⚠ EVALUAR",   "#fffbeb", "#fde68a", "#b45309", "#78350f"),
+            "REVISAR":   ("#dc2626", "⚠ REVISAR",   "#fef2f2", "#fecaca", "#b91c1c", "#7f1d1d"),
+        }
+        bg_badge, txt_badge, bg_head, borde, col_label, col_texto = estilos_nivel.get(nivel, estilos_nivel["EVALUAR"])
+
+        def _items(lista, color_bullet):
+            out = ""
+            for it in (lista or [])[:5]:
+                if not str(it).strip():
+                    continue
+                out += (f"<p style='margin:0 0 7px;font-size:12px;color:#374151;line-height:1.5;"
+                        f"padding-left:14px;text-indent:-14px;'><span style='color:{color_bullet};'>&#9656;</span> {it}</p>")
+            return out
+
+        col_si  = _items(ver.get("le_conviene_si"), "#059669")
+        col_no  = _items(ver.get("desventaja_si"), "#d97706")
+        dictamen = ver.get("dictamen") or ""
+        paso     = ver.get("proximo_paso") or ""
+
+        paso_html = ""
+        if paso:
+            paso_html = (f"<tr><td colspan='2' style='background:#f8fafc;padding:11px 16px;border-top:1px solid #f1f5f9;'>"
+                         f"<p style='margin:0;font-size:11px;font-weight:800;color:#475569;letter-spacing:0.4px;text-transform:uppercase;'>Próximo paso sugerido</p>"
+                         f"<p style='margin:4px 0 0;font-size:12px;color:#475569;line-height:1.5;'>{paso}</p></td></tr>")
+
+        veredicto_html = f"""<div style="border:1px solid {borde};border-radius:10px;overflow:hidden;">
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr><td colspan="2" style="background:{bg_head};padding:12px 16px;border-bottom:1px solid {borde};">
+<table width="100%" cellpadding="0" cellspacing="0"><tr>
+<td style="vertical-align:middle;">
+<span style="font-size:11px;color:{col_label};font-weight:800;letter-spacing:0.6px;text-transform:uppercase;">Veredicto del análisis</span>
+<p style="margin:5px 0 0;font-size:14px;color:{col_texto};line-height:1.5;font-weight:600;">{dictamen}</p>
+</td>
+<td style="vertical-align:middle;text-align:right;width:110px;">
+<span style="display:inline-block;background:{bg_badge};color:white;font-size:11px;font-weight:800;padding:6px 12px;border-radius:20px;letter-spacing:0.4px;">{txt_badge}</span>
+</td></tr></table>
+</td></tr>
+<tr>
+<td width="50%" style="padding:14px 16px;vertical-align:top;border-right:1px solid #f1f5f9;background:white;">
+<p style="margin:0 0 8px;font-size:11px;font-weight:800;color:#047857;letter-spacing:0.4px;text-transform:uppercase;">&#10003; Le conviene si…</p>
+{col_si}
+</td>
+<td width="50%" style="padding:14px 16px;vertical-align:top;background:white;">
+<p style="margin:0 0 8px;font-size:11px;font-weight:800;color:#b45309;letter-spacing:0.4px;text-transform:uppercase;">&#9888; Compite en desventaja si…</p>
+{col_no}
+</td>
+</tr>
+{paso_html}
+</table></div>"""
+
     # ── Plazos clave ──────────────────────────────────────
     plazos       = analisis.get("plazos_clave") or {}
     plazos_html  = ""
@@ -3415,15 +3528,22 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
     }
     for k, label in labels_exp.items():
         v = req_exp.get(k, "")
-        if v and v not in ("N/A", "n/a", ""):
-            exp_rows += f"<tr style='border-bottom:1px solid #f3f4f6;'><td style='padding:7px 12px;font-size:12px;color:#6b7280;width:38%;vertical-align:top;'>{label}</td><td style='padding:7px 12px;font-size:13px;color:#374151;'>{v}</td></tr>"
+        if v and str(v).strip().lower() not in ("n/a", ""):
+            # Estilo atenuado para "No especificado" para diferenciarlo visualmente
+            es_no_esp = "no especificado" in str(v).lower() or "exceptuado" in str(v).lower()
+            color_val = "#9ca3af" if es_no_esp else "#374151"
+            estilo_val = "font-style:italic;" if es_no_esp else ""
+            exp_rows += f"<tr style='border-bottom:1px solid #f3f4f6;'><td style='padding:7px 12px;font-size:12px;color:#6b7280;width:38%;vertical-align:top;'>{label}</td><td style='padding:7px 12px;font-size:13px;color:{color_val};{estilo_val}'>{v}</td></tr>"
 
     fin_rows = ""
     labels_fin = {"indice_liquidez": "Índice de liquidez", "indice_endeudamiento": "Índice de endeudamiento", "patrimonio_minimo": "Patrimonio mínimo", "otros": "Otros"}
     for k, label in labels_fin.items():
         v = req_fin.get(k, "")
-        if v and v not in ("N/A", "n/a", ""):
-            fin_rows += f"<tr style='border-bottom:1px solid #f3f4f6;'><td style='padding:7px 12px;font-size:12px;color:#6b7280;width:38%;'>{label}</td><td style='padding:7px 12px;font-size:13px;color:#374151;'>{v}</td></tr>"
+        if v and str(v).strip().lower() not in ("n/a", ""):
+            es_no_esp = "no especificado" in str(v).lower() or "exceptuado" in str(v).lower()
+            color_val = "#9ca3af" if es_no_esp else "#374151"
+            estilo_val = "font-style:italic;" if es_no_esp else ""
+            fin_rows += f"<tr style='border-bottom:1px solid #f3f4f6;'><td style='padding:7px 12px;font-size:12px;color:#6b7280;width:38%;'>{label}</td><td style='padding:7px 12px;font-size:13px;color:{color_val};{estilo_val}'>{v}</td></tr>"
 
     # ── Personal clave ────────────────────────────────────
     personal_raw = (analisis.get("personal_y_equipos") or {}).get("personal_clave") or []
@@ -3511,7 +3631,9 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
 
   {'<tr><td style="padding:8px 28px;"><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><p style="margin:0;font-size:13px;font-weight:bold;color:#1e293b;">📊 Evaluación de competitividad</p><p style="margin:4px 0 0;font-size:12px;color:#64748b;">' + razon_dif + '</p></td><td style="text-align:right;vertical-align:top;">' + (f'<span style="background:{color_score};color:white;padding:6px 12px;border-radius:20px;font-size:18px;font-weight:900;">{score_base}/100</span><br>' if score_base is not None else '') + '<span style="background:' + color_dif + ';color:white;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:bold;">Dificultad: ' + dificultad + '</span><br><span style="font-size:11px;color:#64748b;display:block;margin-top:4px;">' + recomendacion + '</span></td></tr></table></div></td></tr>' if dificultad or score_base is not None else ''}
 
-  {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#dc2626;">🚨 Alertas de posible irregularidad</p><p style="margin:0 0 6px;font-size:11px;color:#9ca3af;">Indicadores identificados según Ley 47-25. No implican irregularidad confirmada.</p><table width="100%" style="border:1px solid #fee2e2;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">' + alertas_html + '</table></td></tr>' if alertas_html else '<tr><td style="padding:8px 28px;"><div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:10px 14px;border-radius:8px;font-size:13px;color:#166534;">✅ No se detectaron alertas de irregularidad significativas.</div></td></tr>'}
+  {'<tr><td style="padding:4px 28px 8px;">' + veredicto_html + '</td></tr>' if veredicto_html else ''}
+
+  {'<tr><td style="padding:8px 28px;"><div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:12px 14px;"><p style="margin:0 0 4px;font-size:14px;font-weight:800;color:#991b1b;">🚨 Irregularidades detectadas en este pliego</p><p style="margin:0 0 8px;font-size:11px;color:#9ca3af;">Cada alerta está citada con el artículo de la Ley 47-25 o Decreto 52-26 que estaría siendo vulnerado. Presunción de legalidad — verifique antes de impugnar.</p><table width="100%" style="border:1px solid #fee2e2;border-radius:8px;overflow:hidden;background:white;" cellpadding="0" cellspacing="0">' + alertas_html + '</table></div></td></tr>' if alertas_html else '<tr><td style="padding:8px 28px;"><div style="background:#f0fdf4;border:1px solid #bbf7d0;padding:10px 14px;border-radius:8px;font-size:13px;color:#166534;">✅ Sin irregularidades detectadas bajo el marco de la Ley 47-25.</div></td></tr>'}
 
   {'<tr><td style="padding:8px 28px;"><p style="margin:0 0 6px;font-size:13px;font-weight:bold;color:#7c3aed;">🚫 Restricciones de participación</p><ul style="margin:0;padding-left:18px;background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:10px 10px 10px 26px;">' + restricciones_html + '</ul></td></tr>' if restricciones_html else ''}
 
@@ -3852,7 +3974,10 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
             "checklist_legal":               (datos_json.get("checklist_documentos") or {}).get("legal")
                                              if isinstance(datos_json.get("checklist_documentos"), dict) else None,
             "plazos_clave":                  datos_json.get("plazos_clave"),
-            "evaluacion_competitividad":     datos_json.get("evaluacion_competitividad"),
+            "evaluacion_competitividad":     {
+                **(datos_json.get("evaluacion_competitividad") or {}),
+                "veredicto":                 datos_json.get("veredicto") or {},
+            },
         }
         # Eliminar None para no sobreescribir datos existentes con NULL
         fila_supabase = {k: v for k, v in fila_supabase.items() if v is not None}
