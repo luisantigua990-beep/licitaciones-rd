@@ -5063,6 +5063,56 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
             if comp.get("recomendacion"):rows.append(("RECOMENDACIÓN", comp["recomendacion"]))
         if rows:
             _pdf_tarjeta(rows, story, styles, fondo=HexColor("#E3F2FD"))
+
+        # ── Veredicto consultivo (dos columnas) ──────────────────
+        ver_pdf = comp.get("veredicto") or {}
+        if isinstance(ver_pdf, str):
+            try:
+                import json as _jvp; ver_pdf = _jvp.loads(ver_pdf)
+            except Exception:
+                ver_pdf = {}
+        if isinstance(ver_pdf, dict) and (ver_pdf.get("dictamen") or ver_pdf.get("le_conviene_si")):
+            nivel_pdf = (ver_pdf.get("nivel_confianza") or "EVALUAR").upper()
+            cfg_pdf = {
+                "CONFIABLE": (HexColor("#059669"), HexColor("#ECFDF5"), "CONFIABLE"),
+                "EVALUAR":   (HexColor("#D97706"), HexColor("#FFFBEB"), "EVALUAR CON CUIDADO"),
+                "REVISAR":   (HexColor("#DC2626"), HexColor("#FEF2F2"), "REVISAR ANTES DE OFERTAR"),
+            }.get(nivel_pdf, (HexColor("#D97706"), HexColor("#FFFBEB"), "EVALUAR CON CUIDADO"))
+            col_pdf, bg_pdf, etiqueta_pdf = cfg_pdf
+
+            _pdf_seccion_bar(f"🎯  VEREDICTO — {etiqueta_pdf}", story, styles, color=col_pdf)
+
+            if ver_pdf.get("dictamen"):
+                story.append(Paragraph(ver_pdf["dictamen"], styles["body"]))
+                story.append(Spacer(1, 6))
+
+            def _celda_lista(titulo, items, color_tit):
+                partes = [Paragraph(f'<font color="{color_tit}"><b>{titulo}</b></font>', styles["body"])]
+                for it in (items or [])[:5]:
+                    if str(it).strip():
+                        partes.append(Paragraph(f"• {it}", styles["body"]))
+                return partes
+
+            tabla_ver = Table([[
+                _celda_lista("LE CONVIENE SI…", ver_pdf.get("le_conviene_si"), "#047857"),
+                _celda_lista("COMPITE EN DESVENTAJA SI…", ver_pdf.get("desventaja_si"), "#B45309"),
+            ]], colWidths=[3.25*inch, 3.25*inch])
+            tabla_ver.setStyle(TableStyle([
+                ("BACKGROUND",    (0,0),(-1,-1), bg_pdf),
+                ("VALIGN",        (0,0),(-1,-1), "TOP"),
+                ("LEFTPADDING",   (0,0),(-1,-1), 10),
+                ("RIGHTPADDING",  (0,0),(-1,-1), 10),
+                ("TOPPADDING",    (0,0),(-1,-1), 10),
+                ("BOTTOMPADDING", (0,0),(-1,-1), 10),
+                ("LINEAFTER",     (0,0),(0,0), 0.5, HexColor("#D1D5DB")),
+                ("BOX",           (0,0),(-1,-1), 0.5, HexColor("#D1D5DB")),
+            ]))
+            story.append(tabla_ver)
+            story.append(Spacer(1, 6))
+
+            if ver_pdf.get("proximo_paso"):
+                _pdf_tarjeta([("PRÓXIMO PASO", ver_pdf["proximo_paso"])], story, styles,
+                             fondo=HexColor("#F1F5F9"))
         if comp.get("faltas_graves"):
             faltas = comp["faltas_graves"]
             if faltas:
@@ -5163,7 +5213,8 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
 
 
 @app.get("/analisis/{proceso_id}/pdf")
-async def descargar_pdf_analisis(proceso_id: str):
+@limiter.limit("20/minute")
+async def descargar_pdf_analisis(request: Request, proceso_id: str):
     """Descarga el PDF del análisis de pliego generado por Gemini/IA."""
     # Buscar análisis completado
     res_a = supabase_admin.table("analisis_pliego") \
