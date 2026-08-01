@@ -4880,12 +4880,31 @@ async function vincularReferido() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// TOKEN VÁLIDO — refresca si está vencido antes de usarlo
+// ═══════════════════════════════════════════════════════════
+async function obtenerTokenValido() {
+  let token = localStorage.getItem('sb_token');
+  if (!token) return null;
+  let vencido = false;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    vencido = payload.exp && (payload.exp * 1000) < Date.now();
+  } catch(e) {}
+  if (vencido) {
+    const ok = await _tryRefreshToken();
+    if (ok) token = localStorage.getItem('sb_token');
+    else return null;
+  }
+  return token;
+}
+
+// ═══════════════════════════════════════════════════════════
 // FREEMIUM — verificación de plan PRO con cache
 // ═══════════════════════════════════════════════════════════
 let _esPro = null;
 async function esUsuarioPro(forzar = false) {
   if (_esPro !== null && !forzar) return _esPro;
-  const token = localStorage.getItem('sb_token');
+  const token = await obtenerTokenValido();
   if (!token) { _esPro = false; return false; }
   try {
     const r = await fetch(`${API}/api/pagos/mi-suscripcion`, {
@@ -4935,16 +4954,23 @@ function mostrarModalUpgrade(feature) {
 async function cargarPanelReferidos(contId = 'referidos-contenido') {
   const cont = document.getElementById(contId);
   if (!cont) return;
-  const token = localStorage.getItem('sb_token');
-  if (!token) { cont.innerHTML = '<div style="font-size:13px;color:var(--muted);">Inicia sesión para ver tu programa de referidos.</div>'; return; }
+  const token = await obtenerTokenValido();
+  if (!token) { cont.innerHTML = '<div style="font-size:13px;color:var(--muted);">Tu sesión expiró. Cierra sesión y vuelve a entrar para ver tu programa de referidos.</div>'; return; }
   cont.innerHTML = '<div style="font-size:13px;color:var(--muted);">Cargando...</div>';
   try {
     const h = { 'Authorization': 'Bearer ' + token };
-    const [rCode, rBal, rRefs] = await Promise.all([
-      fetch(`${API}/api/referidos/mi-codigo`, { headers: h }).then(r => r.json()),
-      fetch(`${API}/api/referidos/balance`, { headers: h }).then(r => r.json()),
-      fetch(`${API}/api/referidos/mis-referidos`, { headers: h }).then(r => r.json())
+    const [rCodeRes, rBalRes, rRefsRes] = await Promise.all([
+      fetch(`${API}/api/referidos/mi-codigo`, { headers: h }),
+      fetch(`${API}/api/referidos/balance`, { headers: h }),
+      fetch(`${API}/api/referidos/mis-referidos`, { headers: h })
     ]);
+    if (!rCodeRes.ok || !rBalRes.ok || !rRefsRes.ok) {
+      cont.innerHTML = '<div style="font-size:13px;color:var(--muted);">No se pudo cargar tu programa de referidos. Recarga la página o vuelve a iniciar sesión.</div>';
+      return;
+    }
+    const rCode = await rCodeRes.json();
+    const rBal = await rBalRes.json();
+    const rRefs = await rRefsRes.json();
     window._refLink = rCode.link;
     window._refMsgWA = rCode.mensaje_whatsapp;
     const puedeRetirar = rBal.puede_retirar_efectivo;
@@ -7349,6 +7375,8 @@ function switchTab2(tab) {
   if (tab==='seguimiento') cargarSeguimiento();
   if (tab==='mercado')     cargarMercado();
   if (tab==='inteligencia') {
+    // Bloqueo freemium: al abrir Empresas, verificar PRO
+    esUsuarioPro().then(pro => { if (!pro) mostrarModalUpgrade('empresas'); });
     // FIX: solo resetear el mensaje si no hay resultados ni dashboard visibles
     const dash = document.getElementById('ic-dashboard');
     const resC = document.getElementById('ic-resultados');
