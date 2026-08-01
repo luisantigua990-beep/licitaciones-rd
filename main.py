@@ -37,6 +37,7 @@ from notifications import enviar_notificacion
 from router_agentes import agentes_router, social_router
 from router_closer import closer_router
 from router_pagos import pagos_router
+from router_referidos import referidos_router
 from etl_contratos_adjudicados import run_etl
 from competidores_feature import competidores_router
 from reenriquecer_empresas import get_reenriquecimiento_router
@@ -383,6 +384,9 @@ app.include_router(closer_router)
 
 # ── Pagos con Pagadito (suscripciones) ───────────────────
 app.include_router(pagos_router)
+
+# ── Programa de Referidos y Fundadores ────────────────────
+app.include_router(referidos_router)
 
 # ── Inteligencia Competitiva ──────────────────────────────
 app.include_router(competidores_router)
