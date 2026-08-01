@@ -92,13 +92,26 @@ def crear_pago(body: CrearPagoRequest, authorization: str | None = Header(defaul
         raise HTTPException(404, "Plan no encontrado")
     plan = plan_q.data[0]
 
+    # ─── Descuento 50% primer mes para usuarios referidos (solo plan mensual) ───
+    monto_final = float(plan["precio"])
+    descripcion_extra = ""
+    if plan["duracion_meses"] == 1:
+        es_referido = _sb_admin.table("referrals").select("id") \
+            .eq("referred_user_id", user_id).execute().data
+        if es_referido:
+            pagos_previos = _sb_admin.table("pagos").select("id") \
+                .eq("user_id", user_id).eq("estado", "COMPLETED").execute().data
+            if not pagos_previos:
+                monto_final = round(monto_final * 0.50, 2)
+                descripcion_extra = " · 50% OFF referido"
+
     ern = f"LL-{user_id[:8]}-{int(time.time() * 1000)}"
 
     pago_ins = _sb_admin.table("pagos").insert({
         "user_id": user_id,
         "plan_id": plan["id"],
         "ern": ern,
-        "monto": float(plan["precio"]),
+        "monto": monto_final,
         "moneda": plan["moneda"],
         "estado": "PENDIENTE",
     }).execute()
@@ -107,12 +120,12 @@ def crear_pago(body: CrearPagoRequest, authorization: str | None = Header(defaul
     try:
         resp = _pg.exec_trans(
             ern=ern,
-            amount=float(plan["precio"]),
+            amount=monto_final,
             currency=plan["moneda"],
             details=[{
                 "quantity": 1,
-                "description": f"LicitacionLab — Plan {plan['nombre']} ({plan['duracion_meses']} {'mes' if plan['duracion_meses']==1 else 'meses'})",
-                "price": float(plan["precio"]),
+                "description": f"LicitacionLab — Plan {plan['nombre']} ({plan['duracion_meses']} {'mes' if plan['duracion_meses']==1 else 'meses'}){descripcion_extra}",
+                "price": monto_final,
             }],
         )
     except PagaditoError as e:
@@ -124,8 +137,8 @@ def crear_pago(body: CrearPagoRequest, authorization: str | None = Header(defaul
     url_pago = resp["data"]["url"]
     _sb_admin.table("pagos").update({"token_pagadito": token}).eq("id", pago_id).execute()
 
-    print(f"💳 Pago creado: {ern} | user {user_id[:8]} | plan {plan['nombre']} | ${plan['precio']}")
-    return {"url_pago": url_pago, "pago_id": pago_id, "ern": ern}
+    print(f"💳 Pago creado: {ern} | user {user_id[:8]} | plan {plan['nombre']} | ${monto_final}{descripcion_extra}")
+    return {"url_pago": url_pago, "pago_id": pago_id, "ern": ern, "monto": monto_final, "descuento_aplicado": bool(descripcion_extra)}
 
 
 # ══════════════════════════════════════════════════════════════
@@ -311,7 +324,102 @@ def _activar_suscripcion(pago: dict):
         "activa": True,
     }).execute()
 
+    # ─── Programa de Referidos: comisión al referidor ───
+    try:
+        _procesar_comision_referido(pago)
+    except Exception as e:
+        print(f"⚠️ Error procesando comisión de referido: {e}")
+
+    # ─── Programa Fundadores: inscribir si hay cupos ───
+    try:
+        _procesar_fundador(pago, plan)
+    except Exception as e:
+        print(f"⚠️ Error procesando fundador: {e}")
+
     _enviar_confirmacion_pago(pago, plan)
+
+
+def _procesar_comision_referido(pago: dict):
+    """Si el usuario que pagó fue referido, genera la comisión al referidor.
+    Tasa: 20% si el referidor tiene suscripción activa, 15% si es free.
+    La tasa se evalúa en CADA pago, así que al suscribirse el referidor,
+    todos sus referidos pasan automáticamente a generar 20%."""
+    ref = _sb_admin.table("referrals").select("*") \
+        .eq("referred_user_id", pago["user_id"]).execute().data
+    if not ref:
+        return
+
+    referral = ref[0]
+    referrer_id = referral["referrer_id"]
+
+    # Activar el referral la primera vez que el referido paga
+    if referral["status"] == "pending":
+        _sb_admin.table("referrals").update({
+            "status": "active",
+            "activated_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", referral["id"]).execute()
+
+    # ¿El referidor es suscriptor activo? → define la tasa
+    sub = _sb_admin.table("suscripciones").select("id, fecha_vencimiento") \
+        .eq("user_id", referrer_id).eq("activa", True).execute()
+    es_pro = False
+    if sub.data:
+        venc = datetime.fromisoformat(sub.data[0]["fecha_vencimiento"])
+        es_pro = venc > datetime.now(timezone.utc)
+    tasa = 20 if es_pro else 15
+
+    comision = round(float(pago["monto"]) * tasa / 100, 2)
+    periodo = datetime.now(timezone.utc).strftime("%Y-%m")
+
+    _sb_admin.table("referral_commissions").insert({
+        "referral_id": referral["id"],
+        "referrer_id": referrer_id,
+        "amount": comision,
+        "rate": tasa,
+        "period": periodo,
+        "pago_id": pago["id"],
+        "status": "pending",
+    }).execute()
+    print(f"💰 Comisión referido: US${comision} ({tasa}%) → referidor {referrer_id[:8]}")
+
+
+def _procesar_fundador(pago: dict, plan: dict):
+    """Inscribe al usuario en el Programa Fundadores si hay cupos.
+    Beneficios: Mensual=1 proceso B&S | Semestral=3 B&S o 1 plan constr. | Anual=5 B&S o 1 Sobre A."""
+    perfil = _sb_admin.table("user_profiles").select("is_founder") \
+        .eq("id", pago["user_id"]).execute().data
+    if perfil and perfil[0].get("is_founder"):
+        return  # ya es fundador, no consume otro cupo
+
+    config_q = _sb_admin.table("founder_config").select("*").eq("id", 1).execute()
+    if not config_q.data:
+        return
+    config = config_q.data[0]
+    if not config["active"] or config["used_slots"] >= config["max_slots"]:
+        return  # programa cerrado o cupos agotados
+
+    duracion = plan["duracion_meses"]
+    if duracion == 1:
+        free_total = 1   # 1 proceso B&S (construcción: nada)
+    elif duracion == 6:
+        free_total = 3   # 3 procesos B&S o 1 plan de construcción
+    elif duracion == 12:
+        free_total = 5   # 5 procesos B&S o 1 Sobre A de construcción
+    else:
+        return
+
+    _sb_admin.table("user_profiles").update({
+        "is_founder": True,
+        "founder_type": "por_definir",  # Lonny lo clasifica al contactar al cliente
+        "free_processes_total": free_total,
+        "free_processes_used": 0,
+        "founder_enrolled_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", pago["user_id"]).execute()
+
+    _sb_admin.table("founder_config").update({
+        "used_slots": config["used_slots"] + 1,
+    }).eq("id", 1).execute()
+    print(f"🏆 Fundador #{config['used_slots'] + 1}/30 inscrito: user {pago['user_id'][:8]} | plan {plan['nombre']} | {free_total} procesos gratis")
 
 
 # ══════════════════════════════════════════════════════════════
