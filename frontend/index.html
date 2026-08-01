@@ -3190,6 +3190,8 @@ html { background: var(--color-bg, #0A0A0A); }
       <div style="font-size:12px;color:var(--text2);margin-top:4px">Empieza gratis. Sube cuando estés listo.</div>
     </div>
 
+    <div class="founder-banner-slot" style="display:none;"></div>
+
     <!-- Plan Explorador -->
     <div style="background:var(--bg2);border:1.5px solid var(--border);border-radius:14px;padding:16px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -3567,6 +3569,15 @@ html { background: var(--color-bg, #0A0A0A); }
     <div class="perfil-card" id="perfil-plan-card">
       <h2>Tu plan</h2>
       <div id="perfil-plan-contenido">
+        <div style="font-size:13px;color:var(--muted);">Cargando...</div>
+      </div>
+    </div>
+
+    <!-- ── SECCIÓN REFERIDOS ── -->
+    <div class="perfil-card" id="perfil-referidos-card">
+      <h2>💰 Programa de Referidos</h2>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5;">Comparte tu link y gana <strong style="color:var(--text);">comisión recurrente</strong> por cada suscriptor que traigas. Tus referidos reciben 50% off su primer mes.</p>
+      <div id="referidos-contenido">
         <div style="font-size:13px;color:var(--muted);">Cargando...</div>
       </div>
     </div>
@@ -4810,6 +4821,212 @@ async function login() {
   showApp();
 }
 
+// ═══════════════════════════════════════════════════════════
+// PROGRAMA DE REFERIDOS — captura ?ref= y registro post-signup
+// ═══════════════════════════════════════════════════════════
+(function capturarReferralCode() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (ref) {
+      localStorage.setItem('ll_ref_code', ref.toUpperCase());
+      params.delete('ref');
+      const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+      history.replaceState({}, '', newUrl);
+      console.log('🎁 Código de referido capturado:', ref.toUpperCase());
+    }
+    // Tracking de fuente (agente6, instagram, webinar...)
+    const utm = params.get('utm_source');
+    if (utm) localStorage.setItem('ll_source', utm);
+  } catch(e) {}
+})();
+
+async function vincularReferido() {
+  const refCode = localStorage.getItem('ll_ref_code');
+  if (!refCode) return;
+  const token = localStorage.getItem('sb_token');
+  if (!token) return;
+  try {
+    const r = await fetch(`${API}/api/referidos/registrar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ ref_code: refCode })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      localStorage.removeItem('ll_ref_code');
+      console.log('🎁 Referido vinculado:', d.msg);
+    }
+  } catch(e) { console.log('Ref error:', e); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// FREEMIUM — verificación de plan PRO con cache
+// ═══════════════════════════════════════════════════════════
+let _esPro = null;
+async function esUsuarioPro(forzar = false) {
+  if (_esPro !== null && !forzar) return _esPro;
+  const token = localStorage.getItem('sb_token');
+  if (!token) { _esPro = false; return false; }
+  try {
+    const r = await fetch(`${API}/api/pagos/mi-suscripcion`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const d = await r.json();
+    _esPro = d.activa === true;
+  } catch { _esPro = false; }
+  return _esPro;
+}
+
+async function verificarAccesoPro(featureNombre) {
+  if (await esUsuarioPro()) return true;
+  mostrarModalUpgrade(featureNombre);
+  return false;
+}
+
+function mostrarModalUpgrade(feature) {
+  const nombres = {
+    'analisis': 'el Análisis AI de pliegos',
+    'empresas': 'la Inteligencia Competitiva',
+    'precio': 'Precio Inteligente',
+    'pdf': 'la descarga de análisis en PDF',
+    'seguimiento': 'el seguimiento ilimitado de procesos'
+  };
+  const featureTxt = nombres[feature] || 'esta función';
+  const existente = document.getElementById('modal-upgrade-pro');
+  if (existente) existente.remove();
+  const modal = document.createElement('div');
+  modal.id = 'modal-upgrade-pro';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="max-width:380px;width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:18px;padding:28px;text-align:center;position:relative;">
+      <button onclick="document.getElementById('modal-upgrade-pro').remove()" style="position:absolute;top:12px;right:14px;background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;">✕</button>
+      <div style="font-size:34px;margin-bottom:10px;">🔒</div>
+      <div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:6px;">Función PRO</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:18px;">Para usar ${featureTxt} necesitas una suscripción activa de LicitacionLab PRO.</div>
+      <button onclick="document.getElementById('modal-upgrade-pro').remove();abrirModalPlanes();" style="width:100%;padding:12px;background:linear-gradient(135deg,#15803d,#16A34A);border:none;border-radius:10px;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:var(--font-body);">⭐ Ver planes PRO</button>
+      <div style="font-size:11px;color:var(--muted);margin-top:10px;">Programa Fundadores activo · Procesos preparados gratis</div>
+    </div>`;
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  document.body.appendChild(modal);
+}
+
+// ═══════════════════════════════════════════════════════════
+// PANEL DE REFERIDOS — datos del usuario
+// ═══════════════════════════════════════════════════════════
+async function cargarPanelReferidos() {
+  const cont = document.getElementById('referidos-contenido');
+  if (!cont) return;
+  const token = localStorage.getItem('sb_token');
+  if (!token) { cont.innerHTML = '<div style="font-size:13px;color:var(--muted);">Inicia sesión para ver tu programa de referidos.</div>'; return; }
+  cont.innerHTML = '<div style="font-size:13px;color:var(--muted);">Cargando...</div>';
+  try {
+    const h = { 'Authorization': 'Bearer ' + token };
+    const [rCode, rBal, rRefs] = await Promise.all([
+      fetch(`${API}/api/referidos/mi-codigo`, { headers: h }).then(r => r.json()),
+      fetch(`${API}/api/referidos/balance`, { headers: h }).then(r => r.json()),
+      fetch(`${API}/api/referidos/mis-referidos`, { headers: h }).then(r => r.json())
+    ]);
+    window._refLink = rCode.link;
+    window._refMsgWA = rCode.mensaje_whatsapp;
+    const puedeRetirar = rBal.puede_retirar_efectivo;
+    cont.innerHTML = `
+      <div style="background:linear-gradient(135deg,#0D1B2A,#12321f);border-radius:14px;padding:16px;margin-bottom:12px;text-align:center;">
+        <div style="font-size:10px;font-weight:800;color:#4ade80;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;">Tu código de referido</div>
+        <div style="font-size:26px;font-weight:800;color:#fff;letter-spacing:.15em;font-family:var(--font-mono);">${rCode.code}</div>
+        <button onclick="compartirRefLink()" style="margin-top:10px;padding:9px 22px;background:#25D366;border:none;border-radius:8px;color:#fff;font-size:13px;font-weight:800;cursor:pointer;">📤 Compartir por WhatsApp</button>
+        <button onclick="copiarRefLink()" style="margin-top:8px;margin-left:6px;padding:9px 16px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">📋 Copiar link</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;">
+          <div style="font-size:18px;font-weight:800;color:var(--text);">${rRefs.total_referidos}</div>
+          <div style="font-size:10px;color:var(--muted);">Referidos</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;">
+          <div style="font-size:18px;font-weight:800;color:#16A34A;">US$${rBal.balance_pendiente.toFixed(2)}</div>
+          <div style="font-size:10px;color:var(--muted);">Balance</div>
+        </div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;">
+          <div style="font-size:18px;font-weight:800;color:var(--text);">${rBal.tasa_actual}%</div>
+          <div style="font-size:10px;color:var(--muted);">Tu tasa</div>
+        </div>
+      </div>
+      ${!rBal.es_suscriptor ? `<div style="font-size:11px;color:var(--text2);background:rgba(22,163,74,.08);border:1px solid var(--green-border);border-radius:8px;padding:10px;margin-bottom:12px;line-height:1.5;">💡 <strong>Suscríbete y tu tasa sube a 20%</strong> en TODOS tus referidos — los de antes y los nuevos. Tu balance puede pagar tu suscripción.</div>` : ''}
+      ${rBal.balance_pendiente > 0 ? `
+        <div style="display:flex;gap:8px;">
+          <button onclick="solicitarCobroReferidos('credito')" style="flex:1;padding:10px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:8px;color:var(--green);font-size:12px;font-weight:800;cursor:pointer;">Usar como crédito</button>
+          <button onclick="solicitarCobroReferidos('transferencia')" ${!puedeRetirar ? 'disabled title="Mínimo US$'+rBal.umbral_efectivo+'"' : ''} style="flex:1;padding:10px;background:${puedeRetirar ? '#16A34A' : 'var(--bg2)'};border:${puedeRetirar ? 'none' : '1px solid var(--border)'};border-radius:8px;color:${puedeRetirar ? '#fff' : 'var(--muted)'};font-size:12px;font-weight:800;cursor:${puedeRetirar ? 'pointer' : 'not-allowed'};">Retirar (mín US$${rBal.umbral_efectivo})</button>
+        </div>` : ''}
+      ${rRefs.referidos.length > 0 ? `
+        <div style="margin-top:14px;">
+          <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Tus referidos</div>
+          ${rRefs.referidos.map(r => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+              <div>
+                <div style="font-size:12px;font-weight:600;color:var(--text);">${r.email}</div>
+                <div style="font-size:10px;color:var(--muted);">${r.status === 'active' ? '✅ Suscrito' : '⏳ Registrado (aún no paga)'}</div>
+              </div>
+              <div style="font-size:12px;font-weight:800;color:#16A34A;">+US$${r.comision_generada.toFixed(2)}</div>
+            </div>`).join('')}
+        </div>` : '<div style="font-size:12px;color:var(--muted);text-align:center;margin-top:10px;">Aún no tienes referidos. ¡Comparte tu link!</div>'}`;
+  } catch(e) {
+    cont.innerHTML = '<div style="font-size:13px;color:var(--muted);">No se pudo cargar. Intenta de nuevo.</div>';
+  }
+}
+
+function compartirRefLink() {
+  const msg = window._refMsgWA || ('Regístrate en LicitacionLab: ' + (window._refLink || ''));
+  window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+}
+
+function copiarRefLink() {
+  if (!window._refLink) return;
+  navigator.clipboard.writeText(window._refLink).then(() => {
+    alert('✅ Link copiado: ' + window._refLink);
+  });
+}
+
+async function solicitarCobroReferidos(tipo) {
+  const token = localStorage.getItem('sb_token');
+  if (!token) return;
+  let datos_bancarios = null;
+  if (tipo === 'transferencia') {
+    datos_bancarios = prompt('Ingresa tu banco y número de cuenta para la transferencia:');
+    if (!datos_bancarios) return;
+  }
+  try {
+    const r = await fetch(`${API}/api/referidos/solicitar-cobro`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ tipo, datos_bancarios })
+    });
+    const d = await r.json();
+    if (r.ok) { alert('✅ ' + d.mensaje); cargarPanelReferidos(); }
+    else alert('❌ ' + (d.detail || 'Error procesando la solicitud'));
+  } catch(e) { alert('❌ Error de conexión'); }
+}
+
+// ═══════════════════════════════════════════════════════════
+// BANNER FUNDADORES — cupos en vivo en el modal de planes
+// ═══════════════════════════════════════════════════════════
+async function cargarBannerFundadores() {
+  try {
+    const r = await fetch(`${API}/api/referidos/fundadores/estado`);
+    const d = await r.json();
+    const banners = document.querySelectorAll('.founder-banner-slot');
+    if (!d.activo) { banners.forEach(b => b.style.display = 'none'); return; }
+    banners.forEach(b => {
+      b.style.display = 'block';
+      b.innerHTML = `
+        <div style="background:linear-gradient(135deg,#0D1B2A,#14532d);border:1px solid #16A34A;border-radius:12px;padding:14px 16px;margin-bottom:12px;text-align:center;">
+          <div style="font-size:10px;font-weight:800;color:#4ade80;letter-spacing:.1em;text-transform:uppercase;">🔥 Programa Fundadores</div>
+          <div style="font-size:19px;font-weight:800;color:#fff;margin:4px 0;">Quedan ${d.cupos_disponibles} de ${d.cupos_total} cupos</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.75);line-height:1.5;">Suscríbete y <strong style="color:#4ade80;">te preparamos procesos de licitación GRATIS</strong>:<br>Mensual: 1 proceso · Semestral: 3 procesos · Anual: 5 procesos<br><span style="font-size:10px;">(Construcción: plan o Sobre A según suscripción)</span></div>
+        </div>`;
+    });
+  } catch(e) {}
+}
+
 async function register() {
   const nombre   = document.getElementById('reg-name').value.trim();
   const email    = document.getElementById('reg-email').value.trim();
@@ -4909,6 +5126,8 @@ function showApp() {
   actualizarSaludo();
   initBanner();
   initOnboarding();
+  vincularReferido();       // vincula ?ref= capturado al registrarse
+  esUsuarioPro(true);       // pre-carga el estado PRO (cache freemium)
 }
 
 function showMsg(msg, type) {
@@ -5590,6 +5809,7 @@ function actualizarBadgeFiltros() {
 
 // ── ANÁLISIS IA — solicitar con estado de carga ──
 async function solicitarAnalisis(codigo) {
+  if (!(await verificarAccesoPro('analisis'))) return;
   const btn = document.getElementById(`btn-analizar-${codigo}`);
   if (!btn || btn.disabled) return;
   btn.disabled = true;
@@ -6442,6 +6662,7 @@ function actualizarAsideChecklist(codigo, totalItems) {
 let _precioCache = {};
 
 async function cargarPrecioInteligente(codigo) {
+  if (!(await verificarAccesoPro('precio'))) return;
   const cont = document.getElementById('dtab-oferta-content');
   if (!cont) return;
 
@@ -7116,7 +7337,7 @@ function switchTab2(tab) {
     const hayContenido = (dash && dash.style.display !== 'none') || (resC && resC.innerHTML.trim());
     if (!hayContenido) icRenderEstado('Busca una empresa por nombre o RNC para ver su historial de contratos con el Estado.');
   }
-  if (tab==='perfil')      { cargarEstadoPlan(); }
+  if (tab==='perfil')      { cargarEstadoPlan(); cargarPanelReferidos(); }
   if (tab==='alertas')     cargarAlertas();
   if (tab==='analisis')    cargarAnalisisTab();
   if (tab==='reportes')    cargarReportes();
@@ -8530,6 +8751,14 @@ async function toggleSeguimiento(codigo) {
 }
 
 async function agregarSeguimiento(codigo) {
+  // Freemium: máximo 3 procesos en seguimiento
+  if (!(await esUsuarioPro())) {
+    const actuales = (seguimientoData || []).length;
+    if (actuales >= 3) {
+      mostrarModalUpgrade('seguimiento');
+      return;
+    }
+  }
   try {
     console.log('Guardando seguimiento - user_id:', currentUser?.id, 'codigo:', codigo);
     const result = await sbRest('seguimiento_procesos', 'POST', {
@@ -10810,6 +11039,7 @@ function icDebounce() {
 }
 
 async function icBuscar() {
+  if (!(await verificarAccesoPro('empresas'))) return;
   const q = (document.getElementById('ic-search-input')?.value || '').trim();
   if (q.length < 2) return;
   document.getElementById('ic-resultados').innerHTML = '';
@@ -11687,6 +11917,7 @@ function icVolverBusqueda() {
       <button onclick="cerrarModalPlanes()" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1;">×</button>
     </div>
     <p style="margin:0 0 16px;font-size:12px;color:var(--text2);font-family:Inter,sans-serif;">Acceso completo a LicitacionLab. Pago seguro con Pagadito (Visa / Mastercard).</p>
+    <div class="founder-banner-slot" style="display:none;"></div>
     <div id="listaPlanes"></div>
     <p id="errorPago" style="display:none;margin:12px 0 0;font-size:12px;color:var(--red);font-family:Inter,sans-serif;"></p>
   </div>
@@ -11696,10 +11927,24 @@ function icVolverBusqueda() {
 // ── Pagadito: abrir/cerrar modal ─────────────────────────
 const PLAN_BADGES = { 6: 'AHORRA 10%', 12: 'AHORRA 14%' };
 
+// Beneficios Fundadores por duración de plan
+const FOUNDER_BENEFITS = {
+  1:  '🎁 Fundadores: 1 proceso de bienes/servicios preparado GRATIS',
+  6:  '🎁 Fundadores: 3 procesos B&S gratis, o 1 plan de construcción',
+  12: '🎁 Fundadores: 5 procesos B&S gratis, o 1 Sobre A de construcción'
+};
+
 async function abrirModalPlanes() {
   document.getElementById('modalPlanes').style.display = 'flex';
   const cont = document.getElementById('listaPlanes');
   cont.innerHTML = '<p style="color:var(--text2);font-size:13px;font-family:Inter,sans-serif;">Cargando planes...</p>';
+  cargarBannerFundadores();  // cupos en vivo
+  let fundadoresActivo = false;
+  try {
+    const rf = await fetch(`${API}/api/referidos/fundadores/estado`);
+    const df = await rf.json();
+    fundadoresActivo = df.activo === true;
+  } catch(e) {}
   try {
     const r = await fetch('/api/pagos/planes');
     const { planes } = await r.json();
@@ -11713,6 +11958,7 @@ async function abrirModalPlanes() {
           </div>
           <button class="plan-btn" onclick="event.stopPropagation();pagarPlan(${p.id},this)">Elegir</button>
         </div>
+        ${fundadoresActivo && FOUNDER_BENEFITS[p.duracion_meses] ? `<p style="margin:8px 0 0;font-size:11px;font-weight:700;color:#16A34A;font-family:Inter,sans-serif;line-height:1.4;">${FOUNDER_BENEFITS[p.duracion_meses]}</p>` : ''}
       </div>`).join('');
   } catch(e) {
     cont.innerHTML = '<p style="color:var(--red);font-size:13px;font-family:Inter,sans-serif;">Error cargando planes. Intenta de nuevo.</p>';
