@@ -215,7 +215,30 @@ Formato JSON: {{"subject": "...", "cuerpo_html": "..."}}
 Firma: Lonny Antigua | LicitacionLab | {APP_URL}"""
     }
 
-    prompt = contextos[numero]
+    # ─── Oferta Programa Fundadores (con cupos en vivo) ───
+    cupos_disponibles = 0
+    try:
+        cfg = supabase.table("founder_config").select("max_slots, used_slots, active").eq("id", 1).execute()
+        if cfg.data and cfg.data[0]["active"]:
+            cupos_disponibles = max(0, cfg.data[0]["max_slots"] - cfg.data[0]["used_slots"])
+    except Exception:
+        pass
+
+    oferta_fundadores = ""
+    if cupos_disponibles > 0:
+        oferta_fundadores = f"""
+
+OFERTA OBLIGATORIA — Incluye esto en el email de forma natural y persuasiva:
+LicitacionLab lanzó su Programa Fundadores con SOLO 30 cupos (quedan {cupos_disponibles}).
+Al suscribirse, LES PREPARAMOS PROCESOS DE LICITACIÓN COMPLETOS GRATIS:
+- Plan Mensual (US$37): 1 proceso de bienes/servicios preparado gratis
+- Plan Semestral (US$200): 3 procesos de bienes/servicios gratis, o 1 plan de construcción
+- Plan Anual (US$380): 5 procesos de bienes/servicios gratis, o 1 Sobre A completo de construcción
+Esto significa que un experto prepara su documentación de oferta (Sobre A) lista para presentar.
+Menciona la escasez real: quedan {cupos_disponibles} cupos de 30 y cuando se llenan, se cierra.
+Link con tracking: {APP_URL}/?utm_source=agente6&utm_campaign=fundadores"""
+
+    prompt = contextos[numero] + oferta_fundadores
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
