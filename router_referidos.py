@@ -35,11 +35,28 @@ _sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 referidos_router = APIRouter(prefix="/api/referidos", tags=["referidos"])
 
-# Umbrales de cobro
-UMBRAL_EFECTIVO_FREE = 60.0   # freemium puede retirar efectivo desde US$60
-UMBRAL_EFECTIVO_PRO = 40.0    # suscriptor puede retirar desde US$40
-TASA_FREE = 15
-TASA_PRO = 20
+
+def _config():
+    """Lee la config de comisiones desde la DB (auditable, no hardcodeada)."""
+    q = _sb.table("referral_config").select("*").eq("id", 1).execute()
+    if q.data:
+        return q.data[0]
+    return {
+        "bono_bienvenida": 10.0, "tasa_pago": 15, "tasa_free": 10,
+        "descuento_referido_pct": 50, "umbral_retiro_pago": 40.0, "umbral_retiro_free": 60.0,
+    }
+
+
+def _audit(user_id: str, accion: str, detalle: dict | None = None):
+    """Registra acciones sensibles para auditoría antifraude."""
+    try:
+        _sb.table("referral_audit").insert({
+            "user_id": user_id,
+            "accion": accion,
+            "detalle": detalle or {},
+        }).execute()
+    except Exception:
+        pass
 
 
 # ── Auth helper (mismo patrón que router_pagos) ──────────────────
@@ -91,8 +108,8 @@ def mi_codigo(authorization: str | None = Header(default=None)):
         "link": f"{APP_URL}/?ref={code}",
         "mensaje_whatsapp": (
             f"Mira, estoy usando LicitacionLab para monitorear las licitaciones "
-            f"del Estado en tiempo real. Regístrate con mi link y te dan 50% de "
-            f"descuento el primer mes: {APP_URL}/?ref={code}"
+            f"del Estado en tiempo real. Regístrate con mi link y te preparan un "
+            f"proceso de licitación GRATIS en tu primer mes: {APP_URL}/?ref={code}"
         ),
     }
 
@@ -145,6 +162,7 @@ def mis_referidos(authorization: str | None = Header(default=None)):
 def balance(authorization: str | None = Header(default=None)):
     user_id = _user_id_desde_token(authorization)
     es_pro = _es_suscriptor_activo(user_id)
+    cfg = _config()
 
     coms = _sb.table("referral_commissions").select("amount, status") \
         .eq("referrer_id", user_id).execute().data or []
@@ -153,13 +171,14 @@ def balance(authorization: str | None = Header(default=None)):
     cobrado = sum(float(c["amount"]) for c in coms if c["status"] in ("paid", "credited"))
     total = pendiente + cobrado
 
-    umbral = UMBRAL_EFECTIVO_PRO if es_pro else UMBRAL_EFECTIVO_FREE
+    umbral = float(cfg["umbral_retiro_pago"]) if es_pro else float(cfg["umbral_retiro_free"])
 
     return {
         "balance_pendiente": round(pendiente, 2),
         "total_ganado": round(total, 2),
         "total_cobrado": round(cobrado, 2),
-        "tasa_actual": TASA_PRO if es_pro else TASA_FREE,
+        "tasa_actual": cfg["tasa_pago"] if es_pro else cfg["tasa_free"],
+        "bono_bienvenida": float(cfg["bono_bienvenida"]),
         "es_suscriptor": es_pro,
         "umbral_efectivo": umbral,
         "puede_retirar_efectivo": pendiente >= umbral,
@@ -233,6 +252,11 @@ def solicitar_cobro(body: SolicitudCobro, authorization: str | None = Header(def
         }).execute()
     except Exception:
         pass  # el log no debe tumbar la operación
+
+    _audit(user_id, "cobro_solicitado", {
+        "tipo": body.tipo, "monto": round(pendiente, 2),
+        "num_comisiones": len(ids),
+    })
 
     return {
         "ok": True,
@@ -353,14 +377,25 @@ def registrar_referido(body: RegistroReferido, authorization: str | None = Heade
         return {"ok": False, "msg": "Código no válido"}
 
     referrer_id = referrer.data[0]["id"]
+
+    # GUARD 1: no auto-referido
     if referrer_id == user_id:
+        _audit(user_id, "auto_referido_bloqueado", {"ref_code": ref_code})
         return {"ok": False, "msg": "No puedes referirte a ti mismo"}
 
-    # ¿Ya tiene referidor?
+    # GUARD 2: ¿ya tiene referidor?
     existing = _sb.table("referrals").select("id") \
         .eq("referred_user_id", user_id).execute()
     if existing.data:
         return {"ok": False, "msg": "Ya tienes un referidor asignado"}
+
+    # GUARD 3: el referido NO puede ser una cuenta que ya pagó antes
+    # (evita que usuarios existentes se vinculen a un referidor solo para generar bono)
+    pagos_previos = _sb.table("pagos").select("id") \
+        .eq("user_id", user_id).eq("estado", "COMPLETED").execute().data
+    if pagos_previos:
+        _audit(user_id, "referido_rechazado_ya_pago", {"ref_code": ref_code})
+        return {"ok": False, "msg": "Solo cuentas nuevas pueden vincularse a un referidor"}
 
     _sb.table("referrals").insert({
         "referrer_id": referrer_id,
@@ -374,7 +409,8 @@ def registrar_referido(body: RegistroReferido, authorization: str | None = Heade
         "source": "referral",
     }).eq("id", user_id).execute()
 
-    return {"ok": True, "msg": "Referido registrado. Tendrás 50% de descuento en tu primer mes."}
+    _audit(user_id, "referido_registrado", {"referrer_id": referrer_id, "ref_code": ref_code})
+    return {"ok": True, "msg": "Referido registrado. Te prepararemos un proceso de bienes/servicios GRATIS en tu primer mes."}
 
 
 # ══════════════════════════════════════════════════════════════
