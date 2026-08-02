@@ -246,9 +246,10 @@ def solicitar_cobro(body: SolicitudCobro, authorization: str | None = Header(def
         detalle += f" | banco: {body.datos_bancarios[:120]}"
     try:
         _sb.table("cron_log").insert({
-            "tarea": "cobro_referidos",
+            "job": "cobro_referidos",
             "detalle": detalle,
-            "ejecutado_en": datetime.now(timezone.utc).isoformat(),
+            "status": "pendiente",
+            "ejecutado_at": datetime.now(timezone.utc).isoformat(),
         }).execute()
     except Exception:
         pass  # el log no debe tumbar la operación
