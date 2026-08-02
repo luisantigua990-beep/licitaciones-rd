@@ -3582,7 +3582,7 @@ html { background: var(--color-bg, #0A0A0A); }
     <!-- ── SECCIÓN REFERIDOS ── -->
     <div class="perfil-card" id="perfil-referidos-card">
       <h2>Programa de Referidos</h2>
-      <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5;">Comparte tu link y gana <strong style="color:var(--text);">comisión recurrente</strong> por cada suscriptor que traigas. Tus referidos reciben 50% off su primer mes.</p>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.5;">Comparte tu link y gana <strong style="color:var(--text);">US$10 de bono + comisión recurrente</strong> por cada suscriptor que traigas. A tus referidos les preparamos un proceso de bienes/servicios gratis en su primer mes.</p>
       <div id="referidos-contenido">
         <div style="font-size:13px;color:var(--muted);">Cargando...</div>
       </div>
@@ -4997,7 +4997,8 @@ async function cargarPanelReferidos(contId = 'referidos-contenido') {
           <div style="font-size:10px;color:var(--muted);">Tu tasa</div>
         </div>
       </div>
-      ${!rBal.es_suscriptor ? `<div style="font-size:11px;color:var(--text2);background:rgba(22,163,74,.08);border:1px solid var(--green-border);border-radius:8px;padding:10px;margin-bottom:12px;line-height:1.5;"><strong>Suscríbete y tu tasa sube a 20%</strong> en TODOS tus referidos — los de antes y los nuevos. Tu balance puede pagar tu suscripción.</div>` : ''}
+      ${!rBal.es_suscriptor ? `<div style="font-size:11px;color:var(--text2);background:rgba(22,163,74,.08);border:1px solid var(--green-border);border-radius:8px;padding:10px;margin-bottom:12px;line-height:1.5;"><strong>Suscríbete y tu tasa sube a ${rBal.tasa_actual < 15 ? '15' : '20'}%</strong> en TODOS tus referidos — los de antes y los nuevos. Tu balance puede pagar tu suscripción.</div>` : ''}
+      <div style="font-size:11px;color:var(--text2);background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:12px;line-height:1.5;">Ganas <strong style="color:#16A34A;">US$${rBal.bono_bienvenida.toFixed(0)} de bono</strong> cuando tu referido hace su primer pago, más <strong style="color:#16A34A;">${rBal.tasa_actual}% cada mes</strong> que siga suscrito.</div>
       ${rBal.balance_pendiente > 0 ? `
         <div style="display:flex;gap:8px;">
           <button onclick="solicitarCobroReferidos('credito')" style="flex:1;padding:10px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:8px;color:var(--green);font-size:12px;font-weight:800;cursor:pointer;">Usar como crédito</button>
