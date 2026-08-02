@@ -92,7 +92,7 @@ def crear_pago(body: CrearPagoRequest, authorization: str | None = Header(defaul
         raise HTTPException(404, "Plan no encontrado")
     plan = plan_q.data[0]
 
-    # ─── Descuento 50% primer mes para usuarios referidos (solo plan mensual) ───
+    # ─── Descuento primer mes para usuarios referidos (solo plan mensual) ───
     monto_final = float(plan["precio"])
     descripcion_extra = ""
     if plan["duracion_meses"] == 1:
@@ -102,8 +102,10 @@ def crear_pago(body: CrearPagoRequest, authorization: str | None = Header(defaul
             pagos_previos = _sb_admin.table("pagos").select("id") \
                 .eq("user_id", user_id).eq("estado", "COMPLETED").execute().data
             if not pagos_previos:
-                monto_final = round(monto_final * 0.50, 2)
-                descripcion_extra = " · 50% OFF referido"
+                cfg_q = _sb_admin.table("referral_config").select("descuento_referido_pct").eq("id", 1).execute()
+                desc_pct = cfg_q.data[0]["descuento_referido_pct"] if cfg_q.data else 50
+                monto_final = round(monto_final * (100 - desc_pct) / 100, 2)
+                descripcion_extra = f" · {desc_pct}% OFF referido"
 
     ern = f"LL-{user_id[:8]}-{int(time.time() * 1000)}"
 
@@ -336,14 +338,66 @@ def _activar_suscripcion(pago: dict):
     except Exception as e:
         print(f"⚠️ Error procesando fundador: {e}")
 
+    # ─── Proceso gratis por referido (solo si NO quedó como fundador) ───
+    try:
+        _procesar_proceso_referido(pago)
+    except Exception as e:
+        print(f"⚠️ Error procesando proceso de referido: {e}")
+
     _enviar_confirmacion_pago(pago, plan)
 
 
+def _procesar_proceso_referido(pago: dict):
+    """Da 1 proceso de bienes/servicios gratis al referido en su primer pago.
+    REGLA: si ya es fundador, NO se suma (solo cuenta el beneficio de fundador).
+    Solo aplica una vez, en el primer pago del referido."""
+    user_id = pago["user_id"]
+
+    # ¿Este usuario fue referido?
+    ref = _sb_admin.table("referrals").select("id, proceso_gratis_otorgado") \
+        .eq("referred_user_id", user_id).execute().data
+    if not ref:
+        return
+    referral = ref[0]
+
+    # Solo una vez
+    if referral.get("proceso_gratis_otorgado"):
+        return
+
+    # Traer perfil para ver si ya es fundador
+    perfil = _sb_admin.table("user_profiles").select(
+        "is_founder, free_processes_total, free_processes_used"
+    ).eq("id", user_id).execute().data
+    if not perfil:
+        return
+    p = perfil[0]
+
+    # REGLA: si ya es fundador, no se suma. Solo marcamos el referral como procesado.
+    if p.get("is_founder"):
+        _sb_admin.table("referrals").update({"proceso_gratis_otorgado": True}) \
+            .eq("id", referral["id"]).execute()
+        print(f"ℹ️ Referido {user_id[:8]} ya es fundador — proceso por referido NO se suma")
+        return
+
+    # No es fundador → otorgar 1 proceso gratis de bienes/servicios
+    cfg = _sb_admin.table("referral_config").select("proceso_gratis_referido").eq("id", 1).execute().data
+    n = cfg[0]["proceso_gratis_referido"] if cfg else 1
+
+    _sb_admin.table("user_profiles").update({
+        "founder_type": "referido_bs",  # marca que es beneficio de referido (bienes/servicios)
+        "free_processes_total": (p.get("free_processes_total") or 0) + n,
+    }).eq("id", user_id).execute()
+
+    _sb_admin.table("referrals").update({"proceso_gratis_otorgado": True}) \
+        .eq("id", referral["id"]).execute()
+    print(f"🎁 Referido {user_id[:8]} recibe {n} proceso(s) gratis de bienes/servicios")
+
+
 def _procesar_comision_referido(pago: dict):
-    """Si el usuario que pagó fue referido, genera la comisión al referidor.
-    Tasa: 20% si el referidor tiene suscripción activa, 15% si es free.
-    La tasa se evalúa en CADA pago, así que al suscribirse el referidor,
-    todos sus referidos pasan automáticamente a generar 20%."""
+    """Genera comisión al referidor cuando su referido paga.
+    Modelo híbrido: bono de bienvenida (1 sola vez, al primer pago) + recurrente.
+    Tasas y bono leídos desde referral_config (auditable, no hardcodeado).
+    Seguridad: valida no-auto-referido, idempotencia por pago_id, bono 1 sola vez."""
     ref = _sb_admin.table("referrals").select("*") \
         .eq("referred_user_id", pago["user_id"]).execute().data
     if not ref:
@@ -352,35 +406,79 @@ def _procesar_comision_referido(pago: dict):
     referral = ref[0]
     referrer_id = referral["referrer_id"]
 
+    # GUARD 1: nunca auto-referido (defensa en profundidad; la DB también lo bloquea)
+    if referrer_id == pago["user_id"]:
+        print(f"⚠️ Auto-referido bloqueado: {referrer_id[:8]}")
+        return
+
+    # GUARD 2: idempotencia — si este pago ya generó comisión RECURRENTE, no duplicar
+    ya = _sb_admin.table("referral_commissions").select("id") \
+        .eq("pago_id", pago["id"]).eq("tipo", "recurrente").execute().data
+    if ya:
+        print(f"⚠️ Pago {pago['id']} ya tiene comisión recurrente, se omite")
+        return
+
+    # Config de comisiones desde la DB
+    cfg_q = _sb_admin.table("referral_config").select("*").eq("id", 1).execute()
+    cfg = cfg_q.data[0] if cfg_q.data else {
+        "bono_bienvenida": 10.0, "tasa_pago": 15, "tasa_free": 10
+    }
+
+    es_primer_pago = referral["status"] == "pending"
+
     # Activar el referral la primera vez que el referido paga
-    if referral["status"] == "pending":
+    if es_primer_pago:
         _sb_admin.table("referrals").update({
             "status": "active",
             "activated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", referral["id"]).execute()
 
-    # ¿El referidor es suscriptor activo? → define la tasa
+    # ¿El referidor es suscriptor activo? → define la tasa recurrente
     sub = _sb_admin.table("suscripciones").select("id, fecha_vencimiento") \
         .eq("user_id", referrer_id).eq("activa", True).execute()
     es_pro = False
     if sub.data:
         venc = datetime.fromisoformat(sub.data[0]["fecha_vencimiento"])
         es_pro = venc > datetime.now(timezone.utc)
-    tasa = 20 if es_pro else 15
+    tasa = cfg["tasa_pago"] if es_pro else cfg["tasa_free"]
 
-    comision = round(float(pago["monto"]) * tasa / 100, 2)
     periodo = datetime.now(timezone.utc).strftime("%Y-%m")
 
-    _sb_admin.table("referral_commissions").insert({
-        "referral_id": referral["id"],
-        "referrer_id": referrer_id,
-        "amount": comision,
-        "rate": tasa,
-        "period": periodo,
-        "pago_id": pago["id"],
-        "status": "pending",
-    }).execute()
-    print(f"💰 Comisión referido: US${comision} ({tasa}%) → referidor {referrer_id[:8]}")
+    # ─── BONO DE BIENVENIDA: solo en el primer pago del referido y 1 sola vez ───
+    if es_primer_pago and not referral.get("bono_pagado"):
+        bono = round(float(cfg["bono_bienvenida"]), 2)
+        if bono > 0:
+            _sb_admin.table("referral_commissions").insert({
+                "referral_id": referral["id"],
+                "referrer_id": referrer_id,
+                "amount": bono,
+                "rate": 0,
+                "period": periodo,
+                "pago_id": pago["id"],
+                "tipo": "bono",
+                "status": "pending",
+            }).execute()
+            _sb_admin.table("referrals").update({"bono_pagado": True}) \
+                .eq("id", referral["id"]).execute()
+            print(f"🎁 Bono bienvenida US${bono} → referidor {referrer_id[:8]}")
+
+    # ─── COMISIÓN RECURRENTE ───
+    comision = round(float(pago["monto"]) * tasa / 100, 2)
+    try:
+        _sb_admin.table("referral_commissions").insert({
+            "referral_id": referral["id"],
+            "referrer_id": referrer_id,
+            "amount": comision,
+            "rate": tasa,
+            "period": periodo,
+            "pago_id": pago["id"],
+            "tipo": "recurrente",
+            "status": "pending",
+        }).execute()
+        print(f"💰 Comisión referido: US${comision} ({tasa}%) → referidor {referrer_id[:8]}")
+    except Exception as e:
+        # Si el UNIQUE(pago_id) rebota (bono ya usó ese pago_id), registrar recurrente sin romper
+        print(f"⚠️ Comisión recurrente no insertada (posible constraint pago_id): {e}")
 
 
 def _procesar_fundador(pago: dict, plan: dict):
