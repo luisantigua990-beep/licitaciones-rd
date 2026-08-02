@@ -199,8 +199,18 @@ def solicitar_cobro(body: SolicitudCobro, authorization: str | None = Header(def
                 f"Necesitas al menos US${umbral:.0f} para retirar en efectivo. "
                 f"Tu balance actual: US${pendiente:.2f}",
             )
-        if not body.datos_bancarios:
-            raise HTTPException(400, "Incluye tus datos bancarios (banco y número de cuenta)")
+        # Usar datos bancarios del body, o los guardados en el perfil
+        datos = body.datos_bancarios
+        if not datos:
+            perfil = _sb.table("user_profiles").select(
+                "bank_name, bank_account_number, bank_account_holder"
+            ).eq("id", user_id).execute().data
+            if perfil and perfil[0].get("bank_account_number"):
+                p = perfil[0]
+                datos = f"{p['bank_name']} - {p['bank_account_number']} - {p['bank_account_holder']}"
+        if not datos:
+            raise HTTPException(400, "Registra tu cuenta bancaria antes de solicitar transferencia")
+        body.datos_bancarios = datos
 
     # Marcar comisiones según el tipo
     nuevo_status = "credited" if body.tipo == "credito" else "paid"
@@ -234,6 +244,52 @@ def solicitar_cobro(body: SolicitudCobro, authorization: str | None = Header(def
             else "Solicitud recibida. Procesamos transferencias una vez al mes."
         ),
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# 9) CUENTA BANCARIA — para depósito de comisiones
+# ══════════════════════════════════════════════════════════════
+class CuentaBancaria(BaseModel):
+    bank_name: str
+    account_number: str
+    account_holder: str
+    account_type: str | None = None  # ahorros / corriente
+    document: str | None = None  # cédula/RNC del titular
+
+
+@referidos_router.get("/cuenta-bancaria")
+def obtener_cuenta_bancaria(authorization: str | None = Header(default=None)):
+    user_id = _user_id_desde_token(authorization)
+    q = _sb.table("user_profiles").select(
+        "bank_name, bank_account_number, bank_account_holder, bank_account_type, bank_document"
+    ).eq("id", user_id).execute()
+    if not q.data:
+        return {"tiene_cuenta": False}
+    p = q.data[0]
+    tiene = bool(p.get("bank_account_number"))
+    return {
+        "tiene_cuenta": tiene,
+        "bank_name": p.get("bank_name") or "",
+        "account_number": p.get("bank_account_number") or "",
+        "account_holder": p.get("bank_account_holder") or "",
+        "account_type": p.get("bank_account_type") or "",
+        "document": p.get("bank_document") or "",
+    }
+
+
+@referidos_router.post("/cuenta-bancaria")
+def guardar_cuenta_bancaria(body: CuentaBancaria, authorization: str | None = Header(default=None)):
+    user_id = _user_id_desde_token(authorization)
+    if not body.bank_name.strip() or not body.account_number.strip() or not body.account_holder.strip():
+        raise HTTPException(400, "Banco, número de cuenta y titular son obligatorios")
+    _sb.table("user_profiles").update({
+        "bank_name": body.bank_name.strip(),
+        "bank_account_number": body.account_number.strip(),
+        "bank_account_holder": body.account_holder.strip(),
+        "bank_account_type": (body.account_type or "").strip() or None,
+        "bank_document": (body.document or "").strip() or None,
+    }).eq("id", user_id).execute()
+    return {"ok": True, "mensaje": "Cuenta bancaria guardada. La usaremos para depositar tus comisiones."}
 
 
 # ══════════════════════════════════════════════════════════════
