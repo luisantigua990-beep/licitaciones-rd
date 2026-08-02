@@ -414,6 +414,62 @@ def registrar_referido(body: RegistroReferido, authorization: str | None = Heade
 
 
 # ══════════════════════════════════════════════════════════════
+# 11) ANÁLISIS GRATIS — gancho de conversión para freemium
+# ══════════════════════════════════════════════════════════════
+class AnalisisGratis(BaseModel):
+    codigo_proceso: str
+
+
+@referidos_router.get("/analisis-gratis/estado")
+def estado_analisis_gratis(authorization: str | None = Header(default=None)):
+    """Indica si el usuario free todavía tiene su análisis de cortesía disponible."""
+    user_id = _user_id_desde_token(authorization)
+    # Los suscriptores tienen análisis ilimitado, no aplica
+    if _es_suscriptor_activo(user_id):
+        return {"aplica": False, "es_suscriptor": True}
+    q = _sb.table("user_profiles").select("free_analysis_used, free_analysis_proceso") \
+        .eq("id", user_id).execute()
+    usado = bool(q.data and q.data[0].get("free_analysis_used"))
+    return {
+        "aplica": True,
+        "es_suscriptor": False,
+        "disponible": not usado,
+        "usado": usado,
+        "proceso_analizado": q.data[0].get("free_analysis_proceso") if q.data else None,
+    }
+
+
+@referidos_router.post("/analisis-gratis/reclamar")
+def reclamar_analisis_gratis(body: AnalisisGratis, authorization: str | None = Header(default=None)):
+    """Marca el análisis gratis como usado y autoriza UNO. El análisis real y el
+    envío de correo lo dispara main.py; aquí solo controlamos el límite de forma
+    atómica del lado servidor (el frontend no puede saltarse esto)."""
+    user_id = _user_id_desde_token(authorization)
+    codigo = (body.codigo_proceso or "").strip()
+    if not codigo:
+        raise HTTPException(400, "Falta el código del proceso")
+
+    # Suscriptores no consumen el gratis (tienen ilimitado)
+    if _es_suscriptor_activo(user_id):
+        return {"ok": True, "es_suscriptor": True, "autorizado": True}
+
+    # Verificar que no lo haya usado ya
+    q = _sb.table("user_profiles").select("free_analysis_used").eq("id", user_id).execute()
+    if q.data and q.data[0].get("free_analysis_used"):
+        raise HTTPException(403, "Ya usaste tu análisis gratis. Suscríbete para análisis ilimitados.")
+
+    # Marcar como usado ANTES de disparar (previene doble uso por doble clic)
+    _sb.table("user_profiles").update({
+        "free_analysis_used": True,
+        "free_analysis_proceso": codigo,
+        "free_analysis_at": datetime.now(timezone.utc).isoformat(),
+    }).eq("id", user_id).execute()
+
+    _audit(user_id, "analisis_gratis_reclamado", {"proceso": codigo})
+    return {"ok": True, "autorizado": True, "es_suscriptor": False}
+
+
+# ══════════════════════════════════════════════════════════════
 # 8) ADMIN — dashboard de fundadores para Lonny (protegido)
 # ══════════════════════════════════════════════════════════════
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
