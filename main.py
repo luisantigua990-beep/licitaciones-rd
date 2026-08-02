@@ -3497,7 +3497,8 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
         razon_dif    = ""
         recomendacion = ""
 
-    # ── Matriz de criterios de evaluación (email) ─────────    crit_ev = eval_comp.get("criterios_evaluacion") or {}
+    # ── Matriz de criterios de evaluación (email) ─────────
+    crit_ev = eval_comp.get("criterios_evaluacion") or {}
     if isinstance(crit_ev, str):
         try:
             import json as _jc; crit_ev = _jc.loads(crit_ev)
