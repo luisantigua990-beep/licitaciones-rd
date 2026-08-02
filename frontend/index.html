@@ -5324,23 +5324,22 @@ async function sendRecovery() {
     btn.textContent = 'Enviar enlace';
     result.style.display = 'block';
 
-    if (res.ok) {
+    // Por seguridad, Supabase puede devolver un status de error aunque SÍ envíe
+    // el correo (para no revelar qué emails están registrados). Salvo error de
+    // servidor real (5xx) o rate limit, mostramos siempre "enviado".
+    if (res.ok || res.status === 400 || res.status === 422) {
       result.style.background = 'var(--green-dim)';
       result.style.color = 'var(--green)';
-      result.textContent = 'Enlace enviado. Revisa tu correo.';
+      result.textContent = 'Si ese correo está registrado, te enviamos el enlace. Revisa tu bandeja y spam.';
       document.getElementById('recovery-email').value = '';
+    } else if (res.status === 429) {
+      result.style.background = 'var(--red-dim)';
+      result.style.color = 'var(--red)';
+      result.textContent = 'Demasiados intentos. Espera unos minutos.';
     } else {
-      const data = await res.json().catch(() => ({}));
-      const msg = (data?.msg || data?.message || data?.error_description || '').toLowerCase();
-      if (res.status === 400 || res.status === 422 || msg.includes('not found') || msg.includes('user')) {
-        result.style.background = 'var(--red-dim)';
-        result.style.color = 'var(--red)';
-        result.textContent = 'Ese correo no está registrado.';
-      } else {
-        result.style.background = 'var(--red-dim)';
-        result.style.color = 'var(--red)';
-        result.textContent = 'Error al enviar. Intenta de nuevo.';
-      }
+      result.style.background = 'var(--red-dim)';
+      result.style.color = 'var(--red)';
+      result.textContent = 'Error al enviar. Intenta de nuevo.';
     }
   } catch(e) {
     btn.disabled = false;
@@ -5949,7 +5948,43 @@ function actualizarBadgeFiltros() {
 
 // ── ANÁLISIS IA — solicitar con estado de carga ──
 async function solicitarAnalisis(codigo) {
-  if (!(await verificarAccesoPro('analisis'))) return;
+  const pro = await esUsuarioPro();
+
+  // Si NO es suscriptor, verificar/reclamar su análisis gratis de cortesía
+  if (!pro) {
+    const token = await obtenerTokenValido();
+    if (!token) { mostrarModalUpgrade('analisis'); return; }
+    try {
+      const est = await fetch(`${API}/api/referidos/analisis-gratis/estado`, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).then(r => r.json());
+      if (est.aplica && !est.disponible) {
+        // Ya usó su gratis → mostrar upgrade
+        mostrarModalUpgrade('analisis');
+        return;
+      }
+      if (est.aplica && est.disponible) {
+        // Confirmar que quiere usar su único análisis gratis
+        const ok = confirm('Este es tu análisis GRATIS de cortesía. Analizaremos el pliego con IA y te enviaremos el resultado a tu correo. ¿Continuar?');
+        if (!ok) return;
+        const rec = await fetch(`${API}/api/referidos/analisis-gratis/reclamar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ codigo_proceso: codigo })
+        });
+        if (!rec.ok) {
+          const d = await rec.json().catch(() => ({}));
+          mostrarToast(d.detail || 'No se pudo reclamar el análisis gratis');
+          mostrarModalUpgrade('analisis');
+          return;
+        }
+      }
+    } catch(e) {
+      mostrarModalUpgrade('analisis');
+      return;
+    }
+  }
+
   const btn = document.getElementById(`btn-analizar-${codigo}`);
   if (!btn || btn.disabled) return;
   btn.disabled = true;
@@ -5958,6 +5993,7 @@ async function solicitarAnalisis(codigo) {
     const res  = await fetch(`${API}/api/procesos/${codigo}/analizar`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
     const data = await res.json();
     if (res.ok) {
+      if (!pro) mostrarToast('Análisis en proceso. Te llegará a tu correo en unos minutos.');
       await verDetalle(codigo);  // recarga la vista con el nuevo análisis
     } else {
       showMsg(data.detail || 'Error al solicitar análisis', 'error');
@@ -8902,38 +8938,47 @@ async function agregarSeguimiento(codigo) {
       return;
     }
   }
+
+  // ── ACTUALIZACIÓN OPTIMISTA: el usuario ve el cambio AL INSTANTE ──
+  // Agregamos localmente primero, actualizamos el botón, y luego sincronizamos.
+  const yaLocal = (seguimientoData || []).some(d =>
+    (d.proceso?.codigo_proceso || d.proceso_codigo) === codigo
+  );
+  if (!yaLocal) {
+    seguimientoData = seguimientoData || [];
+    seguimientoData.push({ proceso_codigo: codigo, estado: 'analizando', _optimista: true });
+  }
+  actualizarBtnSeguir(codigo);           // botón cambia YA
+  mostrarToast('Proceso agregado al seguimiento');
+
   try {
-    console.log('Guardando seguimiento - user_id:', currentUser?.id, 'codigo:', codigo);
-    const result = await sbRest('seguimiento_procesos', 'POST', {
+    await sbRest('seguimiento_procesos', 'POST', {
       user_id: currentUser.id,
       proceso_codigo: codigo,
       estado: 'analizando'
     });
-    console.log('Resultado POST seguimiento:', result);
-    await cargarSeguimiento();
-    actualizarBtnSeguir(codigo);
-    mostrarToast('Proceso agregado al seguimiento');
+    // Sincronizar con el servidor en segundo plano (sin bloquear la UI)
+    cargarSeguimiento().then(() => actualizarBtnSeguir(codigo));
 
-    // ── SOLICITAR ANÁLISIS IA AUTOMÁTICAMENTE ──────────────────────
-    // Llamar al backend para que analice el pliego y envíe el email al completar
-    try {
-      const resAnalisis = await fetch(`${API}/api/procesos/${codigo}/analizar`, {
+    // ── Análisis IA automático al seguir: SOLO para suscriptores PRO ──
+    // (los freemium tienen su análisis gratis manual, no automático)
+    esUsuarioPro().then(pro => {
+      if (!pro) return;
+      fetch(`${API}/api/procesos/${codigo}/analizar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
-      });
-      if (resAnalisis.ok) {
-        console.log(`✅ Análisis solicitado para ${codigo}`);
-      } else {
-        console.warn(`⚠️ Análisis no iniciado para ${codigo}:`, resAnalisis.status);
-      }
-    } catch(eAnalisis) {
-      console.warn('⚠️ Error solicitando análisis:', eAnalisis);
-      // No mostrar error al usuario — el análisis es en segundo plano
-    }
-    // ──────────────────────────────────────────────────────────────
+      }).then(r => {
+        if (r.ok) console.log(`✅ Análisis solicitado para ${codigo}`);
+      }).catch(() => {});
+    });
 
   } catch(e) {
+    // Falló el guardado → revertir el cambio optimista
     console.error('Error agregando seguimiento:', e);
+    seguimientoData = (seguimientoData || []).filter(d =>
+      (d.proceso?.codigo_proceso || d.proceso_codigo) !== codigo
+    );
+    actualizarBtnSeguir(codigo);
     mostrarToast('Error al agregar. Intenta de nuevo.');
   }
 }
