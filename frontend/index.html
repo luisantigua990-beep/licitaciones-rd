@@ -6567,32 +6567,135 @@ function renderTabScore(analisis, p) {
         </div>`;
       }).join('')}
     </div>` : ''}
-    ${analisis.requisitos_experiencia || analisis.requisitos_financieros ? `
+    ${renderRequisitosCompletos(analisis)}`;
+}
+
+// Renderiza TODOS los requisitos del pliego (mismo detalle que el correo):
+// experiencia, financieros, personal clave, equipos, garantías, restricciones.
+function renderRequisitosCompletos(analisis) {
+  const exp = analisis.requisitos_experiencia || {};
+  const fin = analisis.requisitos_financieros || {};
+  const pye = analisis.personal_y_equipos || {};
+  const personal = pye.personal_clave || [];
+  const equipos = pye.equipos_minimos || [];
+  const garantias = analisis.garantias_exigidas || [];
+  const restricciones = analisis.restricciones_participacion || [];
+
+  const val = (v) => v && String(v).trim().toUpperCase() !== 'N/A' && String(v).trim() !== '' ? v : null;
+  const fila = (label, v) => val(v) ? `
+    <div style="margin-bottom:10px;">
+      <div class="ll-caption ll-u-text-subtle" style="margin-bottom:3px;">${label}</div>
+      <div class="ll-body-sm">${v}</div>
+    </div>` : '';
+
+  // ── Experiencia ──
+  let expHtml = '';
+  const expFilas = [
+    fila('Años de experiencia (empresa)', exp.anos_experiencia_empresa),
+    fila('Contratos similares', exp.contratos_similares || exp.obras_similares),
+    fila('Sector / especialidad', exp.sector_especialidad),
+    fila('Período de referencia', exp.periodo_referencia),
+    fila('Ámbito', exp.ambito),
+    fila('Montos facturados', exp.montos_facturados),
+    fila('Otros', exp.otros),
+  ].filter(Boolean).join('');
+  if (expFilas) expHtml = `
     <div class="ll-card" style="margin-bottom:12px;">
-      <div class="ll-card__header"><h2 class="ll-card__title">Requisitos para participar</h2></div>
+      <div class="ll-card__header"><h2 class="ll-card__title">Experiencia requerida</h2></div>
+      <div class="ll-card__body" style="padding-top:8px;">${expFilas}</div>
+    </div>`;
+
+  // ── Financieros ──
+  let finHtml = '';
+  const finFilas = [
+    fila('Índice de liquidez', fin.indice_liquidez),
+    fila('Índice de endeudamiento', fin.indice_endeudamiento),
+    fila('Patrimonio mínimo', fin.patrimonio_minimo),
+    fila('Otros', fin.otros),
+  ].filter(Boolean).join('');
+  if (finFilas) finHtml = `
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div class="ll-card__header"><h2 class="ll-card__title">Requisitos financieros</h2></div>
+      <div class="ll-card__body" style="padding-top:8px;">${finFilas}</div>
+    </div>`;
+
+  // ── Personal clave ──
+  let persHtml = '';
+  if (personal.length) {
+    persHtml = `
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div class="ll-card__header"><h2 class="ll-card__title">Personal clave exigido <span style="font-size:10px;font-weight:800;margin-left:6px;background:var(--bg2);color:var(--muted);padding:2px 7px;border-radius:4px;">${personal.length}</span></h2></div>
       <div class="ll-card__body" style="padding-top:8px;">
-        ${analisis.requisitos_experiencia && analisis.requisitos_experiencia.anos_experiencia_empresa !== 'N/A' ? `
-        <div style="margin-bottom:10px;">
-          <div class="ll-caption ll-u-text-subtle" style="margin-bottom:4px;">Experiencia empresa</div>
-          <div class="ll-body-sm">${analisis.requisitos_experiencia.anos_experiencia_empresa}</div>
-        </div>` : ''}
-        ${analisis.requisitos_experiencia && analisis.requisitos_experiencia.obras_similares !== 'N/A' ? `
-        <div style="margin-bottom:10px;">
-          <div class="ll-caption ll-u-text-subtle" style="margin-bottom:4px;">Obras similares</div>
-          <div class="ll-body-sm">${analisis.requisitos_experiencia.obras_similares}</div>
-        </div>` : ''}
-        ${analisis.requisitos_financieros && analisis.requisitos_financieros.patrimonio_minimo !== 'N/A' ? `
-        <div style="margin-bottom:10px;">
-          <div class="ll-caption ll-u-text-subtle" style="margin-bottom:4px;">Patrimonio mínimo</div>
-          <div class="ll-body-sm ll-mono">${analisis.requisitos_financieros.patrimonio_minimo}</div>
-        </div>` : ''}
-        ${analisis.requisitos_financieros && analisis.requisitos_financieros.otros && analisis.requisitos_financieros.otros !== 'N/A' ? `
-        <div>
-          <div class="ll-caption ll-u-text-subtle" style="margin-bottom:4px;">Otros financieros</div>
-          <div class="ll-body-sm">${analisis.requisitos_financieros.otros}</div>
-        </div>` : ''}
+        ${personal.map(pc => `
+          <div style="padding:10px 0;border-bottom:1px solid var(--border);">
+            <div class="ll-body-sm" style="font-weight:700;color:var(--text);">${pc.posicion || 'Cargo'}${pc.es_subsanable === false ? '<span style="font-size:9px;font-weight:800;margin-left:6px;background:rgba(231,76,60,.12);color:var(--red);padding:1px 6px;border-radius:3px;">NO SUBSANABLE</span>' : ''}</div>
+            ${val(pc.titulo) ? `<div class="ll-caption" style="margin-top:3px;">${pc.titulo}</div>` : ''}
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:5px;">
+              ${val(pc.anos_experiencia_general) ? `<span class="ll-chip">Exp. gral: ${pc.anos_experiencia_general}</span>` : ''}
+              ${val(pc.anos_experiencia_especifica) ? `<span class="ll-chip">Exp. específica: ${pc.anos_experiencia_especifica}</span>` : ''}
+              ${val(pc.registro_profesional) ? `<span class="ll-chip">${pc.registro_profesional}</span>` : ''}
+              ${val(pc.dedicacion) ? `<span class="ll-chip">${pc.dedicacion}</span>` : ''}
+            </div>
+            ${val(pc.nota) ? `<div class="ll-caption ll-u-text-subtle" style="margin-top:4px;">${pc.nota}</div>` : ''}
+          </div>`).join('')}
       </div>
-    </div>` : ''}`;
+    </div>`;
+  }
+
+  // ── Equipos mínimos ──
+  let equipHtml = '';
+  if (equipos.length) {
+    equipHtml = `
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div class="ll-card__header"><h2 class="ll-card__title">Equipos mínimos <span style="font-size:10px;font-weight:800;margin-left:6px;background:var(--bg2);color:var(--muted);padding:2px 7px;border-radius:4px;">${equipos.length}</span></h2></div>
+      <div class="ll-card__body" style="padding-top:8px;">
+        ${equipos.map(eq => `
+          <div style="padding:9px 0;border-bottom:1px solid var(--border);">
+            <div class="ll-body-sm" style="font-weight:700;color:var(--text);">${eq.equipo || 'Equipo'}${val(eq.cantidad) ? ` <span style="color:var(--muted);font-weight:600;">×${eq.cantidad}</span>` : ''}</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">
+              ${val(eq.especificaciones) ? `<span class="ll-chip">${eq.especificaciones}</span>` : ''}
+              ${val(eq.antiguedad_maxima) ? `<span class="ll-chip">Máx. ${eq.antiguedad_maxima}</span>` : ''}
+              ${val(eq.modalidad) ? `<span class="ll-chip">${eq.modalidad}</span>` : ''}
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  // ── Garantías ──
+  let garHtml = '';
+  if (garantias.length) {
+    garHtml = `
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div class="ll-card__header"><h2 class="ll-card__title">Garantías exigidas</h2></div>
+      <div class="ll-card__body" style="padding-top:8px;">
+        ${garantias.map(g => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+            <div class="ll-body-sm">${g.tipo || 'Garantía'}</div>
+            <div class="ll-body-sm ll-mono" style="font-weight:700;">${val(g.monto_o_porcentaje) || '—'}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  // ── Restricciones ──
+  let restrHtml = '';
+  if (restricciones.length) {
+    restrHtml = `
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div class="ll-card__header"><h2 class="ll-card__title">Restricciones de participación</h2></div>
+      <div class="ll-card__body" style="padding-top:8px;">
+        ${restricciones.map(r => `
+          <div style="padding:7px 0;border-bottom:1px solid var(--border);">
+            ${val(r.tipo) ? `<div class="ll-caption ll-u-text-subtle">${r.tipo}</div>` : ''}
+            <div class="ll-body-sm">${r.descripcion || r}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  const todo = expHtml + finHtml + persHtml + equipHtml + garHtml + restrHtml;
+  return todo || '';
 }
 
 function renderTabPlazos(analisis, p) {
@@ -8768,32 +8871,35 @@ async function cargarSeguimiento() {
       return;
     }
 
-    // 2. Traer los procesos correspondientes — EN LOTES de 50.
-    // Con cientos de seguimientos, un solo in.() genera una URL gigante que el
-    // servidor rechaza (414) y la lista quedaba vacía o en error.
+    // 2. Traer los procesos correspondientes — EN LOTES de 50, PERO EN PARALELO.
+    // Antes se hacían secuencialmente (uno tras otro), lo que con 800+ seguimientos
+    // tomaba muchísimo. Ahora se lanzan todos los lotes a la vez con Promise.all.
     const todosCodigos = segs.map(s => s.proceso_codigo);
     const SELECT_PROC = 'select=codigo_proceso,titulo,unidad_compra,monto_estimado,modalidad,objeto_proceso,url,fecha_publicacion,fecha_fin_recepcion_ofertas,fecha_apertura_ofertas,fecha_estimada_adjudicacion,fecha_enmienda,fecha_suscripcion';
-    let procesos = [];
+
+    // Construir todos los lotes de códigos
+    const lotes = [];
     for (let i = 0; i < todosCodigos.length; i += 50) {
-      const lote = todosCodigos.slice(i, i + 50).join(',');
-      try {
-        const parte = await sbRest(`procesos?codigo_proceso=in.(${lote})&${SELECT_PROC}`);
-        if (Array.isArray(parte)) procesos = procesos.concat(parte);
-      } catch(e) { console.warn('Lote de procesos falló:', e); }
+      lotes.push(todosCodigos.slice(i, i + 50).join(','));
     }
 
-    // 3. Traer plazos_clave del análisis — una sola llamada bulk
+    // Lanzar procesos y plazos EN PARALELO
+    const [procesosLotes, plazosLotes] = await Promise.all([
+      Promise.all(lotes.map(lote =>
+        sbRest(`procesos?codigo_proceso=in.(${lote})&${SELECT_PROC}`)
+          .then(r => Array.isArray(r) ? r : [])
+          .catch(() => [])
+      )),
+      Promise.all(lotes.map(lote =>
+        fetch(`${API}/api/plazos-bulk?codigos=${encodeURIComponent(lote)}`)
+          .then(r => r.ok ? r.json() : {})
+          .catch(() => ({}))
+      ))
+    ]);
+
+    const procesos = procesosLotes.flat();
     const analisisMap = {};
-    try {
-      for (let i = 0; i < todosCodigos.length; i += 50) {
-        const lote = todosCodigos.slice(i, i + 50).join(',');
-        const resPlazos = await fetch(`${API}/api/plazos-bulk?codigos=${encodeURIComponent(lote)}`);
-        if (resPlazos.ok) {
-          const plazosData = await resPlazos.json();
-          Object.assign(analisisMap, plazosData);
-        }
-      }
-    } catch(e) { /* silencioso — las fechas base del scraper igual se muestran */ }
+    plazosLotes.forEach(pd => Object.assign(analisisMap, pd));
 
     // 4. Combinar proceso + plazos IA
     const procesosMap = {};
