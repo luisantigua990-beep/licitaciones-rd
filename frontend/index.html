@@ -1324,6 +1324,7 @@ body.drawer-open .bottom-nav { display: none !important; }
   html.ll-has-session #tab-seguimiento,
   html.ll-has-session #tab-mercado,
   html.ll-has-session #tab-inteligencia,
+  html.ll-has-session #tab-referidos,
   html.ll-has-session #tab-semaforo {
     top: 0 !important; bottom: 0 !important;
     left: 220px !important; right: 0 !important;
@@ -1366,6 +1367,7 @@ body.drawer-open .bottom-nav { display: none !important; }
   html.ll-has-session #tab-seguimiento,
   html.ll-has-session #tab-mercado,
   html.ll-has-session #tab-inteligencia,
+  html.ll-has-session #tab-referidos,
   html.ll-has-session #tab-semaforo {
     left: 260px !important;
   }
@@ -2118,7 +2120,7 @@ body.drawer-open .bottom-nav { display: none !important; }
    contenedores raíz y romperían cualquier `position: fixed` descendiente
    (modales, sheets, bottom nav). El momentum scroll funciona perfecto solo
    en los scroll containers reales. */
-#tab-seguimiento, #tab-detalle, #tab-perfil, #tab-dashboard, #tab-mercado, #tab-inteligencia,
+#tab-seguimiento, #tab-detalle, #tab-perfil, #tab-dashboard, #tab-mercado, #tab-inteligencia, #tab-referidos,
 .mercado-form-sheet, .drawer-section, .ll-drawer__body, .onb-step {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
@@ -2821,7 +2823,7 @@ html { background: var(--color-bg, #0A0A0A); }
 
 /* ── Fix móvil PWA: Empresas y Mercado quedaban debajo del navbar ── */
 @media (max-width: 899px) {
-  #tab-inteligencia, #tab-mercado, #tab-semaforo { top: calc(58px + env(safe-area-inset-top, 0px)) !important; }
+  #tab-inteligencia, #tab-mercado, #tab-semaforo, #tab-referidos { top: calc(58px + env(safe-area-inset-top, 0px)) !important; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -5012,10 +5014,92 @@ async function cargarPanelReferidos(contId = 'referidos-contenido') {
               </div>
               <div style="font-size:12px;font-weight:800;color:#16A34A;">+US$${r.comision_generada.toFixed(2)}</div>
             </div>`).join('')}
-        </div>` : '<div style="font-size:12px;color:var(--muted);text-align:center;margin-top:10px;">Aún no tienes referidos. Comparte tu link.</div>'}`;
+        </div>` : '<div style="font-size:12px;color:var(--muted);text-align:center;margin-top:10px;">Aún no tienes referidos. Comparte tu link.</div>'}
+      <div id="referido-banco-box" style="margin-top:18px;border-top:1px solid var(--border);padding-top:16px;"></div>`;
+    cargarCuentaBancaria();
   } catch(e) {
     cont.innerHTML = '<div style="font-size:13px;color:var(--muted);">No se pudo cargar. Intenta de nuevo.</div>';
   }
+}
+
+async function cargarCuentaBancaria() {
+  const box = document.getElementById('referido-banco-box');
+  if (!box) return;
+  const token = await obtenerTokenValido();
+  if (!token) return;
+  try {
+    const r = await fetch(`${API}/api/referidos/cuenta-bancaria`, { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if (d.tiene_cuenta) {
+      box.innerHTML = `
+        <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Cuenta para depósito</div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;">
+          <div style="font-size:13px;font-weight:700;color:var(--text);">${d.bank_name}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">Cuenta: ${d.account_number}${d.account_type ? ' · ' + d.account_type : ''}</div>
+          <div style="font-size:12px;color:var(--text2);">Titular: ${d.account_holder}</div>
+          <button onclick="mostrarFormBanco()" style="margin-top:8px;padding:6px 14px;background:none;border:1px solid var(--border2);border-radius:7px;color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;">Editar</button>
+        </div>`;
+    } else {
+      box.innerHTML = `
+        <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Cuenta para depósito</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Registra tu cuenta bancaria para que podamos depositarte tus comisiones.</div>
+        <button onclick="mostrarFormBanco()" style="width:100%;padding:11px;background:var(--green-dim);border:1px solid var(--green-border);border-radius:9px;color:var(--green);font-size:13px;font-weight:800;cursor:pointer;">Agregar cuenta bancaria</button>`;
+    }
+  } catch(e) {}
+}
+
+async function mostrarFormBanco() {
+  const box = document.getElementById('referido-banco-box');
+  if (!box) return;
+  const token = await obtenerTokenValido();
+  let actual = {};
+  try {
+    const r = await fetch(`${API}/api/referidos/cuenta-bancaria`, { headers: { 'Authorization': 'Bearer ' + token } });
+    actual = await r.json();
+  } catch(e) {}
+  box.innerHTML = `
+    <div style="font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Datos bancarios</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <input id="banco-nombre" class="ll-input" placeholder="Banco (ej: Banco Popular)" value="${actual.bank_name || ''}" style="font-size:13px;">
+      <input id="banco-cuenta" class="ll-input" placeholder="Número de cuenta" value="${actual.account_number || ''}" style="font-size:13px;">
+      <input id="banco-titular" class="ll-input" placeholder="Nombre del titular" value="${actual.account_holder || ''}" style="font-size:13px;">
+      <select id="banco-tipo" class="ll-input" style="font-size:13px;">
+        <option value="">Tipo de cuenta</option>
+        <option value="Ahorros" ${actual.account_type === 'Ahorros' ? 'selected' : ''}>Ahorros</option>
+        <option value="Corriente" ${actual.account_type === 'Corriente' ? 'selected' : ''}>Corriente</option>
+      </select>
+      <input id="banco-documento" class="ll-input" placeholder="Cédula o RNC del titular" value="${actual.document || ''}" style="font-size:13px;">
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button onclick="guardarCuentaBancaria()" style="flex:1;padding:11px;background:#16A34A;border:none;border-radius:9px;color:#fff;font-size:13px;font-weight:800;cursor:pointer;">Guardar</button>
+        <button onclick="cargarCuentaBancaria()" style="padding:11px 16px;background:none;border:1px solid var(--border2);border-radius:9px;color:var(--text2);font-size:13px;font-weight:700;cursor:pointer;">Cancelar</button>
+      </div>
+    </div>`;
+}
+
+async function guardarCuentaBancaria() {
+  const token = await obtenerTokenValido();
+  if (!token) { alert('Tu sesión expiró. Vuelve a iniciar sesión.'); return; }
+  const body = {
+    bank_name: document.getElementById('banco-nombre').value.trim(),
+    account_number: document.getElementById('banco-cuenta').value.trim(),
+    account_holder: document.getElementById('banco-titular').value.trim(),
+    account_type: document.getElementById('banco-tipo').value,
+    document: document.getElementById('banco-documento').value.trim()
+  };
+  if (!body.bank_name || !body.account_number || !body.account_holder) {
+    alert('Banco, número de cuenta y titular son obligatorios');
+    return;
+  }
+  try {
+    const r = await fetch(`${API}/api/referidos/cuenta-bancaria`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (r.ok) { alert(d.mensaje); cargarCuentaBancaria(); }
+    else alert(d.detail || 'Error guardando la cuenta');
+  } catch(e) { alert('Error de conexión'); }
 }
 
 function compartirRefLink() {
@@ -5031,12 +5115,19 @@ function copiarRefLink() {
 }
 
 async function solicitarCobroReferidos(tipo) {
-  const token = localStorage.getItem('sb_token');
-  if (!token) return;
+  const token = await obtenerTokenValido();
+  if (!token) { alert('Tu sesión expiró. Vuelve a iniciar sesión.'); return; }
   let datos_bancarios = null;
+  // Para transferencia, el backend usa la cuenta guardada automáticamente.
+  // Si no tiene cuenta guardada, se la pedimos.
   if (tipo === 'transferencia') {
-    datos_bancarios = prompt('Ingresa tu banco y número de cuenta para la transferencia:');
-    if (!datos_bancarios) return;
+    const rc = await fetch(`${API}/api/referidos/cuenta-bancaria`, { headers: { 'Authorization': 'Bearer ' + token } });
+    const dc = await rc.json();
+    if (!dc.tiene_cuenta) {
+      alert('Primero registra tu cuenta bancaria abajo para poder retirar.');
+      mostrarFormBanco();
+      return;
+    }
   }
   try {
     const r = await fetch(`${API}/api/referidos/solicitar-cobro`, {
@@ -5045,7 +5136,11 @@ async function solicitarCobroReferidos(tipo) {
       body: JSON.stringify({ tipo, datos_bancarios })
     });
     const d = await r.json();
-    if (r.ok) { alert(d.mensaje); cargarPanelReferidos(); }
+    if (r.ok) {
+      alert(d.mensaje);
+      const contId = document.getElementById('referidos-tab-contenido') && window._lastActiveTab === 'referidos' ? 'referidos-tab-contenido' : 'referidos-contenido';
+      cargarPanelReferidos(contId);
+    }
     else alert(d.detail || 'Error procesando la solicitud');
   } catch(e) { alert('Error de conexión'); }
 }
