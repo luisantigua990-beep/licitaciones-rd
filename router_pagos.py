@@ -190,6 +190,18 @@ def verificar_pago(pago_id: int, authorization: str | None = Header(default=None
 @pagos_router.get("/mi-suscripcion")
 def mi_suscripcion(authorization: str | None = Header(default=None)):
     user_id = _user_id_desde_token(authorization)
+
+    # Súper cuenta: acceso PRO permanente sin suscripción
+    perfil = _sb_admin.table("user_profiles").select("acceso_total") \
+        .eq("id", user_id).execute()
+    if perfil.data and perfil.data[0].get("acceso_total"):
+        return {
+            "activa": True,
+            "plan": "Acceso total",
+            "fecha_vencimiento": None,
+            "dias_restantes": None,
+        }
+
     q = _sb_admin.table("suscripciones").select("*, planes(nombre)") \
         .eq("user_id", user_id).eq("activa", True) \
         .order("fecha_vencimiento", desc=True).limit(1).execute()
