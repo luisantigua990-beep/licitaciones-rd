@@ -76,6 +76,10 @@ def _user_id_desde_token(authorization: str | None) -> str:
 
 
 def _es_suscriptor_activo(user_id: str) -> bool:
+    # Súper cuenta con acceso total cuenta como suscriptor
+    perfil = _sb.table("user_profiles").select("acceso_total").eq("id", user_id).execute()
+    if perfil.data and perfil.data[0].get("acceso_total"):
+        return True
     q = _sb.table("suscripciones").select("id, fecha_vencimiento") \
         .eq("user_id", user_id).eq("activa", True).execute()
     if not q.data:
