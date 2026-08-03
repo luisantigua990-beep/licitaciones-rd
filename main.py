@@ -2263,6 +2263,112 @@ async def notificar_seguimiento(_: None = Depends(verificar_admin)):
 
     return {"notificaciones_enviadas": enviadas, "seguimientos_revisados": len(seguimientos)}
 
+
+@app.post("/api/admin/notificar-freemium-nuevos")
+async def notificar_freemium_nuevos(_: None = Depends(verificar_admin)):
+    """Envía push a usuarios FREEMIUM sobre procesos nuevos del día, invitándolos
+    a suscribirse para recibir alertas y análisis. Gancho de conversión.
+    Se debe llamar 1 vez al día desde el cron (después de cargar procesos nuevos)."""
+    from datetime import date
+
+    hoy = date.today()
+
+    # 1. Procesos publicados hoy (los "nuevos")
+    procesos_nuevos = supabase.table("procesos") \
+        .select("codigo_proceso, titulo, unidad_compra, objeto_proceso, monto_estimado, fecha_publicacion") \
+        .gte("fecha_publicacion", hoy.isoformat()) \
+        .order("fecha_publicacion", desc=True) \
+        .limit(200).execute().data or []
+
+    if not procesos_nuevos:
+        return {"notificaciones_enviadas": 0, "motivo": "sin procesos nuevos hoy"}
+
+    total_nuevos = len(procesos_nuevos)
+
+    # 2. Usuarios con push activo
+    todas_subs = supabase_admin.table("user_subscriptions") \
+        .select("user_id, endpoint, auth, p256dh") \
+        .eq("active", True).execute().data or []
+    if not todas_subs:
+        return {"notificaciones_enviadas": 0, "motivo": "sin suscripciones push"}
+
+    # 3. Determinar quiénes son FREEMIUM (no tienen suscripción activa ni acceso_total)
+    #    Traer suscriptores activos y súper cuentas para excluirlos
+    subs_activas = supabase_admin.table("suscripciones") \
+        .select("user_id, fecha_vencimiento") \
+        .eq("activa", True).execute().data or []
+    ahora = datetime.now(timezone.utc)
+    pro_user_ids = set()
+    for s in subs_activas:
+        try:
+            if datetime.fromisoformat(s["fecha_vencimiento"]) > ahora:
+                pro_user_ids.add(s["user_id"])
+        except Exception:
+            pass
+    super_cuentas = supabase_admin.table("user_profiles") \
+        .select("id").eq("acceso_total", True).execute().data or []
+    for sc in super_cuentas:
+        pro_user_ids.add(sc["id"])
+
+    # 4. Agrupar push subs por usuario freemium
+    freemium_subs = {}
+    for sub in todas_subs:
+        uid = sub["user_id"]
+        if uid in pro_user_ids:
+            continue  # ya es PRO, no le mandamos invitación a suscribir
+        freemium_subs.setdefault(uid, []).append(sub)
+
+    if not freemium_subs:
+        return {"notificaciones_enviadas": 0, "motivo": "no hay usuarios freemium con push"}
+
+    APP_URL = os.getenv("APP_URL", "https://app.licitacionlab.com")
+
+    # 5. Mensaje gancho: muestra un proceso destacado + total, invita a suscribir
+    destacado = procesos_nuevos[0]
+    titulo_proc = (destacado.get("titulo") or destacado.get("objeto_proceso") or "Nuevo proceso")[:45]
+
+    if total_nuevos == 1:
+        titulo_push = "🔔 1 nueva licitación publicada hoy"
+        cuerpo_push = f"{titulo_proc} · Suscríbete para recibir alertas y análisis con IA"
+    else:
+        titulo_push = f"🔔 {total_nuevos} nuevas licitaciones hoy"
+        cuerpo_push = f"Incluyendo: {titulo_proc}. Suscríbete para alertas y análisis con IA"
+
+    enviadas = 0
+    usuarios_notificados = 0
+    for uid, subs in freemium_subs.items():
+        notificado = False
+        for sub in subs:
+            ok = enviar_push_y_limpiar(
+                sub,
+                titulo=titulo_push,
+                cuerpo=cuerpo_push,
+                url=f"{APP_URL}?utm_source=push_freemium&utm_campaign=nuevos_procesos"
+            )
+            if ok:
+                enviadas += 1
+                notificado = True
+        if notificado:
+            usuarios_notificados += 1
+
+    # Log
+    try:
+        supabase_admin.table("cron_log").insert({
+            "job": "notificar_freemium_nuevos",
+            "status": "ok",
+            "detalle": f"{total_nuevos} procesos nuevos · {usuarios_notificados} freemium notificados · {enviadas} push enviadas",
+            "ejecutado_at": ahora.isoformat(),
+        }).execute()
+    except Exception:
+        pass
+
+    return {
+        "notificaciones_enviadas": enviadas,
+        "usuarios_freemium_notificados": usuarios_notificados,
+        "procesos_nuevos": total_nuevos,
+    }
+
+
 @app.get("/api/admin/cron-log")
 def ver_cron_log(job: str = None, limit: int = 50, _: None = Depends(verificar_admin)):
     query = supabase.table("cron_log").select("*").order("ejecutado_at", desc=True).limit(limit)
