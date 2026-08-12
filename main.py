@@ -403,6 +403,10 @@ app.include_router(get_ofertas_router())
 # ── Agente 6: Email Prospector ────────────────────────────
 app.include_router(get_agente6_router())
 
+# ── Webhook Resend (tracking de outreach: delivered/opened/bounced/…) ──
+from router_resend_webhook import resend_webhook_router
+app.include_router(resend_webhook_router)
+
 
 
 # ── Semáforo de Pago por institución (InfoPago DGCP) ─────────────
