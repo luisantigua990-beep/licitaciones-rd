@@ -255,8 +255,11 @@ Link con tracking: {APP_URL}/?utm_source=agente6&utm_campaign=fundadores"""
 
 # ─── Envío por Resend ───────────────────────────────────────────────────────
 
-async def _enviar_resend(to: str, subject: str, html: str) -> bool:
-    """Envía el email via Resend. Retorna True si fue exitoso."""
+async def _enviar_resend(to: str, subject: str, html: str, tags: list[dict] | None = None) -> tuple[bool, str | None]:
+    """Envía el email via Resend.
+    Retorna (ok, resend_email_id) — el id es el que Resend usa después en los
+    eventos del webhook (email.delivered, email.opened, email.bounced, etc.).
+    """
     # Wrapper HTML completo con estilos de LicitacionLab
     html_full = f"""<!DOCTYPE html>
 <html lang="es">
@@ -301,12 +304,20 @@ async def _enviar_resend(to: str, subject: str, html: str) -> bool:
 </html>"""
 
     async with httpx.AsyncClient(timeout=20) as client:
+        payload = {"from": FROM_EMAIL, "to": [to], "subject": subject, "html": html_full}
+        if tags:
+            payload["tags"] = tags
         resp = await client.post(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
-            json={"from": FROM_EMAIL, "to": [to], "subject": subject, "html": html_full}
+            json=payload,
         )
-        return resp.status_code in (200, 201)
+        if resp.status_code in (200, 201):
+            try:
+                return True, resp.json().get("id")
+            except Exception:
+                return True, None
+        return False, None
 
 
 # ─── Endpoints ──────────────────────────────────────────────────────────────
@@ -372,7 +383,14 @@ async def disparar_outreach(
             subject = result["subject"]
             html    = result["cuerpo_html"]
 
-            ok = await _enviar_resend(email, subject, html)
+            # Tags: identifican este correo cuando Resend nos mande eventos al webhook.
+            # Se guardan como metadata en Resend y llegan de vuelta con cada evento.
+            tags = [
+                {"name": "categoria", "value": "outreach"},
+                {"name": "email_num", "value": f"e{num}"},
+                {"name": "prospecto_id", "value": str(emp["id"])},
+            ]
+            ok, resend_id = await _enviar_resend(email, subject, html, tags=tags)
 
             if ok:
                 # Registrar en outreach_log
@@ -385,7 +403,9 @@ async def disparar_outreach(
                     "enviado_at": datetime.now(timezone.utc).isoformat(),
                     "respondio": False,
                     "convirtio": False,
-                    "hook_usado": f"secuencia_email_{num}"
+                    "hook_usado": f"secuencia_email_{num}",
+                    "resend_email_id": resend_id,   # ← clave para cruzar con eventos del webhook
+                    "estado_entrega": "sent",
                 }).execute()
                 enviados += 1
                 detalle.append(f"✅ {emp['nombre'][:35]} → E{num}")
