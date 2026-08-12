@@ -533,9 +533,25 @@ def _procesar_fundador(pago: dict, plan: dict):
 
 
 # ══════════════════════════════════════════════════════════════
-# 5) CRON — re-verifica pagos en VERIFYING/REGISTERED/PENDING
-#    Conéctalo a n8n cada 30-60 min con header X-Cron-Secret
+# 5) CRON — re-verifica pagos que todavía no llegaron a un estado final
+#    Conéctalo a n8n cada 15-30 min con header X-Cron-Secret
+#
+#    BUGFIX 2026-08-10: el filtro original comparaba pagos.estado
+#    (que nace como "PENDIENTE", en español, ver crear_pago()) contra
+#    ESTADOS_EN_PROCESO = {"REGISTERED","VERIFYING","PENDING"}, que son
+#    los nombres de estado que devuelve PAGADITO (en inglés). Como
+#    "PENDIENTE" != "PENDING", el cron nunca encontraba nada — llevaba
+#    corriendo siempre en 0 resultados. Ahora se excluyen explícitamente
+#    los estados que sí son finales (en cualquiera de los dos vocabularios
+#    que existen hoy en la tabla) en vez de intentar adivinar los "en
+#    proceso", así cualquier pago "atascado" cae dentro del barrido.
 # ══════════════════════════════════════════════════════════════
+ESTADOS_FINALES_DB = (
+    {"COMPLETED", "COMPLETADO"} |          # éxito (automático en inglés / manual en español)
+    ESTADOS_FINALES_FALLO |                # FAILED, CANCELED, EXPIRED, REVOKED, UNCOLLECTABLE
+    {"ERROR", "ABANDONADO", "TEST_PREPROD"}  # estados internos que no se deben re-tocar
+)
+
 @pagos_router.post("/cron/reverificar")
 def cron_reverificar(request: Request):
     cron_secret = os.getenv("CRON_SECRET", "")
@@ -546,13 +562,15 @@ def cron_reverificar(request: Request):
     if request.headers.get("X-Cron-Secret") != cron_secret:
         raise HTTPException(403, "No autorizado")
 
-    pendientes = _sb_admin.table("pagos").select("token_pagadito") \
-        .in_("estado", list(ESTADOS_EN_PROCESO)) \
+    pendientes = _sb_admin.table("pagos").select("id, token_pagadito, estado, created_at") \
+        .not_.in_("estado", list(ESTADOS_FINALES_DB)) \
         .not_.is_("token_pagadito", "null").execute()
 
-    resultados = {"revisados": 0, "completados": 0}
+    resultados = {"revisados": 0, "completados": 0, "detalle": []}
     for p in (pendientes.data or []):
         resultados["revisados"] += 1
-        if _verificar_y_activar(p["token_pagadito"]) == "exitoso":
+        resultado = _verificar_y_activar(p["token_pagadito"])
+        resultados["detalle"].append({"pago_id": p["id"], "estado_previo": p["estado"], "resultado": resultado})
+        if resultado == "exitoso":
             resultados["completados"] += 1
     return resultados
