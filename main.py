@@ -38,6 +38,7 @@ from router_agentes import agentes_router, social_router
 from router_closer import closer_router
 from router_pagos import pagos_router
 from router_referidos import referidos_router
+from router_bid_manager import bid_manager_router
 from etl_contratos_adjudicados import run_etl
 from competidores_feature import competidores_router
 from reenriquecer_empresas import get_reenriquecimiento_router
@@ -406,6 +407,7 @@ app.include_router(get_agente6_router())
 # ── Webhook Resend (tracking de outreach: delivered/opened/bounced/…) ──
 from router_resend_webhook import resend_webhook_router
 app.include_router(resend_webhook_router)
+app.include_router(bid_manager_router)
 
 
 
