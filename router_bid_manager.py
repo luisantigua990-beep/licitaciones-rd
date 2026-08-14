@@ -1084,3 +1084,168 @@ async def extraer_lote_ia(
         resultados.append(item)
 
     return {"resultados": resultados}
+
+
+# ══════════════════════════════════════════════════════════════
+# 17. CRON — ALERTAS DE VENCIMIENTO DE DOCUMENTOS (push + email)
+# ══════════════════════════════════════════════════════════════
+# Llamar diariamente (n8n / Railway cron / cron-job.org):
+#   POST /api/bid/cron/alertas-vencimiento
+#   Header: X-Admin-Key: <ADMIN_SECRET>
+#
+# Por cada certificación con fecha de vencimiento:
+#   - por_vencer (<=7 días) y sin alerta previa → email + push "próximo a vencer"
+#   - vencido y sin alerta previa               → email + push "documento vencido"
+# Los flags evitan duplicados; se resetean al renovar la fecha en el PUT.
+# ══════════════════════════════════════════════════════════════
+
+ADMIN_SECRET_BID = os.getenv("ADMIN_SECRET", "")
+
+
+def _email_alerta_html(razon_social: str, docs: list, vencidos: bool) -> str:
+    titulo = "Documentos VENCIDOS" if vencidos else "Documentos próximos a vencer"
+    color = "#dc2626" if vencidos else "#d97706"
+    filas = "".join(
+        f"<tr><td style='padding:8px 12px;border-bottom:1px solid #eee'>{d['nombre_display']}</td>"
+        f"<td style='padding:8px 12px;border-bottom:1px solid #eee'>{d.get('fecha_vencimiento','')}</td></tr>"
+        for d in docs
+    )
+    accion = ("Renuévalos cuanto antes: sin ellos no podrás presentar ofertas."
+              if vencidos else
+              "Renuévalos a tiempo para no quedar fuera de ningún proceso.")
+    return f"""
+    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
+      <h2 style="color:{color}">{titulo}</h2>
+      <p>Hola {razon_social or ''}, tu Expediente Digital en LicitacionLab tiene documentos que requieren atención:</p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <tr style="background:#f8f9fa">
+          <th style="text-align:left;padding:8px 12px">Documento</th>
+          <th style="text-align:left;padding:8px 12px">Vence</th>
+        </tr>
+        {filas}
+      </table>
+      <p style="margin-top:16px">{accion}</p>
+      <p><a href="https://app.licitacionlab.com/#bid"
+            style="display:inline-block;background:#16a34a;color:#fff;padding:10px 20px;
+                   border-radius:6px;text-decoration:none">Ver mi Expediente Digital</a></p>
+      <p style="color:#9ca3af;font-size:12px;margin-top:24px">LicitacionLab · Monitoreo de compras públicas RD</p>
+    </div>
+    """
+
+
+@bid_manager_router.post("/cron/alertas-vencimiento")
+def cron_alertas_vencimiento(x_admin_key: str = Header(None)):
+    """Envía push + email por documentos vencidos o por vencer. Idempotente por flags."""
+    if not ADMIN_SECRET_BID or x_admin_key != ADMIN_SECRET_BID:
+        raise HTTPException(403, "No autorizado")
+
+    # Imports lazy para evitar import circular con main.py
+    try:
+        from main import enviar_push_y_limpiar, _resend_send
+    except Exception as e:
+        raise HTTPException(500, f"No se pudieron importar helpers de main: {e}")
+
+    hoy = datetime.utcnow().date().isoformat()
+
+    # Refrescar estados de todas las certificaciones con fecha (bulk, sin filtro de empresa)
+    try:
+        _sb.rpc("fn_actualizar_estados_certificaciones_global", {}).execute()
+    except Exception:
+        pass  # si no existe la versión global, los estados por-trigger siguen siendo razonables
+
+    # Candidatas: por_vencer sin alerta, o vencidas sin alerta
+    certs = _sb.table("bid_certificaciones") \
+        .select("id, empresa_id, nombre_display, fecha_vencimiento, estado, "
+                "alerta_por_vencer_enviada, alerta_vencido_enviada") \
+        .not_.is_("fecha_vencimiento", "null") \
+        .in_("estado", ["por_vencer", "vencido"]) \
+        .execute().data or []
+
+    pendientes = [
+        c for c in certs
+        if (c["estado"] == "por_vencer" and not c.get("alerta_por_vencer_enviada"))
+        or (c["estado"] == "vencido" and not c.get("alerta_vencido_enviada"))
+    ]
+    if not pendientes:
+        return {"ok": True, "enviadas": 0, "detalle": "Sin alertas pendientes"}
+
+    # Agrupar por empresa
+    por_empresa: dict = {}
+    for c in pendientes:
+        por_empresa.setdefault(c["empresa_id"], []).append(c)
+
+    resumen = {"empresas": 0, "emails": 0, "push": 0, "errores": []}
+
+    for eid, docs in por_empresa.items():
+        try:
+            emp = _sb.table("perfiles_empresa") \
+                .select("user_id, razon_social, email_empresa") \
+                .eq("id", eid).execute().data
+            if not emp:
+                continue
+            emp = emp[0]
+            user_id = emp.get("user_id")
+            razon = emp.get("razon_social") or "tu empresa"
+
+            vencidos = [d for d in docs if d["estado"] == "vencido"]
+            por_vencer = [d for d in docs if d["estado"] == "por_vencer"]
+
+            # Email destino: email_empresa, o el email del auth user como fallback
+            email = emp.get("email_empresa")
+            if not email and user_id:
+                try:
+                    u = _sb.auth.admin.get_user_by_id(user_id)
+                    email = u.user.email if u and u.user else None
+                except Exception:
+                    email = None
+
+            # ── EMAIL ──
+            if email:
+                if vencidos:
+                    if _resend_send(
+                        f"⛔ {len(vencidos)} documento(s) VENCIDO(S) en tu expediente",
+                        _email_alerta_html(razon, vencidos, vencidos=True), email
+                    ):
+                        resumen["emails"] += 1
+                if por_vencer:
+                    if _resend_send(
+                        f"⏰ {len(por_vencer)} documento(s) por vencer en tu expediente",
+                        _email_alerta_html(razon, por_vencer, vencidos=False), email
+                    ):
+                        resumen["emails"] += 1
+
+            # ── PUSH ──
+            if user_id:
+                subs = _sb.table("user_subscriptions") \
+                    .select("endpoint, auth, p256dh") \
+                    .eq("user_id", user_id).eq("active", True) \
+                    .execute().data or []
+                for sub in subs:
+                    if vencidos:
+                        nombres = ", ".join(d["nombre_display"] for d in vencidos[:3])
+                        if enviar_push_y_limpiar(
+                            sub, "Documento vencido",
+                            f"{nombres} — renuévalo para poder ofertar", "/#bid"
+                        ):
+                            resumen["push"] += 1
+                    if por_vencer:
+                        nombres = ", ".join(d["nombre_display"] for d in por_vencer[:3])
+                        if enviar_push_y_limpiar(
+                            sub, "Documento por vencer",
+                            f"{nombres} — vence pronto, renuévalo a tiempo", "/#bid"
+                        ):
+                            resumen["push"] += 1
+
+            # ── Marcar flags ──
+            for d in vencidos:
+                _sb.table("bid_certificaciones").update(
+                    {"alerta_vencido_enviada": True}).eq("id", d["id"]).execute()
+            for d in por_vencer:
+                _sb.table("bid_certificaciones").update(
+                    {"alerta_por_vencer_enviada": True}).eq("id", d["id"]).execute()
+
+            resumen["empresas"] += 1
+        except Exception as e:
+            resumen["errores"].append({"empresa_id": eid, "error": str(e)})
+
+    return {"ok": True, "fecha": hoy, "enviadas": len(pendientes), **resumen}
