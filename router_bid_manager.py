@@ -177,10 +177,34 @@ def eliminar_representante(id: str, authorization: str | None = Header(default=N
 # 3. SOCIOS / ACCIONISTAS
 # ══════════════════════════════════════════════════════════════
 
+def _validar_participacion(empresa_id: str, nuevo_pct, excluir_id: str = None):
+    """Valida que la suma de porcentajes de participación no exceda 100%."""
+    try:
+        pct_nuevo = float(nuevo_pct or 0)
+    except (TypeError, ValueError):
+        pct_nuevo = 0
+    if pct_nuevo <= 0:
+        return
+    q = _sb.table("bid_socios").select("id, porcentaje_participacion").eq("empresa_id", empresa_id)
+    rows = q.execute().data or []
+    total_otros = sum(
+        float(r.get("porcentaje_participacion") or 0)
+        for r in rows if r["id"] != excluir_id
+    )
+    if total_otros + pct_nuevo > 100.0001:  # tolerancia flotante
+        disponible = max(0, 100 - total_otros)
+        raise HTTPException(
+            400,
+            f"La participación total no puede exceder 100%. "
+            f"Ya hay {total_otros:.2f}% asignado; disponible: {disponible:.2f}%"
+        )
+
 @bid_manager_router.post("/socios")
 async def crear_socio(request: dict, authorization: str | None = Header(default=None)):
     uid = _auth(authorization)
-    return _crear("bid_socios", request, _empresa_id(uid))
+    eid = _empresa_id(uid)
+    _validar_participacion(eid, request.get("porcentaje_participacion"))
+    return _crear("bid_socios", request, eid)
 
 @bid_manager_router.get("/socios")
 def listar_socios(authorization: str | None = Header(default=None)):
@@ -195,7 +219,10 @@ def obtener_socio(id: str, authorization: str | None = Header(default=None)):
 @bid_manager_router.put("/socios/{id}")
 async def actualizar_socio(id: str, request: dict, authorization: str | None = Header(default=None)):
     uid = _auth(authorization)
-    return _actualizar("bid_socios", id, request, _empresa_id(uid))
+    eid = _empresa_id(uid)
+    if "porcentaje_participacion" in request:
+        _validar_participacion(eid, request.get("porcentaje_participacion"), excluir_id=id)
+    return _actualizar("bid_socios", id, request, eid)
 
 @bid_manager_router.delete("/socios/{id}")
 def eliminar_socio(id: str, authorization: str | None = Header(default=None)):
@@ -823,3 +850,121 @@ def eliminar_archivo(
         raise HTTPException(500, f"Error eliminando archivo: {str(e)}")
 
     return {"ok": True, "path": path}
+
+
+# ══════════════════════════════════════════════════════════════
+# 16. EXTRACCIÓN CON IA — Estados Financieros / IR-2 (Gemini)
+# ══════════════════════════════════════════════════════════════
+# Sube un PDF de estados financieros o IR-2 y Gemini extrae los
+# valores numéricos para pre-llenar el formulario. El usuario
+# revisa y guarda; nada se persiste automáticamente.
+# ══════════════════════════════════════════════════════════════
+
+import base64
+import json as _json
+import urllib.request as _urlreq
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+_PROMPT_FINANCIEROS = """Eres un contador experto en estados financieros dominicanos.
+Analiza el PDF adjunto (estados financieros auditados o declaración IR-2 de DGII).
+Extrae los valores en DOP (pesos dominicanos). Si un valor no aparece, usa null.
+Responde SOLO con JSON válido, sin markdown, sin explicación, con esta estructura exacta:
+{
+  "tipo_detectado": "estados_financieros" | "ir2",
+  "periodo": "2025",
+  "fecha_cierre": "2025-12-31",
+  "activos_corrientes": 0,
+  "activos_no_corrientes": 0,
+  "activos_totales": 0,
+  "pasivos_corrientes": 0,
+  "pasivos_no_corrientes": 0,
+  "pasivos_totales": 0,
+  "patrimonio_neto": 0,
+  "ingresos": 0,
+  "costo_ventas": 0,
+  "utilidad_bruta": 0,
+  "gastos_operativos": 0,
+  "utilidad_operativa": 0,
+  "utilidad_neta": 0,
+  "ingresos_brutos": 0,
+  "costos_y_gastos": 0,
+  "renta_neta_imponible": 0,
+  "impuesto_liquidado": 0,
+  "confianza": "alta" | "media" | "baja",
+  "notas": "observaciones breves si algo es ambiguo"
+}
+Reglas:
+- Números sin separadores de miles ni símbolos de moneda (ej: 1500000.50)
+- Si es IR-2: llena también los campos de balance (total activos → activos_totales, etc.)
+- Si hay varios períodos, usa el MÁS RECIENTE
+- "confianza" baja si el PDF es escaneado borroso o faltan páginas"""
+
+
+@bid_manager_router.post("/financieros/extraer")
+async def extraer_financieros_ia(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+):
+    """
+    Extrae con Gemini los valores de un PDF de estados financieros o IR-2.
+    NO guarda nada: devuelve el JSON extraído para pre-llenar el formulario.
+    """
+    uid = _auth(authorization)
+    _empresa_id(uid)  # valida que tenga perfil
+
+    if not GEMINI_API_KEY:
+        raise HTTPException(503, "Extracción IA no configurada (falta GEMINI_API_KEY)")
+
+    contenido = await file.read()
+    if not contenido:
+        raise HTTPException(400, "Archivo vacío")
+    if len(contenido) > STORAGE_MAX_BYTES:
+        raise HTTPException(413, "El archivo excede 25 MB")
+
+    mime = file.content_type or "application/pdf"
+    if "pdf" not in mime and not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "Solo se aceptan PDFs para extracción IA")
+
+    payload = {
+        "contents": [{
+            "parts": [
+                {"inline_data": {"mime_type": "application/pdf",
+                                 "data": base64.b64encode(contenido).decode()}},
+                {"text": _PROMPT_FINANCIEROS},
+            ]
+        }],
+        "generationConfig": {
+            "temperature": 0.1,
+            "response_mime_type": "application/json",
+        },
+    }
+
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+
+    try:
+        req = _urlreq.Request(
+            url,
+            data=_json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with _urlreq.urlopen(req, timeout=120) as resp:
+            body = _json.loads(resp.read().decode())
+    except Exception as e:
+        raise HTTPException(502, f"Error llamando a Gemini: {str(e)}")
+
+    try:
+        texto = body["candidates"][0]["content"]["parts"][0]["text"]
+        texto = texto.strip()
+        if texto.startswith("```"):
+            texto = texto.strip("`")
+            if texto.lower().startswith("json"):
+                texto = texto[4:]
+        datos = _json.loads(texto)
+    except Exception as e:
+        raise HTTPException(502, f"Gemini devolvió una respuesta no parseable: {str(e)}")
+
+    return {"extraido": datos, "archivo": file.filename}
