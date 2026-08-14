@@ -547,7 +547,7 @@ const BidManager = {
         <div class="bm-form-row" id="bm-cert-vig-row"><label class="bm-label">Vigencia (días)</label><input class="bm-input" type="number" id="f-vigencia_dias" value="${c.vigencia_dias || ''}"></div>
       </div>
       <div class="bm-form-row"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
-        <input type="checkbox" id="f-no_vence" ${id && !c.fecha_vencimiento ? 'checked' : ''} onchange="BidManager._toggleNoVence(this.checked)"> Este documento no vence (estatutos, registro mercantil histórico, etc.)
+        <input type="checkbox" id="f-no_vence" ${id && !c.fecha_vencimiento ? 'checked' : ''} onchange="BidManager._toggleNoVence(this.checked)"> Este documento no vence
       </label></div>
       <div class="bm-form-row"><label class="bm-label">Archivo</label>
         ${this._uploadWidget('archivo_url', 'certificaciones', c.archivo_url)}
@@ -1558,6 +1558,8 @@ const BidManager = {
   // Análisis por LOTE: varios PDFs (estados + IR-2 de distintos años) de una vez.
   // El backend extrae cada uno, detecta el tipo, sube el PDF y CREA los registros.
   // Los indicadores se calculan solos al insertarse (columnas GENERATED).
+  _loteAbort: null,
+
   async _extraerLoteIA(evt) {
     const files = Array.from(evt.target.files || []);
     evt.target.value = '';
@@ -1574,7 +1576,14 @@ const BidManager = {
     }
 
     setStatus(`Analizando ${files.length} PDF(s) con IA... esto puede tomar 1-3 minutos`);
-    if (resultCont) resultCont.innerHTML = '';
+    if (resultCont) {
+      resultCont.innerHTML = `
+        <button type="button" class="bm-btn bm-btn-danger bm-btn-sm" id="bm-ia-lote-stop"
+                onclick="BidManager._detenerLoteIA()">Detener análisis</button>
+      `;
+    }
+
+    this._loteAbort = new AbortController();
 
     try {
       const form = new FormData();
@@ -1582,7 +1591,8 @@ const BidManager = {
       const r = await fetch('/api/bid/financieros/extraer-lote', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + this._token() },
-        body: form
+        body: form,
+        signal: this._loteAbort.signal
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -1615,9 +1625,22 @@ const BidManager = {
         this.toast('Ningún PDF pudo procesarse', 'err');
       }
     } catch (e) {
-      setStatus('');
-      this.toast('Error en análisis por lote: ' + e.message, 'err');
+      if (e.name === 'AbortError') {
+        setStatus('Análisis detenido por el usuario.');
+        if (resultCont) resultCont.innerHTML = '';
+        this.toast('Análisis detenido', 'ok');
+      } else {
+        setStatus('');
+        if (resultCont) resultCont.innerHTML = '';
+        this.toast('Error en análisis por lote: ' + e.message, 'err');
+      }
+    } finally {
+      this._loteAbort = null;
     }
+  },
+
+  _detenerLoteIA() {
+    if (this._loteAbort) this._loteAbort.abort();
   },
 
   async _extraerFinancierosIA(evt, modo) {
