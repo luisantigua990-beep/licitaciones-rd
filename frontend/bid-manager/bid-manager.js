@@ -86,7 +86,7 @@ const BidManager = {
     if (!this.htmlLoaded) {
       const container = document.getElementById('tab-bid');
       if (!container) {
-        console.error('❌ #tab-bid no encontrado');
+        console.error('#tab-bid no encontrado');
         return;
       }
       try {
@@ -96,7 +96,7 @@ const BidManager = {
         this.htmlLoaded = true;
         this._bindTabs();
       } catch (e) {
-        container.innerHTML = `<div class="bm-container"><div class="bm-empty"><div class="bm-empty-icon">⚠️</div><div class="bm-empty-text">Error cargando el módulo: ${e.message}</div></div></div>`;
+        container.innerHTML = `<div class="bm-container"><div class="bm-empty"><div class="bm-empty-icon">!</div><div class="bm-empty-text">Error cargando el módulo: ${e.message}</div></div></div>`;
         return;
       }
     }
@@ -241,10 +241,10 @@ const BidManager = {
     
     let html = '';
     if (vencidas.length) {
-      html += `<div class="bm-alert"><div class="bm-alert-icon">🚨</div><div class="bm-alert-text"><strong>${vencidas.length} documento(s) vencido(s)</strong> — necesitan renovación urgente para poder ofertar.</div></div>`;
+      html += `<div class="bm-alert"><div class="bm-alert-icon">!</div><div class="bm-alert-text"><strong>${vencidas.length} documento(s) vencido(s)</strong> — necesitan renovación urgente para poder ofertar.</div></div>`;
     }
     if (porVencer.length) {
-      html += `<div class="bm-alert" style="background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.25);"><div class="bm-alert-icon">⚠️</div><div class="bm-alert-text" style="color:var(--text)"><strong style="color:#F59E0B">${porVencer.length} documento(s) por vencer</strong> — vencen en los próximos 15 días.</div></div>`;
+      html += `<div class="bm-alert" style="background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.25);"><div class="bm-alert-icon">!</div><div class="bm-alert-text" style="color:var(--text)"><strong style="color:#F59E0B">${porVencer.length} documento(s) por vencer</strong> — vencen en los próximos 15 días.</div></div>`;
     }
     cont.innerHTML = html;
   },
@@ -272,7 +272,7 @@ const BidManager = {
     if (!cont) return;
     const e = this.data.empresa;
     if (!e) {
-      cont.innerHTML = `<div class="bm-empty"><div class="bm-empty-icon">🏢</div><div class="bm-empty-text">Aún no tienes datos de empresa. Completa el onboarding.</div></div>`;
+      cont.innerHTML = `<div class="bm-empty"><div class="bm-empty-icon">B</div><div class="bm-empty-text">Aún no tienes datos de empresa. Completa el onboarding.</div></div>`;
       return;
     }
     cont.innerHTML = `
@@ -284,7 +284,7 @@ const BidManager = {
           <div><strong>Registro Mercantil:</strong> ${e.registro_mercantil_no || '—'}</div>
           <div><strong>Tipo:</strong> ${e.tipo_sociedad || '—'}</div>
           <div><strong>Capital social:</strong> ${e.capital_social ? this._money(e.capital_social, e.moneda_capital) : '—'}</div>
-          <div><strong>Clasificación MIPYME:</strong> ${e.clasificacion_mipyme || '—'}</div>
+          <div><strong>MIPYME:</strong> ${e.clasificacion_mipyme === 'NO' || e.clasificacion_mipyme === 'GRANDE' ? 'No' : (e.clasificacion_mipyme ? 'Sí' : '—')}</div>
           <div><strong>Provee:</strong> ${e.provee || '—'}</div>
           <div><strong>Domicilio:</strong> ${e.domicilio || '—'}</div>
           <div><strong>Teléfono:</strong> ${e.telefono_principal || '—'}</div>
@@ -310,10 +310,11 @@ const BidManager = {
           </select>
         </div>
         <div class="bm-form-row"><label class="bm-label">Capital social (DOP)</label><input class="bm-input" type="number" id="f-capital_social" value="${e.capital_social || ''}"></div>
-        <div class="bm-form-row"><label class="bm-label">Clasificación MIPYME</label>
+        <div class="bm-form-row"><label class="bm-label">¿Es MIPYME?</label>
           <select class="bm-select" id="f-clasificacion_mipyme">
             <option value="">—</option>
-            ${['MICRO','PEQUEÑA','MEDIANA','GRANDE'].map(t => `<option ${e.clasificacion_mipyme===t?'selected':''}>${t}</option>`).join('')}
+            <option value="SI" ${e.clasificacion_mipyme==='SI'||['MICRO','PEQUEÑA','MEDIANA'].includes(e.clasificacion_mipyme)?'selected':''}>Sí</option>
+            <option value="NO" ${e.clasificacion_mipyme==='NO'||e.clasificacion_mipyme==='GRANDE'?'selected':''}>No</option>
           </select>
         </div>
         <div class="bm-form-row"><label class="bm-label">Provee</label>
@@ -340,7 +341,7 @@ const BidManager = {
     const cont = document.getElementById('bm-representantes-list');
     if (!cont) return;
     if (!this.data.representantes.length) {
-      cont.innerHTML = this._emptyState('👤', 'No has agregado representantes legales.');
+      cont.innerHTML = this._emptyState('R', 'No has agregado representantes legales.');
       return;
     }
     cont.innerHTML = `<div class="bm-grid">${this.data.representantes.map(r => `
@@ -385,8 +386,15 @@ const BidManager = {
       </div>
       <div class="bm-form-row"><label class="bm-label">Dirección</label><input class="bm-input" id="f-direccion" value="${this._esc(r.direccion)}"></div>
       <div class="bm-form-row"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="f-es_firmante_principal" ${r.es_firmante_principal?'checked':''}> Firmante principal (aparece por defecto en las ofertas)</label></div>
+      <div class="bm-form-row"><label class="bm-label">Documentos del representante</label>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:6px">La firma se usará automáticamente en los documentos que la requieran (SNCC, cartas, declaraciones).</div>
+        ${this._docCascade('rep', 'personal', [
+          {field:'firma_url', label:'Firma (imagen o PDF)'},
+          {field:'cedula_url', label:'Cédula (ambos lados)'}
+        ], r)}
+      </div>
     `, async () => {
-      const data = this._collectForm(['nombre_completo','cedula','cargo','profesion','estado_civil','telefono','email','direccion']);
+      const data = this._collectForm(['nombre_completo','cedula','cargo','profesion','estado_civil','telefono','email','direccion','firma_url','cedula_url']);
       data.es_firmante_principal = document.getElementById('f-es_firmante_principal').checked;
       if (id) await this._put(`/representantes/${id}`, data);
       else await this._post('/representantes', data);
@@ -401,7 +409,7 @@ const BidManager = {
     const cont = document.getElementById('bm-socios-list');
     if (!cont) return;
     if (!this.data.socios.length) {
-      cont.innerHTML = this._emptyState('🤝', 'No has agregado socios.');
+      cont.innerHTML = this._emptyState('S', 'No has agregado socios.');
       return;
     }
     cont.innerHTML = `<div class="bm-grid">${this.data.socios.map(s => `
@@ -427,6 +435,11 @@ const BidManager = {
 
   abrirSocio(id) {
     const s = id ? this.data.socios.find(x => x.id === id) : {};
+    // Suma de participación de los OTROS socios (excluye el que se está editando)
+    const totalOtros = (this.data.socios || [])
+      .filter(x => x.id !== id)
+      .reduce((acc, x) => acc + (Number(x.porcentaje_participacion) || 0), 0);
+    const disponible = Math.max(0, 100 - totalOtros);
     this._openModal(id ? 'Editar socio' : 'Nuevo socio', `
       <div class="bm-form-row"><label class="bm-label">Nombre completo *</label><input class="bm-input" id="f-nombre_completo" value="${this._esc(s.nombre_completo)}"></div>
       <div class="bm-form-grid">
@@ -438,11 +451,16 @@ const BidManager = {
           </select>
         </div>
         <div class="bm-form-row"><label class="bm-label">Cantidad cuotas</label><input class="bm-input" type="number" id="f-cantidad_cuotas" value="${s.cantidad_cuotas || ''}"></div>
-        <div class="bm-form-row"><label class="bm-label">% participación</label><input class="bm-input" type="number" step="0.01" id="f-porcentaje_participacion" value="${s.porcentaje_participacion || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">% participación <span style="color:var(--text2);font-weight:400">(disponible: ${disponible.toFixed(2)}%)</span></label><input class="bm-input" type="number" step="0.01" min="0" max="${disponible.toFixed(2)}" id="f-porcentaje_participacion" value="${s.porcentaje_participacion || ''}"></div>
       </div>
       <div class="bm-form-row"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="f-es_gerente" ${s.es_gerente?'checked':''}> Es gerente</label></div>
     `, async () => {
       const data = this._collectForm(['nombre_completo','cedula','estado_civil','cantidad_cuotas','porcentaje_participacion']);
+      const pct = Number(data.porcentaje_participacion) || 0;
+      if (pct < 0) throw new Error('El porcentaje no puede ser negativo');
+      if (totalOtros + pct > 100.0001) {
+        throw new Error(`La participación total excedería 100%. Ya hay ${totalOtros.toFixed(2)}% asignado; máximo disponible: ${disponible.toFixed(2)}%`);
+      }
       data.es_gerente = document.getElementById('f-es_gerente').checked;
       if (id) await this._put(`/socios/${id}`, data);
       else await this._post('/socios', data);
@@ -457,7 +475,7 @@ const BidManager = {
     const cont = document.getElementById('bm-certificaciones-list');
     if (!cont) return;
     if (!this.data.certificaciones.length) {
-      cont.innerHTML = this._emptyState('📄', 'No has subido documentos aún. Sube DGII, TSS, RPE, Estatutos, etc.');
+      cont.innerHTML = this._emptyState('D', 'No has subido documentos aún. Sube DGII, TSS, RPE, Estatutos, etc.');
       return;
     }
     cont.innerHTML = `<div class="bm-grid">${this.data.certificaciones.map(c => {
@@ -475,7 +493,7 @@ const BidManager = {
           ${c.numero_certificacion ? `<div>No.: <strong>${c.numero_certificacion}</strong></div>` : ''}
           ${c.fecha_emision ? `<div>Emisión: ${this._fecha(c.fecha_emision)}</div>` : ''}
           ${c.fecha_vencimiento ? `<div>Vence: <strong>${this._fecha(c.fecha_vencimiento)}</strong></div>` : ''}
-          ${c.archivo_url ? `<div style="margin-top:6px"><a href="javascript:void(0)" onclick="BidManager._openStoragePath('${this._esc(c.archivo_url)}')" style="color:var(--green);text-decoration:none">📎 Ver archivo</a></div>` : ''}
+          ${c.archivo_url ? `<div style="margin-top:6px"><a href="javascript:void(0)" onclick="BidManager._openStoragePath('${this._esc(c.archivo_url)}')" style="color:var(--green);text-decoration:none">Ver archivo</a></div>` : ''}
         </div>
         <div class="bm-card-actions">
           <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirCertificacion('${c.id}')">Editar</button>
@@ -514,7 +532,7 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Fecha vencimiento</label><input class="bm-input" type="date" id="f-fecha_vencimiento" value="${c.fecha_vencimiento || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Vigencia (días)</label><input class="bm-input" type="number" id="f-vigencia_dias" value="${c.vigencia_dias || ''}"></div>
       </div>
-      <div class="bm-form-row"><label class="bm-label">📎 Archivo</label>
+      <div class="bm-form-row"><label class="bm-label">Archivo</label>
         ${this._uploadWidget('archivo_url', 'certificaciones', c.archivo_url)}
       </div>
       <div class="bm-form-row"><label class="bm-label">Notas</label><textarea class="bm-textarea" id="f-notas">${this._esc(c.notas)}</textarea></div>
@@ -545,7 +563,7 @@ const BidManager = {
     const cont = document.getElementById('bm-personal-list');
     if (!cont) return;
     if (!this.data.personal.length) {
-      cont.innerHTML = this._emptyState('👥', 'No has agregado personal técnico.');
+      cont.innerHTML = this._emptyState('P', 'No has agregado personal técnico.');
       return;
     }
     cont.innerHTML = `<div class="bm-grid">${this.data.personal.map(p => `
@@ -561,7 +579,7 @@ const BidManager = {
           ${p.profesion ? `<div>${p.profesion}</div>` : ''}
           ${p.experiencia_general_anios ? `<div>Experiencia: <strong>${p.experiencia_general_anios} años</strong></div>` : ''}
           ${p.codia ? `<div>CODIA: ${p.codia}</div>` : ''}
-          ${p.tiene_maestria ? '<div>🎓 Con maestría</div>' : ''}
+          ${p.tiene_maestria ? '<div>Con maestría</div>' : ''}
         </div>
         <div class="bm-card-actions">
           <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirPersonal('${p.id}')">Editar</button>
@@ -580,34 +598,28 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Cargo en la empresa</label><input class="bm-input" id="f-cargo_empresa" placeholder="Director de Obra" value="${this._esc(p.cargo_empresa)}"></div>
         <div class="bm-form-row"><label class="bm-label">Profesión</label><input class="bm-input" id="f-profesion" placeholder="Ingeniero Civil" value="${this._esc(p.profesion)}"></div>
         <div class="bm-form-row"><label class="bm-label">CODIA</label><input class="bm-input" id="f-codia" value="${this._esc(p.codia)}"></div>
-        <div class="bm-form-row"><label class="bm-label">Exp. general (años)</label><input class="bm-input" type="number" id="f-experiencia_general_anios" value="${p.experiencia_general_anios || ''}"></div>
-        <div class="bm-form-row"><label class="bm-label">Exp. específica (años)</label><input class="bm-input" type="number" id="f-experiencia_especifica_anios" value="${p.experiencia_especifica_anios || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Años de experiencia</label><input class="bm-input" type="number" id="f-experiencia_general_anios" value="${p.experiencia_general_anios || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Teléfono</label><input class="bm-input" id="f-telefono" value="${this._esc(p.telefono)}"></div>
         <div class="bm-form-row"><label class="bm-label">Email</label><input class="bm-input" type="email" id="f-email" value="${this._esc(p.email)}"></div>
       </div>
-      <div class="bm-form-row"><label class="bm-label">Formación académica</label><input class="bm-input" id="f-formacion_academica" placeholder="Ing. Civil, UNPHU 2010" value="${this._esc(p.formacion_academica)}"></div>
       <div class="bm-form-row"><label class="bm-label">Especialidades (separadas por coma)</label><input class="bm-input" id="f-especialidades" placeholder="alcantarillado, edificaciones, carreteras" value="${(p.especialidades || []).join(', ')}"></div>
       <div class="bm-form-row"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="f-tiene_maestria" ${p.tiene_maestria?'checked':''}> Tiene maestría</label></div>
       <div class="bm-form-row"><label class="bm-label">Descripción maestría</label><input class="bm-input" id="f-maestria_descripcion" placeholder="Maestría en Gestión de Proyectos" value="${this._esc(p.maestria_descripcion)}"></div>
-      <div class="bm-form-row"><label class="bm-label">📎 CV (PDF)</label>
-        ${this._uploadWidget('cv_url', 'personal', p.cv_url)}
-      </div>
-      <div class="bm-form-grid">
-        <div class="bm-form-row"><label class="bm-label">📎 Cédula</label>
-          ${this._uploadWidget('cedula_url', 'personal', p.cedula_url)}
-        </div>
-        <div class="bm-form-row"><label class="bm-label">📎 Firma</label>
-          ${this._uploadWidget('firma_url', 'personal', p.firma_url)}
-        </div>
-        <div class="bm-form-row"><label class="bm-label">📎 Exequátur</label>
-          ${this._uploadWidget('exequatur_url', 'personal', p.exequatur_url)}
-        </div>
-        <div class="bm-form-row"><label class="bm-label">📎 Carta de trabajo</label>
-          ${this._uploadWidget('carta_trabajo_url', 'personal', p.carta_trabajo_url)}
-        </div>
+      <div class="bm-form-row"><label class="bm-label">Documentos</label>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:6px">Selecciona el tipo y sube el archivo. Quedan guardados aquí abajo.</div>
+        ${this._docCascade('pers', 'personal', [
+          {field:'cv_url', label:'Curriculum (CV)'},
+          {field:'cedula_url', label:'Cédula'},
+          {field:'foto_url', label:'Foto'},
+          {field:'firma_url', label:'Firma'},
+          {field:'codia_url', label:'Carnet CODIA'},
+          {field:'exequatur_url', label:'Exequátur'},
+          {field:'maestria_url', label:'Título de maestría'},
+          {field:'carta_trabajo_url', label:'Carta de trabajo'}
+        ], p)}
       </div>
     `, async () => {
-      const data = this._collectForm(['nombre_completo','cedula','cargo_empresa','profesion','codia','experiencia_general_anios','experiencia_especifica_anios','telefono','email','formacion_academica','maestria_descripcion','cv_url','cedula_url','firma_url','exequatur_url','carta_trabajo_url']);
+      const data = this._collectForm(['nombre_completo','cedula','cargo_empresa','profesion','codia','experiencia_general_anios','telefono','email','maestria_descripcion','cv_url','cedula_url','foto_url','firma_url','codia_url','exequatur_url','maestria_url','carta_trabajo_url']);
       const espText = document.getElementById('f-especialidades').value.trim();
       data.especialidades = espText ? espText.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
       data.tiene_maestria = document.getElementById('f-tiene_maestria').checked;
@@ -624,7 +636,7 @@ const BidManager = {
     const cont = document.getElementById('bm-equipos-list');
     if (!cont) return;
     if (!this.data.equipos.length) {
-      cont.innerHTML = this._emptyState('🚜', 'No has agregado equipos.');
+      cont.innerHTML = this._emptyState('E', 'No has agregado equipos.');
       return;
     }
     cont.innerHTML = `<div class="bm-grid">${this.data.equipos.map(eq => `
@@ -682,22 +694,19 @@ const BidManager = {
           <div class="bm-form-row"><label class="bm-label">Teléfono</label><input class="bm-input" id="f-empresa_alquiler_telefono" value="${this._esc(eq.empresa_alquiler_telefono)}"></div>
           <div class="bm-form-row"><label class="bm-label">Contacto</label><input class="bm-input" id="f-empresa_alquiler_contacto" value="${this._esc(eq.empresa_alquiler_contacto)}"></div>
         </div>
-        <div class="bm-form-row"><label class="bm-label">📎 Carta de disponibilidad</label>
-          ${this._uploadWidget('carta_disponibilidad_equipo_url', 'equipos', eq.carta_disponibilidad_equipo_url)}
-        </div>
       </div>
-      <div class="bm-form-row" id="bm-propio-section" style="display:${eq.propiedad==='propio'?'block':'none'}">
-        <div class="bm-form-grid">
-          <div class="bm-form-row"><label class="bm-label">📎 Matrícula</label>
-            ${this._uploadWidget('matricula_url', 'equipos', eq.matricula_url)}
-          </div>
-          <div class="bm-form-row"><label class="bm-label">📎 Factura</label>
-            ${this._uploadWidget('factura_url', 'equipos', eq.factura_url)}
-          </div>
-        </div>
+      <div class="bm-form-row"><label class="bm-label">Documentos del equipo</label>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:6px">Matrícula y factura para equipos propios; carta de disponibilidad y contrato para alquilados.</div>
+        ${this._docCascade('equipo', 'equipos', [
+          {field:'matricula_url', label:'Matrícula'},
+          {field:'factura_url', label:'Factura de compra'},
+          {field:'foto_url', label:'Foto del equipo'},
+          {field:'carta_disponibilidad_equipo_url', label:'Carta de disponibilidad'},
+          {field:'contrato_alquiler_url', label:'Contrato de alquiler'}
+        ], eq)}
       </div>
     `, async () => {
-      const data = this._collectForm(['descripcion','marca','modelo','anio','cantidad','capacidad','matricula','propiedad','estado','empresa_alquiler','empresa_alquiler_rnc','empresa_alquiler_telefono','empresa_alquiler_contacto','carta_disponibilidad_equipo_url','matricula_url','factura_url']);
+      const data = this._collectForm(['descripcion','marca','modelo','anio','cantidad','capacidad','matricula','propiedad','estado','empresa_alquiler','empresa_alquiler_rnc','empresa_alquiler_telefono','empresa_alquiler_contacto','carta_disponibilidad_equipo_url','matricula_url','factura_url','foto_url','contrato_alquiler_url']);
       if (id) await this._put(`/equipos/${id}`, data);
       else await this._post('/equipos', data);
       this.toast('Equipo guardado', 'ok');
@@ -707,8 +716,8 @@ const BidManager = {
   },
 
   _togglePropiedad(v) {
-    document.getElementById('bm-alquiler-section').style.display = v === 'alquilado' ? 'block' : 'none';
-    document.getElementById('bm-propio-section').style.display = v === 'propio' ? 'block' : 'none';
+    const alq = document.getElementById('bm-alquiler-section');
+    if (alq) alq.style.display = v === 'alquilado' ? 'block' : 'none';
   },
 
   // ── EXPERIENCIA ───────────────────────────────────────
@@ -716,7 +725,7 @@ const BidManager = {
     const cont = document.getElementById('bm-experiencia-list');
     if (!cont) return;
     if (!this.data.experiencia.length) {
-      cont.innerHTML = this._emptyState('🏗️', 'No has agregado proyectos ejecutados.');
+      cont.innerHTML = this._emptyState('X', 'No has agregado proyectos ejecutados.');
       return;
     }
     cont.innerHTML = `<div class="bm-grid">${this.data.experiencia.map(x => `
@@ -775,17 +784,26 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Categorías obra (coma)</label><input class="bm-input" id="f-categorias_obra" placeholder="infraestructura_vial, edificacion" value="${(x.categorias_obra || []).join(', ')}"></div>
         <div class="bm-form-row"><label class="bm-label">Actividades ejecutadas (coma)</label><input class="bm-input" id="f-actividades_ejecutadas" placeholder="movimiento_de_tierra, drenaje, asfalto" value="${(x.actividades_ejecutadas || []).join(', ')}"></div>
       </div>
-      <div class="bm-form-grid">
-        <div class="bm-form-row"><label class="bm-label">Área (m²)</label><input class="bm-input" type="number" id="f-area_m2" value="${x.area_m2 || ''}"></div>
-        <div class="bm-form-row"><label class="bm-label">Longitud (ml)</label><input class="bm-input" type="number" id="f-longitud_ml" value="${x.longitud_ml || ''}"></div>
-        <div class="bm-form-row"><label class="bm-label">Volumen (m³)</label><input class="bm-input" type="number" id="f-volumen_m3" value="${x.volumen_m3 || ''}"></div>
+      <div class="bm-form-row"><label class="bm-label">Documentos del proyecto</label>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:6px">Contrato, cubicaciones, recepciones, certificación de experiencia, finiquito y fotos. Puedes subir varias fotos.</div>
+        ${this._docCascade('exp', 'experiencia', [
+          {field:'contrato_url', label:'Contrato'},
+          {field:'cubicaciones_url', label:'Cubicaciones'},
+          {field:'recepcion_provisional_url', label:'Recepción provisional'},
+          {field:'recepcion_definitiva_url', label:'Recepción definitiva'},
+          {field:'acta_recepcion_url', label:'Acta de recepción'},
+          {field:'certificacion_url', label:'Certificación de experiencia'},
+          {field:'finiquito_url', label:'Finiquito'},
+          {field:'fotos_url', label:'Foto del proyecto', array:true}
+        ], x)}
       </div>
     `, async () => {
-      const data = this._collectForm(['nombre_proyecto','cliente','tipo_cliente','numero_contrato','tipo_obra','provincia','monto_contrato','fecha_inicio','fecha_fin','estado','ubicacion','descripcion','alcance_detallado','area_m2','longitud_ml','volumen_m3']);
+      const data = this._collectForm(['nombre_proyecto','cliente','tipo_cliente','numero_contrato','tipo_obra','provincia','monto_contrato','fecha_inicio','fecha_fin','estado','ubicacion','descripcion','alcance_detallado','contrato_url','cubicaciones_url','recepcion_provisional_url','recepcion_definitiva_url','acta_recepcion_url','certificacion_url','finiquito_url']);
       const cats = document.getElementById('f-categorias_obra').value.trim();
       const acts = document.getElementById('f-actividades_ejecutadas').value.trim();
       data.categorias_obra = cats ? cats.split(',').map(s => s.trim().toLowerCase().replace(/\s+/g,'_')).filter(Boolean) : [];
       data.actividades_ejecutadas = acts ? acts.split(',').map(s => s.trim().toLowerCase().replace(/\s+/g,'_')).filter(Boolean) : [];
+      data.fotos_url = this._collectArray('fotos_url');
       if (id) await this._put(`/experiencia/${id}`, data);
       else await this._post('/experiencia', data);
       this.toast('Proyecto guardado', 'ok');
@@ -799,7 +817,7 @@ const BidManager = {
     const cont = document.getElementById('bm-financieros-list');
     if (!cont) return;
     if (!this.data.financieros.length) {
-      cont.innerHTML = this._emptyState('📑', 'No has agregado estados financieros.');
+      cont.innerHTML = this._emptyState('F', 'No has agregado estados financieros.');
       return;
     }
     cont.innerHTML = `<div class="bm-grid">${this.data.financieros.map(f => `
@@ -828,6 +846,17 @@ const BidManager = {
   abrirFinanciero(id) {
     const f = id ? this.data.financieros.find(x => x.id === id) : { tipo: 'anual' };
     this._openModal(id ? 'Editar estado financiero' : 'Nuevo estado financiero', `
+      <div style="border:1px solid var(--green,#16a34a);border-radius:8px;padding:14px;margin-bottom:16px;background:rgba(22,163,74,0.05)">
+        <div style="font-size:13px;font-weight:600;color:var(--text,#111);margin-bottom:4px">Llenado automático con IA</div>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:10px">Sube el PDF de los estados financieros o el IR-2 y la IA extrae los valores. Revisa y ajusta antes de guardar.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label class="bm-btn bm-btn-primary bm-btn-sm" style="cursor:pointer;margin:0">
+            Subir PDF y extraer
+            <input type="file" accept="application/pdf,.pdf" style="display:none" onchange="BidManager._extraerFinancierosIA(event, 'fin')">
+          </label>
+          <span id="bm-ia-status-fin" style="font-size:12px;color:var(--text2,#6b7280)"></span>
+        </div>
+      </div>
       <div class="bm-form-grid">
         <div class="bm-form-row"><label class="bm-label">Período *</label><input class="bm-input" id="f-periodo" placeholder="2025" value="${this._esc(f.periodo)}"></div>
         <div class="bm-form-row"><label class="bm-label">Tipo</label>
@@ -858,7 +887,7 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Utilidad operativa</label><input class="bm-input" type="number" id="f-utilidad_operativa" value="${f.utilidad_operativa || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Utilidad neta</label><input class="bm-input" type="number" id="f-utilidad_neta" value="${f.utilidad_neta || ''}"></div>
       </div>
-      <div class="bm-form-row"><label class="bm-label">📎 PDF del estado financiero</label>
+      <div class="bm-form-row"><label class="bm-label">PDF del estado financiero</label>
         ${this._uploadWidget('pdf_url', 'financieros', f.pdf_url)}
       </div>
     `, async () => {
@@ -875,7 +904,7 @@ const BidManager = {
     const cont = document.getElementById('bm-indicadores-view');
     if (!cont) return;
     if (!this.data.financieros.length) {
-      cont.innerHTML = this._emptyState('📊', 'Agrega un estado financiero para ver los indicadores.');
+      cont.innerHTML = this._emptyState('i', 'Agrega un estado financiero para ver los indicadores.');
       return;
     }
     const ult = [...this.data.financieros].sort((a,b) => (b.fecha_cierre||'').localeCompare(a.fecha_cierre||''))[0];
@@ -914,7 +943,7 @@ const BidManager = {
     const cont = document.getElementById('bm-ir2-list');
     if (!cont) return;
     if (!this.data.ir2.length) {
-      cont.innerHTML = this._emptyState('📋', 'No has agregado declaraciones IR-2.');
+      cont.innerHTML = this._emptyState('IR', 'No has agregado declaraciones IR-2.');
       return;
     }
     cont.innerHTML = `<div class="bm-grid">${this.data.ir2.map(i => `
@@ -941,6 +970,17 @@ const BidManager = {
   abrirIr2(id) {
     const i = id ? this.data.ir2.find(x => x.id === id) : { tipo: 'anual' };
     this._openModal(id ? 'Editar IR-2' : 'Nueva declaración IR-2', `
+      <div style="border:1px solid var(--green,#16a34a);border-radius:8px;padding:14px;margin-bottom:16px;background:rgba(22,163,74,0.05)">
+        <div style="font-size:13px;font-weight:600;color:var(--text,#111);margin-bottom:4px">Llenado automático con IA</div>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:10px">Sube el PDF del IR-2 y la IA extrae los valores. Revisa y ajusta antes de guardar.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label class="bm-btn bm-btn-primary bm-btn-sm" style="cursor:pointer;margin:0">
+            Subir PDF y extraer
+            <input type="file" accept="application/pdf,.pdf" style="display:none" onchange="BidManager._extraerFinancierosIA(event, 'ir2')">
+          </label>
+          <span id="bm-ia-status-ir2" style="font-size:12px;color:var(--text2,#6b7280)"></span>
+        </div>
+      </div>
       <div class="bm-form-grid">
         <div class="bm-form-row"><label class="bm-label">Período fiscal *</label><input class="bm-input" id="f-periodo_fiscal" placeholder="2025" value="${this._esc(i.periodo_fiscal)}"></div>
         <div class="bm-form-row"><label class="bm-label">Tipo</label>
@@ -958,7 +998,7 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Total pasivos</label><input class="bm-input" type="number" id="f-total_pasivos" value="${i.total_pasivos || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Patrimonio</label><input class="bm-input" type="number" id="f-patrimonio" value="${i.patrimonio || ''}"></div>
       </div>
-      <div class="bm-form-row"><label class="bm-label">📎 PDF del IR-2</label>
+      <div class="bm-form-row"><label class="bm-label">PDF del IR-2</label>
         ${this._uploadWidget('pdf_url', 'ir2', i.pdf_url)}
       </div>
     `, async () => {
@@ -976,7 +1016,7 @@ const BidManager = {
     const cont = document.getElementById('bm-capacidad-list');
     if (!cont) return;
     if (!this.data.capacidad.length) {
-      cont.innerHTML = this._emptyState('💳', 'No has agregado líneas de crédito o solvencias.');
+      cont.innerHTML = this._emptyState('C', 'No has agregado líneas de crédito o solvencias.');
       return;
     }
     cont.innerHTML = `<div class="bm-grid">${this.data.capacidad.map(c => `
@@ -1019,7 +1059,7 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Fecha emisión</label><input class="bm-input" type="date" id="f-fecha_emision" value="${c.fecha_emision || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Fecha vencimiento</label><input class="bm-input" type="date" id="f-fecha_vencimiento" value="${c.fecha_vencimiento || ''}"></div>
       </div>
-      <div class="bm-form-row"><label class="bm-label">📎 Archivo (carta / certificación)</label>
+      <div class="bm-form-row"><label class="bm-label">Archivo (carta / certificación)</label>
         ${this._uploadWidget('archivo_url', 'capacidad', c.archivo_url)}
       </div>
     `, async () => {
@@ -1037,7 +1077,7 @@ const BidManager = {
     const cont = document.getElementById('bm-referencias-list');
     if (!cont) return;
     if (!this.data.referencias.length) {
-      cont.innerHTML = this._emptyState('🤝', 'No has agregado referencias comerciales.');
+      cont.innerHTML = this._emptyState('RC', 'No has agregado referencias comerciales.');
       return;
     }
     cont.innerHTML = `<div class="bm-grid">${this.data.referencias.map(r => `
@@ -1074,7 +1114,7 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Años de relación</label><input class="bm-input" type="number" id="f-relacion_anios" value="${r.relacion_anios || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Fecha carta</label><input class="bm-input" type="date" id="f-fecha_carta" value="${r.fecha_carta || ''}"></div>
       </div>
-      <div class="bm-form-row"><label class="bm-label">📎 Carta de referencia</label>
+      <div class="bm-form-row"><label class="bm-label">Carta de referencia</label>
         ${this._uploadWidget('archivo_url', 'referencias', r.archivo_url)}
       </div>
     `, async () => {
@@ -1199,31 +1239,330 @@ const BidManager = {
 
   _renderUploadWidget(field, val) {
     if (val) {
-      // Path del bucket: "empresa-uuid/categoria/prefijo_nombre.pdf"
-      // Extraer nombre visible quitando prefijo UUID de 8 chars + guión bajo
       let displayName;
       if (val.startsWith('http')) {
-        displayName = '📎 Archivo externo (legacy)';
+        displayName = 'Archivo externo (legacy)';
       } else {
         const last = val.split('/').pop() || val;
-        displayName = '📄 ' + last.replace(/^[0-9a-f]{8}_/, '');
+        displayName = last.replace(/^[0-9a-f]{8}_/, '');
       }
       return `
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:var(--bg2,#f8f9fa);border:1px solid var(--border,#e5e7eb);border-radius:6px">
           <span style="flex:1;min-width:120px;font-size:13px;color:var(--text,#111);word-break:break-all">${this._esc(displayName)}</span>
-          <button type="button" class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._viewFile('${field}')" title="Ver archivo">👁️ Ver</button>
-          <button type="button" class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._replaceFile('${field}')" title="Reemplazar">🔄 Cambiar</button>
-          <button type="button" class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager._clearFile('${field}')" title="Quitar">🗑️</button>
+          <button type="button" class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._viewFile('${field}')">Ver</button>
+          <button type="button" class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._replaceFile('${field}')">Cambiar</button>
+          <button type="button" class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager._clearFile('${field}')">Quitar</button>
         </div>
       `;
     }
     return `
       <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:1.5px dashed var(--border,#d1d5db);border-radius:6px;cursor:pointer;color:var(--text2,#6b7280);font-size:13px;transition:all .15s;background:var(--bg2,#fafafa)" onmouseover="this.style.borderColor='var(--green,#16a34a)';this.style.color='var(--green,#16a34a)'" onmouseout="this.style.borderColor='var(--border,#d1d5db)';this.style.color='var(--text2,#6b7280)'">
-        <span style="font-size:16px">📎</span>
+        <span style="font-weight:600">+</span>
         <span>Elegir archivo (máx. 25 MB)</span>
         <input type="file" style="display:none" onchange="BidManager._doUpload(event, '${field}')">
       </label>
     `;
+  },
+
+  // ═══════════════════════════════════════════════════════
+  // CASCADA DE DOCUMENTOS — un selector de tipo + subir
+  // ═══════════════════════════════════════════════════════
+  // En vez de un cajón de upload por cada documento posible,
+  // muestra: [select tipo de documento] [Subir] y debajo la
+  // lista de documentos ya cargados con Ver / Quitar.
+  //
+  // Uso:
+  //   ${this._docCascade('personal', 'personal', [
+  //     {field:'cv_url', label:'Curriculum (CV)'},
+  //     {field:'cedula_url', label:'Cédula'},
+  //     ...
+  //     {field:'fotos_url', label:'Foto del proyecto', array:true}
+  //   ], p)}
+  //
+  // - Campos normales: hidden f-{field} con el path (compatible _collectForm)
+  // - Campos array:true: hidden f-{field} con JSON '["path1","path2"]'
+  //   → el handler de guardado debe parsearlo manualmente.
+  // ═══════════════════════════════════════════════════════
+
+  _cascadeReg: {},
+
+  _docCascade(cid, categoria, tipos, record) {
+    this._cascadeReg[cid] = { categoria, tipos };
+    record = record || {};
+    const hiddens = tipos.map(t => {
+      let v = record[t.field];
+      if (t.array) v = JSON.stringify(Array.isArray(v) ? v : (v ? [v] : []));
+      else v = v || '';
+      return `<input type="hidden" id="f-${t.field}" value="${this._esc(v)}">`;
+    }).join('');
+    return `
+      ${hiddens}
+      <div class="bm-cascade" id="bm-cascade-${cid}" style="border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:14px;background:var(--bg2,#fafafa)">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select class="bm-select" id="bm-cascade-sel-${cid}" style="flex:1;min-width:180px">
+            ${tipos.map(t => `<option value="${t.field}">${t.label}</option>`).join('')}
+          </select>
+          <label class="bm-btn bm-btn-primary bm-btn-sm" style="cursor:pointer;margin:0">
+            Subir
+            <input type="file" style="display:none" onchange="BidManager._cascadeUpload(event, '${cid}')">
+          </label>
+        </div>
+        <div id="bm-cascade-list-${cid}" style="margin-top:10px">
+          ${this._cascadeListHtml(cid, record)}
+        </div>
+      </div>
+    `;
+  },
+
+  _cascadeListHtml(cid, record) {
+    const reg = this._cascadeReg[cid];
+    if (!reg) return '';
+    const filas = [];
+    reg.tipos.forEach(t => {
+      let val;
+      if (record) {
+        // Primer render: los hidden aún no están en el DOM → leer del registro
+        val = record[t.field];
+        if (t.array) val = JSON.stringify(Array.isArray(val) ? val : (val ? [val] : []));
+        else val = val || '';
+      } else {
+        const el = document.getElementById(`f-${t.field}`);
+        if (!el) return;
+        val = el.value;
+      }
+      if (t.array) {
+        let arr = [];
+        try { arr = JSON.parse(val || '[]'); } catch(e) { arr = []; }
+        arr.forEach((p, idx) => filas.push(this._cascadeRowHtml(cid, t, p, idx)));
+      } else if (val) {
+        filas.push(this._cascadeRowHtml(cid, t, val, null));
+      }
+    });
+    if (!filas.length) {
+      return `<div style="font-size:12px;color:var(--text2,#9ca3af);padding:4px 2px">Sin documentos cargados todavía.</div>`;
+    }
+    return filas.join('');
+  },
+
+  _cascadeRowHtml(cid, tipo, path, idx) {
+    let name;
+    if (path.startsWith('http')) name = 'Archivo externo';
+    else name = (path.split('/').pop() || path).replace(/^[0-9a-f]{8}_/, '');
+    const idxArg = idx === null ? 'null' : idx;
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:6px;background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:6px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;color:var(--text,#111)">${this._esc(tipo.label)}</div>
+          <div style="font-size:12px;color:var(--text2,#6b7280);word-break:break-all">${this._esc(name)}</div>
+        </div>
+        <button type="button" class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._openStoragePath('${this._esc(path)}')">Ver</button>
+        <button type="button" class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager._cascadeRemove('${cid}','${tipo.field}',${idxArg})">Quitar</button>
+      </div>
+    `;
+  },
+
+  _cascadeRefresh(cid) {
+    const cont = document.getElementById(`bm-cascade-list-${cid}`);
+    if (cont) cont.innerHTML = this._cascadeListHtml(cid);
+  },
+
+  async _cascadeUpload(evt, cid) {
+    const file = evt.target.files && evt.target.files[0];
+    evt.target.value = '';
+    if (!file) return;
+    const reg = this._cascadeReg[cid];
+    if (!reg) return;
+    const sel = document.getElementById(`bm-cascade-sel-${cid}`);
+    const field = sel ? sel.value : null;
+    const tipo = reg.tipos.find(t => t.field === field);
+    if (!tipo) return;
+
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) { this.toast('Archivo excede 25 MB', 'err'); return; }
+    if (file.size === 0) { this.toast('Archivo vacío', 'err'); return; }
+
+    const cont = document.getElementById(`bm-cascade-list-${cid}`);
+    if (cont) cont.insertAdjacentHTML('afterbegin', `
+      <div id="bm-cascade-uploading-${cid}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-top:6px;background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:6px">
+        <div style="width:14px;height:14px;border:2px solid var(--green,#16a34a);border-top-color:transparent;border-radius:50%;animation:bm-spin .7s linear infinite"></div>
+        <span style="font-size:12px;color:var(--text2,#6b7280)">Subiendo ${this._esc(file.name)} como <strong>${this._esc(tipo.label)}</strong>...</span>
+      </div>
+    `);
+
+    try {
+      const form = new FormData();
+      form.append('categoria', reg.categoria);
+      form.append('file', file);
+      const r = await fetch('/api/bid/upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + this._token() },
+        body: form
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `Upload → ${r.status}`);
+      }
+      const res = await r.json();
+      const hidden = document.getElementById(`f-${field}`);
+      if (hidden) {
+        if (tipo.array) {
+          let arr = [];
+          try { arr = JSON.parse(hidden.value || '[]'); } catch(e) { arr = []; }
+          arr.push(res.path);
+          hidden.value = JSON.stringify(arr);
+        } else {
+          hidden.value = res.path;
+        }
+      }
+      this.toast('Documento subido', 'ok');
+    } catch (e) {
+      this.toast('Error subiendo: ' + e.message, 'err');
+    } finally {
+      const up = document.getElementById(`bm-cascade-uploading-${cid}`);
+      if (up) up.remove();
+      this._cascadeRefresh(cid);
+    }
+  },
+
+  async _cascadeRemove(cid, field, idx) {
+    const reg = this._cascadeReg[cid];
+    const tipo = reg ? reg.tipos.find(t => t.field === field) : null;
+    const hidden = document.getElementById(`f-${field}`);
+    if (!hidden || !tipo) return;
+
+    let path;
+    if (tipo.array) {
+      let arr = [];
+      try { arr = JSON.parse(hidden.value || '[]'); } catch(e) { arr = []; }
+      path = arr[idx];
+      arr.splice(idx, 1);
+      hidden.value = JSON.stringify(arr);
+    } else {
+      path = hidden.value;
+      hidden.value = '';
+    }
+
+    if (path && !path.startsWith('http')) {
+      try {
+        await fetch(`/api/bid/upload?path=${encodeURIComponent(path)}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + this._token() }
+        });
+      } catch(e) { /* silencioso */ }
+    }
+    this._cascadeRefresh(cid);
+    this.toast('Documento quitado', 'ok');
+  },
+
+  // Recoge un hidden array (JSON) y devuelve el array parseado
+  _collectArray(field) {
+    const el = document.getElementById(`f-${field}`);
+    if (!el) return [];
+    try { return JSON.parse(el.value || '[]'); } catch(e) { return []; }
+  },
+
+  // ═══════════════════════════════════════════════════════
+  // EXTRACCIÓN IA — Estados financieros / IR-2
+  // ═══════════════════════════════════════════════════════
+  // Sube el PDF al storage (categoría financieros/ir2) y en
+  // paralelo lo manda a /financieros/extraer para que Gemini
+  // devuelva los valores y pre-llenar el formulario.
+  // El usuario siempre revisa antes de guardar.
+  // ═══════════════════════════════════════════════════════
+
+  async _extraerFinancierosIA(evt, modo) {
+    const file = evt.target.files && evt.target.files[0];
+    evt.target.value = '';
+    if (!file) return;
+
+    const status = document.getElementById(`bm-ia-status-${modo}`);
+    const setStatus = (t) => { if (status) status.textContent = t; };
+
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) { this.toast('PDF excede 25 MB', 'err'); return; }
+
+    setStatus('Analizando con IA... esto toma 20-60 segundos');
+
+    try {
+      const categoria = modo === 'ir2' ? 'ir2' : 'financieros';
+
+      // 1) Subir al storage (para que quede guardado como respaldo)
+      const formUp = new FormData();
+      formUp.append('categoria', categoria);
+      formUp.append('file', file);
+      const upPromise = fetch('/api/bid/upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + this._token() },
+        body: formUp
+      }).then(r => r.ok ? r.json() : null).catch(() => null);
+
+      // 2) Extraer con IA
+      const formIA = new FormData();
+      formIA.append('file', file);
+      const iaResp = await fetch('/api/bid/financieros/extraer', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + this._token() },
+        body: formIA
+      });
+      if (!iaResp.ok) {
+        const err = await iaResp.json().catch(() => ({}));
+        throw new Error(err.detail || `Extracción → ${iaResp.status}`);
+      }
+      const { extraido } = await iaResp.json();
+
+      // 3) Guardar el path del PDF subido en f-pdf_url
+      const up = await upPromise;
+      if (up && up.path) {
+        const hidden = document.getElementById('f-pdf_url');
+        if (hidden) {
+          hidden.value = up.path;
+          const widget = document.getElementById('bm-upload-pdf_url');
+          if (widget) widget.innerHTML = this._renderUploadWidget('pdf_url', up.path);
+        }
+      }
+
+      // 4) Pre-llenar los campos según el modo
+      const setVal = (fid, v) => {
+        const el = document.getElementById('f-' + fid);
+        if (el && v !== null && v !== undefined && v !== 0) el.value = v;
+        else if (el && v === 0) el.value = 0;
+      };
+
+      if (modo === 'ir2') {
+        setVal('periodo_fiscal', extraido.periodo);
+        setVal('fecha_cierre_fiscal', extraido.fecha_cierre);
+        setVal('ingresos_brutos', extraido.ingresos_brutos ?? extraido.ingresos);
+        setVal('costos_y_gastos', extraido.costos_y_gastos);
+        setVal('renta_neta_imponible', extraido.renta_neta_imponible);
+        setVal('impuesto_liquidado', extraido.impuesto_liquidado);
+        setVal('total_activos', extraido.activos_totales);
+        setVal('total_pasivos', extraido.pasivos_totales);
+        setVal('patrimonio', extraido.patrimonio_neto);
+      } else {
+        setVal('periodo', extraido.periodo);
+        setVal('fecha_cierre', extraido.fecha_cierre);
+        setVal('activos_corrientes', extraido.activos_corrientes);
+        setVal('activos_no_corrientes', extraido.activos_no_corrientes);
+        setVal('activos_totales', extraido.activos_totales);
+        setVal('pasivos_corrientes', extraido.pasivos_corrientes);
+        setVal('pasivos_no_corrientes', extraido.pasivos_no_corrientes);
+        setVal('pasivos_totales', extraido.pasivos_totales);
+        setVal('patrimonio_neto', extraido.patrimonio_neto);
+        setVal('ingresos', extraido.ingresos ?? extraido.ingresos_brutos);
+        setVal('costo_ventas', extraido.costo_ventas);
+        setVal('utilidad_bruta', extraido.utilidad_bruta);
+        setVal('gastos_operativos', extraido.gastos_operativos);
+        setVal('utilidad_operativa', extraido.utilidad_operativa);
+        setVal('utilidad_neta', extraido.utilidad_neta);
+      }
+
+      const conf = extraido.confianza || 'media';
+      setStatus(`Listo. Confianza: ${conf}.${extraido.notas ? ' ' + extraido.notas : ''} Revisa los valores antes de guardar.`);
+      this.toast('Valores extraídos. Revísalos antes de guardar.', 'ok');
+    } catch (e) {
+      setStatus('');
+      this.toast('Error extrayendo: ' + e.message, 'err');
+    }
   },
 
   async _doUpload(evt, field) {
@@ -1277,7 +1616,7 @@ const BidManager = {
 
       // Re-render widget con el archivo cargado
       widget.innerHTML = this._renderUploadWidget(field, res.path);
-      this.toast('Archivo subido ✓', 'ok');
+      this.toast('Archivo subido', 'ok');
     } catch (e) {
       this.toast('Error subiendo: ' + e.message, 'err');
       widget.innerHTML = this._renderUploadWidget(field, '');
