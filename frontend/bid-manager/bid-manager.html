@@ -149,6 +149,7 @@
     <!-- Sub-tabs financieros -->
     <div class="bm-tabs" style="margin-bottom: 20px;">
       <button class="bm-tab bm-active" data-fin-panel="indicadores">Indicadores</button>
+      <button class="bm-tab" data-fin-panel="matching">Matching</button>
       <button class="bm-tab" data-fin-panel="estados">Estados financieros</button>
       <button class="bm-tab" data-fin-panel="ir2">IR-2</button>
       <button class="bm-tab" data-fin-panel="capacidad">Capacidad</button>
@@ -170,6 +171,22 @@
       </div>
       <h3 class="bm-section-title" style="margin-bottom: 16px;">Indicadores del último período</h3>
       <div id="bm-indicadores-view"></div>
+    </div>
+
+    <div class="bm-fin-panel" data-fin-panel="matching" style="display:none">
+      <div style="border:1px solid var(--green,#16a34a);border-radius:8px;padding:16px;margin-bottom:20px;background:rgba(22,163,74,0.05)">
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">Matching financiero contra un pliego</div>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:12px">Sube el pliego de condiciones (PDF). La IA identifica los índices financieros exigidos (solvencia, liquidez, capital de trabajo, etc.) y los compara con tu expediente para decirte si cumples antes de preparar la oferta.</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <input class="bm-input" type="number" id="bm-matching-monto" placeholder="Monto a ofertar (opcional, usa presupuesto base si vacío)" style="flex:1;min-width:260px">
+          <label class="bm-btn bm-btn-primary" style="cursor:pointer;margin:0">
+            Subir pliego y analizar
+            <input type="file" accept="application/pdf,.pdf" style="display:none" onchange="BidManager._analizarPliegoMatching(event)">
+          </label>
+          <span id="bm-matching-status" style="font-size:12px;color:var(--text2,#6b7280)"></span>
+        </div>
+      </div>
+      <div id="bm-matching-list"></div>
     </div>
 
     <div class="bm-fin-panel" data-fin-panel="estados" style="display:none">
