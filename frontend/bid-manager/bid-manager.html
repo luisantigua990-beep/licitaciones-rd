@@ -156,6 +156,18 @@
     </div>
 
     <div class="bm-fin-panel bm-active" data-fin-panel="indicadores">
+      <div style="border:1px solid var(--green,#16a34a);border-radius:8px;padding:16px;margin-bottom:20px;background:rgba(22,163,74,0.05)">
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">Análisis financiero con IA</div>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:12px">Sube los PDFs de tus estados financieros e IR-2 de los últimos 2 años (puedes seleccionar varios a la vez). La IA extrae los valores, crea los registros y calcula los indicadores automáticamente.</div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <label class="bm-btn bm-btn-primary" style="cursor:pointer;margin:0">
+            Subir PDFs y analizar
+            <input type="file" accept="application/pdf,.pdf" multiple style="display:none" onchange="BidManager._extraerLoteIA(event)">
+          </label>
+          <span id="bm-ia-lote-status" style="font-size:12px;color:var(--text2,#6b7280)"></span>
+        </div>
+        <div id="bm-ia-lote-resultados" style="margin-top:10px"></div>
+      </div>
       <h3 class="bm-section-title" style="margin-bottom: 16px;">Indicadores del último período</h3>
       <div id="bm-indicadores-view"></div>
     </div>
