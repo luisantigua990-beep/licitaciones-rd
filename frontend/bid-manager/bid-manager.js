@@ -479,7 +479,21 @@ const BidManager = {
       return;
     }
     cont.innerHTML = `<div class="bm-grid">${this.data.certificaciones.map(c => {
-      const badge = c.estado === 'vigente' ? 'bm-badge-ok' : c.estado === 'por_vencer' ? 'bm-badge-warn' : 'bm-badge-err';
+      // Estado SIEMPRE calculado por fecha real, no por el campo guardado:
+      //   sin fecha_vencimiento → NO VENCE (documento permanente)
+      //   fecha < hoy → VENCIDO | fecha <= hoy+7d → POR VENCER | resto → VIGENTE
+      let estadoCalc, badge;
+      if (!c.fecha_vencimiento) {
+        estadoCalc = 'NO VENCE';
+        badge = 'bm-badge-ok';
+      } else {
+        const hoy = new Date(); hoy.setHours(0,0,0,0);
+        const fv = new Date(c.fecha_vencimiento + 'T00:00:00');
+        const limite = new Date(hoy); limite.setDate(limite.getDate() + 7);
+        if (fv < hoy) { estadoCalc = 'VENCIDO'; badge = 'bm-badge-err'; }
+        else if (fv <= limite) { estadoCalc = 'POR VENCER'; badge = 'bm-badge-warn'; }
+        else { estadoCalc = 'VIGENTE'; badge = 'bm-badge-ok'; }
+      }
       return `
       <div class="bm-card">
         <div class="bm-card-header">
@@ -487,12 +501,12 @@ const BidManager = {
             <h4 class="bm-card-title">${c.nombre_display}</h4>
             <div class="bm-card-subtitle">${c.tipo}</div>
           </div>
-          <div class="bm-badge ${badge}">${c.estado || '—'}</div>
+          <div class="bm-badge ${badge}">${estadoCalc}</div>
         </div>
         <div class="bm-card-body">
           ${c.numero_certificacion ? `<div>No.: <strong>${c.numero_certificacion}</strong></div>` : ''}
           ${c.fecha_emision ? `<div>Emisión: ${this._fecha(c.fecha_emision)}</div>` : ''}
-          ${c.fecha_vencimiento ? `<div>Vence: <strong>${this._fecha(c.fecha_vencimiento)}</strong></div>` : ''}
+          ${c.fecha_vencimiento ? `<div>Vence: <strong>${this._fecha(c.fecha_vencimiento)}</strong></div>` : '<div style="color:var(--text2)">Documento sin vencimiento</div>'}
           ${c.archivo_url ? `<div style="margin-top:6px"><a href="javascript:void(0)" onclick="BidManager._openStoragePath('${this._esc(c.archivo_url)}')" style="color:var(--green);text-decoration:none">Ver archivo</a></div>` : ''}
         </div>
         <div class="bm-card-actions">
@@ -529,15 +543,25 @@ const BidManager = {
       <div class="bm-form-grid">
         <div class="bm-form-row"><label class="bm-label">No. certificación</label><input class="bm-input" id="f-numero_certificacion" value="${this._esc(c.numero_certificacion)}"></div>
         <div class="bm-form-row"><label class="bm-label">Fecha emisión</label><input class="bm-input" type="date" id="f-fecha_emision" value="${c.fecha_emision || ''}"></div>
-        <div class="bm-form-row"><label class="bm-label">Fecha vencimiento</label><input class="bm-input" type="date" id="f-fecha_vencimiento" value="${c.fecha_vencimiento || ''}"></div>
-        <div class="bm-form-row"><label class="bm-label">Vigencia (días)</label><input class="bm-input" type="number" id="f-vigencia_dias" value="${c.vigencia_dias || ''}"></div>
+        <div class="bm-form-row" id="bm-cert-fv-row"><label class="bm-label">Fecha vencimiento *</label><input class="bm-input" type="date" id="f-fecha_vencimiento" value="${c.fecha_vencimiento || ''}"></div>
+        <div class="bm-form-row" id="bm-cert-vig-row"><label class="bm-label">Vigencia (días)</label><input class="bm-input" type="number" id="f-vigencia_dias" value="${c.vigencia_dias || ''}"></div>
       </div>
+      <div class="bm-form-row"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
+        <input type="checkbox" id="f-no_vence" ${id && !c.fecha_vencimiento ? 'checked' : ''} onchange="BidManager._toggleNoVence(this.checked)"> Este documento no vence (estatutos, registro mercantil histórico, etc.)
+      </label></div>
       <div class="bm-form-row"><label class="bm-label">Archivo</label>
         ${this._uploadWidget('archivo_url', 'certificaciones', c.archivo_url)}
       </div>
       <div class="bm-form-row"><label class="bm-label">Notas</label><textarea class="bm-textarea" id="f-notas">${this._esc(c.notas)}</textarea></div>
     `, async () => {
+      const noVence = document.getElementById('f-no_vence').checked;
       const data = this._collectForm(['tipo','nombre_display','numero_certificacion','fecha_emision','fecha_vencimiento','vigencia_dias','archivo_url','notas']);
+      if (noVence) {
+        data.fecha_vencimiento = null;
+        data.vigencia_dias = null;
+      } else if (!data.fecha_vencimiento) {
+        throw new Error('Indica la fecha de vencimiento, o marca "Este documento no vence"');
+      }
       if (!data.nombre_display) data.nombre_display = tipos.find(t => t[0] === data.tipo)?.[1] || data.tipo;
       if (id) await this._put(`/certificaciones/${id}`, data);
       else await this._post('/certificaciones', data);
@@ -545,6 +569,19 @@ const BidManager = {
       this.cerrarModal();
       await this.refresh();
     });
+    // Estado inicial del toggle (al editar un doc sin fecha)
+    if (id && !c.fecha_vencimiento) this._toggleNoVence(true);
+  },
+
+  _toggleNoVence(checked) {
+    const fv = document.getElementById('bm-cert-fv-row');
+    const vig = document.getElementById('bm-cert-vig-row');
+    if (fv) fv.style.opacity = checked ? '0.4' : '1';
+    if (vig) vig.style.opacity = checked ? '0.4' : '1';
+    const fvi = document.getElementById('f-fecha_vencimiento');
+    const vigi = document.getElementById('f-vigencia_dias');
+    if (fvi) { fvi.disabled = checked; if (checked) fvi.value = ''; }
+    if (vigi) { vigi.disabled = checked; if (checked) vigi.value = ''; }
   },
 
   _autoFillCert(tipo) {
@@ -615,7 +652,8 @@ const BidManager = {
           {field:'codia_url', label:'Carnet CODIA'},
           {field:'exequatur_url', label:'Exequátur'},
           {field:'maestria_url', label:'Título de maestría'},
-          {field:'carta_trabajo_url', label:'Carta de trabajo'}
+          {field:'carta_trabajo_url', label:'Carta de trabajo'},
+          {field:'otros_documentos', label:'Otro documento (nombre libre)', custom:true}
         ], p)}
       </div>
     `, async () => {
@@ -623,6 +661,7 @@ const BidManager = {
       const espText = document.getElementById('f-especialidades').value.trim();
       data.especialidades = espText ? espText.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
       data.tiene_maestria = document.getElementById('f-tiene_maestria').checked;
+      data.otros_documentos = this._collectArray('otros_documentos');
       if (id) await this._put(`/personal/${id}`, data);
       else await this._post('/personal', data);
       this.toast('Personal guardado', 'ok');
@@ -702,11 +741,13 @@ const BidManager = {
           {field:'factura_url', label:'Factura de compra'},
           {field:'foto_url', label:'Foto del equipo'},
           {field:'carta_disponibilidad_equipo_url', label:'Carta de disponibilidad'},
-          {field:'contrato_alquiler_url', label:'Contrato de alquiler'}
+          {field:'contrato_alquiler_url', label:'Contrato de alquiler'},
+          {field:'otros_documentos', label:'Otro documento (nombre libre)', custom:true}
         ], eq)}
       </div>
     `, async () => {
       const data = this._collectForm(['descripcion','marca','modelo','anio','cantidad','capacidad','matricula','propiedad','estado','empresa_alquiler','empresa_alquiler_rnc','empresa_alquiler_telefono','empresa_alquiler_contacto','carta_disponibilidad_equipo_url','matricula_url','factura_url','foto_url','contrato_alquiler_url']);
+      data.otros_documentos = this._collectArray('otros_documentos');
       if (id) await this._put(`/equipos/${id}`, data);
       else await this._post('/equipos', data);
       this.toast('Equipo guardado', 'ok');
@@ -794,7 +835,8 @@ const BidManager = {
           {field:'acta_recepcion_url', label:'Acta de recepción'},
           {field:'certificacion_url', label:'Certificación de experiencia'},
           {field:'finiquito_url', label:'Finiquito'},
-          {field:'fotos_url', label:'Foto del proyecto', array:true}
+          {field:'fotos_url', label:'Foto del proyecto', array:true},
+          {field:'otros_documentos', label:'Otro documento (nombre libre)', custom:true}
         ], x)}
       </div>
     `, async () => {
@@ -804,6 +846,7 @@ const BidManager = {
       data.categorias_obra = cats ? cats.split(',').map(s => s.trim().toLowerCase().replace(/\s+/g,'_')).filter(Boolean) : [];
       data.actividades_ejecutadas = acts ? acts.split(',').map(s => s.trim().toLowerCase().replace(/\s+/g,'_')).filter(Boolean) : [];
       data.fotos_url = this._collectArray('fotos_url');
+      data.otros_documentos = this._collectArray('otros_documentos');
       if (id) await this._put(`/experiencia/${id}`, data);
       else await this._post('/experiencia', data);
       this.toast('Proyecto guardado', 'ok');
@@ -1291,15 +1334,16 @@ const BidManager = {
     record = record || {};
     const hiddens = tipos.map(t => {
       let v = record[t.field];
-      if (t.array) v = JSON.stringify(Array.isArray(v) ? v : (v ? [v] : []));
+      if (t.array || t.custom) v = JSON.stringify(Array.isArray(v) ? v : (v ? [v] : []));
       else v = v || '';
       return `<input type="hidden" id="f-${t.field}" value="${this._esc(v)}">`;
     }).join('');
+    const hayCustom = tipos.some(t => t.custom);
     return `
       ${hiddens}
       <div class="bm-cascade" id="bm-cascade-${cid}" style="border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:14px;background:var(--bg2,#fafafa)">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <select class="bm-select" id="bm-cascade-sel-${cid}" style="flex:1;min-width:180px">
+          <select class="bm-select" id="bm-cascade-sel-${cid}" style="flex:1;min-width:180px" ${hayCustom ? `onchange="BidManager._cascadeSelChange('${cid}')"` : ''}>
             ${tipos.map(t => `<option value="${t.field}">${t.label}</option>`).join('')}
           </select>
           <label class="bm-btn bm-btn-primary bm-btn-sm" style="cursor:pointer;margin:0">
@@ -1307,11 +1351,21 @@ const BidManager = {
             <input type="file" style="display:none" onchange="BidManager._cascadeUpload(event, '${cid}')">
           </label>
         </div>
+        ${hayCustom ? `<input class="bm-input" id="bm-cascade-name-${cid}" placeholder="Nombre del documento (ej: Permiso del ayuntamiento)" style="display:none;margin-top:8px">` : ''}
         <div id="bm-cascade-list-${cid}" style="margin-top:10px">
           ${this._cascadeListHtml(cid, record)}
         </div>
       </div>
     `;
+  },
+
+  _cascadeSelChange(cid) {
+    const reg = this._cascadeReg[cid];
+    const sel = document.getElementById(`bm-cascade-sel-${cid}`);
+    const nameInput = document.getElementById(`bm-cascade-name-${cid}`);
+    if (!reg || !sel || !nameInput) return;
+    const tipo = reg.tipos.find(t => t.field === sel.value);
+    nameInput.style.display = (tipo && tipo.custom) ? 'block' : 'none';
   },
 
   _cascadeListHtml(cid, record) {
@@ -1323,14 +1377,20 @@ const BidManager = {
       if (record) {
         // Primer render: los hidden aún no están en el DOM → leer del registro
         val = record[t.field];
-        if (t.array) val = JSON.stringify(Array.isArray(val) ? val : (val ? [val] : []));
+        if (t.array || t.custom) val = JSON.stringify(Array.isArray(val) ? val : (val ? [val] : []));
         else val = val || '';
       } else {
         const el = document.getElementById(`f-${t.field}`);
         if (!el) return;
         val = el.value;
       }
-      if (t.array) {
+      if (t.custom) {
+        let arr = [];
+        try { arr = JSON.parse(val || '[]'); } catch(e) { arr = []; }
+        arr.forEach((item, idx) => {
+          if (item && item.path) filas.push(this._cascadeRowHtml(cid, t, item.path, idx, item.label));
+        });
+      } else if (t.array) {
         let arr = [];
         try { arr = JSON.parse(val || '[]'); } catch(e) { arr = []; }
         arr.forEach((p, idx) => filas.push(this._cascadeRowHtml(cid, t, p, idx)));
@@ -1344,15 +1404,16 @@ const BidManager = {
     return filas.join('');
   },
 
-  _cascadeRowHtml(cid, tipo, path, idx) {
+  _cascadeRowHtml(cid, tipo, path, idx, labelOverride) {
     let name;
     if (path.startsWith('http')) name = 'Archivo externo';
     else name = (path.split('/').pop() || path).replace(/^[0-9a-f]{8}_/, '');
     const idxArg = idx === null ? 'null' : idx;
+    const label = labelOverride || tipo.label;
     return `
       <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:6px;background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:6px">
         <div style="flex:1;min-width:0">
-          <div style="font-size:12px;font-weight:600;color:var(--text,#111)">${this._esc(tipo.label)}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--text,#111)">${this._esc(label)}</div>
           <div style="font-size:12px;color:var(--text2,#6b7280);word-break:break-all">${this._esc(name)}</div>
         </div>
         <button type="button" class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._openStoragePath('${this._esc(path)}')">Ver</button>
@@ -1376,6 +1437,17 @@ const BidManager = {
     const field = sel ? sel.value : null;
     const tipo = reg.tipos.find(t => t.field === field);
     if (!tipo) return;
+
+    // Documento "Otro": requiere nombre antes de subir
+    let customLabel = null;
+    if (tipo.custom) {
+      const nameInput = document.getElementById(`bm-cascade-name-${cid}`);
+      customLabel = nameInput ? nameInput.value.trim() : '';
+      if (!customLabel) {
+        this.toast('Escribe el nombre del documento antes de subirlo', 'err');
+        return;
+      }
+    }
 
     const MAX = 25 * 1024 * 1024;
     if (file.size > MAX) { this.toast('Archivo excede 25 MB', 'err'); return; }
@@ -1405,7 +1477,14 @@ const BidManager = {
       const res = await r.json();
       const hidden = document.getElementById(`f-${field}`);
       if (hidden) {
-        if (tipo.array) {
+        if (tipo.custom) {
+          let arr = [];
+          try { arr = JSON.parse(hidden.value || '[]'); } catch(e) { arr = []; }
+          arr.push({ label: customLabel, path: res.path });
+          hidden.value = JSON.stringify(arr);
+          const nameInput = document.getElementById(`bm-cascade-name-${cid}`);
+          if (nameInput) nameInput.value = '';
+        } else if (tipo.array) {
           let arr = [];
           try { arr = JSON.parse(hidden.value || '[]'); } catch(e) { arr = []; }
           arr.push(res.path);
@@ -1431,7 +1510,13 @@ const BidManager = {
     if (!hidden || !tipo) return;
 
     let path;
-    if (tipo.array) {
+    if (tipo.custom) {
+      let arr = [];
+      try { arr = JSON.parse(hidden.value || '[]'); } catch(e) { arr = []; }
+      path = arr[idx] ? arr[idx].path : null;
+      arr.splice(idx, 1);
+      hidden.value = JSON.stringify(arr);
+    } else if (tipo.array) {
       let arr = [];
       try { arr = JSON.parse(hidden.value || '[]'); } catch(e) { arr = []; }
       path = arr[idx];
@@ -1469,6 +1554,71 @@ const BidManager = {
   // devuelva los valores y pre-llenar el formulario.
   // El usuario siempre revisa antes de guardar.
   // ═══════════════════════════════════════════════════════
+
+  // Análisis por LOTE: varios PDFs (estados + IR-2 de distintos años) de una vez.
+  // El backend extrae cada uno, detecta el tipo, sube el PDF y CREA los registros.
+  // Los indicadores se calculan solos al insertarse (columnas GENERATED).
+  async _extraerLoteIA(evt) {
+    const files = Array.from(evt.target.files || []);
+    evt.target.value = '';
+    if (!files.length) return;
+    if (files.length > 6) { this.toast('Máximo 6 PDFs por lote', 'err'); return; }
+
+    const status = document.getElementById('bm-ia-lote-status');
+    const resultCont = document.getElementById('bm-ia-lote-resultados');
+    const setStatus = (t) => { if (status) status.textContent = t; };
+
+    const MAX = 25 * 1024 * 1024;
+    for (const f of files) {
+      if (f.size > MAX) { this.toast(`${f.name} excede 25 MB`, 'err'); return; }
+    }
+
+    setStatus(`Analizando ${files.length} PDF(s) con IA... esto puede tomar 1-3 minutos`);
+    if (resultCont) resultCont.innerHTML = '';
+
+    try {
+      const form = new FormData();
+      files.forEach(f => form.append('files', f));
+      const r = await fetch('/api/bid/financieros/extraer-lote', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + this._token() },
+        body: form
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `Lote → ${r.status}`);
+      }
+      const { resultados } = await r.json();
+
+      const oks = resultados.filter(x => x.ok).length;
+      setStatus(`Completado: ${oks}/${resultados.length} procesados correctamente.`);
+
+      if (resultCont) {
+        resultCont.innerHTML = resultados.map(res => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-top:6px;background:#fff;border:1px solid ${res.ok ? 'var(--green,#16a34a)' : '#dc2626'};border-radius:6px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:600">${this._esc(res.archivo)}</div>
+              <div style="font-size:12px;color:var(--text2,#6b7280)">
+                ${res.ok
+                  ? `${res.tipo} · Período ${this._esc(res.periodo || '?')} · Confianza: ${res.confianza || 'media'}${res.notas ? ' · ' + this._esc(res.notas) : ''}`
+                  : `Error: ${this._esc(res.error || 'desconocido')}`}
+              </div>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      if (oks > 0) {
+        this.toast(`${oks} registro(s) creados. Revisa los valores en Estados/IR-2.`, 'ok');
+        await this.refresh();
+      } else {
+        this.toast('Ningún PDF pudo procesarse', 'err');
+      }
+    } catch (e) {
+      setStatus('');
+      this.toast('Error en análisis por lote: ' + e.message, 'err');
+    }
+  },
 
   async _extraerFinancierosIA(evt, modo) {
     const file = evt.target.files && evt.target.files[0];
