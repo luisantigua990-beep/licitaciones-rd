@@ -1,0 +1,206 @@
+<!-- ============================================================
+     BID MANAGER — Markup del módulo completo
+     ============================================================
+     Este HTML se carga dinámicamente dentro de #tab-bid.
+     Toda la lógica está en bid-manager.js (objeto BidManager).
+     ============================================================ -->
+
+<div class="bm-container">
+  
+  <!-- Header -->
+  <div class="bm-header">
+    <h1>📁 Expediente Digital</h1>
+    <p>Tu perfil completo de empresa listo para generar ofertas automáticamente.</p>
+  </div>
+
+  <!-- Progress card -->
+  <div class="bm-progress-card">
+    <div class="bm-progress-header">
+      <div class="bm-progress-title">Completitud del expediente</div>
+      <div class="bm-progress-pct" id="bm-progress-pct">0%</div>
+    </div>
+    <div class="bm-progress-bar">
+      <div class="bm-progress-fill" id="bm-progress-fill" style="width: 0%"></div>
+    </div>
+  </div>
+
+  <!-- Alertas de vencimiento -->
+  <div id="bm-alerts-container"></div>
+
+  <!-- Tabs de navegación interna -->
+  <div class="bm-tabs" id="bm-tabs">
+    <button class="bm-tab bm-active" data-panel="empresa">🏢 Empresa</button>
+    <button class="bm-tab" data-panel="representantes">👤 Representantes <span class="bm-tab-badge" id="bm-badge-representantes">0</span></button>
+    <button class="bm-tab" data-panel="socios">🤝 Socios <span class="bm-tab-badge" id="bm-badge-socios">0</span></button>
+    <button class="bm-tab" data-panel="certificaciones">📄 Documentos <span class="bm-tab-badge" id="bm-badge-certificaciones">0</span></button>
+    <button class="bm-tab" data-panel="personal">👥 Personal <span class="bm-tab-badge" id="bm-badge-personal">0</span></button>
+    <button class="bm-tab" data-panel="equipos">🚜 Equipos <span class="bm-tab-badge" id="bm-badge-equipos">0</span></button>
+    <button class="bm-tab" data-panel="experiencia">🏗️ Experiencia <span class="bm-tab-badge" id="bm-badge-experiencia">0</span></button>
+    <button class="bm-tab" data-panel="financieros">💰 Financieros <span class="bm-tab-badge" id="bm-badge-financieros">0</span></button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PANEL: EMPRESA
+       ═══════════════════════════════════════════════════════ -->
+  <div class="bm-panel bm-active" data-panel="empresa">
+    <div class="bm-section-header">
+      <div>
+        <h2 class="bm-section-title">Datos maestros de la empresa</h2>
+        <p class="bm-section-desc">Esta información se auto-llena en todos los formularios.</p>
+      </div>
+      <button class="bm-btn bm-btn-primary" onclick="BidManager.editarEmpresa()">✏️ Editar</button>
+    </div>
+    <div id="bm-empresa-view"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PANEL: REPRESENTANTES
+       ═══════════════════════════════════════════════════════ -->
+  <div class="bm-panel" data-panel="representantes">
+    <div class="bm-section-header">
+      <div>
+        <h2 class="bm-section-title">Representantes legales</h2>
+        <p class="bm-section-desc">Personas autorizadas a firmar ofertas y contratos.</p>
+      </div>
+      <button class="bm-btn bm-btn-primary" onclick="BidManager.abrirRepresentante()">+ Agregar representante</button>
+    </div>
+    <div id="bm-representantes-list"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PANEL: SOCIOS
+       ═══════════════════════════════════════════════════════ -->
+  <div class="bm-panel" data-panel="socios">
+    <div class="bm-section-header">
+      <div>
+        <h2 class="bm-section-title">Socios / Accionistas</h2>
+        <p class="bm-section-desc">Estructura societaria de la empresa.</p>
+      </div>
+      <button class="bm-btn bm-btn-primary" onclick="BidManager.abrirSocio()">+ Agregar socio</button>
+    </div>
+    <div id="bm-socios-list"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PANEL: CERTIFICACIONES / DOCUMENTOS
+       ═══════════════════════════════════════════════════════ -->
+  <div class="bm-panel" data-panel="certificaciones">
+    <div class="bm-section-header">
+      <div>
+        <h2 class="bm-section-title">Documentos y certificaciones</h2>
+        <p class="bm-section-desc">DGII, TSS, RPE, Registro Mercantil, Estatutos, etc.</p>
+      </div>
+      <button class="bm-btn bm-btn-primary" onclick="BidManager.abrirCertificacion()">+ Subir documento</button>
+    </div>
+    <div id="bm-certificaciones-list"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PANEL: PERSONAL
+       ═══════════════════════════════════════════════════════ -->
+  <div class="bm-panel" data-panel="personal">
+    <div class="bm-section-header">
+      <div>
+        <h2 class="bm-section-title">Personal técnico</h2>
+        <p class="bm-section-desc">Ingenieros, arquitectos y personal profesional disponible.</p>
+      </div>
+      <button class="bm-btn bm-btn-primary" onclick="BidManager.abrirPersonal()">+ Agregar persona</button>
+    </div>
+    <div id="bm-personal-list"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PANEL: EQUIPOS
+       ═══════════════════════════════════════════════════════ -->
+  <div class="bm-panel" data-panel="equipos">
+    <div class="bm-section-header">
+      <div>
+        <h2 class="bm-section-title">Equipos y maquinaria</h2>
+        <p class="bm-section-desc">Equipos propios y alquilados disponibles para obra.</p>
+      </div>
+      <button class="bm-btn bm-btn-primary" onclick="BidManager.abrirEquipo()">+ Agregar equipo</button>
+    </div>
+    <div id="bm-equipos-list"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PANEL: EXPERIENCIA
+       ═══════════════════════════════════════════════════════ -->
+  <div class="bm-panel" data-panel="experiencia">
+    <div class="bm-section-header">
+      <div>
+        <h2 class="bm-section-title">Experiencia — Banco de proyectos</h2>
+        <p class="bm-section-desc">Proyectos ejecutados para matching automático con pliegos.</p>
+      </div>
+      <button class="bm-btn bm-btn-primary" onclick="BidManager.abrirExperiencia()">+ Agregar proyecto</button>
+    </div>
+    <div id="bm-experiencia-list"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PANEL: FINANCIEROS
+       ═══════════════════════════════════════════════════════ -->
+  <div class="bm-panel" data-panel="financieros">
+    <!-- Sub-tabs financieros -->
+    <div class="bm-tabs" style="margin-bottom: 20px;">
+      <button class="bm-tab bm-active" data-fin-panel="indicadores">📊 Indicadores</button>
+      <button class="bm-tab" data-fin-panel="estados">📑 Estados financieros</button>
+      <button class="bm-tab" data-fin-panel="ir2">📋 IR-2</button>
+      <button class="bm-tab" data-fin-panel="capacidad">💳 Capacidad</button>
+      <button class="bm-tab" data-fin-panel="referencias">🤝 Referencias comerciales</button>
+    </div>
+
+    <div class="bm-fin-panel bm-active" data-fin-panel="indicadores">
+      <h3 class="bm-section-title" style="margin-bottom: 16px;">Indicadores del último período</h3>
+      <div id="bm-indicadores-view"></div>
+    </div>
+
+    <div class="bm-fin-panel" data-fin-panel="estados" style="display:none">
+      <div class="bm-section-header">
+        <h3 class="bm-section-title">Estados financieros</h3>
+        <button class="bm-btn bm-btn-primary" onclick="BidManager.abrirFinanciero()">+ Agregar estado</button>
+      </div>
+      <div id="bm-financieros-list"></div>
+    </div>
+
+    <div class="bm-fin-panel" data-fin-panel="ir2" style="display:none">
+      <div class="bm-section-header">
+        <h3 class="bm-section-title">Declaraciones IR-2</h3>
+        <button class="bm-btn bm-btn-primary" onclick="BidManager.abrirIr2()">+ Agregar IR-2</button>
+      </div>
+      <div id="bm-ir2-list"></div>
+    </div>
+
+    <div class="bm-fin-panel" data-fin-panel="capacidad" style="display:none">
+      <div class="bm-section-header">
+        <h3 class="bm-section-title">Capacidad financiera (líneas de crédito, solvencias)</h3>
+        <button class="bm-btn bm-btn-primary" onclick="BidManager.abrirCapacidad()">+ Agregar</button>
+      </div>
+      <div id="bm-capacidad-list"></div>
+    </div>
+
+    <div class="bm-fin-panel" data-fin-panel="referencias" style="display:none">
+      <div class="bm-section-header">
+        <h3 class="bm-section-title">Referencias comerciales</h3>
+        <button class="bm-btn bm-btn-primary" onclick="BidManager.abrirReferencia()">+ Agregar referencia</button>
+      </div>
+      <div id="bm-referencias-list"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal genérico (se rellena dinámicamente) -->
+<div class="bm-modal-overlay" id="bm-modal">
+  <div class="bm-modal">
+    <div class="bm-modal-header">
+      <h3 class="bm-modal-title" id="bm-modal-title">Título</h3>
+      <button class="bm-modal-close" onclick="BidManager.cerrarModal()">✕</button>
+    </div>
+    <div id="bm-modal-body"></div>
+    <div class="bm-modal-footer" id="bm-modal-footer"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="bm-toast" id="bm-toast"></div>
