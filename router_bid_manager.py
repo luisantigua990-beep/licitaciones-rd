@@ -902,30 +902,10 @@ Reglas:
 - "confianza" baja si el PDF es escaneado borroso o faltan páginas"""
 
 
-@bid_manager_router.post("/financieros/extraer")
-async def extraer_financieros_ia(
-    file: UploadFile = File(...),
-    authorization: str | None = Header(default=None),
-):
-    """
-    Extrae con Gemini los valores de un PDF de estados financieros o IR-2.
-    NO guarda nada: devuelve el JSON extraído para pre-llenar el formulario.
-    """
-    uid = _auth(authorization)
-    _empresa_id(uid)  # valida que tenga perfil
-
+def _gemini_extraer_financieros(contenido: bytes) -> dict:
+    """Llama a Gemini con el PDF y devuelve el dict extraído. Lanza HTTPException en error."""
     if not GEMINI_API_KEY:
         raise HTTPException(503, "Extracción IA no configurada (falta GEMINI_API_KEY)")
-
-    contenido = await file.read()
-    if not contenido:
-        raise HTTPException(400, "Archivo vacío")
-    if len(contenido) > STORAGE_MAX_BYTES:
-        raise HTTPException(413, "El archivo excede 25 MB")
-
-    mime = file.content_type or "application/pdf"
-    if "pdf" not in mime and not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(400, "Solo se aceptan PDFs para extracción IA")
 
     payload = {
         "contents": [{
@@ -940,10 +920,8 @@ async def extraer_financieros_ia(
             "response_mime_type": "application/json",
         },
     }
-
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
-
     try:
         req = _urlreq.Request(
             url,
@@ -957,14 +935,152 @@ async def extraer_financieros_ia(
         raise HTTPException(502, f"Error llamando a Gemini: {str(e)}")
 
     try:
-        texto = body["candidates"][0]["content"]["parts"][0]["text"]
-        texto = texto.strip()
+        texto = body["candidates"][0]["content"]["parts"][0]["text"].strip()
         if texto.startswith("```"):
             texto = texto.strip("`")
             if texto.lower().startswith("json"):
                 texto = texto[4:]
-        datos = _json.loads(texto)
+        return _json.loads(texto)
     except Exception as e:
         raise HTTPException(502, f"Gemini devolvió una respuesta no parseable: {str(e)}")
 
+
+@bid_manager_router.post("/financieros/extraer")
+async def extraer_financieros_ia(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+):
+    """
+    Extrae con Gemini los valores de un PDF de estados financieros o IR-2.
+    NO guarda nada: devuelve el JSON extraído para pre-llenar el formulario.
+    """
+    uid = _auth(authorization)
+    _empresa_id(uid)  # valida que tenga perfil
+
+    contenido = await file.read()
+    if not contenido:
+        raise HTTPException(400, "Archivo vacío")
+    if len(contenido) > STORAGE_MAX_BYTES:
+        raise HTTPException(413, "El archivo excede 25 MB")
+
+    mime = file.content_type or "application/pdf"
+    if "pdf" not in mime and not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "Solo se aceptan PDFs para extracción IA")
+
+    datos = _gemini_extraer_financieros(contenido)
     return {"extraido": datos, "archivo": file.filename}
+
+
+def _num(v):
+    """Convierte a número o None."""
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+@bid_manager_router.post("/financieros/extraer-lote")
+async def extraer_lote_ia(
+    files: List[UploadFile] = File(...),
+    authorization: str | None = Header(default=None),
+):
+    """
+    Analiza VARIOS PDFs (estados financieros y/o IR-2 de distintos años):
+    para cada uno extrae con Gemini, lo sube al storage, detecta el tipo y
+    CREA el registro correspondiente (bid_financieros o bid_ir2).
+    Los indicadores se calculan solos (columnas GENERATED).
+    Devuelve un resumen por archivo para que el usuario revise/edite.
+    """
+    uid = _auth(authorization)
+    eid = _empresa_id(uid)
+
+    if not files:
+        raise HTTPException(400, "No se recibieron archivos")
+    if len(files) > 6:
+        raise HTTPException(400, "Máximo 6 archivos por lote")
+
+    resultados = []
+    for f in files:
+        item = {"archivo": f.filename, "ok": False}
+        try:
+            contenido = await f.read()
+            if not contenido:
+                raise ValueError("Archivo vacío")
+            if len(contenido) > STORAGE_MAX_BYTES:
+                raise ValueError("Excede 25 MB")
+            if "pdf" not in (f.content_type or "") and not (f.filename or "").lower().endswith(".pdf"):
+                raise ValueError("Solo PDFs")
+
+            datos = _gemini_extraer_financieros(contenido)
+            tipo_det = (datos.get("tipo_detectado") or "estados_financieros").lower()
+            es_ir2 = "ir2" in tipo_det or "ir-2" in tipo_det
+
+            # Subir el PDF al storage
+            categoria = "ir2" if es_ir2 else "financieros"
+            safe_name = _sanitize_filename(f.filename or "archivo.pdf")
+            path = f"{eid}/{categoria}/{safe_name}"
+            _sb.storage.from_(STORAGE_BUCKET).upload(
+                path=path,
+                file=contenido,
+                file_options={"content-type": "application/pdf", "upsert": "false"},
+            )
+
+            periodo = str(datos.get("periodo") or "")
+            fecha_cierre = datos.get("fecha_cierre")
+
+            if es_ir2:
+                registro = {
+                    "empresa_id": eid,
+                    "periodo_fiscal": periodo or None,
+                    "tipo": "anual",
+                    "fecha_cierre_fiscal": fecha_cierre,
+                    "ingresos_brutos": _num(datos.get("ingresos_brutos")) or _num(datos.get("ingresos")),
+                    "costos_y_gastos": _num(datos.get("costos_y_gastos")),
+                    "renta_neta_imponible": _num(datos.get("renta_neta_imponible")),
+                    "impuesto_liquidado": _num(datos.get("impuesto_liquidado")),
+                    "total_activos": _num(datos.get("activos_totales")),
+                    "total_pasivos": _num(datos.get("pasivos_totales")),
+                    "patrimonio": _num(datos.get("patrimonio_neto")),
+                    "pdf_url": path,
+                }
+                registro = {k: v for k, v in registro.items() if v is not None}
+                _sb.table("bid_ir2").insert(registro).execute()
+                item["tipo"] = "IR-2"
+            else:
+                registro = {
+                    "empresa_id": eid,
+                    "periodo": periodo or None,
+                    "tipo": "anual",
+                    "fecha_cierre": fecha_cierre,
+                    "activos_corrientes": _num(datos.get("activos_corrientes")),
+                    "activos_no_corrientes": _num(datos.get("activos_no_corrientes")),
+                    "activos_totales": _num(datos.get("activos_totales")),
+                    "pasivos_corrientes": _num(datos.get("pasivos_corrientes")),
+                    "pasivos_no_corrientes": _num(datos.get("pasivos_no_corrientes")),
+                    "pasivos_totales": _num(datos.get("pasivos_totales")),
+                    "patrimonio_neto": _num(datos.get("patrimonio_neto")),
+                    "ingresos": _num(datos.get("ingresos")) or _num(datos.get("ingresos_brutos")),
+                    "costo_ventas": _num(datos.get("costo_ventas")),
+                    "utilidad_bruta": _num(datos.get("utilidad_bruta")),
+                    "gastos_operativos": _num(datos.get("gastos_operativos")),
+                    "utilidad_operativa": _num(datos.get("utilidad_operativa")),
+                    "utilidad_neta": _num(datos.get("utilidad_neta")),
+                    "pdf_url": path,
+                }
+                registro = {k: v for k, v in registro.items() if v is not None}
+                _sb.table("bid_financieros").insert(registro).execute()
+                item["tipo"] = "Estados financieros"
+
+            item["ok"] = True
+            item["periodo"] = periodo
+            item["confianza"] = datos.get("confianza")
+            item["notas"] = datos.get("notas")
+        except HTTPException as he:
+            item["error"] = he.detail
+        except Exception as e:
+            item["error"] = str(e)
+        resultados.append(item)
+
+    return {"resultados": resultados}
