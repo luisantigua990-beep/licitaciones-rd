@@ -24,7 +24,9 @@ import os
 from datetime import datetime
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, Header, Query
+import re
+import uuid
+from fastapi import APIRouter, HTTPException, Header, Query, UploadFile, File, Form
 from pydantic import BaseModel
 from supabase import create_client
 
@@ -651,3 +653,173 @@ def resumen_expediente(authorization: str | None = Header(default=None)):
             "ir2": ir2.count or 0,
         }
     }
+
+
+# ══════════════════════════════════════════════════════════════
+# 15. UPLOAD DE ARCHIVOS (Supabase Storage: bucket bid-manager-docs)
+# ══════════════════════════════════════════════════════════════
+# El bucket es PRIVADO. RLS multi-tenant vive en Storage.
+# Los archivos se sirven al frontend mediante signed URLs de corta duración.
+#
+# Estructura de paths:  {empresa_id}/{categoria}/{archivo}
+# Ejemplos:
+#   f47ac10b-.../certificaciones/a1b2c3d4_dgii-2026.pdf
+#   f47ac10b-.../personal/e5f6g7h8_cedula-lonny.jpg
+# ══════════════════════════════════════════════════════════════
+
+STORAGE_BUCKET = "bid-manager-docs"
+STORAGE_MAX_BYTES = 25 * 1024 * 1024  # 25 MB (igual que el limit del bucket)
+
+VALID_CATEGORIAS = {
+    "certificaciones", "personal", "equipos", "experiencia",
+    "financieros", "ir2", "capacidad", "referencias", "otro"
+}
+
+
+def _sanitize_filename(nombre: str) -> str:
+    """
+    Devuelve un nombre de archivo seguro:
+    - reemplaza caracteres raros por _
+    - trunca a 80 chars
+    - antepone un prefijo aleatorio para evitar colisiones dentro de la misma carpeta
+    - preserva la extensión original en minúsculas
+    """
+    if not nombre:
+        nombre = "archivo"
+    partes = nombre.rsplit(".", 1)
+    base = partes[0] if len(partes) > 1 else nombre
+    ext = ("." + partes[1].lower()) if len(partes) > 1 else ""
+    base_limpio = re.sub(r"[^A-Za-z0-9_\-]", "_", base).strip("_") or "archivo"
+    base_limpio = base_limpio[:80]
+    prefijo = uuid.uuid4().hex[:8]
+    return f"{prefijo}_{base_limpio}{ext}"
+
+
+def _validar_path(path: str, empresa_id: str) -> None:
+    """Bloquea path traversal y accesos cross-tenant."""
+    if not path:
+        raise HTTPException(400, "Path requerido")
+    if ".." in path or path.startswith("/") or "\\" in path:
+        raise HTTPException(400, "Path inválido")
+    prefijo_empresa = f"{empresa_id}/"
+    if not path.startswith(prefijo_empresa):
+        raise HTTPException(403, "No autorizado para acceder a este archivo")
+
+
+@bid_manager_router.post("/upload")
+async def upload_archivo(
+    categoria: str = Form(...),
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None)
+):
+    """
+    Sube un archivo al bucket privado bid-manager-docs.
+
+    Body (multipart/form-data):
+      - categoria: str  (una de VALID_CATEGORIAS)
+      - file: archivo binario
+
+    Respuesta:
+      {"path": "...", "name": "original.pdf", "size": 12345, "content_type": "application/pdf"}
+
+    El frontend debe guardar el `path` devuelto en el campo _url correspondiente
+    del registro (bid_certificaciones.archivo_url, bid_personal.cedula_url, etc).
+    Los paths NO son URLs directas; para ver el archivo pedir /api/bid/signed-url.
+    """
+    uid = _auth(authorization)
+    eid = _empresa_id(uid)
+
+    if categoria not in VALID_CATEGORIAS:
+        raise HTTPException(
+            400,
+            f"Categoría inválida. Debe ser una de: {', '.join(sorted(VALID_CATEGORIAS))}"
+        )
+
+    contenido = await file.read()
+    if not contenido:
+        raise HTTPException(400, "Archivo vacío")
+    if len(contenido) > STORAGE_MAX_BYTES:
+        max_mb = STORAGE_MAX_BYTES // 1024 // 1024
+        raise HTTPException(413, f"El archivo excede el máximo permitido de {max_mb} MB")
+
+    safe_name = _sanitize_filename(file.filename or "archivo")
+    path = f"{eid}/{categoria}/{safe_name}"
+    content_type = file.content_type or "application/octet-stream"
+
+    try:
+        _sb.storage.from_(STORAGE_BUCKET).upload(
+            path=path,
+            file=contenido,
+            file_options={"content-type": content_type, "upsert": "false"},
+        )
+    except Exception as e:
+        # Si es un duplicado (raro por el prefijo UUID), reintentar con nuevo prefijo
+        msg = str(e)
+        if "Duplicate" in msg or "already exists" in msg.lower():
+            safe_name = _sanitize_filename(file.filename or "archivo")
+            path = f"{eid}/{categoria}/{safe_name}"
+            try:
+                _sb.storage.from_(STORAGE_BUCKET).upload(
+                    path=path,
+                    file=contenido,
+                    file_options={"content-type": content_type, "upsert": "false"},
+                )
+            except Exception as e2:
+                raise HTTPException(500, f"Error subiendo archivo: {str(e2)}")
+        else:
+            raise HTTPException(500, f"Error subiendo archivo: {msg}")
+
+    return {
+        "path": path,
+        "name": file.filename,
+        "size": len(contenido),
+        "content_type": content_type,
+    }
+
+
+@bid_manager_router.get("/signed-url")
+def obtener_signed_url(
+    path: str = Query(..., description="Path del archivo en el bucket (empresa_id/categoria/archivo)"),
+    expires_in: int = Query(3600, ge=60, le=86400, description="Segundos de validez (60 a 86400)"),
+    authorization: str | None = Header(default=None),
+):
+    """
+    Genera una signed URL temporal para ver/descargar el archivo.
+    Solo funciona si el path pertenece a la empresa del usuario.
+    Por defecto 1 hora de validez.
+    """
+    uid = _auth(authorization)
+    eid = _empresa_id(uid)
+    _validar_path(path, eid)
+
+    try:
+        res = _sb.storage.from_(STORAGE_BUCKET).create_signed_url(path, expires_in)
+        signed = (res or {}).get("signedURL") or (res or {}).get("signed_url")
+        if not signed:
+            raise HTTPException(500, "No se pudo generar la URL firmada")
+        return {"url": signed, "expires_in": expires_in}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Error generando URL firmada: {str(e)}")
+
+
+@bid_manager_router.delete("/upload")
+def eliminar_archivo(
+    path: str = Query(..., description="Path del archivo a eliminar"),
+    authorization: str | None = Header(default=None),
+):
+    """
+    Elimina un archivo del bucket.
+    Solo funciona si el path pertenece a la empresa del usuario.
+    """
+    uid = _auth(authorization)
+    eid = _empresa_id(uid)
+    _validar_path(path, eid)
+
+    try:
+        _sb.storage.from_(STORAGE_BUCKET).remove([path])
+    except Exception as e:
+        raise HTTPException(500, f"Error eliminando archivo: {str(e)}")
+
+    return {"ok": True, "path": path}
