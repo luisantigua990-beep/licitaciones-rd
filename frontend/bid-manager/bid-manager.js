@@ -475,7 +475,7 @@ const BidManager = {
           ${c.numero_certificacion ? `<div>No.: <strong>${c.numero_certificacion}</strong></div>` : ''}
           ${c.fecha_emision ? `<div>Emisión: ${this._fecha(c.fecha_emision)}</div>` : ''}
           ${c.fecha_vencimiento ? `<div>Vence: <strong>${this._fecha(c.fecha_vencimiento)}</strong></div>` : ''}
-          ${c.archivo_url ? `<div style="margin-top:6px"><a href="${c.archivo_url}" target="_blank" style="color:var(--green);text-decoration:none">📎 Ver archivo</a></div>` : ''}
+          ${c.archivo_url ? `<div style="margin-top:6px"><a href="javascript:void(0)" onclick="BidManager._openStoragePath('${this._esc(c.archivo_url)}')" style="color:var(--green);text-decoration:none">📎 Ver archivo</a></div>` : ''}
         </div>
         <div class="bm-card-actions">
           <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirCertificacion('${c.id}')">Editar</button>
@@ -514,7 +514,9 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Fecha vencimiento</label><input class="bm-input" type="date" id="f-fecha_vencimiento" value="${c.fecha_vencimiento || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Vigencia (días)</label><input class="bm-input" type="number" id="f-vigencia_dias" value="${c.vigencia_dias || ''}"></div>
       </div>
-      <div class="bm-form-row"><label class="bm-label">URL del archivo (Supabase Storage)</label><input class="bm-input" id="f-archivo_url" placeholder="https://..." value="${this._esc(c.archivo_url)}"></div>
+      <div class="bm-form-row"><label class="bm-label">📎 Archivo</label>
+        ${this._uploadWidget('archivo_url', 'certificaciones', c.archivo_url)}
+      </div>
       <div class="bm-form-row"><label class="bm-label">Notas</label><textarea class="bm-textarea" id="f-notas">${this._esc(c.notas)}</textarea></div>
     `, async () => {
       const data = this._collectForm(['tipo','nombre_display','numero_certificacion','fecha_emision','fecha_vencimiento','vigencia_dias','archivo_url','notas']);
@@ -587,12 +589,22 @@ const BidManager = {
       <div class="bm-form-row"><label class="bm-label">Especialidades (separadas por coma)</label><input class="bm-input" id="f-especialidades" placeholder="alcantarillado, edificaciones, carreteras" value="${(p.especialidades || []).join(', ')}"></div>
       <div class="bm-form-row"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="f-tiene_maestria" ${p.tiene_maestria?'checked':''}> Tiene maestría</label></div>
       <div class="bm-form-row"><label class="bm-label">Descripción maestría</label><input class="bm-input" id="f-maestria_descripcion" placeholder="Maestría en Gestión de Proyectos" value="${this._esc(p.maestria_descripcion)}"></div>
-      <div class="bm-form-row"><label class="bm-label">URL CV (PDF)</label><input class="bm-input" id="f-cv_url" placeholder="https://..." value="${this._esc(p.cv_url)}"></div>
+      <div class="bm-form-row"><label class="bm-label">📎 CV (PDF)</label>
+        ${this._uploadWidget('cv_url', 'personal', p.cv_url)}
+      </div>
       <div class="bm-form-grid">
-        <div class="bm-form-row"><label class="bm-label">URL cédula</label><input class="bm-input" id="f-cedula_url" value="${this._esc(p.cedula_url)}"></div>
-        <div class="bm-form-row"><label class="bm-label">URL firma</label><input class="bm-input" id="f-firma_url" value="${this._esc(p.firma_url)}"></div>
-        <div class="bm-form-row"><label class="bm-label">URL exequátur</label><input class="bm-input" id="f-exequatur_url" value="${this._esc(p.exequatur_url)}"></div>
-        <div class="bm-form-row"><label class="bm-label">URL carta trabajo</label><input class="bm-input" id="f-carta_trabajo_url" value="${this._esc(p.carta_trabajo_url)}"></div>
+        <div class="bm-form-row"><label class="bm-label">📎 Cédula</label>
+          ${this._uploadWidget('cedula_url', 'personal', p.cedula_url)}
+        </div>
+        <div class="bm-form-row"><label class="bm-label">📎 Firma</label>
+          ${this._uploadWidget('firma_url', 'personal', p.firma_url)}
+        </div>
+        <div class="bm-form-row"><label class="bm-label">📎 Exequátur</label>
+          ${this._uploadWidget('exequatur_url', 'personal', p.exequatur_url)}
+        </div>
+        <div class="bm-form-row"><label class="bm-label">📎 Carta de trabajo</label>
+          ${this._uploadWidget('carta_trabajo_url', 'personal', p.carta_trabajo_url)}
+        </div>
       </div>
     `, async () => {
       const data = this._collectForm(['nombre_completo','cedula','cargo_empresa','profesion','codia','experiencia_general_anios','experiencia_especifica_anios','telefono','email','formacion_academica','maestria_descripcion','cv_url','cedula_url','firma_url','exequatur_url','carta_trabajo_url']);
@@ -670,12 +682,18 @@ const BidManager = {
           <div class="bm-form-row"><label class="bm-label">Teléfono</label><input class="bm-input" id="f-empresa_alquiler_telefono" value="${this._esc(eq.empresa_alquiler_telefono)}"></div>
           <div class="bm-form-row"><label class="bm-label">Contacto</label><input class="bm-input" id="f-empresa_alquiler_contacto" value="${this._esc(eq.empresa_alquiler_contacto)}"></div>
         </div>
-        <div class="bm-form-row"><label class="bm-label">URL carta disponibilidad</label><input class="bm-input" id="f-carta_disponibilidad_equipo_url" value="${this._esc(eq.carta_disponibilidad_equipo_url)}"></div>
+        <div class="bm-form-row"><label class="bm-label">📎 Carta de disponibilidad</label>
+          ${this._uploadWidget('carta_disponibilidad_equipo_url', 'equipos', eq.carta_disponibilidad_equipo_url)}
+        </div>
       </div>
       <div class="bm-form-row" id="bm-propio-section" style="display:${eq.propiedad==='propio'?'block':'none'}">
         <div class="bm-form-grid">
-          <div class="bm-form-row"><label class="bm-label">URL matrícula</label><input class="bm-input" id="f-matricula_url" value="${this._esc(eq.matricula_url)}"></div>
-          <div class="bm-form-row"><label class="bm-label">URL factura</label><input class="bm-input" id="f-factura_url" value="${this._esc(eq.factura_url)}"></div>
+          <div class="bm-form-row"><label class="bm-label">📎 Matrícula</label>
+            ${this._uploadWidget('matricula_url', 'equipos', eq.matricula_url)}
+          </div>
+          <div class="bm-form-row"><label class="bm-label">📎 Factura</label>
+            ${this._uploadWidget('factura_url', 'equipos', eq.factura_url)}
+          </div>
         </div>
       </div>
     `, async () => {
@@ -840,7 +858,9 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Utilidad operativa</label><input class="bm-input" type="number" id="f-utilidad_operativa" value="${f.utilidad_operativa || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Utilidad neta</label><input class="bm-input" type="number" id="f-utilidad_neta" value="${f.utilidad_neta || ''}"></div>
       </div>
-      <div class="bm-form-row"><label class="bm-label">URL PDF</label><input class="bm-input" id="f-pdf_url" value="${this._esc(f.pdf_url)}"></div>
+      <div class="bm-form-row"><label class="bm-label">📎 PDF del estado financiero</label>
+        ${this._uploadWidget('pdf_url', 'financieros', f.pdf_url)}
+      </div>
     `, async () => {
       const data = this._collectForm(['periodo','tipo','fecha_cierre','activos_corrientes','activos_no_corrientes','activos_totales','pasivos_corrientes','pasivos_no_corrientes','pasivos_totales','patrimonio_neto','ingresos','costo_ventas','utilidad_bruta','gastos_operativos','utilidad_operativa','utilidad_neta','pdf_url']);
       if (id) await this._put(`/financieros/${id}`, data);
@@ -938,7 +958,9 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Total pasivos</label><input class="bm-input" type="number" id="f-total_pasivos" value="${i.total_pasivos || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Patrimonio</label><input class="bm-input" type="number" id="f-patrimonio" value="${i.patrimonio || ''}"></div>
       </div>
-      <div class="bm-form-row"><label class="bm-label">URL PDF</label><input class="bm-input" id="f-pdf_url" value="${this._esc(i.pdf_url)}"></div>
+      <div class="bm-form-row"><label class="bm-label">📎 PDF del IR-2</label>
+        ${this._uploadWidget('pdf_url', 'ir2', i.pdf_url)}
+      </div>
     `, async () => {
       const data = this._collectForm(['periodo_fiscal','tipo','fecha_cierre_fiscal','ingresos_brutos','costos_y_gastos','renta_neta_imponible','impuesto_liquidado','total_activos','total_pasivos','patrimonio','pdf_url']);
       if (id) await this._put(`/ir2/${id}`, data);
@@ -997,7 +1019,9 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Fecha emisión</label><input class="bm-input" type="date" id="f-fecha_emision" value="${c.fecha_emision || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Fecha vencimiento</label><input class="bm-input" type="date" id="f-fecha_vencimiento" value="${c.fecha_vencimiento || ''}"></div>
       </div>
-      <div class="bm-form-row"><label class="bm-label">URL archivo</label><input class="bm-input" id="f-archivo_url" value="${this._esc(c.archivo_url)}"></div>
+      <div class="bm-form-row"><label class="bm-label">📎 Archivo (carta / certificación)</label>
+        ${this._uploadWidget('archivo_url', 'capacidad', c.archivo_url)}
+      </div>
     `, async () => {
       const data = this._collectForm(['tipo','institucion_financiera','monto','monto_disponible','fecha_emision','fecha_vencimiento','archivo_url']);
       if (id) await this._put(`/capacidad-financiera/${id}`, data);
@@ -1050,7 +1074,9 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Años de relación</label><input class="bm-input" type="number" id="f-relacion_anios" value="${r.relacion_anios || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Fecha carta</label><input class="bm-input" type="date" id="f-fecha_carta" value="${r.fecha_carta || ''}"></div>
       </div>
-      <div class="bm-form-row"><label class="bm-label">URL archivo</label><input class="bm-input" id="f-archivo_url" value="${this._esc(r.archivo_url)}"></div>
+      <div class="bm-form-row"><label class="bm-label">📎 Carta de referencia</label>
+        ${this._uploadWidget('archivo_url', 'referencias', r.archivo_url)}
+      </div>
     `, async () => {
       const data = this._collectForm(['proveedor_nombre','proveedor_rnc','proveedor_contacto','proveedor_telefono','monto_credito','plazo_credito_dias','relacion_anios','fecha_carta','archivo_url']);
       if (id) await this._put(`/referencias-comerciales/${id}`, data);
@@ -1139,6 +1165,184 @@ const BidManager = {
     try {
       return new Date(f).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' });
     } catch(e) { return f; }
+  },
+
+  // ═══════════════════════════════════════════════════════
+  // UPLOAD WIDGET — Reemplaza los inputs de URL manuales
+  // ═══════════════════════════════════════════════════════
+  // Uso dentro de un modal:
+  //   ${this._uploadWidget('archivo_url', 'certificaciones', c.archivo_url)}
+  //
+  // El helper renderiza:
+  //   - <input type="hidden" id="f-{field}"> con el path guardado
+  //   - Un div visible que muestra o "elegir archivo" o el archivo cargado
+  //
+  // _collectForm() sigue funcionando sin cambios (lee el hidden por su id).
+  // El valor guardado en BD es el path del bucket (ej: "abc-uuid/certificaciones/xyz.pdf"),
+  // no una URL directa. Al presionar Ver, se pide una signed URL de 1h.
+  //
+  // Retro-compatibilidad: si el valor ya guardado empieza con "http", se trata
+  // como URL externa legacy y "Ver" abre esa URL directa.
+  // ═══════════════════════════════════════════════════════
+
+  _uploadWidget(field, categoria, currentValue) {
+    const inputId = `f-${field}`;
+    const widgetId = `bm-upload-${field}`;
+    const val = currentValue || '';
+    return `
+      <input type="hidden" id="${inputId}" value="${this._esc(val)}">
+      <div class="bm-upload-widget" id="${widgetId}" data-field="${field}" data-categoria="${categoria}">
+        ${this._renderUploadWidget(field, val)}
+      </div>
+    `;
+  },
+
+  _renderUploadWidget(field, val) {
+    if (val) {
+      // Path del bucket: "empresa-uuid/categoria/prefijo_nombre.pdf"
+      // Extraer nombre visible quitando prefijo UUID de 8 chars + guión bajo
+      let displayName;
+      if (val.startsWith('http')) {
+        displayName = '📎 Archivo externo (legacy)';
+      } else {
+        const last = val.split('/').pop() || val;
+        displayName = '📄 ' + last.replace(/^[0-9a-f]{8}_/, '');
+      }
+      return `
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:var(--bg2,#f8f9fa);border:1px solid var(--border,#e5e7eb);border-radius:6px">
+          <span style="flex:1;min-width:120px;font-size:13px;color:var(--text,#111);word-break:break-all">${this._esc(displayName)}</span>
+          <button type="button" class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._viewFile('${field}')" title="Ver archivo">👁️ Ver</button>
+          <button type="button" class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._replaceFile('${field}')" title="Reemplazar">🔄 Cambiar</button>
+          <button type="button" class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager._clearFile('${field}')" title="Quitar">🗑️</button>
+        </div>
+      `;
+    }
+    return `
+      <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:1.5px dashed var(--border,#d1d5db);border-radius:6px;cursor:pointer;color:var(--text2,#6b7280);font-size:13px;transition:all .15s;background:var(--bg2,#fafafa)" onmouseover="this.style.borderColor='var(--green,#16a34a)';this.style.color='var(--green,#16a34a)'" onmouseout="this.style.borderColor='var(--border,#d1d5db)';this.style.color='var(--text2,#6b7280)'">
+        <span style="font-size:16px">📎</span>
+        <span>Elegir archivo (máx. 25 MB)</span>
+        <input type="file" style="display:none" onchange="BidManager._doUpload(event, '${field}')">
+      </label>
+    `;
+  },
+
+  async _doUpload(evt, field) {
+    const file = evt.target.files && evt.target.files[0];
+    if (!file) return;
+
+    const widget = document.getElementById(`bm-upload-${field}`);
+    if (!widget) return;
+    const categoria = widget.dataset.categoria;
+
+    // Validación cliente-side (backend valida también)
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) {
+      this.toast('Archivo excede 25 MB. Comprime o divide.', 'err');
+      evt.target.value = '';
+      return;
+    }
+    if (file.size === 0) {
+      this.toast('Archivo vacío', 'err');
+      evt.target.value = '';
+      return;
+    }
+
+    // Estado visual: subiendo
+    widget.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg2,#f8f9fa);border:1px solid var(--border,#e5e7eb);border-radius:6px">
+        <div style="width:16px;height:16px;border:2px solid var(--green,#16a34a);border-top-color:transparent;border-radius:50%;animation:bm-spin 0.7s linear infinite"></div>
+        <span style="font-size:13px;color:var(--text2,#6b7280);flex:1">Subiendo <strong>${this._esc(file.name)}</strong> (${(file.size/1024/1024).toFixed(2)} MB)...</span>
+      </div>
+    `;
+
+    try {
+      const form = new FormData();
+      form.append('categoria', categoria);
+      form.append('file', file);
+
+      const r = await fetch('/api/bid/upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + this._token() },
+        body: form
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `Upload → ${r.status}`);
+      }
+      const res = await r.json();
+
+      // Guardar path en el input hidden (así _collectForm lo recoge)
+      const hidden = document.getElementById(`f-${field}`);
+      if (hidden) hidden.value = res.path;
+
+      // Re-render widget con el archivo cargado
+      widget.innerHTML = this._renderUploadWidget(field, res.path);
+      this.toast('Archivo subido ✓', 'ok');
+    } catch (e) {
+      this.toast('Error subiendo: ' + e.message, 'err');
+      widget.innerHTML = this._renderUploadWidget(field, '');
+    }
+  },
+
+  async _viewFile(field) {
+    const path = (document.getElementById(`f-${field}`) || {}).value || '';
+    return this._openStoragePath(path);
+  },
+
+  // Utilidad pública: abrir cualquier path/URL guardado en storage
+  // (uso desde tarjetas fuera del modal, ej: link "Ver archivo" en certificaciones)
+  async _openStoragePath(path) {
+    if (!path) return;
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      window.open(path, '_blank', 'noopener');
+      return;
+    }
+    try {
+      const r = await fetch(`/api/bid/signed-url?path=${encodeURIComponent(path)}`, {
+        headers: { 'Authorization': 'Bearer ' + this._token() }
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `Signed URL → ${r.status}`);
+      }
+      const { url } = await r.json();
+      window.open(url, '_blank', 'noopener');
+    } catch (e) {
+      this.toast('Error abriendo archivo: ' + e.message, 'err');
+    }
+  },
+
+  _replaceFile(field) {
+    const widget = document.getElementById(`bm-upload-${field}`);
+    if (!widget) return;
+    // Vaciar el hidden y renderizar el selector; luego auto-click para abrir picker
+    const hidden = document.getElementById(`f-${field}`);
+    if (hidden) hidden.value = '';
+    widget.innerHTML = this._renderUploadWidget(field, '');
+    const input = widget.querySelector('input[type="file"]');
+    if (input) input.click();
+  },
+
+  async _clearFile(field) {
+    const hidden = document.getElementById(`f-${field}`);
+    const path = hidden ? hidden.value : '';
+    if (!path) return;
+
+    // Si es path del bucket (no URL externa), intentar borrar del storage.
+    // Silencioso: si falla, seguimos y limpiamos el campo igual.
+    if (!path.startsWith('http')) {
+      try {
+        await fetch(`/api/bid/upload?path=${encodeURIComponent(path)}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + this._token() }
+        });
+      } catch(e) { /* silencioso */ }
+    }
+
+    if (hidden) hidden.value = '';
+    const widget = document.getElementById(`bm-upload-${field}`);
+    if (widget) widget.innerHTML = this._renderUploadWidget(field, '');
+    this.toast('Archivo quitado', 'ok');
   }
 };
 
