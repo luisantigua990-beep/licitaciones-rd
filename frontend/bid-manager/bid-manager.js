@@ -24,7 +24,8 @@ const BidManager = {
     capacidad: [],
     referencias: [],
     alertas: [],
-    resumen: null
+    resumen: null,
+    matching: []
   },
   editing: null, // {tipo, id} cuando se está editando algo
 
@@ -108,7 +109,7 @@ const BidManager = {
   // ── Refrescar toda la data ────────────────────────────
   async refresh() {
     try {
-      const [empresa, reps, socios, certs, pers, equip, exp, fin, ir2, cap, refs, alertas, resumen] = await Promise.all([
+      const [empresa, reps, socios, certs, pers, equip, exp, fin, ir2, cap, refs, alertas, resumen, matching] = await Promise.all([
         this._get('/empresa'),
         this._get('/representantes'),
         this._get('/socios'),
@@ -121,7 +122,8 @@ const BidManager = {
         this._get('/capacidad-financiera'),
         this._get('/referencias-comerciales'),
         this._get('/certificaciones/alertas'),
-        this._get('/expediente/resumen')
+        this._get('/expediente/resumen'),
+        this._get('/matching').catch(() => [])
       ]);
 
       this.data.empresa = empresa.empresa;
@@ -137,6 +139,7 @@ const BidManager = {
       this.data.referencias = refs;
       this.data.alertas = alertas;
       this.data.resumen = resumen;
+      this.data.matching = matching;
 
       this._renderAll();
     } catch (e) {
@@ -205,6 +208,7 @@ const BidManager = {
     this._renderIr2();
     this._renderCapacidad();
     this._renderReferencias();
+    this._renderMatching();
   },
 
   _renderProgress() {
@@ -1641,6 +1645,153 @@ const BidManager = {
 
   _detenerLoteIA() {
     if (this._loteAbort) this._loteAbort.abort();
+  },
+
+  // ═══════════════════════════════════════════════════════
+  // MATCHING FINANCIERO — Pliego vs Expediente
+  // ═══════════════════════════════════════════════════════
+
+  async _analizarPliegoMatching(evt) {
+    const file = evt.target.files && evt.target.files[0];
+    evt.target.value = '';
+    if (!file) return;
+
+    const status = document.getElementById('bm-matching-status');
+    const setStatus = (t) => { if (status) status.textContent = t; };
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) { this.toast('El pliego excede 25 MB', 'err'); return; }
+
+    const montoInput = document.getElementById('bm-matching-monto');
+    const monto = montoInput && montoInput.value ? montoInput.value.trim() : '';
+
+    setStatus('Analizando pliego con IA... esto toma 1-2 minutos');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      if (monto) form.append('monto_ofertado', monto);
+      const r = await fetch('/api/bid/matching/analizar', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + this._token() },
+        body: form
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `Análisis → ${r.status}`);
+      }
+      const reg = await r.json();
+      setStatus('');
+      if (montoInput) montoInput.value = '';
+      const cumple = reg.resultado && reg.resultado.cumple_financiero;
+      this.toast(cumple === true ? 'Análisis listo: CUMPLES los requisitos financieros'
+               : cumple === false ? 'Análisis listo: NO cumples todos los requisitos'
+               : 'Análisis listo: revisa el detalle', cumple === false ? 'err' : 'ok');
+      await this.refresh();
+    } catch (e) {
+      setStatus('');
+      this.toast('Error analizando pliego: ' + e.message, 'err');
+    }
+  },
+
+  _renderMatching() {
+    const cont = document.getElementById('bm-matching-list');
+    if (!cont) return;
+    const lista = this.data.matching || [];
+    if (!lista.length) {
+      cont.innerHTML = this._emptyState('M', 'Sube un pliego para ver si cumples sus requisitos financieros.');
+      return;
+    }
+    cont.innerHTML = lista.map(m => this._matchingCardHtml(m)).join('');
+  },
+
+  _matchingCardHtml(m) {
+    const res = m.resultado || {};
+    const detalle = res.detalle || [];
+    const cumple = res.cumple_financiero;
+    const badge = cumple === true
+      ? '<div class="bm-badge bm-badge-ok">CUMPLE</div>'
+      : cumple === false
+        ? '<div class="bm-badge bm-badge-err">NO CUMPLE</div>'
+        : '<div class="bm-badge bm-badge-warn">REVISAR</div>';
+
+    const filas = detalle.map(d => {
+      const estado = d.cumple === true
+        ? '<span style="color:var(--green,#16a34a);font-weight:700">CUMPLE</span>'
+        : d.cumple === false
+          ? '<span style="color:#dc2626;font-weight:700">NO CUMPLE</span>'
+          : '<span style="color:#d97706;font-weight:700">MANUAL</span>';
+      const valor = d.valor !== null && d.valor !== undefined
+        ? (Math.abs(d.valor) >= 1000 ? 'RD$ ' + Number(d.valor).toLocaleString('es-DO', {maximumFractionDigits:2}) : Number(d.valor).toFixed(2))
+        : '—';
+      const faltante = d.faltante
+        ? `<div style="font-size:11px;color:#dc2626">Faltan RD$ ${Number(d.faltante).toLocaleString('es-DO', {maximumFractionDigits:2})}</div>`
+        : '';
+      return `
+        <tr style="border-bottom:1px solid var(--border,#eee)">
+          <td style="padding:8px 10px;font-size:12px">
+            <div style="font-weight:600">${this._esc(d.nombre || d.tipo)}</div>
+            <div style="color:var(--text2,#6b7280);font-size:11px">${this._esc(d.formula || '')}</div>
+          </td>
+          <td style="padding:8px 10px;font-size:12px;color:var(--text2,#6b7280)">${this._esc(d.limite_desc || '')}</td>
+          <td style="padding:8px 10px;font-size:12px">
+            ${valor}
+            ${d.valor_desc ? `<div style="font-size:11px;color:var(--text2,#6b7280)">${this._esc(d.valor_desc)}</div>` : ''}
+          </td>
+          <td style="padding:8px 10px;font-size:12px">${estado}${faltante}</td>
+        </tr>`;
+    }).join('');
+
+    const aviso = res.sin_estados
+      ? '<div style="padding:8px 12px;background:rgba(217,119,6,0.08);border-radius:6px;font-size:12px;color:#d97706;margin-bottom:8px">No hay estados financieros cargados en tu expediente. Sube al menos uno para evaluar.</div>'
+      : '';
+
+    return `
+      <div class="bm-card" style="margin-bottom:16px">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${this._esc(m.referencia || 'Sin referencia')}</h4>
+            <div class="bm-card-subtitle">${this._esc(m.institucion || '')}${m.nombre_proceso ? ' · ' + this._esc(m.nombre_proceso) : ''}</div>
+          </div>
+          ${badge}
+        </div>
+        <div class="bm-card-body">
+          ${aviso}
+          <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text2,#6b7280);margin-bottom:10px">
+            ${m.presupuesto_base ? `<div>Presupuesto base: <strong>RD$ ${Number(m.presupuesto_base).toLocaleString('es-DO', {maximumFractionDigits:2})}</strong></div>` : ''}
+            ${m.monto_ofertado ? `<div>Monto evaluado: <strong>RD$ ${Number(m.monto_ofertado).toLocaleString('es-DO', {maximumFractionDigits:2})}</strong></div>` : ''}
+            ${res.periodo_usado ? `<div>Período usado: <strong>${this._esc(res.periodo_usado)}</strong></div>` : ''}
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border,#eee);border-radius:6px">
+              <tr style="background:var(--bg2,#f8f9fa)">
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Requisito</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Límite del pliego</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Tu valor</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Resultado</th>
+              </tr>
+              ${filas}
+            </table>
+          </div>
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._reevaluarMatching('${m.id}')">Reevaluar</button>
+          ${m.pliego_url ? `<button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._openStoragePath('${this._esc(m.pliego_url)}')">Ver pliego</button>` : ''}
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('matching', '${m.id}')">Eliminar</button>
+        </div>
+      </div>
+    `;
+  },
+
+  async _reevaluarMatching(id) {
+    const nuevoMonto = prompt('Monto a ofertar (deja vacío para mantener el actual):');
+    if (nuevoMonto === null) return; // canceló
+    try {
+      const body = nuevoMonto.trim() ? { monto_ofertado: Number(nuevoMonto.trim()) } : {};
+      await this._post(`/matching/${id}/reevaluar`, body);
+      this.toast('Matching recalculado con tus datos actuales', 'ok');
+      await this.refresh();
+    } catch (e) {
+      this.toast('Error reevaluando: ' + e.message, 'err');
+    }
   },
 
   async _extraerFinancierosIA(evt, modo) {
