@@ -1249,3 +1249,304 @@ def cron_alertas_vencimiento(x_admin_key: str = Header(None)):
             resumen["errores"].append({"empresa_id": eid, "error": str(e)})
 
     return {"ok": True, "fecha": hoy, "enviadas": len(pendientes), **resumen}
+
+
+# ══════════════════════════════════════════════════════════════
+# 18. MATCHING FINANCIERO — Pliego vs Expediente
+# ══════════════════════════════════════════════════════════════
+# Flujo:
+#   1. POST /matching/analizar  → sube el pliego, Gemini extrae los
+#      requisitos financieros, se guarda el registro y se evalúa
+#      contra bid_financieros + bid_capacidad_financiera.
+#   2. GET /matching            → historial de análisis.
+#   3. POST /matching/{id}/reevaluar → recalcula con datos actuales
+#      (útil tras actualizar estados o conseguir líneas de crédito).
+#   4. DELETE /matching/{id}
+# ══════════════════════════════════════════════════════════════
+
+_PROMPT_MATCHING = """Eres un experto en licitaciones públicas dominicanas (Ley 47-25, Decreto 52-26).
+Analiza el PDF adjunto (pliego de condiciones) y extrae SOLO los requisitos de
+DOCUMENTACIÓN FINANCIERA / capacidad financiera exigidos al oferente.
+Responde SOLO con JSON válido, sin markdown, con esta estructura exacta:
+{
+  "referencia": "MOPC-CCC-LPN-2026-0004",
+  "nombre_proceso": "título corto del objeto",
+  "institucion": "MOPC",
+  "presupuesto_base": 3702545294.85,
+  "anios_estados_requeridos": 2,
+  "requisitos": [
+    {
+      "nombre": "Índice de solvencia",
+      "tipo": "solvencia",
+      "formula": "Activo Total / Pasivo Total",
+      "operador": ">",
+      "limite": 1.20,
+      "pct_monto": null,
+      "incluye_lineas_credito": false,
+      "notas": ""
+    },
+    {
+      "nombre": "Índice de liquidez corriente",
+      "tipo": "liquidez",
+      "formula": "Activo Corriente / Pasivo Corriente",
+      "operador": ">",
+      "limite": 0.9,
+      "pct_monto": null,
+      "incluye_lineas_credito": false,
+      "notas": ""
+    },
+    {
+      "nombre": "Capital de trabajo",
+      "tipo": "capital_trabajo",
+      "formula": "(AC - PC) + cuentas/certificados/líneas de crédito",
+      "operador": ">=",
+      "limite": null,
+      "pct_monto": 0.20,
+      "incluye_lineas_credito": true,
+      "notas": "≥ 20% del valor total ofertado"
+    }
+  ]
+}
+Reglas:
+- "tipo" debe ser uno de: solvencia, liquidez, capital_trabajo, endeudamiento, patrimonio, ingresos, otro
+- "pct_monto": fracción del monto ofertado/presupuesto si el límite es relativo (ej: 0.20 para 20%); null si el límite es absoluto
+- "limite": valor numérico absoluto; null si el requisito usa pct_monto
+- "incluye_lineas_credito": true si el pliego permite sumar cuentas bancarias, certificados o líneas de crédito
+- Si un requisito no encaja en los tipos conocidos, usa "otro" y describe en notas
+- Números sin separadores de miles
+- Si no encuentras sección financiera, devuelve requisitos: []"""
+
+
+def _evaluar_matching(eid: str, requisitos: list, monto: float | None) -> dict:
+    """Evalúa los requisitos del pliego contra los datos del expediente."""
+    # Último estado financiero CON datos (ignora registros vacíos)
+    fin_rows = _sb.table("bid_financieros") \
+        .select("periodo, fecha_cierre, activos_totales, pasivos_totales, "
+                "activos_corrientes, pasivos_corrientes, patrimonio_neto, ingresos, "
+                "solvencia, liquidez_corriente, capital_trabajo, endeudamiento") \
+        .eq("empresa_id", eid) \
+        .not_.is_("activos_totales", "null") \
+        .order("periodo", desc=True) \
+        .limit(1).execute().data or []
+    fin = fin_rows[0] if fin_rows else None
+
+    # Capacidad financiera (líneas de crédito, certificados, cuentas)
+    cap_rows = _sb.table("bid_capacidad_financiera") \
+        .select("monto, monto_disponible") \
+        .eq("empresa_id", eid).execute().data or []
+    lineas_total = sum(float(r.get("monto_disponible") or r.get("monto") or 0) for r in cap_rows)
+
+    def _num(v):
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    detalle = []
+    cumple_todos = True
+    evaluables = 0
+
+    for req in (requisitos or []):
+        tipo = (req.get("tipo") or "otro").lower()
+        operador = req.get("operador") or ">="
+        limite = _num(req.get("limite"))
+        pct = _num(req.get("pct_monto"))
+
+        # Límite efectivo (absoluto o % del monto)
+        limite_efectivo = limite
+        limite_desc = f"{operador} {limite}" if limite is not None else ""
+        if pct is not None and monto:
+            limite_efectivo = pct * monto
+            limite_desc = f"{operador} {pct*100:.0f}% del monto (RD$ {limite_efectivo:,.2f})"
+
+        valor = None
+        valor_desc = None
+        if fin:
+            if tipo == "solvencia":
+                valor = _num(fin.get("solvencia"))
+            elif tipo == "liquidez":
+                valor = _num(fin.get("liquidez_corriente"))
+            elif tipo == "capital_trabajo":
+                base = _num(fin.get("capital_trabajo")) or 0
+                if req.get("incluye_lineas_credito"):
+                    valor = base + lineas_total
+                    valor_desc = f"CT RD$ {base:,.2f} + líneas RD$ {lineas_total:,.2f}"
+                else:
+                    valor = base
+            elif tipo == "endeudamiento":
+                valor = _num(fin.get("endeudamiento"))
+            elif tipo == "patrimonio":
+                valor = _num(fin.get("patrimonio_neto"))
+            elif tipo == "ingresos":
+                valor = _num(fin.get("ingresos"))
+
+        # Evaluar
+        cumple = None
+        faltante = None
+        if valor is not None and limite_efectivo is not None:
+            evaluables += 1
+            if operador in (">", "mayor"):
+                cumple = valor > limite_efectivo
+            elif operador in (">=", "≥", "mayor_igual"):
+                cumple = valor >= limite_efectivo
+            elif operador in ("<", "menor"):
+                cumple = valor < limite_efectivo
+            elif operador in ("<=", "≤", "menor_igual"):
+                cumple = valor <= limite_efectivo
+            else:
+                cumple = valor >= limite_efectivo
+            if cumple is False:
+                cumple_todos = False
+                if operador in (">", ">=", "mayor", "≥", "mayor_igual"):
+                    faltante = limite_efectivo - valor
+
+        detalle.append({
+            "nombre": req.get("nombre"),
+            "tipo": tipo,
+            "formula": req.get("formula"),
+            "limite_desc": limite_desc or (req.get("notas") or "revisar pliego"),
+            "valor": valor,
+            "valor_desc": valor_desc,
+            "cumple": cumple,           # true / false / null (no evaluable)
+            "faltante": faltante,
+            "notas": req.get("notas"),
+        })
+
+    return {
+        "evaluado_en": datetime.utcnow().isoformat(),
+        "periodo_usado": fin.get("periodo") if fin else None,
+        "lineas_credito_total": lineas_total,
+        "monto_usado": monto,
+        "cumple_financiero": cumple_todos if evaluables else None,
+        "detalle": detalle,
+        "sin_estados": fin is None,
+    }
+
+
+@bid_manager_router.post("/matching/analizar")
+async def matching_analizar(
+    file: UploadFile = File(...),
+    monto_ofertado: str = Form(None),
+    authorization: str | None = Header(default=None),
+):
+    """Sube el pliego, extrae requisitos financieros con IA, guarda y evalúa."""
+    uid = _auth(authorization)
+    eid = _empresa_id(uid)
+
+    contenido = await file.read()
+    if not contenido:
+        raise HTTPException(400, "Archivo vacío")
+    if len(contenido) > STORAGE_MAX_BYTES:
+        raise HTTPException(413, "El pliego excede 25 MB")
+
+    # Extraer con Gemini
+    if not GEMINI_API_KEY:
+        raise HTTPException(503, "Extracción IA no configurada (falta GEMINI_API_KEY)")
+    payload = {
+        "contents": [{"parts": [
+            {"inline_data": {"mime_type": "application/pdf",
+                             "data": base64.b64encode(contenido).decode()}},
+            {"text": _PROMPT_MATCHING},
+        ]}],
+        "generationConfig": {"temperature": 0.1, "response_mime_type": "application/json"},
+    }
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+    try:
+        req = _urlreq.Request(url, data=_json.dumps(payload).encode(),
+                              headers={"Content-Type": "application/json"}, method="POST")
+        with _urlreq.urlopen(req, timeout=180) as resp:
+            body = _json.loads(resp.read().decode())
+        texto = body["candidates"][0]["content"]["parts"][0]["text"].strip()
+        if texto.startswith("```"):
+            texto = texto.strip("`")
+            if texto.lower().startswith("json"):
+                texto = texto[4:]
+        extraido = _json.loads(texto)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Error extrayendo requisitos del pliego: {str(e)}")
+
+    # Subir pliego al storage
+    safe_name = _sanitize_filename(file.filename or "pliego.pdf")
+    path = f"{eid}/matching/{safe_name}"
+    try:
+        _sb.storage.from_(STORAGE_BUCKET).upload(
+            path=path, file=contenido,
+            file_options={"content-type": "application/pdf", "upsert": "false"})
+    except Exception:
+        path = None  # no bloquear el análisis por fallo de storage
+
+    presupuesto = None
+    try:
+        presupuesto = float(extraido.get("presupuesto_base")) if extraido.get("presupuesto_base") else None
+    except (TypeError, ValueError):
+        pass
+
+    monto = None
+    try:
+        monto = float(monto_ofertado) if monto_ofertado else None
+    except (TypeError, ValueError):
+        pass
+    if monto is None:
+        monto = presupuesto
+
+    requisitos = extraido.get("requisitos") or []
+    resultado = _evaluar_matching(eid, requisitos, monto)
+
+    registro = {
+        "empresa_id": eid,
+        "referencia": extraido.get("referencia"),
+        "nombre_proceso": extraido.get("nombre_proceso"),
+        "institucion": extraido.get("institucion"),
+        "presupuesto_base": presupuesto,
+        "monto_ofertado": monto,
+        "anios_estados_requeridos": extraido.get("anios_estados_requeridos"),
+        "requisitos": requisitos,
+        "resultado": resultado,
+        "pliego_url": path,
+    }
+    res = _sb.table("bid_matching_pliegos").insert(registro).execute()
+    return res.data[0] if res.data else registro
+
+
+@bid_manager_router.get("/matching")
+def matching_listar(authorization: str | None = Header(default=None)):
+    uid = _auth(authorization)
+    eid = _empresa_id(uid)
+    return _sb.table("bid_matching_pliegos").select("*") \
+        .eq("empresa_id", eid).order("creado_en", desc=True).execute().data or []
+
+
+@bid_manager_router.post("/matching/{id}/reevaluar")
+async def matching_reevaluar(id: str, request: dict = None,
+                             authorization: str | None = Header(default=None)):
+    """Recalcula el matching con los datos ACTUALES del expediente.
+    Body opcional: {"monto_ofertado": 123456.78}"""
+    uid = _auth(authorization)
+    eid = _empresa_id(uid)
+    reg = _obtener("bid_matching_pliegos", id, eid)
+
+    monto = None
+    if request and request.get("monto_ofertado") is not None:
+        try:
+            monto = float(request["monto_ofertado"])
+        except (TypeError, ValueError):
+            monto = None
+    if monto is None:
+        monto = float(reg.get("monto_ofertado") or reg.get("presupuesto_base") or 0) or None
+
+    resultado = _evaluar_matching(eid, reg.get("requisitos") or [], monto)
+    upd = {"resultado": resultado, "actualizado_en": datetime.utcnow().isoformat()}
+    if monto is not None:
+        upd["monto_ofertado"] = monto
+    res = _sb.table("bid_matching_pliegos").update(upd) \
+        .eq("id", id).eq("empresa_id", eid).execute()
+    return res.data[0] if res.data else {**reg, **upd}
+
+
+@bid_manager_router.delete("/matching/{id}")
+def matching_eliminar(id: str, authorization: str | None = Header(default=None)):
+    uid = _auth(authorization)
+    return _eliminar("bid_matching_pliegos", id, _empresa_id(uid))
