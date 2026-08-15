@@ -2468,6 +2468,160 @@ def matching_listar(authorization: str | None = Header(default=None)):
         .eq("empresa_id", eid).order("creado_en", desc=True).execute().data or []
 
 
+@bid_manager_router.get("/matching/por-referencia/{referencia}")
+def matching_por_referencia(referencia: str, authorization: str | None = Header(default=None)):
+    """Devuelve el analisis de matching mas reciente de esta empresa para un
+    codigo de proceso (referencia). Lo usa el detalle del proceso en el portal
+    para mostrar la compatibilidad sin re-analizar. 404 si no existe."""
+    uid = _auth(authorization)
+    eid = _empresa_id(uid)
+    rows = _sb.table("bid_matching_pliegos").select("*") \
+        .eq("empresa_id", eid).eq("referencia", referencia) \
+        .order("creado_en", desc=True).limit(1).execute().data or []
+    if not rows:
+        raise HTTPException(404, "Sin analisis para esta referencia")
+    return rows[0]
+
+
+@bid_manager_router.post("/matching/analizar-proceso")
+async def matching_analizar_proceso(request: dict,
+                                    authorization: str | None = Header(default=None)):
+    """Compatibilidad Expediente vs proceso del portal, sin subir PDF a mano.
+    Body: {"codigo_proceso": "...", "monto_ofertado": opcional, "forzar": opcional}
+    - Si ya hay un analisis para esa referencia y no se fuerza, REEVALUA con
+      los datos actuales del expediente (rapido, sin Gemini) y lo devuelve.
+    - Si no hay, descarga el pliego del portal DGCP (misma maquinaria del
+      analisis general), extrae los requisitos con Gemini y evalua.
+    """
+    uid = _auth(authorization)
+    eid = _empresa_id(uid)
+    codigo = (request or {}).get("codigo_proceso")
+    if not codigo:
+        raise HTTPException(400, "codigo_proceso requerido")
+    forzar = bool((request or {}).get("forzar"))
+
+    monto = None
+    try:
+        if (request or {}).get("monto_ofertado") is not None:
+            monto = float(request["monto_ofertado"])
+    except (TypeError, ValueError):
+        monto = None
+
+    # ── Cache: ya existe un analisis para esta referencia ──
+    rows = _sb.table("bid_matching_pliegos").select("*") \
+        .eq("empresa_id", eid).eq("referencia", codigo) \
+        .order("creado_en", desc=True).limit(1).execute().data or []
+    existente = rows[0] if rows else None
+
+    if existente and not forzar:
+        m = monto if monto is not None else \
+            (float(existente.get("monto_ofertado") or existente.get("presupuesto_base") or 0) or None)
+        presupuesto_prev = None
+        try:
+            presupuesto_prev = float(existente.get("presupuesto_base")) if existente.get("presupuesto_base") else None
+        except (TypeError, ValueError):
+            pass
+        resultado = _evaluar_matching(eid, existente.get("requisitos") or {}, m, presupuesto_prev)
+        upd = {"resultado": resultado, "actualizado_en": datetime.utcnow().isoformat()}
+        if monto is not None:
+            upd["monto_ofertado"] = monto
+        res = _sb.table("bid_matching_pliegos").update(upd) \
+            .eq("id", existente["id"]).eq("empresa_id", eid).execute()
+        return res.data[0] if res.data else {**existente, **upd}
+
+    if not GEMINI_API_KEY:
+        raise HTTPException(503, "Extracción IA no configurada (falta GEMINI_API_KEY)")
+
+    # ── Localizar el proceso y bajar el pliego del portal ──
+    proc_rows = _sb.table("procesos") \
+        .select("codigo_proceso, titulo, unidad_compra, monto_estimado, url") \
+        .eq("codigo_proceso", codigo).limit(1).execute().data or []
+    if not proc_rows:
+        raise HTTPException(404, "Proceso no encontrado")
+    proc = proc_rows[0]
+    if not proc.get("url"):
+        raise HTTPException(422, "El proceso no tiene URL de documentos en el portal")
+
+    try:
+        from main import descargar_y_extraer_texto_pdf  # lazy: evita import circular
+        res_pdf = descargar_y_extraer_texto_pdf(proc["url"])
+        texto_pliego = res_pdf.get("__texto") if isinstance(res_pdf, dict) else res_pdf
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"No se pudo descargar el pliego del portal: {str(e)}")
+    if not texto_pliego or len(texto_pliego.strip()) < 100:
+        raise HTTPException(422, "El pliego descargado no tiene texto legible")
+    texto_pliego = texto_pliego[:400000]  # margen amplio para gemini-2.5-flash
+
+    payload = {
+        "contents": [{"parts": [
+            {"text": _PROMPT_MATCHING + "\n\n=== TEXTO DEL PLIEGO (extraido del portal) ===\n" + texto_pliego},
+        ]}],
+        "generationConfig": {"temperature": 0.1, "response_mime_type": "application/json"},
+    }
+    url_g = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+             f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+    try:
+        req = _urlreq.Request(url_g, data=_json.dumps(payload).encode(),
+                              headers={"Content-Type": "application/json"}, method="POST")
+        with _urlreq.urlopen(req, timeout=180) as resp:
+            body = _json.loads(resp.read().decode())
+        texto = body["candidates"][0]["content"]["parts"][0]["text"].strip()
+        if texto.startswith("```"):
+            texto = texto.strip("`")
+            if texto.lower().startswith("json"):
+                texto = texto[4:]
+        extraido = _json.loads(texto)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Error extrayendo requisitos del pliego: {str(e)}")
+
+    presupuesto = None
+    try:
+        presupuesto = float(extraido.get("presupuesto_base")) if extraido.get("presupuesto_base") else None
+    except (TypeError, ValueError):
+        pass
+    if presupuesto is None:
+        try:
+            presupuesto = float(proc.get("monto_estimado")) if proc.get("monto_estimado") else None
+        except (TypeError, ValueError):
+            pass
+    if monto is None:
+        monto = presupuesto
+
+    requisitos = extraido.get("requisitos") or {}
+    if isinstance(requisitos, list):
+        requisitos = {"financieros": requisitos}
+    for campo in ("metodologia", "puntaje_total", "puntaje_minimo",
+                  "naturaleza_proceso", "lotes"):
+        if extraido.get(campo) is not None and campo not in requisitos:
+            requisitos[campo] = extraido[campo]
+
+    resultado = _evaluar_matching(eid, requisitos, monto, presupuesto)
+
+    registro = {
+        "empresa_id": eid,
+        "referencia": codigo,
+        "nombre_proceso": extraido.get("nombre_proceso") or proc.get("titulo"),
+        "institucion": extraido.get("institucion") or proc.get("unidad_compra"),
+        "presupuesto_base": presupuesto,
+        "monto_ofertado": monto,
+        "anios_estados_requeridos": extraido.get("anios_estados_requeridos"),
+        "requisitos": requisitos,
+        "resultado": resultado,
+        "pliego_url": None,  # el pliego vive en el portal, no en storage
+    }
+    if existente:  # forzar=true sobre un analisis previo: actualizar, no duplicar
+        registro["actualizado_en"] = datetime.utcnow().isoformat()
+        res = _sb.table("bid_matching_pliegos").update(registro) \
+            .eq("id", existente["id"]).eq("empresa_id", eid).execute()
+        return res.data[0] if res.data else registro
+    res = _sb.table("bid_matching_pliegos").insert(registro).execute()
+    return res.data[0] if res.data else registro
+
+
 @bid_manager_router.post("/matching/{id}/reevaluar")
 async def matching_reevaluar(id: str, request: dict = None,
                              authorization: str | None = Header(default=None)):
