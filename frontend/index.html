@@ -7384,6 +7384,7 @@ async function verDetalle(codigo) {
               ${analisis ? 'Sin resumen ejecutivo.' : 'Sigue el proceso para activar el análisis del pliego.'}
             </div>
           </div>`}
+          <div id="compat-exp-${p.codigo_proceso}"></div>
           <div class="ll-card" style="margin-bottom:12px;">
             <div class="ll-card__header"><h2 class="ll-card__title">Datos del proceso</h2></div>
             <div class="ll-card__body">
@@ -7471,6 +7472,9 @@ async function verDetalle(codigo) {
 
     // Sincronizar barra de progreso del aside con el checklist
     actualizarAsideChecklist(p.codigo_proceso, totalItems);
+
+    // Compatibilidad Expediente Digital vs pliego (Bid Manager)
+    cargarCompatibilidadExpediente(p.codigo_proceso);
   }, 10);
 
   if (['procesando','pendiente','pendiente_analisis'].includes(analisis?.estado)) {
@@ -9098,6 +9102,8 @@ async function agregarSeguimiento(codigo) {
     // (los freemium tienen su análisis gratis manual, no automático)
     esUsuarioPro().then(pro => {
       if (!pro) return;
+      // Compatibilidad Expediente vs pliego, en paralelo al analisis general
+      evaluarCompatibilidadExpediente(codigo, false).catch(() => {});
       fetch(`${API}/api/procesos/${codigo}/analizar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
@@ -9114,6 +9120,138 @@ async function agregarSeguimiento(codigo) {
     );
     actualizarBtnSeguir(codigo);
     mostrarToast('Error al agregar. Intenta de nuevo.');
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// COMPATIBILIDAD EXPEDIENTE DIGITAL vs PLIEGO (Bid Manager)
+// Se muestra en el tab Resumen del detalle del proceso.
+// ════════════════════════════════════════════════════════════
+
+async function _bidFetch(path, options = {}) {
+  const doReq = (tok) => fetch(`/api/bid${path}`, Object.assign({}, options, {
+    headers: Object.assign({}, options.headers || {}, { 'Authorization': 'Bearer ' + tok })
+  }));
+  let r = await doReq(localStorage.getItem('sb_token'));
+  if (r.status === 401) {
+    // reusar la maquinaria de refresh de sbRest: un request dummy refresca el token
+    try { await sbRest('perfiles_empresa?select=id&limit=1'); } catch(e) {}
+    r = await doReq(localStorage.getItem('sb_token'));
+  }
+  return r;
+}
+
+function _compatSemaforo(v) {
+  if (v === true) return '<span style="color:var(--green);font-weight:800">CUMPLE</span>';
+  if (v === false) return '<span style="color:var(--red);font-weight:800">NO CUMPLE</span>';
+  return '<span style="color:var(--amber);font-weight:800">SIN DATOS</span>';
+}
+
+function _renderCompatCard(codigo, m) {
+  const cont = document.getElementById(`compat-exp-${codigo}`);
+  if (!cont) return;
+  const res = (m && m.resultado) || {};
+  const cumple = res.cumple_global !== undefined ? res.cumple_global : res.cumple_financiero;
+  const faltantes = res.faltantes || [];
+  const sec = res.secciones || {};
+  const pj = res.puntaje;
+
+  const chips = [
+    ['Financieros', (sec.financieros || {}).cumple],
+    ['Líneas de crédito', (sec.lineas_credito || {}).cumple],
+    ['Personal', (sec.personal || {}).cumple],
+    ['Equipos', (sec.equipos || {}).cumple],
+    ['Experiencia', (sec.experiencia || {}).cumple],
+  ].map(([n, c]) => {
+    const col = c === true ? 'var(--green)' : c === false ? 'var(--red)' : 'var(--amber)';
+    return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 9px;border:1px solid var(--border);border-radius:12px;background:var(--bg2)"><span style="width:8px;height:8px;border-radius:50%;background:${col}"></span>${n}</span>`;
+  }).join(' ');
+
+  const topFalt = faltantes.slice(0, 5).map(f =>
+    `<div style="font-size:12px;color:var(--text2);padding:3px 0;display:flex;gap:6px"><span>–</span><span>${f.texto}${f.subsanable === true ? ' <strong style="color:var(--amber)">(subsanable)</strong>' : f.subsanable === false ? ' <strong style="color:var(--red)">(NO subsanable)</strong>' : ''}</span></div>`
+  ).join('') + (faltantes.length > 5 ? `<div style="font-size:11px;color:var(--muted);padding-top:4px">+${faltantes.length - 5} más en Expediente Digital → Financieros → Matching</div>` : '');
+
+  const pjHtml = pj ? `<div style="font-size:12px;color:var(--text2);margin-top:6px">Puntaje técnico estimado: <strong>${pj.estimado}${pj.puntaje_total ? ' / ' + pj.puntaje_total : ''}</strong>${pj.puntaje_minimo ? ` (mínimo ${pj.puntaje_minimo})` : ''} — asumiendo tus documentos de redacción completos</div>` : '';
+
+  cont.innerHTML = `
+  <div class="ll-card" style="margin-bottom:12px;border-left:3px solid ${cumple === true ? 'var(--green)' : cumple === false ? 'var(--red)' : 'var(--amber)'}">
+    <div class="ll-card__header" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <h2 class="ll-card__title">Compatibilidad con tu Expediente</h2>
+      <div>${_compatSemaforo(cumple)}</div>
+    </div>
+    <div class="ll-card__body">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${chips}</div>
+      ${pjHtml}
+      ${faltantes.length ? `<div style="margin-top:8px"><div style="font-size:12px;font-weight:800;color:var(--text2);margin-bottom:4px">Lo que te falta (${faltantes.length})</div>${topFalt}</div>` : (cumple === true ? '<div style="font-size:12px;color:var(--green);font-weight:700;margin-top:6px">Tu expediente cumple todo lo evaluable de este pliego.</div>' : '')}
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="ll-btn ll-btn--ghost ll-btn--sm" onclick="evaluarCompatibilidadExpediente('${codigo}', false)">Actualizar con mi expediente</button>
+        <button class="ll-btn ll-btn--ghost ll-btn--sm" onclick="evaluarCompatibilidadExpediente('${codigo}', true)">Re-analizar pliego</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">El detalle completo por sección está en Expediente Digital → Financieros → Matching.</div>
+    </div>
+  </div>`;
+}
+
+function _renderCompatCTA(codigo) {
+  const cont = document.getElementById(`compat-exp-${codigo}`);
+  if (!cont) return;
+  cont.innerHTML = `
+  <div class="ll-card" style="margin-bottom:12px;">
+    <div class="ll-card__body" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div>
+        <div style="font-size:13px;font-weight:800;color:var(--text)">¿Cumples los requisitos de este pliego?</div>
+        <div style="font-size:12px;color:var(--muted)">Cruza el pliego contra tu Expediente Digital: financieros, líneas de crédito, personal, equipos y experiencia.</div>
+      </div>
+      <button class="ll-btn ll-btn--primary ll-btn--sm" onclick="evaluarCompatibilidadExpediente('${codigo}', false)">Evaluar compatibilidad</button>
+    </div>
+  </div>`;
+}
+
+async function cargarCompatibilidadExpediente(codigo) {
+  const cont = document.getElementById(`compat-exp-${codigo}`);
+  if (!cont || !currentUser?.id) return;
+  try {
+    const r = await _bidFetch(`/matching/por-referencia/${encodeURIComponent(codigo)}`);
+    if (r.ok) {
+      _renderCompatCard(codigo, await r.json());
+    } else {
+      _renderCompatCTA(codigo);
+    }
+  } catch (e) {
+    _renderCompatCTA(codigo);
+  }
+}
+
+async function evaluarCompatibilidadExpediente(codigo, forzar) {
+  if (!currentUser?.id) { mostrarToast('Inicia sesión para evaluar compatibilidad'); return; }
+  const cont = document.getElementById(`compat-exp-${codigo}`);
+  if (cont) cont.innerHTML = `
+  <div class="ll-card" style="margin-bottom:12px;">
+    <div class="ll-card__body" style="display:flex;align-items:center;gap:10px">
+      <div class="spinner" style="width:18px;height:18px;flex-shrink:0"></div>
+      <div style="font-size:12px;color:var(--text2)">${forzar ? 'Re-analizando el pliego contra tu expediente (1-2 min)...' : 'Cruzando el pliego contra tu Expediente Digital... si es la primera vez toma 1-2 min.'}</div>
+    </div>
+  </div>`;
+  try {
+    const r = await _bidFetch('/matching/analizar-proceso', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigo_proceso: codigo, forzar: !!forzar })
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || `Error ${r.status}`);
+    }
+    _renderCompatCard(codigo, await r.json());
+  } catch (e) {
+    if (cont) cont.innerHTML = `
+    <div class="ll-card" style="margin-bottom:12px;">
+      <div class="ll-card__body" style="font-size:12px;color:var(--text2)">
+        No se pudo evaluar la compatibilidad: ${e.message}.
+        ${String(e.message).includes('perfil') || String(e.message).includes('404') ? 'Completa tu Expediente Digital primero.' : ''}
+        <button class="ll-btn ll-btn--ghost ll-btn--sm" style="margin-left:8px" onclick="evaluarCompatibilidadExpediente('${codigo}', ${!!forzar})">Reintentar</button>
+      </div>
+    </div>`;
   }
 }
 
@@ -11230,12 +11368,9 @@ async function initOnboarding() {
     return;
   }
 
-  // 4) Usuario realmente nuevo: primero tutorial, luego wizard de perfil
-  if (!localStorage.getItem('tutorial_completado')) {
-    setTimeout(mostrarTutorial, 1200);
-  } else {
-    setTimeout(mostrarWizardPerfil, 1200);
-  }
+  // 4) DESACTIVADO (ago-2026): el wizard ya no se abre solo.
+  //    El Expediente Digital es ahora la via principal para completar el perfil;
+  //    el wizard sigue disponible manualmente desde el menu (Perfil empresa).
 }
 
 
