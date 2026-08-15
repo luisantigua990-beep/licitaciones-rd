@@ -1750,6 +1750,7 @@ def _evaluar_lineas_credito(eid: str, reqs: list, presupuesto, lotes: list) -> d
 
     def _suma(tipo_linea):
         total = 0.0
+        fuentes = []
         for r in cap_rows:
             t = _norm(r.get("tipo"))
             estado = (r.get("estado") or "vigente").lower()
@@ -1762,8 +1763,11 @@ def _evaluar_lineas_credito(eid: str, reqs: list, presupuesto, lotes: list) -> d
                 continue
             if tipo_linea == "bancaria" and es_com:
                 continue
-            total += _num_or_none(r.get("monto_disponible")) or _num_or_none(r.get("monto")) or 0
-        return total
+            monto_r = _num_or_none(r.get("monto_disponible")) or _num_or_none(r.get("monto")) or 0
+            total += monto_r
+            if monto_r:
+                fuentes.append(f"{r.get('institucion_financiera') or 'Sin institucion'}: RD$ {monto_r:,.2f}")
+        return total, fuentes
 
     escenarios = []
     detalle, faltantes = [], []
@@ -1785,7 +1789,7 @@ def _evaluar_lineas_credito(eid: str, reqs: list, presupuesto, lotes: list) -> d
         for req in reqs:
             tipo_linea = (req.get("tipo") or "bancaria").lower()
             pct = _num_or_none(req.get("pct_mipyme") if es_mipyme else req.get("pct_grande"))
-            disponible = _suma(tipo_linea)
+            disponible, fuentes = _suma(tipo_linea)
             requerido = (pct * base_monto) if (pct is not None and base_monto) else None
             cumple = None
             if requerido is not None:
@@ -1805,6 +1809,7 @@ def _evaluar_lineas_credito(eid: str, reqs: list, presupuesto, lotes: list) -> d
             esc["requisitos"].append({
                 "tipo": tipo_linea, "pct_aplicado": pct, "es_mipyme": es_mipyme,
                 "requerido": requerido, "disponible": disponible, "cumple": cumple,
+                "fuentes": fuentes or None,
                 "texto_original": req.get("texto_original"),
             })
         esc["cumple"] = esc_cumple if esc_eval else None
@@ -1888,6 +1893,21 @@ def _evaluar_personal(eid: str, reqs: list, lotes: list) -> dict:
         for i in range(cantidad * multiplicador):
             puestos.append({"req": req, "n": i + 1})
 
+    # Candidatos elegibles por cargo (TODOS los que cumplen, antes del greedy):
+    # esto es lo que le dice al usuario "para Director puedes usar a X o a Y".
+    candidatos_por_cargo = {}
+    for req in reqs:
+        cargo = req.get("cargo") or "puesto"
+        elegibles = []
+        for p in personas:
+            ok, _razones, anios = _persona_elegible(p, req)
+            if ok:
+                elegibles.append({"personal_id": p["id"],
+                                  "nombre": p.get("nombre_completo"),
+                                  "anios": anios})
+        elegibles.sort(key=lambda c: -(c["anios"] or 0))
+        candidatos_por_cargo[cargo] = elegibles
+
     # Greedy: puestos mas exigentes primero (maestria > anos > colegiatura)
     def _exigencia(p):
         r = p["req"]
@@ -1950,6 +1970,7 @@ def _evaluar_personal(eid: str, reqs: list, lotes: list) -> dict:
             "cargo": cargo,
             "puestos": info["total"], "cubiertos": info["cubiertos"],
             "cumple": info["cubiertos"] >= info["total"],
+            "candidatos": candidatos_por_cargo.get(cargo) or [],
             "titulaciones": req.get("titulaciones"),
             "anios_min": req.get("anios_min"),
             "requiere_maestria": req.get("requiere_maestria"),
@@ -1996,6 +2017,7 @@ def _evaluar_equipos(eid: str, reqs: list) -> dict:
         admite_alq = True if admite_alq is None else bool(admite_alq)
 
         disponibles = 0
+        usables = []
         revision = []
         for e in equipos:
             canon_e = _canon_equipo(e.get("tipo") or e.get("descripcion"))
@@ -2018,7 +2040,11 @@ def _evaluar_equipos(eid: str, reqs: list) -> dict:
                     continue
                 if cap_e < cap_req:
                     continue
-            disponibles += int(_num_or_none(e.get("cantidad")) or 1)
+            cant_e = int(_num_or_none(e.get("cantidad")) or 1)
+            disponibles += cant_e
+            etiqueta = e.get("descripcion") or e.get("tipo") or "equipo"
+            usables.append(f"{etiqueta}" + (f" (x{cant_e})" if cant_e > 1 else "") +
+                           (f" [{e.get('propiedad')}]" if e.get("propiedad") else ""))
 
         evaluado = True
         cumple = disponibles >= cant_req
@@ -2036,6 +2062,7 @@ def _evaluar_equipos(eid: str, reqs: list) -> dict:
         detalle.append({
             "tipo": req.get("tipo"), "tipo_canonico": canon_req,
             "requerido": cant_req, "disponible": disponibles,
+            "usables": usables or None,
             "capacidad_min": req.get("capacidad_min"),
             "admite_alquilado": admite_alq, "cumple": cumple,
             "revision_manual": revision or None,
@@ -2127,6 +2154,14 @@ def _evaluar_experiencia(eid: str, req: dict, presupuesto, lotes: list) -> dict:
 
     n_ok = len(calificadas)
     monto_acum = sum(c["monto"] for c in calificadas)
+    obras_usables = [{
+        "nombre": c["obra"].get("nombre_proyecto"),
+        "cliente": c["obra"].get("cliente"),
+        "monto": c["monto"],
+        "en_curso": _norm(c["obra"].get("estado")) not in
+                    ("terminado", "terminada", "concluido", "concluida",
+                     "finalizado", "finalizada", "completado", "completada"),
+    } for c in calificadas]
 
     checks = []
     cumple = True
@@ -2211,6 +2246,7 @@ def _evaluar_experiencia(eid: str, req: dict, presupuesto, lotes: list) -> dict:
         "criterio_similitud": criterio,
         "naturaleza": naturalezas,
         "obras_calificadas": n_ok,
+        "obras_usables": obras_usables or None,
         "monto_acumulado": monto_acum,
         "checks": checks,
         "escenarios_volumen": escenarios_vol or None,
