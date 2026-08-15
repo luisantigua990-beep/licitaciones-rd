@@ -472,7 +472,18 @@ def eliminar_equipo(id: str, authorization: str | None = Header(default=None)):
 @bid_manager_router.post("/financieros")
 async def crear_financiero(request: dict, authorization: str | None = Header(default=None)):
     uid = _auth(authorization)
-    return _crear("bid_financieros", request, _empresa_id(uid))
+    eid = _empresa_id(uid)
+    periodo = request.get("periodo")
+    if periodo:
+        existe = _sb.table("bid_financieros").select("id") \
+            .eq("empresa_id", eid).eq("periodo", str(periodo)).execute().data
+        if existe:
+            raise HTTPException(
+                409,
+                f"Ya existe un estado financiero del período {periodo}. "
+                f"Edita el existente en vez de crear otro."
+            )
+    return _crear("bid_financieros", request, eid)
 
 @bid_manager_router.get("/financieros")
 def listar_financieros(authorization: str | None = Header(default=None)):
@@ -600,7 +611,18 @@ def eliminar_referencia(id: str, authorization: str | None = Header(default=None
 @bid_manager_router.post("/ir2")
 async def crear_ir2(request: dict, authorization: str | None = Header(default=None)):
     uid = _auth(authorization)
-    return _crear("bid_ir2", request, _empresa_id(uid))
+    eid = _empresa_id(uid)
+    periodo = request.get("periodo_fiscal")
+    if periodo:
+        existe = _sb.table("bid_ir2").select("id") \
+            .eq("empresa_id", eid).eq("periodo_fiscal", str(periodo)).execute().data
+        if existe:
+            raise HTTPException(
+                409,
+                f"Ya existe una declaración IR-2 del período {periodo}. "
+                f"Edita la existente en vez de crear otra."
+            )
+    return _crear("bid_ir2", request, eid)
 
 @bid_manager_router.get("/ir2")
 def listar_ir2(authorization: str | None = Header(default=None)):
@@ -1046,7 +1068,18 @@ async def extraer_lote_ia(
                     "pdf_url": path,
                 }
                 registro = {k: v for k, v in registro.items() if v is not None}
-                _sb.table("bid_ir2").insert(registro).execute()
+                existente = _sb.table("bid_ir2").select("id") \
+                    .eq("empresa_id", eid).eq("periodo_fiscal", periodo).execute().data \
+                    if periodo else []
+                if existente:
+                    registro.pop("empresa_id", None)
+                    registro["actualizado_en"] = datetime.utcnow().isoformat()
+                    _sb.table("bid_ir2").update(registro) \
+                        .eq("id", existente[0]["id"]).execute()
+                    item["accion"] = "actualizado"
+                else:
+                    _sb.table("bid_ir2").insert(registro).execute()
+                    item["accion"] = "creado"
                 item["tipo"] = "IR-2"
             else:
                 registro = {
@@ -1070,7 +1103,18 @@ async def extraer_lote_ia(
                     "pdf_url": path,
                 }
                 registro = {k: v for k, v in registro.items() if v is not None}
-                _sb.table("bid_financieros").insert(registro).execute()
+                existente = _sb.table("bid_financieros").select("id") \
+                    .eq("empresa_id", eid).eq("periodo", periodo).execute().data \
+                    if periodo else []
+                if existente:
+                    registro.pop("empresa_id", None)
+                    registro["actualizado_en"] = datetime.utcnow().isoformat()
+                    _sb.table("bid_financieros").update(registro) \
+                        .eq("id", existente[0]["id"]).execute()
+                    item["accion"] = "actualizado"
+                else:
+                    _sb.table("bid_financieros").insert(registro).execute()
+                    item["accion"] = "creado"
                 item["tipo"] = "Estados financieros"
 
             item["ok"] = True
@@ -1304,10 +1348,22 @@ Responde SOLO con JSON válido, sin markdown, con esta estructura exacta:
       "pct_monto": 0.20,
       "incluye_lineas_credito": true,
       "notas": "≥ 20% del valor total ofertado"
+    },
+    {
+      "nombre": "Índice de endeudamiento",
+      "tipo": "endeudamiento",
+      "formula": "Pasivo Total / Patrimonio",
+      "operador": "<",
+      "limite": 1.5,
+      "pct_monto": null,
+      "incluye_lineas_credito": false,
+      "notas": ""
     }
   ]
 }
 Reglas:
+- Los pliegos dominicanos típicamente piden 2 o 3 de estos: solvencia, liquidez corriente, endeudamiento y/o capital de trabajo. Extrae SOLO los que el pliego pide, con sus límites exactos.
+- El endeudamiento puede aparecer como "Pasivo Total / Patrimonio" o "Pasivo Total / Activo Total"; copia la fórmula tal cual la escribe el pliego en "formula"
 - "tipo" debe ser uno de: solvencia, liquidez, capital_trabajo, endeudamiento, patrimonio, ingresos, otro
 - "pct_monto": fracción del monto ofertado/presupuesto si el límite es relativo (ej: 0.20 para 20%); null si el límite es absoluto
 - "limite": valor numérico absoluto; null si el requisito usa pct_monto
@@ -1374,7 +1430,17 @@ def _evaluar_matching(eid: str, requisitos: list, monto: float | None) -> dict:
                 else:
                     valor = base
             elif tipo == "endeudamiento":
-                valor = _num(fin.get("endeudamiento"))
+                # La fórmula varía por pliego: Pasivo/Patrimonio (default de la BD)
+                # o Pasivo/Activo. Usar la que indique el pliego.
+                formula_txt = (req.get("formula") or "").lower()
+                if "activo" in formula_txt:
+                    pt = _num(fin.get("pasivos_totales"))
+                    at = _num(fin.get("activos_totales"))
+                    valor = (pt / at) if (pt is not None and at) else None
+                    valor_desc = "Pasivo Total / Activo Total"
+                else:
+                    valor = _num(fin.get("endeudamiento"))
+                    valor_desc = "Pasivo Total / Patrimonio"
             elif tipo == "patrimonio":
                 valor = _num(fin.get("patrimonio_neto"))
             elif tipo == "ingresos":
