@@ -1,2661 +1,2270 @@
-"""
-router_bid_manager.py — Bid Manager para LicitacionLab
-=======================================================
-CRUD completo para el Expediente Digital de Empresa:
-- Perfil empresa (campos extendidos)
-- Representantes legales
-- Socios / accionistas
-- Certificaciones y documentos de empresa
-- Personal técnico + certificaciones del personal
-- Experiencia (banco de proyectos) + personal por proyecto
-- Equipos
-- Estados financieros
-- Capacidad financiera (líneas de crédito, solvencias)
-- Referencias comerciales
-- IR-2
-- Formularios por institución (catálogo)
+/* ============================================================
+   BID MANAGER — Lógica encapsulada
+   ============================================================
+   Todo dentro del objeto BidManager para no contaminar el scope
+   global (el index.html ya tiene 1584+ declaraciones).
+   ============================================================ */
 
-Integración en main.py (2 líneas):
-    from router_bid_manager import bid_manager_router
-    app.include_router(bid_manager_router)
-"""
+const BidManager = {
+  // ── Estado ────────────────────────────────────────────
+  loaded: false,
+  htmlLoaded: false,
+  currentTab: 'empresa',
+  currentFinTab: 'indicadores',
+  data: {
+    empresa: null,
+    representantes: [],
+    socios: [],
+    certificaciones: [],
+    personal: [],
+    equipos: [],
+    experiencia: [],
+    financieros: [],
+    ir2: [],
+    capacidad: [],
+    referencias: [],
+    alertas: [],
+    resumen: null,
+    matching: []
+  },
+  editing: null, // {tipo, id} cuando se está editando algo
 
-import os
-from datetime import datetime
-from typing import Optional, List
+  // ── Auth ──────────────────────────────────────────────
+  _token() {
+    return localStorage.getItem('sb_token');
+  },
 
-import re
-import uuid
-from fastapi import APIRouter, HTTPException, Header, Query, UploadFile, File, Form
-from pydantic import BaseModel
-from supabase import create_client
+  _authHeaders(json = true) {
+    const h = { 'Authorization': 'Bearer ' + this._token() };
+    if (json) h['Content-Type'] = 'application/json';
+    return h;
+  },
 
-# ── Clientes Supabase ──────────────────────────────────────
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
+  // ── API helpers ───────────────────────────────────────
+  // Fetch con retry-refresh: si el token expiró (401) mientras se llenaba
+  // el expediente, refresca una vez y reintenta sin perder el formulario.
+  async _refreshToken() {
+    const rt = localStorage.getItem('sb_refresh_token');
+    if (!rt || typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') return null;
+    try {
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+        body: JSON.stringify({ refresh_token: rt })
+      });
+      const d = await r.json();
+      if (d.access_token) {
+        localStorage.setItem('sb_token', d.access_token);
+        if (d.refresh_token) localStorage.setItem('sb_refresh_token', d.refresh_token);
+        if (typeof _syncSesionCookies === 'function') _syncSesionCookies();
+        return d.access_token;
+      }
+    } catch (e) {
+      console.error('BidManager: error refrescando token', e);
+    }
+    return null;
+  },
 
-_sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+  async _fetchAuth(url, options = {}) {
+    const doReq = (tok) => {
+      const headers = Object.assign({}, options.headers || {}, { 'Authorization': 'Bearer ' + tok });
+      return fetch(url, Object.assign({}, options, { headers }));
+    };
+    let r = await doReq(this._token());
+    if (r.status === 401) {
+      const nuevo = await this._refreshToken();
+      if (nuevo) r = await doReq(nuevo);
+    }
+    return r;
+  },
 
-bid_manager_router = APIRouter(prefix="/api/bid", tags=["bid-manager"])
+  async _get(path) {
+    const r = await this._fetchAuth(`/api/bid${path}`);
+    if (!r.ok) throw new Error(`GET ${path} → ${r.status}`);
+    return r.json();
+  },
 
+  async _post(path, body) {
+    const r = await this._fetchAuth(`/api/bid${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || `POST ${path} → ${r.status}`);
+    }
+    return r.json();
+  },
 
-# ── Auth ───────────────────────────────────────────────────
-def _auth(authorization: str | None) -> str:
-    """Valida Bearer token y devuelve user_id."""
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(401, "Falta el token de sesión")
-    token = authorization.split(" ", 1)[1].strip()
-    try:
-        user_resp = _sb.auth.get_user(token)
-        if not user_resp or not user_resp.user:
-            raise HTTPException(401, "Sesión inválida o expirada")
-        return user_resp.user.id
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(401, "Sesión inválida o expirada")
+  async _put(path, body) {
+    const r = await this._fetchAuth(`/api/bid${path}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) throw new Error(`PUT ${path} → ${r.status}`);
+    return r.json();
+  },
 
+  async _delete(path) {
+    const r = await this._fetchAuth(`/api/bid${path}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error(`DELETE ${path} → ${r.status}`);
+    return r.json();
+  },
 
-# ── Helper: obtener empresa_id del usuario ─────────────────
-def _empresa_id(user_id: str) -> str:
-    """Devuelve el ID de perfiles_empresa del usuario. Lanza 404 si no existe."""
-    res = _sb.table("perfiles_empresa").select("id").eq("user_id", user_id).execute()
-    if not res.data:
-        raise HTTPException(404, "No tienes perfil de empresa. Completa el onboarding primero.")
-    return res.data[0]["id"]
+  // ── Init: se llama la primera vez que se abre el tab ─
+  async init() {
+    if (this.loaded) return;
 
+    // Cargar el HTML del módulo dentro de #tab-bid
+    if (!this.htmlLoaded) {
+      const container = document.getElementById('tab-bid');
+      if (!container) {
+        console.error('#tab-bid no encontrado');
+        return;
+      }
+      try {
+        const r = await fetch('/frontend/bid-manager/bid-manager.html');
+        if (!r.ok) throw new Error('HTML no encontrado');
+        container.innerHTML = await r.text();
+        this.htmlLoaded = true;
+        this._bindTabs();
+      } catch (e) {
+        container.innerHTML = `<div class="bm-container"><div class="bm-empty"><div class="bm-empty-icon">!</div><div class="bm-empty-text">Error cargando el módulo: ${e.message}</div></div></div>`;
+        return;
+      }
+    }
 
-# ── Helper: CRUD genérico ──────────────────────────────────
-def _crear(tabla: str, data: dict, empresa_id: str):
-    data["empresa_id"] = empresa_id
-    res = _sb.table(tabla).insert(data).execute()
-    return res.data[0] if res.data else None
+    await this.refresh();
+    this.loaded = true;
+  },
 
-def _listar(tabla: str, empresa_id: str, filtros: dict = None):
-    q = _sb.table(tabla).select("*").eq("empresa_id", empresa_id)
-    if filtros:
-        for k, v in filtros.items():
-            if v is not None:
-                q = q.eq(k, v)
-    return q.order("creado_en", desc=True).execute().data or []
+  // ── Refrescar toda la data ────────────────────────────
+  async refresh() {
+    try {
+      const [empresa, reps, socios, certs, pers, equip, exp, fin, ir2, cap, refs, alertas, resumen, matching] = await Promise.all([
+        this._get('/empresa'),
+        this._get('/representantes'),
+        this._get('/socios'),
+        this._get('/certificaciones'),
+        this._get('/personal'),
+        this._get('/equipos'),
+        this._get('/experiencia'),
+        this._get('/financieros'),
+        this._get('/ir2'),
+        this._get('/capacidad-financiera'),
+        this._get('/referencias-comerciales'),
+        this._get('/certificaciones/alertas'),
+        this._get('/expediente/resumen'),
+        this._get('/matching').catch(() => [])
+      ]);
 
-def _obtener(tabla: str, id: str, empresa_id: str):
-    res = _sb.table(tabla).select("*").eq("id", id).eq("empresa_id", empresa_id).execute()
-    if not res.data:
-        raise HTTPException(404, "Registro no encontrado")
-    return res.data[0]
+      this.data.empresa = empresa.empresa;
+      this.data.representantes = reps;
+      this.data.socios = socios;
+      this.data.certificaciones = certs;
+      this.data.personal = pers;
+      this.data.equipos = equip;
+      this.data.experiencia = exp;
+      this.data.financieros = fin;
+      this.data.ir2 = ir2;
+      this.data.capacidad = cap;
+      this.data.referencias = refs;
+      this.data.alertas = alertas;
+      this.data.resumen = resumen;
+      this.data.matching = matching;
 
-def _actualizar(tabla: str, id: str, data: dict, empresa_id: str):
-    data["actualizado_en"] = datetime.utcnow().isoformat()
-    res = _sb.table(tabla).update(data).eq("id", id).eq("empresa_id", empresa_id).execute()
-    if not res.data:
-        raise HTTPException(404, "Registro no encontrado")
-    return res.data[0]
+      this._renderAll();
+    } catch (e) {
+      console.error('Error cargando Bid Manager:', e);
+      this.toast('Error cargando datos: ' + e.message, 'err');
+    }
+  },
 
-def _eliminar(tabla: str, id: str, empresa_id: str):
-    res = _sb.table(tabla).delete().eq("id", id).eq("empresa_id", empresa_id).execute()
-    if not res.data:
-        raise HTTPException(404, "Registro no encontrado")
-    return {"ok": True}
+  // ── Bind de tabs internos ─────────────────────────────
+  _bindTabs() {
+    // Tabs principales
+    document.querySelectorAll('#bm-tabs .bm-tab').forEach(t => {
+      t.addEventListener('click', () => this.switchPanel(t.dataset.panel));
+    });
+    // Sub-tabs financieros
+    document.querySelectorAll('[data-fin-panel]').forEach(t => {
+      if (t.tagName === 'BUTTON') {
+        t.addEventListener('click', () => this.switchFinPanel(t.dataset.finPanel));
+      }
+    });
+    // Cerrar modal con overlay
+    const modal = document.getElementById('bm-modal');
+    if (modal) {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) this.cerrarModal();
+      });
+    }
+  },
 
+  switchPanel(panel) {
+    this.currentTab = panel;
+    document.querySelectorAll('#bm-tabs .bm-tab').forEach(t => {
+      t.classList.toggle('bm-active', t.dataset.panel === panel);
+    });
+    document.querySelectorAll('.bm-panel[data-panel]').forEach(p => {
+      p.classList.toggle('bm-active', p.dataset.panel === panel);
+    });
+  },
 
-# ══════════════════════════════════════════════════════════════
-# 1. PERFIL DE EMPRESA (campos extendidos del Bid Manager)
-# ══════════════════════════════════════════════════════════════
+  switchFinPanel(panel) {
+    this.currentFinTab = panel;
+    document.querySelectorAll('[data-fin-panel]').forEach(el => {
+      if (el.tagName === 'BUTTON') {
+        el.classList.toggle('bm-active', el.dataset.finPanel === panel);
+      } else {
+        el.style.display = el.dataset.finPanel === panel ? 'block' : 'none';
+        el.classList.toggle('bm-active', el.dataset.finPanel === panel);
+      }
+    });
+  },
 
-CAMPOS_BID_EMPRESA = {
-    "rpe", "registro_mercantil_no", "tipo_sociedad", "capital_social",
-    "moneda_capital", "objeto_social", "fecha_constitucion", "fecha_registro_rpe",
-    "telefono_principal", "telefono_secundario", "clasificacion_mipyme",
-    "registro_mipyme", "provee", "sitio_web", "direccion_completa",
-    # Campos originales que también se pueden actualizar
-    "razon_social", "rnc", "domicilio", "email_empresa",
-}
+  // ── Render principal ──────────────────────────────────
+  _renderAll() {
+    this._renderProgress();
+    this._renderAlertas();
+    this._renderBadges();
+    this._renderEmpresa();
+    this._renderRepresentantes();
+    this._renderSocios();
+    this._renderCertificaciones();
+    this._renderPersonal();
+    this._renderEquipos();
+    this._renderExperiencia();
+    this._renderFinancieros();
+    this._renderIndicadores();
+    this._renderIr2();
+    this._renderCapacidad();
+    this._renderReferencias();
+    this._renderMatching();
+  },
 
-@bid_manager_router.get("/empresa")
-def get_empresa(authorization: str | None = Header(default=None)):
-    """Obtener perfil completo de empresa con todos los campos del Bid Manager."""
-    uid = _auth(authorization)
-    res = _sb.table("perfiles_empresa").select("*").eq("user_id", uid).execute()
-    return {"empresa": res.data[0] if res.data else None}
-
-@bid_manager_router.put("/empresa")
-async def actualizar_empresa(request: dict, authorization: str | None = Header(default=None)):
-    """Actualizar campos del Bid Manager en el perfil de empresa."""
-    uid = _auth(authorization)
-    data = {k: v for k, v in request.items() if k in CAMPOS_BID_EMPRESA}
-    if not data:
-        raise HTTPException(400, "No hay campos válidos para actualizar")
-    data["actualizado_en"] = datetime.utcnow().isoformat()
+  _renderProgress() {
+    // Calcular completitud: 10 secciones, cada una vale 10%
+    const m = this.data.resumen?.modulos || {};
+    const emp = this.data.empresa;
+    let done = 0;
+    if (emp?.razon_social && emp?.rnc) done++;
+    if (m.representantes > 0) done++;
+    if (m.socios > 0) done++;
+    if (m.certificaciones >= 3) done++;
+    if (m.personal > 0) done++;
+    if (m.equipos > 0) done++;
+    if (m.experiencia > 0) done++;
+    if (m.estados_financieros > 0) done++;
+    if (m.capacidad_financiera > 0) done++;
+    if (m.referencias_comerciales > 0) done++;
     
-    existente = _sb.table("perfiles_empresa").select("id").eq("user_id", uid).execute()
-    if existente.data:
-        _sb.table("perfiles_empresa").update(data).eq("user_id", uid).execute()
-    else:
-        data["user_id"] = uid
-        _sb.table("perfiles_empresa").insert(data).execute()
-    return {"ok": True}
-
-
-# ══════════════════════════════════════════════════════════════
-# 2. REPRESENTANTES LEGALES
-# ══════════════════════════════════════════════════════════════
-
-@bid_manager_router.post("/representantes")
-async def crear_representante(request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    return _crear("bid_representantes", request, eid)
-
-@bid_manager_router.get("/representantes")
-def listar_representantes(authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    return _listar("bid_representantes", eid)
-
-@bid_manager_router.get("/representantes/{id}")
-def obtener_representante(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    return _obtener("bid_representantes", id, eid)
-
-@bid_manager_router.put("/representantes/{id}")
-async def actualizar_representante(id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    return _actualizar("bid_representantes", id, request, eid)
-
-@bid_manager_router.delete("/representantes/{id}")
-def eliminar_representante(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    return _eliminar("bid_representantes", id, eid)
-
-
-# ══════════════════════════════════════════════════════════════
-# 3. SOCIOS / ACCIONISTAS
-# ══════════════════════════════════════════════════════════════
-
-def _validar_participacion(empresa_id: str, nuevo_pct, excluir_id: str = None):
-    """Valida que la suma de porcentajes de participación no exceda 100%."""
-    try:
-        pct_nuevo = float(nuevo_pct or 0)
-    except (TypeError, ValueError):
-        pct_nuevo = 0
-    if pct_nuevo <= 0:
-        return
-    q = _sb.table("bid_socios").select("id, porcentaje_participacion").eq("empresa_id", empresa_id)
-    rows = q.execute().data or []
-    total_otros = sum(
-        float(r.get("porcentaje_participacion") or 0)
-        for r in rows if r["id"] != excluir_id
-    )
-    if total_otros + pct_nuevo > 100.0001:  # tolerancia flotante
-        disponible = max(0, 100 - total_otros)
-        raise HTTPException(
-            400,
-            f"La participación total no puede exceder 100%. "
-            f"Ya hay {total_otros:.2f}% asignado; disponible: {disponible:.2f}%"
-        )
-
-@bid_manager_router.post("/socios")
-async def crear_socio(request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    _validar_participacion(eid, request.get("porcentaje_participacion"))
-    return _crear("bid_socios", request, eid)
-
-@bid_manager_router.get("/socios")
-def listar_socios(authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _listar("bid_socios", _empresa_id(uid))
-
-@bid_manager_router.get("/socios/{id}")
-def obtener_socio(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _obtener("bid_socios", id, _empresa_id(uid))
-
-@bid_manager_router.put("/socios/{id}")
-async def actualizar_socio(id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    if "porcentaje_participacion" in request:
-        _validar_participacion(eid, request.get("porcentaje_participacion"), excluir_id=id)
-    return _actualizar("bid_socios", id, request, eid)
-
-@bid_manager_router.delete("/socios/{id}")
-def eliminar_socio(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _eliminar("bid_socios", id, _empresa_id(uid))
-
-
-# ══════════════════════════════════════════════════════════════
-# 4. CERTIFICACIONES Y DOCUMENTOS DE EMPRESA
-# ══════════════════════════════════════════════════════════════
-# Tipos: DGII, TSS, RPE, REGISTRO_MERCANTIL, MIPYME,
-#        ANTECEDENTES_PENALES, ESTATUTOS, ACTA_ASAMBLEA,
-#        PODER_REPRESENTACION, NOMINA_SOCIETARIA,
-#        CEDULA_REPRESENTANTE, OTRO
-
-@bid_manager_router.post("/certificaciones")
-async def crear_certificacion(request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _crear("bid_certificaciones", request, _empresa_id(uid))
-
-@bid_manager_router.get("/certificaciones")
-def listar_certificaciones(
-    tipo: str = Query(None),
-    estado: str = Query(None),
-    authorization: str | None = Header(default=None)
-):
-    uid = _auth(authorization)
-    return _listar("bid_certificaciones", _empresa_id(uid), {"tipo": tipo, "estado": estado})
-
-@bid_manager_router.get("/certificaciones/alertas")
-def alertas_vencimiento(authorization: str | None = Header(default=None)):
-    """Devuelve certificaciones vencidas o por vencer en los próximos 15 días."""
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    # Actualizar estados antes de consultar
-    _sb.rpc("fn_actualizar_estados_certificaciones", {"p_empresa_id": eid}).execute()
-    res = _sb.table("bid_certificaciones") \
-        .select("*") \
-        .eq("empresa_id", eid) \
-        .in_("estado", ["vencido", "por_vencer"]) \
-        .order("fecha_vencimiento") \
-        .execute()
-    return res.data or []
-
-@bid_manager_router.get("/certificaciones/{id}")
-def obtener_certificacion(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _obtener("bid_certificaciones", id, _empresa_id(uid))
-
-@bid_manager_router.put("/certificaciones/{id}")
-async def actualizar_certificacion(id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _actualizar("bid_certificaciones", id, request, _empresa_id(uid))
-
-@bid_manager_router.delete("/certificaciones/{id}")
-def eliminar_certificacion(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _eliminar("bid_certificaciones", id, _empresa_id(uid))
-
-
-# ══════════════════════════════════════════════════════════════
-# 5. PERSONAL TÉCNICO
-# ══════════════════════════════════════════════════════════════
-
-@bid_manager_router.post("/personal")
-async def crear_personal(request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _crear("bid_personal", request, _empresa_id(uid))
-
-@bid_manager_router.get("/personal")
-def listar_personal(
-    cargo: str = Query(None),
-    profesion: str = Query(None),
-    disponible: bool = Query(None),
-    authorization: str | None = Header(default=None)
-):
-    uid = _auth(authorization)
-    filtros = {"cargo_empresa": cargo, "profesion": profesion}
-    if disponible is not None:
-        filtros["disponible"] = disponible
-    return _listar("bid_personal", _empresa_id(uid), filtros)
-
-@bid_manager_router.get("/personal/{id}")
-def obtener_personal(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _obtener("bid_personal", id, _empresa_id(uid))
-
-@bid_manager_router.put("/personal/{id}")
-async def actualizar_personal(id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _actualizar("bid_personal", id, request, _empresa_id(uid))
-
-@bid_manager_router.delete("/personal/{id}")
-def eliminar_personal(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _eliminar("bid_personal", id, _empresa_id(uid))
-
-
-# ══════════════════════════════════════════════════════════════
-# 6. CERTIFICACIONES DEL PERSONAL
-# ══════════════════════════════════════════════════════════════
-
-def _verificar_personal_pertenece(personal_id: str, empresa_id: str):
-    """Verifica que el personal pertenece a la empresa del usuario."""
-    res = _sb.table("bid_personal").select("id").eq("id", personal_id).eq("empresa_id", empresa_id).execute()
-    if not res.data:
-        raise HTTPException(404, "Personal no encontrado")
-
-@bid_manager_router.post("/personal/{personal_id}/certificaciones")
-async def crear_cert_personal(personal_id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    _verificar_personal_pertenece(personal_id, eid)
-    request["personal_id"] = personal_id
-    res = _sb.table("bid_personal_certificaciones").insert(request).execute()
-    return res.data[0] if res.data else None
-
-@bid_manager_router.get("/personal/{personal_id}/certificaciones")
-def listar_certs_personal(personal_id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    _verificar_personal_pertenece(personal_id, eid)
-    return _sb.table("bid_personal_certificaciones") \
-        .select("*").eq("personal_id", personal_id) \
-        .order("creado_en", desc=True).execute().data or []
-
-@bid_manager_router.delete("/personal/{personal_id}/certificaciones/{cert_id}")
-def eliminar_cert_personal(personal_id: str, cert_id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    _verificar_personal_pertenece(personal_id, eid)
-    _sb.table("bid_personal_certificaciones").delete().eq("id", cert_id).eq("personal_id", personal_id).execute()
-    return {"ok": True}
-
-
-# ══════════════════════════════════════════════════════════════
-# 7. EXPERIENCIA (BANCO DE PROYECTOS)
-# ══════════════════════════════════════════════════════════════
-
-@bid_manager_router.post("/experiencia")
-async def crear_experiencia(request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _crear("bid_experiencia", request, _empresa_id(uid))
-
-@bid_manager_router.get("/experiencia")
-def listar_experiencia(
-    tipo_obra: str = Query(None),
-    cliente: str = Query(None),
-    estado: str = Query(None),
-    authorization: str | None = Header(default=None)
-):
-    uid = _auth(authorization)
-    return _listar("bid_experiencia", _empresa_id(uid), {
-        "tipo_obra": tipo_obra, "cliente": cliente, "estado": estado
-    })
-
-@bid_manager_router.get("/experiencia/{id}")
-def obtener_experiencia(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _obtener("bid_experiencia", id, _empresa_id(uid))
-
-@bid_manager_router.put("/experiencia/{id}")
-async def actualizar_experiencia(id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _actualizar("bid_experiencia", id, request, _empresa_id(uid))
-
-@bid_manager_router.delete("/experiencia/{id}")
-def eliminar_experiencia(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _eliminar("bid_experiencia", id, _empresa_id(uid))
-
-
-# ══════════════════════════════════════════════════════════════
-# 8. PERSONAL ASIGNADO A PROYECTOS
-# ══════════════════════════════════════════════════════════════
-
-def _verificar_experiencia_pertenece(exp_id: str, empresa_id: str):
-    res = _sb.table("bid_experiencia").select("id").eq("id", exp_id).eq("empresa_id", empresa_id).execute()
-    if not res.data:
-        raise HTTPException(404, "Proyecto no encontrado")
-
-@bid_manager_router.post("/experiencia/{exp_id}/personal")
-async def asignar_personal_proyecto(exp_id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    _verificar_experiencia_pertenece(exp_id, eid)
-    request["experiencia_id"] = exp_id
-    res = _sb.table("bid_experiencia_personal").insert(request).execute()
-    return res.data[0] if res.data else None
-
-@bid_manager_router.get("/experiencia/{exp_id}/personal")
-def listar_personal_proyecto(exp_id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    _verificar_experiencia_pertenece(exp_id, eid)
-    return _sb.table("bid_experiencia_personal") \
-        .select("*, bid_personal(nombre_completo, profesion, cargo_empresa)") \
-        .eq("experiencia_id", exp_id).execute().data or []
-
-@bid_manager_router.delete("/experiencia/{exp_id}/personal/{asig_id}")
-def desasignar_personal_proyecto(exp_id: str, asig_id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    _verificar_experiencia_pertenece(exp_id, eid)
-    _sb.table("bid_experiencia_personal").delete().eq("id", asig_id).eq("experiencia_id", exp_id).execute()
-    return {"ok": True}
-
-
-# ══════════════════════════════════════════════════════════════
-# 9. EQUIPOS
-# ══════════════════════════════════════════════════════════════
-
-@bid_manager_router.post("/equipos")
-async def crear_equipo(request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _crear("bid_equipos", request, _empresa_id(uid))
-
-@bid_manager_router.get("/equipos")
-def listar_equipos(
-    propiedad: str = Query(None),
-    estado: str = Query(None),
-    authorization: str | None = Header(default=None)
-):
-    uid = _auth(authorization)
-    return _listar("bid_equipos", _empresa_id(uid), {"propiedad": propiedad, "estado": estado})
-
-@bid_manager_router.get("/equipos/{id}")
-def obtener_equipo(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _obtener("bid_equipos", id, _empresa_id(uid))
-
-@bid_manager_router.put("/equipos/{id}")
-async def actualizar_equipo(id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _actualizar("bid_equipos", id, request, _empresa_id(uid))
-
-@bid_manager_router.delete("/equipos/{id}")
-def eliminar_equipo(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _eliminar("bid_equipos", id, _empresa_id(uid))
-
-
-# ══════════════════════════════════════════════════════════════
-# 10. ESTADOS FINANCIEROS
-# ══════════════════════════════════════════════════════════════
-
-@bid_manager_router.post("/financieros")
-async def crear_financiero(request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    periodo = request.get("periodo")
-    if periodo:
-        existe = _sb.table("bid_financieros").select("id") \
-            .eq("empresa_id", eid).eq("periodo", str(periodo)).execute().data
-        if existe:
-            raise HTTPException(
-                409,
-                f"Ya existe un estado financiero del período {periodo}. "
-                f"Edita el existente en vez de crear otro."
-            )
-    return _crear("bid_financieros", request, eid)
-
-@bid_manager_router.get("/financieros")
-def listar_financieros(authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _listar("bid_financieros", _empresa_id(uid))
-
-@bid_manager_router.get("/financieros/{id}")
-def obtener_financiero(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _obtener("bid_financieros", id, _empresa_id(uid))
-
-@bid_manager_router.put("/financieros/{id}")
-async def actualizar_financiero(id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _actualizar("bid_financieros", id, request, _empresa_id(uid))
-
-@bid_manager_router.delete("/financieros/{id}")
-def eliminar_financiero(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _eliminar("bid_financieros", id, _empresa_id(uid))
-
-@bid_manager_router.get("/financieros/indicadores/resumen")
-def resumen_indicadores(authorization: str | None = Header(default=None)):
-    """Devuelve los indicadores financieros del último período."""
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    res = _sb.table("bid_financieros") \
-        .select("periodo, fecha_cierre, solvencia, liquidez_corriente, endeudamiento, capital_trabajo, margen_utilidad, roe") \
-        .eq("empresa_id", eid) \
-        .order("fecha_cierre", desc=True) \
-        .limit(2) \
-        .execute()
-    return {"indicadores": res.data or []}
-
-
-# ══════════════════════════════════════════════════════════════
-# 11. CAPACIDAD FINANCIERA (líneas de crédito, solvencias)
-# ══════════════════════════════════════════════════════════════
-
-@bid_manager_router.post("/capacidad-financiera")
-async def crear_capacidad(request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _crear("bid_capacidad_financiera", request, _empresa_id(uid))
-
-@bid_manager_router.get("/capacidad-financiera")
-def listar_capacidad(
-    tipo: str = Query(None),
-    authorization: str | None = Header(default=None)
-):
-    uid = _auth(authorization)
-    return _listar("bid_capacidad_financiera", _empresa_id(uid), {"tipo": tipo})
-
-@bid_manager_router.get("/capacidad-financiera/{id}")
-def obtener_capacidad(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _obtener("bid_capacidad_financiera", id, _empresa_id(uid))
-
-@bid_manager_router.put("/capacidad-financiera/{id}")
-async def actualizar_capacidad(id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _actualizar("bid_capacidad_financiera", id, request, _empresa_id(uid))
-
-@bid_manager_router.delete("/capacidad-financiera/{id}")
-def eliminar_capacidad(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _eliminar("bid_capacidad_financiera", id, _empresa_id(uid))
-
-@bid_manager_router.get("/capacidad-financiera/resumen/total")
-def resumen_capacidad(authorization: str | None = Header(default=None)):
-    """Total disponible por tipo de capacidad financiera."""
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    res = _sb.table("bid_capacidad_financiera") \
-        .select("tipo, monto, monto_disponible, estado") \
-        .eq("empresa_id", eid) \
-        .eq("estado", "vigente") \
-        .execute()
+    const pct = Math.round(done * 10);
+    const pctEl = document.getElementById('bm-progress-pct');
+    const fillEl = document.getElementById('bm-progress-fill');
+    if (pctEl) pctEl.textContent = pct + '%';
+    if (fillEl) fillEl.style.width = pct + '%';
+  },
+
+  _renderAlertas() {
+    const cont = document.getElementById('bm-alerts-container');
+    if (!cont) return;
+    const alertas = this.data.alertas || [];
+    if (!alertas.length) { cont.innerHTML = ''; return; }
     
-    por_tipo = {}
-    for r in (res.data or []):
-        t = r["tipo"]
-        m = float(r.get("monto_disponible") or r.get("monto") or 0)
-        por_tipo[t] = por_tipo.get(t, 0) + m
+    const vencidas = alertas.filter(a => a.estado === 'vencido');
+    const porVencer = alertas.filter(a => a.estado === 'por_vencer');
     
-    return {
-        "por_tipo": por_tipo,
-        "total_disponible": sum(por_tipo.values())
+    let html = '';
+    if (vencidas.length) {
+      html += `<div class="bm-alert"><div class="bm-alert-icon">!</div><div class="bm-alert-text"><strong>${vencidas.length} documento(s) vencido(s)</strong> — necesitan renovación urgente para poder ofertar.</div></div>`;
     }
-
-
-# ══════════════════════════════════════════════════════════════
-# 12. REFERENCIAS COMERCIALES
-# ══════════════════════════════════════════════════════════════
-
-@bid_manager_router.post("/referencias-comerciales")
-async def crear_referencia(request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _crear("bid_referencias_comerciales", request, _empresa_id(uid))
-
-@bid_manager_router.get("/referencias-comerciales")
-def listar_referencias(authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _listar("bid_referencias_comerciales", _empresa_id(uid))
-
-@bid_manager_router.get("/referencias-comerciales/{id}")
-def obtener_referencia(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _obtener("bid_referencias_comerciales", id, _empresa_id(uid))
-
-@bid_manager_router.put("/referencias-comerciales/{id}")
-async def actualizar_referencia(id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _actualizar("bid_referencias_comerciales", id, request, _empresa_id(uid))
-
-@bid_manager_router.delete("/referencias-comerciales/{id}")
-def eliminar_referencia(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _eliminar("bid_referencias_comerciales", id, _empresa_id(uid))
-
-
-# ══════════════════════════════════════════════════════════════
-# 13. IR-2
-# ══════════════════════════════════════════════════════════════
-
-@bid_manager_router.post("/ir2")
-async def crear_ir2(request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    periodo = request.get("periodo_fiscal")
-    if periodo:
-        existe = _sb.table("bid_ir2").select("id") \
-            .eq("empresa_id", eid).eq("periodo_fiscal", str(periodo)).execute().data
-        if existe:
-            raise HTTPException(
-                409,
-                f"Ya existe una declaración IR-2 del período {periodo}. "
-                f"Edita la existente en vez de crear otra."
-            )
-    return _crear("bid_ir2", request, eid)
-
-@bid_manager_router.get("/ir2")
-def listar_ir2(authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _listar("bid_ir2", _empresa_id(uid))
-
-@bid_manager_router.get("/ir2/{id}")
-def obtener_ir2(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _obtener("bid_ir2", id, _empresa_id(uid))
-
-@bid_manager_router.put("/ir2/{id}")
-async def actualizar_ir2(id: str, request: dict, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _actualizar("bid_ir2", id, request, _empresa_id(uid))
-
-@bid_manager_router.delete("/ir2/{id}")
-def eliminar_ir2(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _eliminar("bid_ir2", id, _empresa_id(uid))
-
-
-# ══════════════════════════════════════════════════════════════
-# 14. FORMULARIOS POR INSTITUCIÓN (catálogo, solo lectura)
-# ══════════════════════════════════════════════════════════════
-
-@bid_manager_router.get("/formularios")
-def listar_formularios(
-    institucion: str = Query(None),
-    tipo: str = Query(None)
-):
-    """Catálogo de formularios por institución. No requiere auth."""
-    q = _sb.table("bid_formularios_institucion").select("*").eq("activo", True)
-    if institucion:
-        q = q.eq("institucion", institucion)
-    if tipo:
-        q = q.eq("tipo", tipo)
-    return q.order("institucion").execute().data or []
-
-
-# ══════════════════════════════════════════════════════════════
-# 15. RESUMEN GENERAL DEL EXPEDIENTE
-# ══════════════════════════════════════════════════════════════
-
-@bid_manager_router.get("/expediente/resumen")
-def resumen_expediente(authorization: str | None = Header(default=None)):
-    """Dashboard: resumen del estado del expediente digital."""
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-
-    # Contar registros por módulo
-    representantes = _sb.table("bid_representantes").select("id", count="exact").eq("empresa_id", eid).execute()
-    socios = _sb.table("bid_socios").select("id", count="exact").eq("empresa_id", eid).execute()
-    certificaciones = _sb.table("bid_certificaciones").select("id", count="exact").eq("empresa_id", eid).execute()
-    cert_vencidas = _sb.table("bid_certificaciones").select("id", count="exact").eq("empresa_id", eid).in_("estado", ["vencido", "por_vencer"]).execute()
-    personal = _sb.table("bid_personal").select("id", count="exact").eq("empresa_id", eid).execute()
-    experiencia = _sb.table("bid_experiencia").select("id", count="exact").eq("empresa_id", eid).execute()
-    equipos = _sb.table("bid_equipos").select("id", count="exact").eq("empresa_id", eid).execute()
-    financieros = _sb.table("bid_financieros").select("id", count="exact").eq("empresa_id", eid).execute()
-    capacidad = _sb.table("bid_capacidad_financiera").select("id", count="exact").eq("empresa_id", eid).execute()
-    referencias = _sb.table("bid_referencias_comerciales").select("id", count="exact").eq("empresa_id", eid).execute()
-    ir2 = _sb.table("bid_ir2").select("id", count="exact").eq("empresa_id", eid).execute()
-
-    return {
-        "empresa_id": eid,
-        "modulos": {
-            "representantes": representantes.count or 0,
-            "socios": socios.count or 0,
-            "certificaciones": certificaciones.count or 0,
-            "certificaciones_alertas": cert_vencidas.count or 0,
-            "personal": personal.count or 0,
-            "experiencia": experiencia.count or 0,
-            "equipos": equipos.count or 0,
-            "estados_financieros": financieros.count or 0,
-            "capacidad_financiera": capacidad.count or 0,
-            "referencias_comerciales": referencias.count or 0,
-            "ir2": ir2.count or 0,
-        }
+    if (porVencer.length) {
+      html += `<div class="bm-alert" style="background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.25);"><div class="bm-alert-icon">!</div><div class="bm-alert-text" style="color:var(--text)"><strong style="color:#F59E0B">${porVencer.length} documento(s) por vencer</strong> — vencen en los próximos 15 días.</div></div>`;
     }
+    cont.innerHTML = html;
+  },
 
+  _renderBadges() {
+    const m = this.data.resumen?.modulos || {};
+    const map = {
+      'bm-badge-representantes': m.representantes,
+      'bm-badge-socios': m.socios,
+      'bm-badge-certificaciones': m.certificaciones,
+      'bm-badge-personal': m.personal,
+      'bm-badge-equipos': m.equipos,
+      'bm-badge-experiencia': m.experiencia,
+      'bm-badge-financieros': m.estados_financieros
+    };
+    Object.keys(map).forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = map[id] || 0;
+    });
+  },
 
-# ══════════════════════════════════════════════════════════════
-# 15. UPLOAD DE ARCHIVOS (Supabase Storage: bucket bid-manager-docs)
-# ══════════════════════════════════════════════════════════════
-# El bucket es PRIVADO. RLS multi-tenant vive en Storage.
-# Los archivos se sirven al frontend mediante signed URLs de corta duración.
-#
-# Estructura de paths:  {empresa_id}/{categoria}/{archivo}
-# Ejemplos:
-#   f47ac10b-.../certificaciones/a1b2c3d4_dgii-2026.pdf
-#   f47ac10b-.../personal/e5f6g7h8_cedula-lonny.jpg
-# ══════════════════════════════════════════════════════════════
-
-STORAGE_BUCKET = "bid-manager-docs"
-STORAGE_MAX_BYTES = 25 * 1024 * 1024  # 25 MB (igual que el limit del bucket)
-
-VALID_CATEGORIAS = {
-    "certificaciones", "personal", "equipos", "experiencia",
-    "financieros", "ir2", "capacidad", "referencias", "otro"
-}
-
-
-def _sanitize_filename(nombre: str) -> str:
-    """
-    Devuelve un nombre de archivo seguro:
-    - reemplaza caracteres raros por _
-    - trunca a 80 chars
-    - antepone un prefijo aleatorio para evitar colisiones dentro de la misma carpeta
-    - preserva la extensión original en minúsculas
-    """
-    if not nombre:
-        nombre = "archivo"
-    partes = nombre.rsplit(".", 1)
-    base = partes[0] if len(partes) > 1 else nombre
-    ext = ("." + partes[1].lower()) if len(partes) > 1 else ""
-    base_limpio = re.sub(r"[^A-Za-z0-9_\-]", "_", base).strip("_") or "archivo"
-    base_limpio = base_limpio[:80]
-    prefijo = uuid.uuid4().hex[:8]
-    return f"{prefijo}_{base_limpio}{ext}"
-
-
-def _validar_path(path: str, empresa_id: str) -> None:
-    """Bloquea path traversal y accesos cross-tenant."""
-    if not path:
-        raise HTTPException(400, "Path requerido")
-    if ".." in path or path.startswith("/") or "\\" in path:
-        raise HTTPException(400, "Path inválido")
-    prefijo_empresa = f"{empresa_id}/"
-    if not path.startswith(prefijo_empresa):
-        raise HTTPException(403, "No autorizado para acceder a este archivo")
-
-
-@bid_manager_router.post("/upload")
-async def upload_archivo(
-    categoria: str = Form(...),
-    file: UploadFile = File(...),
-    authorization: str | None = Header(default=None)
-):
-    """
-    Sube un archivo al bucket privado bid-manager-docs.
-
-    Body (multipart/form-data):
-      - categoria: str  (una de VALID_CATEGORIAS)
-      - file: archivo binario
-
-    Respuesta:
-      {"path": "...", "name": "original.pdf", "size": 12345, "content_type": "application/pdf"}
-
-    El frontend debe guardar el `path` devuelto en el campo _url correspondiente
-    del registro (bid_certificaciones.archivo_url, bid_personal.cedula_url, etc).
-    Los paths NO son URLs directas; para ver el archivo pedir /api/bid/signed-url.
-    """
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-
-    if categoria not in VALID_CATEGORIAS:
-        raise HTTPException(
-            400,
-            f"Categoría inválida. Debe ser una de: {', '.join(sorted(VALID_CATEGORIAS))}"
-        )
-
-    contenido = await file.read()
-    if not contenido:
-        raise HTTPException(400, "Archivo vacío")
-    if len(contenido) > STORAGE_MAX_BYTES:
-        max_mb = STORAGE_MAX_BYTES // 1024 // 1024
-        raise HTTPException(413, f"El archivo excede el máximo permitido de {max_mb} MB")
-
-    safe_name = _sanitize_filename(file.filename or "archivo")
-    path = f"{eid}/{categoria}/{safe_name}"
-    content_type = file.content_type or "application/octet-stream"
-
-    try:
-        _sb.storage.from_(STORAGE_BUCKET).upload(
-            path=path,
-            file=contenido,
-            file_options={"content-type": content_type, "upsert": "false"},
-        )
-    except Exception as e:
-        # Si es un duplicado (raro por el prefijo UUID), reintentar con nuevo prefijo
-        msg = str(e)
-        if "Duplicate" in msg or "already exists" in msg.lower():
-            safe_name = _sanitize_filename(file.filename or "archivo")
-            path = f"{eid}/{categoria}/{safe_name}"
-            try:
-                _sb.storage.from_(STORAGE_BUCKET).upload(
-                    path=path,
-                    file=contenido,
-                    file_options={"content-type": content_type, "upsert": "false"},
-                )
-            except Exception as e2:
-                raise HTTPException(500, f"Error subiendo archivo: {str(e2)}")
-        else:
-            raise HTTPException(500, f"Error subiendo archivo: {msg}")
-
-    return {
-        "path": path,
-        "name": file.filename,
-        "size": len(contenido),
-        "content_type": content_type,
+  // ── EMPRESA ───────────────────────────────────────────
+  _renderEmpresa() {
+    const cont = document.getElementById('bm-empresa-view');
+    if (!cont) return;
+    const e = this.data.empresa;
+    if (!e) {
+      cont.innerHTML = `<div class="bm-empty"><div class="bm-empty-icon">B</div><div class="bm-empty-text">Aún no tienes datos de empresa. Completa el onboarding.</div></div>`;
+      return;
     }
+    cont.innerHTML = `
+      <div class="bm-card">
+        <div class="bm-card-body" style="line-height:1.9">
+          <div><strong>Razón social:</strong> ${e.razon_social || '—'}</div>
+          <div><strong>RNC:</strong> ${e.rnc || '—'}</div>
+          <div><strong>RPE:</strong> ${e.rpe || '—'}</div>
+          <div><strong>Registro Mercantil:</strong> ${e.registro_mercantil_no || '—'}</div>
+          <div><strong>Tipo:</strong> ${e.tipo_sociedad || '—'}</div>
+          <div><strong>Capital social:</strong> ${e.capital_social ? this._money(e.capital_social, e.moneda_capital) : '—'}</div>
+          <div><strong>MIPYME:</strong> ${e.clasificacion_mipyme === 'NO' || e.clasificacion_mipyme === 'GRANDE' ? 'No' : (e.clasificacion_mipyme ? 'Sí' : '—')}</div>
+          <div><strong>Provee:</strong> ${e.provee || '—'}</div>
+          <div><strong>Domicilio:</strong> ${e.domicilio || '—'}</div>
+          <div><strong>Teléfono:</strong> ${e.telefono_principal || '—'}</div>
+          <div><strong>Email:</strong> ${e.email_empresa || '—'}</div>
+          ${e.objeto_social ? `<div style="margin-top:8px"><strong>Objeto social:</strong><br>${e.objeto_social}</div>` : ''}
+        </div>
+      </div>
+    `;
+  },
 
+  editarEmpresa() {
+    const e = this.data.empresa || {};
+    this._openModal('Editar datos de empresa', `
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Razón social</label><input class="bm-input" id="f-razon_social" value="${this._esc(e.razon_social)}"></div>
+        <div class="bm-form-row"><label class="bm-label">RNC</label><input class="bm-input" id="f-rnc" value="${this._esc(e.rnc)}"></div>
+        <div class="bm-form-row"><label class="bm-label">RPE</label><input class="bm-input" id="f-rpe" value="${this._esc(e.rpe)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Registro Mercantil No.</label><input class="bm-input" id="f-registro_mercantil_no" value="${this._esc(e.registro_mercantil_no)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Tipo sociedad</label>
+          <select class="bm-select" id="f-tipo_sociedad">
+            <option value="">—</option>
+            ${['SRL','SA','EIRL','Sociedad Anónima Simplificada'].map(t => `<option ${e.tipo_sociedad===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="bm-form-row"><label class="bm-label">Capital social (DOP)</label><input class="bm-input" type="number" id="f-capital_social" value="${e.capital_social || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">¿Es MIPYME?</label>
+          <select class="bm-select" id="f-clasificacion_mipyme">
+            <option value="">—</option>
+            <option value="SI" ${e.clasificacion_mipyme==='SI'||['MICRO','PEQUEÑA','MEDIANA'].includes(e.clasificacion_mipyme)?'selected':''}>Sí</option>
+            <option value="NO" ${e.clasificacion_mipyme==='NO'||e.clasificacion_mipyme==='GRANDE'?'selected':''}>No</option>
+          </select>
+        </div>
+        <div class="bm-form-row"><label class="bm-label">Provee</label>
+          <select class="bm-select" id="f-provee">
+            ${['Obras','Bienes','Servicios','Consultoría'].map(t => `<option ${(e.provee||'Obras')===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="bm-form-row"><label class="bm-label">Teléfono principal</label><input class="bm-input" id="f-telefono_principal" value="${this._esc(e.telefono_principal)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Email</label><input class="bm-input" type="email" id="f-email_empresa" value="${this._esc(e.email_empresa)}"></div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Domicilio</label><input class="bm-input" id="f-domicilio" value="${this._esc(e.domicilio)}"></div>
+      <div class="bm-form-row"><label class="bm-label">Objeto social</label><textarea class="bm-textarea" id="f-objeto_social">${this._esc(e.objeto_social)}</textarea></div>
+    `, async () => {
+      const data = this._collectForm(['razon_social','rnc','rpe','registro_mercantil_no','tipo_sociedad','capital_social','clasificacion_mipyme','provee','telefono_principal','email_empresa','domicilio','objeto_social']);
+      await this._put('/empresa', data);
+      this.toast('Empresa actualizada', 'ok');
+      this.cerrarModal();
+      await this.refresh();
+    });
+  },
 
-@bid_manager_router.get("/signed-url")
-def obtener_signed_url(
-    path: str = Query(..., description="Path del archivo en el bucket (empresa_id/categoria/archivo)"),
-    expires_in: int = Query(3600, ge=60, le=86400, description="Segundos de validez (60 a 86400)"),
-    authorization: str | None = Header(default=None),
-):
-    """
-    Genera una signed URL temporal para ver/descargar el archivo.
-    Solo funciona si el path pertenece a la empresa del usuario.
-    Por defecto 1 hora de validez.
-    """
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    _validar_path(path, eid)
-
-    try:
-        res = _sb.storage.from_(STORAGE_BUCKET).create_signed_url(path, expires_in)
-        signed = (res or {}).get("signedURL") or (res or {}).get("signed_url")
-        if not signed:
-            raise HTTPException(500, "No se pudo generar la URL firmada")
-        return {"url": signed, "expires_in": expires_in}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"Error generando URL firmada: {str(e)}")
-
-
-@bid_manager_router.delete("/upload")
-def eliminar_archivo(
-    path: str = Query(..., description="Path del archivo a eliminar"),
-    authorization: str | None = Header(default=None),
-):
-    """
-    Elimina un archivo del bucket.
-    Solo funciona si el path pertenece a la empresa del usuario.
-    """
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    _validar_path(path, eid)
-
-    try:
-        _sb.storage.from_(STORAGE_BUCKET).remove([path])
-    except Exception as e:
-        raise HTTPException(500, f"Error eliminando archivo: {str(e)}")
-
-    return {"ok": True, "path": path}
-
-
-# ══════════════════════════════════════════════════════════════
-# 16. EXTRACCIÓN CON IA — Estados Financieros / IR-2 (Gemini)
-# ══════════════════════════════════════════════════════════════
-# Sube un PDF de estados financieros o IR-2 y Gemini extrae los
-# valores numéricos para pre-llenar el formulario. El usuario
-# revisa y guarda; nada se persiste automáticamente.
-# ══════════════════════════════════════════════════════════════
-
-import base64
-import json as _json
-import urllib.request as _urlreq
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-
-_PROMPT_FINANCIEROS = """Eres un contador experto en estados financieros dominicanos.
-Analiza el PDF adjunto (estados financieros auditados o declaración IR-2 de DGII).
-Extrae los valores en DOP (pesos dominicanos). Si un valor no aparece, usa null.
-Responde SOLO con JSON válido, sin markdown, sin explicación, con esta estructura exacta:
-{
-  "tipo_detectado": "estados_financieros" | "ir2",
-  "periodo": "2025",
-  "fecha_cierre": "2025-12-31",
-  "activos_corrientes": 0,
-  "activos_no_corrientes": 0,
-  "activos_totales": 0,
-  "pasivos_corrientes": 0,
-  "pasivos_no_corrientes": 0,
-  "pasivos_totales": 0,
-  "patrimonio_neto": 0,
-  "ingresos": 0,
-  "costo_ventas": 0,
-  "utilidad_bruta": 0,
-  "gastos_operativos": 0,
-  "utilidad_operativa": 0,
-  "utilidad_neta": 0,
-  "ingresos_brutos": 0,
-  "costos_y_gastos": 0,
-  "renta_neta_imponible": 0,
-  "impuesto_liquidado": 0,
-  "confianza": "alta" | "media" | "baja",
-  "notas": "observaciones breves si algo es ambiguo"
-}
-Reglas:
-- Números sin separadores de miles ni símbolos de moneda (ej: 1500000.50)
-- Si es IR-2: llena también los campos de balance (total activos → activos_totales, etc.)
-- Si hay varios períodos, usa el MÁS RECIENTE
-- "confianza" baja si el PDF es escaneado borroso o faltan páginas"""
-
-
-def _gemini_extraer_financieros(contenido: bytes) -> dict:
-    """Llama a Gemini con el PDF y devuelve el dict extraído. Lanza HTTPException en error."""
-    if not GEMINI_API_KEY:
-        raise HTTPException(503, "Extracción IA no configurada (falta GEMINI_API_KEY)")
-
-    payload = {
-        "contents": [{
-            "parts": [
-                {"inline_data": {"mime_type": "application/pdf",
-                                 "data": base64.b64encode(contenido).decode()}},
-                {"text": _PROMPT_FINANCIEROS},
-            ]
-        }],
-        "generationConfig": {
-            "temperature": 0.1,
-            "response_mime_type": "application/json",
-        },
+  // ── REPRESENTANTES ────────────────────────────────────
+  _renderRepresentantes() {
+    const cont = document.getElementById('bm-representantes-list');
+    if (!cont) return;
+    if (!this.data.representantes.length) {
+      cont.innerHTML = this._emptyState('R', 'No has agregado representantes legales.');
+      return;
     }
-    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
-    try:
-        req = _urlreq.Request(
-            url,
-            data=_json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with _urlreq.urlopen(req, timeout=120) as resp:
-            body = _json.loads(resp.read().decode())
-    except Exception as e:
-        raise HTTPException(502, f"Error llamando a Gemini: {str(e)}")
+    cont.innerHTML = `<div class="bm-grid">${this.data.representantes.map(r => `
+      <div class="bm-card">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${r.nombre_completo}</h4>
+            <div class="bm-card-subtitle">${r.cargo}${r.es_firmante_principal ? ' · <span class="bm-badge bm-badge-ok">Firmante principal</span>' : ''}</div>
+          </div>
+        </div>
+        <div class="bm-card-body">
+          <div>Cédula: <strong>${r.cedula}</strong></div>
+          ${r.profesion ? `<div>Profesión: ${r.profesion}</div>` : ''}
+          ${r.telefono ? `<div>Tel: ${r.telefono}</div>` : ''}
+          ${r.email ? `<div>Email: ${r.email}</div>` : ''}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirRepresentante('${r.id}')">Editar</button>
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('representantes', '${r.id}')">Eliminar</button>
+        </div>
+      </div>
+    `).join('')}</div>`;
+  },
 
-    try:
-        texto = body["candidates"][0]["content"]["parts"][0]["text"].strip()
-        if texto.startswith("```"):
-            texto = texto.strip("`")
-            if texto.lower().startswith("json"):
-                texto = texto[4:]
-        return _json.loads(texto)
-    except Exception as e:
-        raise HTTPException(502, f"Gemini devolvió una respuesta no parseable: {str(e)}")
+  abrirRepresentante(id) {
+    const r = id ? this.data.representantes.find(x => x.id === id) : {};
+    this.editing = { tipo: 'representantes', id };
+    this._openModal(id ? 'Editar representante' : 'Nuevo representante', `
+      <div class="bm-form-row"><label class="bm-label">Nombre completo *</label><input class="bm-input" id="f-nombre_completo" value="${this._esc(r.nombre_completo)}"></div>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Cédula *</label><input class="bm-input" id="f-cedula" value="${this._esc(r.cedula)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Cargo *</label><input class="bm-input" id="f-cargo" placeholder="Ej: Gerente General" value="${this._esc(r.cargo)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Profesión</label><input class="bm-input" id="f-profesion" value="${this._esc(r.profesion)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Estado civil</label>
+          <select class="bm-select" id="f-estado_civil">
+            <option value="">—</option>
+            ${['SOLTERO','CASADO','DIVORCIADO','VIUDO','UNION LIBRE'].map(t => `<option ${r.estado_civil===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="bm-form-row"><label class="bm-label">Teléfono</label><input class="bm-input" id="f-telefono" value="${this._esc(r.telefono)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Email</label><input class="bm-input" type="email" id="f-email" value="${this._esc(r.email)}"></div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Dirección</label><input class="bm-input" id="f-direccion" value="${this._esc(r.direccion)}"></div>
+      <div class="bm-form-row"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="f-es_firmante_principal" ${r.es_firmante_principal?'checked':''}> Firmante principal (aparece por defecto en las ofertas)</label></div>
+      <div class="bm-form-row"><label class="bm-label">Documentos del representante</label>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:6px">La firma se usará automáticamente en los documentos que la requieran (SNCC, cartas, declaraciones).</div>
+        ${this._docCascade('rep', 'personal', [
+          {field:'firma_url', label:'Firma (imagen o PDF)'},
+          {field:'cedula_url', label:'Cédula (ambos lados)'}
+        ], r)}
+      </div>
+    `, async () => {
+      const data = this._collectForm(['nombre_completo','cedula','cargo','profesion','estado_civil','telefono','email','direccion','firma_url','cedula_url']);
+      data.es_firmante_principal = document.getElementById('f-es_firmante_principal').checked;
+      if (id) await this._put(`/representantes/${id}`, data);
+      else await this._post('/representantes', data);
+      this.toast(id ? 'Representante actualizado' : 'Representante agregado', 'ok');
+      this.cerrarModal();
+      await this.refresh();
+    });
+  },
 
+  // ── SOCIOS ────────────────────────────────────────────
+  _renderSocios() {
+    const cont = document.getElementById('bm-socios-list');
+    if (!cont) return;
+    if (!this.data.socios.length) {
+      cont.innerHTML = this._emptyState('S', 'No has agregado socios.');
+      return;
+    }
+    cont.innerHTML = `<div class="bm-grid">${this.data.socios.map(s => `
+      <div class="bm-card">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${s.nombre_completo}</h4>
+            <div class="bm-card-subtitle">${s.es_gerente ? 'Gerente-Socio' : 'Socio'}</div>
+          </div>
+          <div class="bm-badge bm-badge-info">${s.porcentaje_participacion || 0}%</div>
+        </div>
+        <div class="bm-card-body">
+          ${s.cedula ? `<div>Cédula: <strong>${s.cedula}</strong></div>` : ''}
+          ${s.cantidad_cuotas ? `<div>Cuotas: ${s.cantidad_cuotas.toLocaleString()}</div>` : ''}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirSocio('${s.id}')">Editar</button>
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('socios', '${s.id}')">Eliminar</button>
+        </div>
+      </div>
+    `).join('')}</div>`;
+  },
 
-@bid_manager_router.post("/financieros/extraer")
-async def extraer_financieros_ia(
-    file: UploadFile = File(...),
-    authorization: str | None = Header(default=None),
-):
-    """
-    Extrae con Gemini los valores de un PDF de estados financieros o IR-2.
-    NO guarda nada: devuelve el JSON extraído para pre-llenar el formulario.
-    """
-    uid = _auth(authorization)
-    _empresa_id(uid)  # valida que tenga perfil
+  abrirSocio(id) {
+    const s = id ? this.data.socios.find(x => x.id === id) : {};
+    // Suma de participación de los OTROS socios (excluye el que se está editando)
+    const totalOtros = (this.data.socios || [])
+      .filter(x => x.id !== id)
+      .reduce((acc, x) => acc + (Number(x.porcentaje_participacion) || 0), 0);
+    const disponible = Math.max(0, 100 - totalOtros);
+    this._openModal(id ? 'Editar socio' : 'Nuevo socio', `
+      <div class="bm-form-row"><label class="bm-label">Nombre completo *</label><input class="bm-input" id="f-nombre_completo" value="${this._esc(s.nombre_completo)}"></div>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Cédula</label><input class="bm-input" id="f-cedula" value="${this._esc(s.cedula)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Estado civil</label>
+          <select class="bm-select" id="f-estado_civil">
+            <option value="">—</option>
+            ${['SOLTERO','CASADO','DIVORCIADO','VIUDO'].map(t => `<option ${s.estado_civil===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="bm-form-row"><label class="bm-label">Cantidad cuotas</label><input class="bm-input" type="number" id="f-cantidad_cuotas" value="${s.cantidad_cuotas || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">% participación <span style="color:var(--text2);font-weight:400">(disponible: ${disponible.toFixed(2)}%)</span></label><input class="bm-input" type="number" step="0.01" min="0" max="${disponible.toFixed(2)}" id="f-porcentaje_participacion" value="${s.porcentaje_participacion || ''}"></div>
+      </div>
+      <div class="bm-form-row"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="f-es_gerente" ${s.es_gerente?'checked':''}> Es gerente</label></div>
+    `, async () => {
+      const data = this._collectForm(['nombre_completo','cedula','estado_civil','cantidad_cuotas','porcentaje_participacion']);
+      const pct = Number(data.porcentaje_participacion) || 0;
+      if (pct < 0) throw new Error('El porcentaje no puede ser negativo');
+      if (totalOtros + pct > 100.0001) {
+        throw new Error(`La participación total excedería 100%. Ya hay ${totalOtros.toFixed(2)}% asignado; máximo disponible: ${disponible.toFixed(2)}%`);
+      }
+      data.es_gerente = document.getElementById('f-es_gerente').checked;
+      if (id) await this._put(`/socios/${id}`, data);
+      else await this._post('/socios', data);
+      this.toast('Guardado', 'ok');
+      this.cerrarModal();
+      await this.refresh();
+    });
+  },
 
-    contenido = await file.read()
-    if not contenido:
-        raise HTTPException(400, "Archivo vacío")
-    if len(contenido) > STORAGE_MAX_BYTES:
-        raise HTTPException(413, "El archivo excede 25 MB")
+  // ── CERTIFICACIONES ───────────────────────────────────
+  _renderCertificaciones() {
+    const cont = document.getElementById('bm-certificaciones-list');
+    if (!cont) return;
+    if (!this.data.certificaciones.length) {
+      cont.innerHTML = this._emptyState('D', 'No has subido documentos aún. Sube DGII, TSS, RPE, Estatutos, etc.');
+      return;
+    }
+    cont.innerHTML = `<div class="bm-grid">${this.data.certificaciones.map(c => {
+      // Estado SIEMPRE calculado por fecha real, no por el campo guardado:
+      //   sin fecha_vencimiento → NO VENCE (documento permanente)
+      //   fecha < hoy → VENCIDO | fecha <= hoy+7d → POR VENCER | resto → VIGENTE
+      let estadoCalc, badge;
+      if (!c.fecha_vencimiento) {
+        estadoCalc = 'NO VENCE';
+        badge = 'bm-badge-ok';
+      } else {
+        const hoy = new Date(); hoy.setHours(0,0,0,0);
+        const fv = new Date(c.fecha_vencimiento + 'T00:00:00');
+        const limite = new Date(hoy); limite.setDate(limite.getDate() + 7);
+        if (fv < hoy) { estadoCalc = 'VENCIDO'; badge = 'bm-badge-err'; }
+        else if (fv <= limite) { estadoCalc = 'POR VENCER'; badge = 'bm-badge-warn'; }
+        else { estadoCalc = 'VIGENTE'; badge = 'bm-badge-ok'; }
+      }
+      return `
+      <div class="bm-card">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${c.nombre_display}</h4>
+            <div class="bm-card-subtitle">${c.tipo}</div>
+          </div>
+          <div class="bm-badge ${badge}">${estadoCalc}</div>
+        </div>
+        <div class="bm-card-body">
+          ${c.numero_certificacion ? `<div>No.: <strong>${c.numero_certificacion}</strong></div>` : ''}
+          ${c.fecha_emision ? `<div>Emisión: ${this._fecha(c.fecha_emision)}</div>` : ''}
+          ${c.fecha_vencimiento ? `<div>Vence: <strong>${this._fecha(c.fecha_vencimiento)}</strong></div>` : '<div style="color:var(--text2)">Documento sin vencimiento</div>'}
+          ${c.archivo_url ? `<div style="margin-top:6px"><a href="javascript:void(0)" onclick="BidManager._openStoragePath('${this._esc(c.archivo_url)}')" style="color:var(--green);text-decoration:none">Ver archivo</a></div>` : ''}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirCertificacion('${c.id}')">Editar</button>
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('certificaciones', '${c.id}')">Eliminar</button>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  },
 
-    mime = file.content_type or "application/pdf"
-    if "pdf" not in mime and not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(400, "Solo se aceptan PDFs para extracción IA")
+  abrirCertificacion(id) {
+    const c = id ? this.data.certificaciones.find(x => x.id === id) : {};
+    const tipos = [
+      ['DGII','Certificación DGII','30'],
+      ['TSS','Certificación TSS','30'],
+      ['RPE','Registro de Proveedores del Estado',''],
+      ['REGISTRO_MERCANTIL','Registro Mercantil',''],
+      ['MIPYME','Certificación MIPYME','180'],
+      ['ANTECEDENTES_PENALES','No Antecedentes Penales',''],
+      ['ESTATUTOS','Estatutos Sociales',''],
+      ['ACTA_ASAMBLEA','Acta de Asamblea',''],
+      ['PODER_REPRESENTACION','Poder de Representación',''],
+      ['NOMINA_SOCIETARIA','Nómina Societaria',''],
+      ['CEDULA_REPRESENTANTE','Cédula del Representante',''],
+      ['OTRO','Otro documento','']
+    ];
+    this._openModal(id ? 'Editar documento' : 'Subir documento', `
+      <div class="bm-form-row"><label class="bm-label">Tipo de documento *</label>
+        <select class="bm-select" id="f-tipo" onchange="BidManager._autoFillCert(this.value)">
+          ${tipos.map(([t,n,d]) => `<option value="${t}" data-nombre="${n}" data-dias="${d}" ${c.tipo===t?'selected':''}>${n}</option>`).join('')}
+        </select>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Nombre a mostrar</label><input class="bm-input" id="f-nombre_display" value="${this._esc(c.nombre_display)}"></div>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">No. certificación</label><input class="bm-input" id="f-numero_certificacion" value="${this._esc(c.numero_certificacion)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Fecha emisión</label><input class="bm-input" type="date" id="f-fecha_emision" value="${c.fecha_emision || ''}"></div>
+        <div class="bm-form-row" id="bm-cert-fv-row"><label class="bm-label">Fecha vencimiento *</label><input class="bm-input" type="date" id="f-fecha_vencimiento" value="${c.fecha_vencimiento || ''}"></div>
+        <div class="bm-form-row" id="bm-cert-vig-row"><label class="bm-label">Vigencia (días)</label><input class="bm-input" type="number" id="f-vigencia_dias" value="${c.vigencia_dias || ''}"></div>
+      </div>
+      <div class="bm-form-row"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
+        <input type="checkbox" id="f-no_vence" ${id && !c.fecha_vencimiento ? 'checked' : ''} onchange="BidManager._toggleNoVence(this.checked)"> Este documento no vence
+      </label></div>
+      <div class="bm-form-row"><label class="bm-label">Archivo</label>
+        ${this._uploadWidget('archivo_url', 'certificaciones', c.archivo_url)}
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Notas</label><textarea class="bm-textarea" id="f-notas">${this._esc(c.notas)}</textarea></div>
+    `, async () => {
+      const noVence = document.getElementById('f-no_vence').checked;
+      const data = this._collectForm(['tipo','nombre_display','numero_certificacion','fecha_emision','fecha_vencimiento','vigencia_dias','archivo_url','notas']);
+      if (noVence) {
+        data.fecha_vencimiento = null;
+        data.vigencia_dias = null;
+      } else if (!data.fecha_vencimiento) {
+        throw new Error('Indica la fecha de vencimiento, o marca "Este documento no vence"');
+      }
+      if (!data.nombre_display) data.nombre_display = tipos.find(t => t[0] === data.tipo)?.[1] || data.tipo;
+      if (id) await this._put(`/certificaciones/${id}`, data);
+      else await this._post('/certificaciones', data);
+      this.toast('Documento guardado', 'ok');
+      this.cerrarModal();
+      await this.refresh();
+    });
+    // Estado inicial del toggle (al editar un doc sin fecha)
+    if (id && !c.fecha_vencimiento) this._toggleNoVence(true);
+  },
 
-    datos = _gemini_extraer_financieros(contenido)
-    return {"extraido": datos, "archivo": file.filename}
+  _toggleNoVence(checked) {
+    const fv = document.getElementById('bm-cert-fv-row');
+    const vig = document.getElementById('bm-cert-vig-row');
+    if (fv) fv.style.opacity = checked ? '0.4' : '1';
+    if (vig) vig.style.opacity = checked ? '0.4' : '1';
+    const fvi = document.getElementById('f-fecha_vencimiento');
+    const vigi = document.getElementById('f-vigencia_dias');
+    if (fvi) { fvi.disabled = checked; if (checked) fvi.value = ''; }
+    if (vigi) { vigi.disabled = checked; if (checked) vigi.value = ''; }
+  },
 
+  _autoFillCert(tipo) {
+    const sel = document.getElementById('f-tipo');
+    if (!sel) return;
+    const opt = sel.querySelector(`option[value="${tipo}"]`);
+    if (!opt) return;
+    const nombre = document.getElementById('f-nombre_display');
+    const dias = document.getElementById('f-vigencia_dias');
+    if (nombre && !nombre.value) nombre.value = opt.dataset.nombre;
+    if (dias && opt.dataset.dias) dias.value = opt.dataset.dias;
+  },
 
-def _num(v):
-    """Convierte a número o None."""
-    if v is None:
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
+  // ── PERSONAL ──────────────────────────────────────────
+  _renderPersonal() {
+    const cont = document.getElementById('bm-personal-list');
+    if (!cont) return;
+    if (!this.data.personal.length) {
+      cont.innerHTML = this._emptyState('P', 'No has agregado personal técnico.');
+      return;
+    }
+    cont.innerHTML = `<div class="bm-grid">${this.data.personal.map(p => `
+      <div class="bm-card">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${p.nombre_completo}</h4>
+            <div class="bm-card-subtitle">${p.cargo_empresa || p.profesion || '—'}</div>
+          </div>
+          ${p.disponible === false ? '<div class="bm-badge bm-badge-warn">No disponible</div>' : ''}
+        </div>
+        <div class="bm-card-body">
+          ${p.profesion ? `<div>${p.profesion}</div>` : ''}
+          ${p.experiencia_general_anios ? `<div>Experiencia: <strong>${p.experiencia_general_anios} años</strong></div>` : ''}
+          ${p.codia ? `<div>CODIA: ${p.codia}</div>` : ''}
+          ${p.tiene_maestria ? '<div>Con maestría</div>' : ''}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirPersonal('${p.id}')">Editar</button>
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('personal', '${p.id}')">Eliminar</button>
+        </div>
+      </div>
+    `).join('')}</div>`;
+  },
 
+  abrirPersonal(id) {
+    const p = id ? this.data.personal.find(x => x.id === id) : {};
+    this._openModal(id ? 'Editar personal' : 'Nuevo personal técnico', `
+      <div class="bm-form-row"><label class="bm-label">Nombre completo *</label><input class="bm-input" id="f-nombre_completo" value="${this._esc(p.nombre_completo)}"></div>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Cédula</label><input class="bm-input" id="f-cedula" value="${this._esc(p.cedula)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Cargo en la empresa</label><input class="bm-input" id="f-cargo_empresa" placeholder="Director de Obra" value="${this._esc(p.cargo_empresa)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Profesión</label><input class="bm-input" id="f-profesion" placeholder="Ingeniero Civil" value="${this._esc(p.profesion)}"></div>
+        <div class="bm-form-row"><label class="bm-label">CODIA</label><input class="bm-input" id="f-codia" value="${this._esc(p.codia)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Fecha de graduación</label><input class="bm-input" type="date" id="f-fecha_graduacion" value="${p.fecha_graduacion || ''}"><div style="font-size:11px;color:var(--text2,#6b7280);margin-top:2px">Los pliegos cuentan los años "a partir del título". Si la pones, manda sobre los años manuales.</div></div>
+        <div class="bm-form-row"><label class="bm-label">Años de experiencia</label><input class="bm-input" type="number" id="f-experiencia_general_anios" value="${p.experiencia_general_anios || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Teléfono</label><input class="bm-input" id="f-telefono" value="${this._esc(p.telefono)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Email</label><input class="bm-input" type="email" id="f-email" value="${this._esc(p.email)}"></div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Especialidades (separadas por coma)</label><input class="bm-input" id="f-especialidades" placeholder="alcantarillado, edificaciones, carreteras" value="${(p.especialidades || []).join(', ')}"></div>
+      <div class="bm-form-row"><label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)"><input type="checkbox" id="f-tiene_maestria" ${p.tiene_maestria?'checked':''}> Tiene maestría</label></div>
+      <div class="bm-form-row"><label class="bm-label">Descripción maestría</label><input class="bm-input" id="f-maestria_descripcion" placeholder="Maestría en Gestión de Proyectos" value="${this._esc(p.maestria_descripcion)}"></div>
+      <div class="bm-form-row"><label class="bm-label">Documentos</label>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:6px">Selecciona el tipo y sube el archivo. Quedan guardados aquí abajo.</div>
+        ${this._docCascade('pers', 'personal', [
+          {field:'cv_url', label:'Curriculum (CV)'},
+          {field:'cedula_url', label:'Cédula'},
+          {field:'foto_url', label:'Foto'},
+          {field:'firma_url', label:'Firma'},
+          {field:'codia_url', label:'Carnet CODIA'},
+          {field:'exequatur_url', label:'Exequátur'},
+          {field:'maestria_url', label:'Título de maestría'},
+          {field:'carta_trabajo_url', label:'Carta de trabajo'},
+          {field:'otros_documentos', label:'Otro documento (nombre libre)', custom:true}
+        ], p)}
+      </div>
+    `, async () => {
+      const data = this._collectForm(['nombre_completo','cedula','cargo_empresa','profesion','codia','experiencia_general_anios','telefono','email','maestria_descripcion','cv_url','cedula_url','foto_url','firma_url','codia_url','exequatur_url','maestria_url','carta_trabajo_url']);
+      const fg = document.getElementById('f-fecha_graduacion');
+      data.fecha_graduacion = fg && fg.value ? fg.value : null;
+      const espText = document.getElementById('f-especialidades').value.trim();
+      data.especialidades = espText ? espText.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
+      data.tiene_maestria = document.getElementById('f-tiene_maestria').checked;
+      data.otros_documentos = this._collectArray('otros_documentos');
+      if (id) await this._put(`/personal/${id}`, data);
+      else await this._post('/personal', data);
+      this.toast('Personal guardado', 'ok');
+      this.cerrarModal();
+      await this.refresh();
+    });
+  },
 
-@bid_manager_router.post("/financieros/extraer-lote")
-async def extraer_lote_ia(
-    files: List[UploadFile] = File(...),
-    authorization: str | None = Header(default=None),
-):
-    """
-    Analiza VARIOS PDFs (estados financieros y/o IR-2 de distintos años):
-    para cada uno extrae con Gemini, lo sube al storage, detecta el tipo y
-    CREA el registro correspondiente (bid_financieros o bid_ir2).
-    Los indicadores se calculan solos (columnas GENERATED).
-    Devuelve un resumen por archivo para que el usuario revise/edite.
-    """
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
+  // ── EQUIPOS ───────────────────────────────────────────
+  _renderEquipos() {
+    const cont = document.getElementById('bm-equipos-list');
+    if (!cont) return;
+    if (!this.data.equipos.length) {
+      cont.innerHTML = this._emptyState('E', 'No has agregado equipos.');
+      return;
+    }
+    cont.innerHTML = `<div class="bm-grid">${this.data.equipos.map(eq => `
+      <div class="bm-card">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${eq.descripcion}</h4>
+            <div class="bm-card-subtitle">${eq.tipo ? '<strong>' + eq.tipo + '</strong> · ' : ''}${eq.marca || ''} ${eq.modelo || ''} ${eq.anio || ''}</div>
+          </div>
+          <div class="bm-badge ${eq.propiedad==='propio'?'bm-badge-ok':'bm-badge-info'}">${eq.propiedad}</div>
+        </div>
+        <div class="bm-card-body">
+          <div>Cantidad: <strong>${eq.cantidad || 1}</strong></div>
+          ${eq.capacidad ? `<div>Capacidad: ${eq.capacidad}</div>` : ''}
+          ${eq.propiedad === 'alquilado' && eq.empresa_alquiler ? `<div>Empresa: ${eq.empresa_alquiler}</div>` : ''}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirEquipo('${eq.id}')">Editar</button>
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('equipos', '${eq.id}')">Eliminar</button>
+        </div>
+      </div>
+    `).join('')}</div>`;
+  },
 
-    if not files:
-        raise HTTPException(400, "No se recibieron archivos")
-    if len(files) > 6:
-        raise HTTPException(400, "Máximo 6 archivos por lote")
-
-    resultados = []
-    for f in files:
-        item = {"archivo": f.filename, "ok": False}
-        try:
-            contenido = await f.read()
-            if not contenido:
-                raise ValueError("Archivo vacío")
-            if len(contenido) > STORAGE_MAX_BYTES:
-                raise ValueError("Excede 25 MB")
-            if "pdf" not in (f.content_type or "") and not (f.filename or "").lower().endswith(".pdf"):
-                raise ValueError("Solo PDFs")
-
-            datos = _gemini_extraer_financieros(contenido)
-            tipo_det = (datos.get("tipo_detectado") or "estados_financieros").lower()
-            es_ir2 = "ir2" in tipo_det or "ir-2" in tipo_det
-
-            # Subir el PDF al storage
-            categoria = "ir2" if es_ir2 else "financieros"
-            safe_name = _sanitize_filename(f.filename or "archivo.pdf")
-            path = f"{eid}/{categoria}/{safe_name}"
-            _sb.storage.from_(STORAGE_BUCKET).upload(
-                path=path,
-                file=contenido,
-                file_options={"content-type": "application/pdf", "upsert": "false"},
-            )
-
-            periodo = str(datos.get("periodo") or "")
-            fecha_cierre = datos.get("fecha_cierre")
-
-            if es_ir2:
-                registro = {
-                    "empresa_id": eid,
-                    "periodo_fiscal": periodo or None,
-                    "tipo": "anual",
-                    "fecha_cierre_fiscal": fecha_cierre,
-                    "ingresos_brutos": _num(datos.get("ingresos_brutos")) or _num(datos.get("ingresos")),
-                    "costos_y_gastos": _num(datos.get("costos_y_gastos")),
-                    "renta_neta_imponible": _num(datos.get("renta_neta_imponible")),
-                    "impuesto_liquidado": _num(datos.get("impuesto_liquidado")),
-                    "total_activos": _num(datos.get("activos_totales")),
-                    "total_pasivos": _num(datos.get("pasivos_totales")),
-                    "patrimonio": _num(datos.get("patrimonio_neto")),
-                    "pdf_url": path,
-                }
-                registro = {k: v for k, v in registro.items() if v is not None}
-                existente = _sb.table("bid_ir2").select("id") \
-                    .eq("empresa_id", eid).eq("periodo_fiscal", periodo).execute().data \
-                    if periodo else []
-                if existente:
-                    registro.pop("empresa_id", None)
-                    registro["actualizado_en"] = datetime.utcnow().isoformat()
-                    _sb.table("bid_ir2").update(registro) \
-                        .eq("id", existente[0]["id"]).execute()
-                    item["accion"] = "actualizado"
-                else:
-                    _sb.table("bid_ir2").insert(registro).execute()
-                    item["accion"] = "creado"
-                item["tipo"] = "IR-2"
-            else:
-                registro = {
-                    "empresa_id": eid,
-                    "periodo": periodo or None,
-                    "tipo": "anual",
-                    "fecha_cierre": fecha_cierre,
-                    "activos_corrientes": _num(datos.get("activos_corrientes")),
-                    "activos_no_corrientes": _num(datos.get("activos_no_corrientes")),
-                    "activos_totales": _num(datos.get("activos_totales")),
-                    "pasivos_corrientes": _num(datos.get("pasivos_corrientes")),
-                    "pasivos_no_corrientes": _num(datos.get("pasivos_no_corrientes")),
-                    "pasivos_totales": _num(datos.get("pasivos_totales")),
-                    "patrimonio_neto": _num(datos.get("patrimonio_neto")),
-                    "ingresos": _num(datos.get("ingresos")) or _num(datos.get("ingresos_brutos")),
-                    "costo_ventas": _num(datos.get("costo_ventas")),
-                    "utilidad_bruta": _num(datos.get("utilidad_bruta")),
-                    "gastos_operativos": _num(datos.get("gastos_operativos")),
-                    "utilidad_operativa": _num(datos.get("utilidad_operativa")),
-                    "utilidad_neta": _num(datos.get("utilidad_neta")),
-                    "pdf_url": path,
-                }
-                registro = {k: v for k, v in registro.items() if v is not None}
-                existente = _sb.table("bid_financieros").select("id") \
-                    .eq("empresa_id", eid).eq("periodo", periodo).execute().data \
-                    if periodo else []
-                if existente:
-                    registro.pop("empresa_id", None)
-                    registro["actualizado_en"] = datetime.utcnow().isoformat()
-                    _sb.table("bid_financieros").update(registro) \
-                        .eq("id", existente[0]["id"]).execute()
-                    item["accion"] = "actualizado"
-                else:
-                    _sb.table("bid_financieros").insert(registro).execute()
-                    item["accion"] = "creado"
-                item["tipo"] = "Estados financieros"
-
-            item["ok"] = True
-            item["periodo"] = periodo
-            item["confianza"] = datos.get("confianza")
-            item["notas"] = datos.get("notas")
-        except HTTPException as he:
-            item["error"] = he.detail
-        except Exception as e:
-            item["error"] = str(e)
-        resultados.append(item)
-
-    return {"resultados": resultados}
-
-
-# ══════════════════════════════════════════════════════════════
-# 17. CRON — ALERTAS DE VENCIMIENTO DE DOCUMENTOS (push + email)
-# ══════════════════════════════════════════════════════════════
-# Llamar diariamente (n8n / Railway cron / cron-job.org):
-#   POST /api/bid/cron/alertas-vencimiento
-#   Header: X-Admin-Key: <ADMIN_SECRET>
-#
-# Por cada certificación con fecha de vencimiento:
-#   - por_vencer (<=7 días) y sin alerta previa → email + push "próximo a vencer"
-#   - vencido y sin alerta previa               → email + push "documento vencido"
-# Los flags evitan duplicados; se resetean al renovar la fecha en el PUT.
-# ══════════════════════════════════════════════════════════════
-
-ADMIN_SECRET_BID = os.getenv("ADMIN_SECRET", "")
-
-
-def _email_alerta_html(razon_social: str, docs: list, vencidos: bool) -> str:
-    titulo = "Documentos VENCIDOS" if vencidos else "Documentos próximos a vencer"
-    color = "#dc2626" if vencidos else "#d97706"
-    filas = "".join(
-        f"<tr><td style='padding:8px 12px;border-bottom:1px solid #eee'>{d['nombre_display']}</td>"
-        f"<td style='padding:8px 12px;border-bottom:1px solid #eee'>{d.get('fecha_vencimiento','')}</td></tr>"
-        for d in docs
-    )
-    accion = ("Renuévalos cuanto antes: sin ellos no podrás presentar ofertas."
-              if vencidos else
-              "Renuévalos a tiempo para no quedar fuera de ningún proceso.")
-    return f"""
-    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
-      <h2 style="color:{color}">{titulo}</h2>
-      <p>Hola {razon_social or ''}, tu Expediente Digital en LicitacionLab tiene documentos que requieren atención:</p>
-      <table style="width:100%;border-collapse:collapse;font-size:14px">
-        <tr style="background:#f8f9fa">
-          <th style="text-align:left;padding:8px 12px">Documento</th>
-          <th style="text-align:left;padding:8px 12px">Vence</th>
-        </tr>
-        {filas}
-      </table>
-      <p style="margin-top:16px">{accion}</p>
-      <p><a href="https://app.licitacionlab.com/#bid"
-            style="display:inline-block;background:#16a34a;color:#fff;padding:10px 20px;
-                   border-radius:6px;text-decoration:none">Ver mi Expediente Digital</a></p>
-      <p style="color:#9ca3af;font-size:12px;margin-top:24px">LicitacionLab · Monitoreo de compras públicas RD</p>
-    </div>
-    """
-
-
-@bid_manager_router.post("/cron/alertas-vencimiento")
-def cron_alertas_vencimiento(x_admin_key: str = Header(None)):
-    """Envía push + email por documentos vencidos o por vencer. Idempotente por flags."""
-    if not ADMIN_SECRET_BID or x_admin_key != ADMIN_SECRET_BID:
-        raise HTTPException(403, "No autorizado")
-
-    # Imports lazy para evitar import circular con main.py
-    try:
-        from main import enviar_push_y_limpiar, _resend_send
-    except Exception as e:
-        raise HTTPException(500, f"No se pudieron importar helpers de main: {e}")
-
-    hoy = datetime.utcnow().date().isoformat()
-
-    # Refrescar estados de todas las certificaciones con fecha (bulk, sin filtro de empresa)
-    try:
-        _sb.rpc("fn_actualizar_estados_certificaciones_global", {}).execute()
-    except Exception:
-        pass  # si no existe la versión global, los estados por-trigger siguen siendo razonables
-
-    # Candidatas: por_vencer sin alerta, o vencidas sin alerta
-    certs = _sb.table("bid_certificaciones") \
-        .select("id, empresa_id, nombre_display, fecha_vencimiento, estado, "
-                "alerta_por_vencer_enviada, alerta_vencido_enviada") \
-        .not_.is_("fecha_vencimiento", "null") \
-        .in_("estado", ["por_vencer", "vencido"]) \
-        .execute().data or []
-
-    pendientes = [
-        c for c in certs
-        if (c["estado"] == "por_vencer" and not c.get("alerta_por_vencer_enviada"))
-        or (c["estado"] == "vencido" and not c.get("alerta_vencido_enviada"))
-    ]
-    if not pendientes:
-        return {"ok": True, "enviadas": 0, "detalle": "Sin alertas pendientes"}
-
-    # Agrupar por empresa
-    por_empresa: dict = {}
-    for c in pendientes:
-        por_empresa.setdefault(c["empresa_id"], []).append(c)
-
-    resumen = {"empresas": 0, "emails": 0, "push": 0, "errores": []}
-
-    for eid, docs in por_empresa.items():
-        try:
-            emp = _sb.table("perfiles_empresa") \
-                .select("user_id, razon_social, email_empresa") \
-                .eq("id", eid).execute().data
-            if not emp:
-                continue
-            emp = emp[0]
-            user_id = emp.get("user_id")
-            razon = emp.get("razon_social") or "tu empresa"
-
-            vencidos = [d for d in docs if d["estado"] == "vencido"]
-            por_vencer = [d for d in docs if d["estado"] == "por_vencer"]
-
-            # Email destino: email_empresa, o el email del auth user como fallback
-            email = emp.get("email_empresa")
-            if not email and user_id:
-                try:
-                    u = _sb.auth.admin.get_user_by_id(user_id)
-                    email = u.user.email if u and u.user else None
-                except Exception:
-                    email = None
-
-            # ── EMAIL ──
-            if email:
-                if vencidos:
-                    if _resend_send(
-                        f"⛔ {len(vencidos)} documento(s) VENCIDO(S) en tu expediente",
-                        _email_alerta_html(razon, vencidos, vencidos=True), email
-                    ):
-                        resumen["emails"] += 1
-                if por_vencer:
-                    if _resend_send(
-                        f"⏰ {len(por_vencer)} documento(s) por vencer en tu expediente",
-                        _email_alerta_html(razon, por_vencer, vencidos=False), email
-                    ):
-                        resumen["emails"] += 1
-
-            # ── PUSH ──
-            if user_id:
-                subs = _sb.table("user_subscriptions") \
-                    .select("endpoint, auth, p256dh") \
-                    .eq("user_id", user_id).eq("active", True) \
-                    .execute().data or []
-                for sub in subs:
-                    if vencidos:
-                        nombres = ", ".join(d["nombre_display"] for d in vencidos[:3])
-                        if enviar_push_y_limpiar(
-                            sub, "Documento vencido",
-                            f"{nombres} — renuévalo para poder ofertar", "/#bid"
-                        ):
-                            resumen["push"] += 1
-                    if por_vencer:
-                        nombres = ", ".join(d["nombre_display"] for d in por_vencer[:3])
-                        if enviar_push_y_limpiar(
-                            sub, "Documento por vencer",
-                            f"{nombres} — vence pronto, renuévalo a tiempo", "/#bid"
-                        ):
-                            resumen["push"] += 1
-
-            # ── Marcar flags ──
-            for d in vencidos:
-                _sb.table("bid_certificaciones").update(
-                    {"alerta_vencido_enviada": True}).eq("id", d["id"]).execute()
-            for d in por_vencer:
-                _sb.table("bid_certificaciones").update(
-                    {"alerta_por_vencer_enviada": True}).eq("id", d["id"]).execute()
-
-            resumen["empresas"] += 1
-        except Exception as e:
-            resumen["errores"].append({"empresa_id": eid, "error": str(e)})
-
-    return {"ok": True, "fecha": hoy, "enviadas": len(pendientes), **resumen}
-
-
-# ══════════════════════════════════════════════════════════════
-# 18. MATCHING PLIEGO vs EXPEDIENTE (financiero + tecnico)
-# ══════════════════════════════════════════════════════════════
-# Flujo:
-#   1. POST /matching/analizar  → sube el pliego, Gemini extrae los
-#      requisitos (financieros, lineas de credito, personal, equipos,
-#      experiencia, metodologia/puntaje, lotes), se guarda y se evalua
-#      contra todo el expediente.
-#   2. GET /matching            → historial de analisis.
-#   3. POST /matching/{id}/reevaluar → recalcula con datos actuales.
-#   4. DELETE /matching/{id}
-#
-# El esquema de "requisitos" es un objeto de secciones. Se mantiene
-# retrocompatibilidad: si llega una lista (analisis viejos, solo
-# financieros), se envuelve como {"financieros": [...]}.
-# ══════════════════════════════════════════════════════════════
-
-_PROMPT_MATCHING = """Eres un experto en licitaciones publicas dominicanas (Ley 47-25, Decreto 52-26, pliegos estandar SNCC.P.006).
-Analiza el PDF adjunto (pliego de condiciones) y extrae los requisitos exigidos al oferente para el Sobre A.
-Responde SOLO con JSON valido, sin markdown, con esta estructura exacta:
-{
-  "referencia": "INAPA-CCC-LPN-2026-0028",
-  "nombre_proceso": "titulo corto del objeto",
-  "institucion": "INAPA",
-  "presupuesto_base": 3702545294.85,
-  "anios_estados_requeridos": 2,
-  "naturaleza_proceso": "acueducto_alcantarillado",
-  "metodologia": "combinada",
-  "puntaje_total": 70,
-  "puntaje_minimo": 49,
-  "lotes": [
-    {"numero": 1, "nombre": "Lote 1", "presupuesto": 120000000.00}
+  // Tipos canonicos de equipos, sacados de pliegos reales RD (CAASD, INAPA,
+  // DIE, CEIZTUR, CPADP, SNS). Deben coincidir con el prompt del backend.
+  _TIPOS_EQUIPO: [
+    'camion volteo','retroexcavadora','retropala','excavadora','motoniveladora',
+    'bulldozer','cargador frontal','minicargador','grua telescopica','camion grua',
+    'camion cama baja','camion cisterna','camion distribucion asfalto','pavimentadora',
+    'barredora','rodillo','compactador manual','compresor','planta electrica',
+    'torre de luz','bomba de achique','ligadora','vibrador hormigon','soldadora',
+    'camioneta','equipo topografia','maquina perforacion pozos','diferencial','otro'
   ],
-  "requisitos": {
-    "financieros": [
-      {
-        "nombre": "Indice de solvencia",
-        "tipo": "solvencia",
-        "formula": "Activo Total / Pasivo Total",
-        "operador": ">=",
-        "limite": 1.50,
-        "pct_monto": null,
-        "incluye_lineas_credito": false,
-        "base_calculo": "ultimo",
-        "subsanable": null,
-        "texto_original": "Indice de solvencia = ACTIVO TOTAL / PASIVO TOTAL. Limite establecido: Igual o mayor a 1.50",
-        "notas": ""
+
+  _toggleTipoOtro(valor) {
+    const inp = document.getElementById('f-tipo_otro');
+    if (inp) inp.style.display = valor === 'otro' ? 'block' : 'none';
+  },
+
+  abrirEquipo(id) {
+    const eq = id ? this.data.equipos.find(x => x.id === id) : { propiedad: 'propio', cantidad: 1 };
+    // Tipos personalizados que este usuario ya guardo (persisten como opciones suyas)
+    const propios = [...new Set((this.data.equipos || [])
+      .map(e => (e.tipo || '').trim().toLowerCase())
+      .filter(t => t && !this._TIPOS_EQUIPO.includes(t)))].sort();
+    const esPropio = eq.tipo && !this._TIPOS_EQUIPO.includes(eq.tipo);
+    const canonOpts = this._TIPOS_EQUIPO.map(t =>
+      `<option value="${t}" ${eq.tipo === t ? 'selected' : ''}>${t === 'otro' ? 'Otro (escribir cuál)' : t.charAt(0).toUpperCase() + t.slice(1)}</option>`).join('');
+    const propiosOpts = propios.length
+      ? `<optgroup label="Tus tipos">${propios.map(t =>
+          `<option value="${this._esc(t)}" ${eq.tipo === t ? 'selected' : ''}>${this._esc(t.charAt(0).toUpperCase() + t.slice(1))}</option>`).join('')}</optgroup>`
+      : '';
+    this._openModal(id ? 'Editar equipo' : 'Nuevo equipo', `
+      <div class="bm-form-row"><label class="bm-label">Tipo de equipo *</label>
+        <select class="bm-select" id="f-tipo" onchange="BidManager._toggleTipoOtro(this.value)">
+          <option value="">— Selecciona el tipo —</option>
+          ${propiosOpts}
+          ${canonOpts}
+        </select>
+        <input class="bm-input" id="f-tipo_otro" placeholder="Escribe el tipo (ej: grúa torre, dragalina...)" value="${esPropio ? this._esc(eq.tipo) : ''}" style="display:${(eq.tipo === 'otro') ? 'block' : 'none'};margin-top:6px">
+        <div style="font-size:11px;color:var(--text2,#6b7280);margin-top:2px">El tipo es lo que se cruza contra los pliegos en el matching. Si eliges "Otro", el tipo que escribas queda guardado como opción tuya. Marca, modelo y detalles van abajo.</div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Descripción *</label><input class="bm-input" id="f-descripcion" placeholder="Ej: Retroexcavadora CAT 420D" value="${this._esc(eq.descripcion)}"></div>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Marca</label><input class="bm-input" id="f-marca" value="${this._esc(eq.marca)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Modelo</label><input class="bm-input" id="f-modelo" value="${this._esc(eq.modelo)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Año</label><input class="bm-input" type="number" id="f-anio" value="${eq.anio || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Cantidad</label><input class="bm-input" type="number" id="f-cantidad" value="${eq.cantidad || 1}"></div>
+        <div class="bm-form-row"><label class="bm-label">Capacidad</label><input class="bm-input" id="f-capacidad" placeholder="1.5 m3, 20 TON" value="${this._esc(eq.capacidad)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Matrícula</label><input class="bm-input" id="f-matricula" value="${this._esc(eq.matricula)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Propiedad</label>
+          <select class="bm-select" id="f-propiedad" onchange="BidManager._togglePropiedad(this.value)">
+            <option value="propio" ${eq.propiedad==='propio'?'selected':''}>Propio</option>
+            <option value="alquilado" ${eq.propiedad==='alquilado'?'selected':''}>Alquilado</option>
+            <option value="leasing" ${eq.propiedad==='leasing'?'selected':''}>Leasing</option>
+          </select>
+        </div>
+        <div class="bm-form-row"><label class="bm-label">Estado</label>
+          <select class="bm-select" id="f-estado">
+            <option value="operativo" ${eq.estado==='operativo'?'selected':''}>Operativo</option>
+            <option value="en_reparacion" ${eq.estado==='en_reparacion'?'selected':''}>En reparación</option>
+            <option value="fuera_de_servicio" ${eq.estado==='fuera_de_servicio'?'selected':''}>Fuera de servicio</option>
+          </select>
+        </div>
+      </div>
+      <div id="bm-alquiler-section" style="display:${eq.propiedad==='alquilado'?'block':'none'}">
+        <div class="bm-form-grid">
+          <div class="bm-form-row"><label class="bm-label">Empresa que alquila</label><input class="bm-input" id="f-empresa_alquiler" value="${this._esc(eq.empresa_alquiler)}"></div>
+          <div class="bm-form-row"><label class="bm-label">RNC empresa</label><input class="bm-input" id="f-empresa_alquiler_rnc" value="${this._esc(eq.empresa_alquiler_rnc)}"></div>
+          <div class="bm-form-row"><label class="bm-label">Teléfono</label><input class="bm-input" id="f-empresa_alquiler_telefono" value="${this._esc(eq.empresa_alquiler_telefono)}"></div>
+          <div class="bm-form-row"><label class="bm-label">Contacto</label><input class="bm-input" id="f-empresa_alquiler_contacto" value="${this._esc(eq.empresa_alquiler_contacto)}"></div>
+        </div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Documentos del equipo</label>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:6px">Matrícula y factura para equipos propios; carta de disponibilidad y contrato para alquilados.</div>
+        ${this._docCascade('equipo', 'equipos', [
+          {field:'matricula_url', label:'Matrícula'},
+          {field:'factura_url', label:'Factura de compra'},
+          {field:'foto_url', label:'Foto del equipo'},
+          {field:'carta_disponibilidad_equipo_url', label:'Carta de disponibilidad'},
+          {field:'contrato_alquiler_url', label:'Contrato de alquiler'},
+          {field:'otros_documentos', label:'Otro documento (nombre libre)', custom:true}
+        ], eq)}
+      </div>
+    `, async () => {
+      const data = this._collectForm(['tipo','descripcion','marca','modelo','anio','cantidad','capacidad','matricula','propiedad','estado','empresa_alquiler','empresa_alquiler_rnc','empresa_alquiler_telefono','empresa_alquiler_contacto','carta_disponibilidad_equipo_url','matricula_url','factura_url','foto_url','contrato_alquiler_url']);
+      const tipoOtro = document.getElementById('f-tipo_otro');
+      if (data.tipo === 'otro' && tipoOtro && tipoOtro.value.trim()) {
+        data.tipo = tipoOtro.value.trim().toLowerCase();
       }
-    ],
-    "lineas_credito": [
-      {
-        "tipo": "bancaria",
-        "pct_grande": 0.25,
-        "pct_mipyme": 0.15,
-        "base": "lote",
-        "subsanable": null,
-        "texto_original": "Linea financiera por el veinticinco (25%) del valor estimado del lote...",
-        "notas": "Certificacion de linea financiera"
-      },
-      {
-        "tipo": "comercial",
-        "pct_grande": 0.25,
-        "pct_mipyme": 0.15,
-        "base": "lote",
-        "subsanable": null,
-        "texto_original": "Linea comercial por el veinticinco (25%)...",
-        "notas": "Certificaciones de ferreterias o entidades comerciales"
+      data.otros_documentos = this._collectArray('otros_documentos');
+      if (id) await this._put(`/equipos/${id}`, data);
+      else await this._post('/equipos', data);
+      this.toast('Equipo guardado', 'ok');
+      this.cerrarModal();
+      await this.refresh();
+    });
+  },
+
+  _togglePropiedad(v) {
+    const alq = document.getElementById('bm-alquiler-section');
+    if (alq) alq.style.display = v === 'alquilado' ? 'block' : 'none';
+  },
+
+  // ── EXPERIENCIA ───────────────────────────────────────
+  _renderExperiencia() {
+    const cont = document.getElementById('bm-experiencia-list');
+    if (!cont) return;
+    if (!this.data.experiencia.length) {
+      cont.innerHTML = this._emptyState('X', 'No has agregado proyectos ejecutados.');
+      return;
+    }
+    cont.innerHTML = `<div class="bm-grid">${this.data.experiencia.map(x => `
+      <div class="bm-card">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${x.nombre_proyecto}</h4>
+            <div class="bm-card-subtitle">${x.cliente}${x.provincia?' · '+x.provincia:''}</div>
+          </div>
+          <div class="bm-badge bm-badge-${x.estado==='completado'?'ok':'warn'}">${x.estado || '—'}</div>
+        </div>
+        <div class="bm-card-body">
+          ${x.monto_contrato ? `<div>Monto: <strong>${this._money(x.monto_contrato, x.moneda)}</strong></div>` : ''}
+          ${x.tipo_obra ? `<div>Tipo: ${x.tipo_obra}</div>` : ''}
+          ${x.fecha_inicio ? `<div>${this._fecha(x.fecha_inicio)}${x.fecha_fin?' → '+this._fecha(x.fecha_fin):''}</div>` : ''}
+          ${(x.categorias_obra || []).length ? `<div style="margin-top:6px">${x.categorias_obra.map(c=>`<span class="bm-badge bm-badge-info" style="margin-right:4px">${c}</span>`).join('')}</div>` : ''}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirExperiencia('${x.id}')">Editar</button>
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('experiencia', '${x.id}')">Eliminar</button>
+        </div>
+      </div>
+    `).join('')}</div>`;
+  },
+
+  abrirExperiencia(id) {
+    const x = id ? this.data.experiencia.find(e => e.id === id) : { estado: 'completado', tipo_cliente: 'publico' };
+    this._openModal(id ? 'Editar proyecto' : 'Nuevo proyecto', `
+      <div class="bm-form-row"><label class="bm-label">Nombre del proyecto *</label><input class="bm-input" id="f-nombre_proyecto" value="${this._esc(x.nombre_proyecto)}"></div>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Cliente *</label><input class="bm-input" id="f-cliente" placeholder="Ej: INAPA" value="${this._esc(x.cliente)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Tipo cliente</label>
+          <select class="bm-select" id="f-tipo_cliente">
+            <option value="publico" ${x.tipo_cliente==='publico'?'selected':''}>Público</option>
+            <option value="privado" ${x.tipo_cliente==='privado'?'selected':''}>Privado</option>
+          </select>
+        </div>
+        <div class="bm-form-row"><label class="bm-label">No. contrato</label><input class="bm-input" id="f-numero_contrato" value="${this._esc(x.numero_contrato)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Tipo de obra</label><input class="bm-input" id="f-tipo_obra" placeholder="edificación, carretera, etc" value="${this._esc(x.tipo_obra)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Provincia</label><input class="bm-input" id="f-provincia" value="${this._esc(x.provincia)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Monto contrato (DOP)</label><input class="bm-input" type="number" id="f-monto_contrato" value="${x.monto_contrato || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Fecha inicio</label><input class="bm-input" type="date" id="f-fecha_inicio" value="${x.fecha_inicio || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Fecha fin</label><input class="bm-input" type="date" id="f-fecha_fin" value="${x.fecha_fin || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Estado</label>
+          <select class="bm-select" id="f-estado">
+            <option value="completado" ${x.estado==='completado'?'selected':''}>Completado</option>
+            <option value="en_ejecucion" ${x.estado==='en_ejecucion'?'selected':''}>En ejecución</option>
+            <option value="paralizado" ${x.estado==='paralizado'?'selected':''}>Paralizado</option>
+          </select>
+        </div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Ubicación</label><input class="bm-input" id="f-ubicacion" value="${this._esc(x.ubicacion)}"></div>
+      <div class="bm-form-row"><label class="bm-label">Descripción</label><textarea class="bm-textarea" id="f-descripcion">${this._esc(x.descripcion)}</textarea></div>
+      <div class="bm-form-row"><label class="bm-label">Alcance detallado <span style="color:var(--text2);font-weight:400">(para matching con IA)</span></label><textarea class="bm-textarea" id="f-alcance_detallado" placeholder="Describe TODO lo que se hizo: movimiento de tierra, hormigón armado, drenaje pluvial, etc. Mientras más detallado, mejor matching">${this._esc(x.alcance_detallado)}</textarea></div>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Categorías obra (coma)</label><input class="bm-input" id="f-categorias_obra" placeholder="infraestructura_vial, edificacion" value="${(x.categorias_obra || []).join(', ')}"></div>
+        <div class="bm-form-row"><label class="bm-label">Actividades ejecutadas (coma)</label><input class="bm-input" id="f-actividades_ejecutadas" placeholder="movimiento_de_tierra, drenaje, asfalto" value="${(x.actividades_ejecutadas || []).join(', ')}"></div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Documentos del proyecto</label>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:6px">Contrato, cubicaciones, recepciones, certificación de experiencia, finiquito y fotos. Puedes subir varias fotos.</div>
+        ${this._docCascade('exp', 'experiencia', [
+          {field:'contrato_url', label:'Contrato'},
+          {field:'cubicaciones_url', label:'Cubicaciones'},
+          {field:'recepcion_provisional_url', label:'Recepción provisional'},
+          {field:'recepcion_definitiva_url', label:'Recepción definitiva'},
+          {field:'acta_recepcion_url', label:'Acta de recepción'},
+          {field:'certificacion_url', label:'Certificación de experiencia'},
+          {field:'finiquito_url', label:'Finiquito'},
+          {field:'fotos_url', label:'Foto del proyecto', array:true},
+          {field:'otros_documentos', label:'Otro documento (nombre libre)', custom:true}
+        ], x)}
+      </div>
+    `, async () => {
+      const data = this._collectForm(['nombre_proyecto','cliente','tipo_cliente','numero_contrato','tipo_obra','provincia','monto_contrato','fecha_inicio','fecha_fin','estado','ubicacion','descripcion','alcance_detallado','contrato_url','cubicaciones_url','recepcion_provisional_url','recepcion_definitiva_url','acta_recepcion_url','certificacion_url','finiquito_url']);
+      const cats = document.getElementById('f-categorias_obra').value.trim();
+      const acts = document.getElementById('f-actividades_ejecutadas').value.trim();
+      data.categorias_obra = cats ? cats.split(',').map(s => s.trim().toLowerCase().replace(/\s+/g,'_')).filter(Boolean) : [];
+      data.actividades_ejecutadas = acts ? acts.split(',').map(s => s.trim().toLowerCase().replace(/\s+/g,'_')).filter(Boolean) : [];
+      data.fotos_url = this._collectArray('fotos_url');
+      data.otros_documentos = this._collectArray('otros_documentos');
+      if (id) await this._put(`/experiencia/${id}`, data);
+      else await this._post('/experiencia', data);
+      this.toast('Proyecto guardado', 'ok');
+      this.cerrarModal();
+      await this.refresh();
+    });
+  },
+
+  // ── FINANCIEROS ───────────────────────────────────────
+  _renderFinancieros() {
+    const cont = document.getElementById('bm-financieros-list');
+    if (!cont) return;
+    if (!this.data.financieros.length) {
+      cont.innerHTML = this._emptyState('F', 'No has agregado estados financieros.');
+      return;
+    }
+    cont.innerHTML = `<div class="bm-grid">${this.data.financieros.map(f => `
+      <div class="bm-card">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">Período ${f.periodo}</h4>
+            <div class="bm-card-subtitle">${f.tipo} · Cierre: ${this._fecha(f.fecha_cierre)}</div>
+          </div>
+          ${f.verificado ? '<div class="bm-badge bm-badge-ok">Verificado</div>' : ''}
+        </div>
+        <div class="bm-card-body">
+          ${f.activos_totales ? `<div>Activos: <strong>${this._money(f.activos_totales)}</strong></div>` : ''}
+          ${f.patrimonio_neto ? `<div>Patrimonio: <strong>${this._money(f.patrimonio_neto)}</strong></div>` : ''}
+          ${f.ingresos ? `<div>Ingresos: ${this._money(f.ingresos)}</div>` : ''}
+          ${f.solvencia || f.liquidez_corriente || f.capital_trabajo ? `
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#eee)">
+            ${f.solvencia ? `<div>Solvencia: <strong>${Number(f.solvencia).toFixed(2)}</strong></div>` : ''}
+            ${f.liquidez_corriente ? `<div>Liquidez corriente: <strong>${Number(f.liquidez_corriente).toFixed(2)}</strong></div>` : ''}
+            ${f.capital_trabajo !== null && f.capital_trabajo !== undefined ? `<div>Capital de trabajo: <strong>${this._money(f.capital_trabajo)}</strong></div>` : ''}
+          </div>` : ''}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirFinanciero('${f.id}')">Editar</button>
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('financieros', '${f.id}')">Eliminar</button>
+        </div>
+      </div>
+    `).join('')}</div>`;
+  },
+
+  abrirFinanciero(id) {
+    const f = id ? this.data.financieros.find(x => x.id === id) : { tipo: 'anual' };
+    this._openModal(id ? 'Editar estado financiero' : 'Nuevo estado financiero', `
+      <div style="border:1px solid var(--green,#16a34a);border-radius:8px;padding:14px;margin-bottom:16px;background:rgba(22,163,74,0.05)">
+        <div style="font-size:13px;font-weight:600;color:var(--text,#111);margin-bottom:4px">Llenado automático con IA</div>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:10px">Sube el PDF de los estados financieros o el IR-2 y la IA extrae los valores. Revisa y ajusta antes de guardar.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label class="bm-btn bm-btn-primary bm-btn-sm" style="cursor:pointer;margin:0">
+            Subir PDF y extraer
+            <input type="file" accept="application/pdf,.pdf" style="display:none" onchange="BidManager._extraerFinancierosIA(event, 'fin')">
+          </label>
+          <span id="bm-ia-status-fin" style="font-size:12px;color:var(--text2,#6b7280)"></span>
+        </div>
+      </div>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Período *</label><input class="bm-input" id="f-periodo" placeholder="2025" value="${this._esc(f.periodo)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Tipo</label>
+          <select class="bm-select" id="f-tipo">
+            <option value="anual" ${f.tipo==='anual'?'selected':''}>Anual</option>
+            <option value="interino" ${f.tipo==='interino'?'selected':''}>Interino</option>
+            <option value="auditado" ${f.tipo==='auditado'?'selected':''}>Auditado</option>
+          </select>
+        </div>
+        <div class="bm-form-row"><label class="bm-label">Fecha cierre *</label><input class="bm-input" type="date" id="f-fecha_cierre" value="${f.fecha_cierre || ''}"></div>
+      </div>
+      <h4 style="font-size:13px;color:var(--text2);margin:20px 0 10px;text-transform:uppercase;letter-spacing:0.5px">Balance General</h4>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Activos corrientes</label><input class="bm-input" type="number" id="f-activos_corrientes" value="${f.activos_corrientes || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Activos no corrientes</label><input class="bm-input" type="number" id="f-activos_no_corrientes" value="${f.activos_no_corrientes || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Activos totales</label><input class="bm-input" type="number" id="f-activos_totales" value="${f.activos_totales || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Pasivos corrientes</label><input class="bm-input" type="number" id="f-pasivos_corrientes" value="${f.pasivos_corrientes || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Pasivos no corrientes</label><input class="bm-input" type="number" id="f-pasivos_no_corrientes" value="${f.pasivos_no_corrientes || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Pasivos totales</label><input class="bm-input" type="number" id="f-pasivos_totales" value="${f.pasivos_totales || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Patrimonio neto</label><input class="bm-input" type="number" id="f-patrimonio_neto" value="${f.patrimonio_neto || ''}"></div>
+      </div>
+      <h4 style="font-size:13px;color:var(--text2);margin:20px 0 10px;text-transform:uppercase;letter-spacing:0.5px">Estado de Resultados</h4>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Ingresos</label><input class="bm-input" type="number" id="f-ingresos" value="${f.ingresos || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Costo de ventas</label><input class="bm-input" type="number" id="f-costo_ventas" value="${f.costo_ventas || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Utilidad bruta</label><input class="bm-input" type="number" id="f-utilidad_bruta" value="${f.utilidad_bruta || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Gastos operativos</label><input class="bm-input" type="number" id="f-gastos_operativos" value="${f.gastos_operativos || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Utilidad operativa</label><input class="bm-input" type="number" id="f-utilidad_operativa" value="${f.utilidad_operativa || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Utilidad neta</label><input class="bm-input" type="number" id="f-utilidad_neta" value="${f.utilidad_neta || ''}"></div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">PDF del estado financiero</label>
+        ${this._uploadWidget('pdf_url', 'financieros', f.pdf_url)}
+      </div>
+    `, async () => {
+      const data = this._collectForm(['periodo','tipo','fecha_cierre','activos_corrientes','activos_no_corrientes','activos_totales','pasivos_corrientes','pasivos_no_corrientes','pasivos_totales','patrimonio_neto','ingresos','costo_ventas','utilidad_bruta','gastos_operativos','utilidad_operativa','utilidad_neta','pdf_url']);
+      if (id) await this._put(`/financieros/${id}`, data);
+      else await this._post('/financieros', data);
+      this.toast('Estado financiero guardado', 'ok');
+      this.cerrarModal();
+      await this.refresh();
+    });
+  },
+
+  _renderIndicadores() {
+    const cont = document.getElementById('bm-indicadores-view');
+    if (!cont) return;
+    if (!this.data.financieros.length) {
+      cont.innerHTML = this._emptyState('i', 'Agrega un estado financiero para ver los indicadores.');
+      return;
+    }
+    const ult = [...this.data.financieros].sort((a,b) => (b.fecha_cierre||'').localeCompare(a.fecha_cierre||''))[0];
+    const ind = [
+      { label: 'Solvencia', value: ult.solvencia, desc: 'Activo/Pasivo total', fmt: 'ratio' },
+      { label: 'Liquidez corriente', value: ult.liquidez_corriente, desc: 'AC/PC', fmt: 'ratio' },
+      { label: 'Endeudamiento', value: ult.endeudamiento, desc: 'Pasivo/Patrimonio', fmt: 'ratio' },
+      { label: 'Capital de trabajo', value: ult.capital_trabajo, desc: 'AC - PC', fmt: 'money' },
+      { label: 'Margen utilidad', value: ult.margen_utilidad, desc: 'Utilidad/Ingresos', fmt: 'pct' },
+      { label: 'ROE', value: ult.roe, desc: 'Utilidad/Patrimonio', fmt: 'pct' }
+    ];
+    cont.innerHTML = `
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Período: <strong style="color:var(--text)">${ult.periodo}</strong> · Cierre: ${this._fecha(ult.fecha_cierre)}</div>
+      <div class="bm-indicators-grid">
+        ${ind.map(i => `
+          <div class="bm-indicator">
+            <div class="bm-indicator-label">${i.label}</div>
+            <div class="bm-indicator-value">${this._fmtInd(i.value, i.fmt)}</div>
+            <div class="bm-indicator-desc">${i.desc}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  },
+
+  _fmtInd(v, fmt) {
+    if (v === null || v === undefined) return '—';
+    const n = Number(v);
+    if (fmt === 'money') return this._money(n);
+    if (fmt === 'pct') return (n * 100).toFixed(1) + '%';
+    return n.toFixed(2);
+  },
+
+  // ── IR-2 ──────────────────────────────────────────────
+  _renderIr2() {
+    const cont = document.getElementById('bm-ir2-list');
+    if (!cont) return;
+    if (!this.data.ir2.length) {
+      cont.innerHTML = this._emptyState('IR', 'No has agregado declaraciones IR-2.');
+      return;
+    }
+    cont.innerHTML = `<div class="bm-grid">${this.data.ir2.map(i => `
+      <div class="bm-card">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">IR-2 · ${i.periodo_fiscal}</h4>
+            <div class="bm-card-subtitle">${i.tipo} · ${this._fecha(i.fecha_cierre_fiscal)}</div>
+          </div>
+        </div>
+        <div class="bm-card-body">
+          ${i.ingresos_brutos ? `<div>Ingresos brutos: <strong>${this._money(i.ingresos_brutos)}</strong></div>` : ''}
+          ${i.renta_neta_imponible ? `<div>Renta neta: ${this._money(i.renta_neta_imponible)}</div>` : ''}
+          ${i.impuesto_liquidado ? `<div>Impuesto: ${this._money(i.impuesto_liquidado)}</div>` : ''}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirIr2('${i.id}')">Editar</button>
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('ir2', '${i.id}')">Eliminar</button>
+        </div>
+      </div>
+    `).join('')}</div>`;
+  },
+
+  abrirIr2(id) {
+    const i = id ? this.data.ir2.find(x => x.id === id) : { tipo: 'anual' };
+    this._openModal(id ? 'Editar IR-2' : 'Nueva declaración IR-2', `
+      <div style="border:1px solid var(--green,#16a34a);border-radius:8px;padding:14px;margin-bottom:16px;background:rgba(22,163,74,0.05)">
+        <div style="font-size:13px;font-weight:600;color:var(--text,#111);margin-bottom:4px">Llenado automático con IA</div>
+        <div style="font-size:12px;color:var(--text2,#6b7280);margin-bottom:10px">Sube el PDF del IR-2 y la IA extrae los valores. Revisa y ajusta antes de guardar.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label class="bm-btn bm-btn-primary bm-btn-sm" style="cursor:pointer;margin:0">
+            Subir PDF y extraer
+            <input type="file" accept="application/pdf,.pdf" style="display:none" onchange="BidManager._extraerFinancierosIA(event, 'ir2')">
+          </label>
+          <span id="bm-ia-status-ir2" style="font-size:12px;color:var(--text2,#6b7280)"></span>
+        </div>
+      </div>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Período fiscal *</label><input class="bm-input" id="f-periodo_fiscal" placeholder="2025" value="${this._esc(i.periodo_fiscal)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Tipo</label>
+          <select class="bm-select" id="f-tipo">
+            <option value="anual" ${i.tipo==='anual'?'selected':''}>Anual</option>
+            <option value="interino" ${i.tipo==='interino'?'selected':''}>Interino</option>
+          </select>
+        </div>
+        <div class="bm-form-row"><label class="bm-label">Fecha cierre fiscal *</label><input class="bm-input" type="date" id="f-fecha_cierre_fiscal" value="${i.fecha_cierre_fiscal || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Ingresos brutos</label><input class="bm-input" type="number" id="f-ingresos_brutos" value="${i.ingresos_brutos || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Costos y gastos</label><input class="bm-input" type="number" id="f-costos_y_gastos" value="${i.costos_y_gastos || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Renta neta imponible</label><input class="bm-input" type="number" id="f-renta_neta_imponible" value="${i.renta_neta_imponible || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Impuesto liquidado</label><input class="bm-input" type="number" id="f-impuesto_liquidado" value="${i.impuesto_liquidado || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Total activos</label><input class="bm-input" type="number" id="f-total_activos" value="${i.total_activos || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Total pasivos</label><input class="bm-input" type="number" id="f-total_pasivos" value="${i.total_pasivos || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Patrimonio</label><input class="bm-input" type="number" id="f-patrimonio" value="${i.patrimonio || ''}"></div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">PDF del IR-2</label>
+        ${this._uploadWidget('pdf_url', 'ir2', i.pdf_url)}
+      </div>
+    `, async () => {
+      const data = this._collectForm(['periodo_fiscal','tipo','fecha_cierre_fiscal','ingresos_brutos','costos_y_gastos','renta_neta_imponible','impuesto_liquidado','total_activos','total_pasivos','patrimonio','pdf_url']);
+      if (id) await this._put(`/ir2/${id}`, data);
+      else await this._post('/ir2', data);
+      this.toast('IR-2 guardado', 'ok');
+      this.cerrarModal();
+      await this.refresh();
+    });
+  },
+
+  // ── CAPACIDAD FINANCIERA ──────────────────────────────
+  _renderCapacidad() {
+    const cont = document.getElementById('bm-capacidad-list');
+    if (!cont) return;
+    if (!this.data.capacidad.length) {
+      cont.innerHTML = this._emptyState('C', 'No has agregado líneas de crédito o solvencias.');
+      return;
+    }
+    cont.innerHTML = `<div class="bm-grid">${this.data.capacidad.map(c => `
+      <div class="bm-card">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${c.institucion_financiera}</h4>
+            <div class="bm-card-subtitle">${c.tipo}</div>
+          </div>
+          <div class="bm-badge ${c.estado==='vigente'?'bm-badge-ok':c.estado==='por_vencer'?'bm-badge-warn':'bm-badge-err'}">${c.estado || '—'}</div>
+        </div>
+        <div class="bm-card-body">
+          <div>Monto: <strong>${this._money(c.monto, c.moneda)}</strong></div>
+          ${c.monto_disponible ? `<div>Disponible: ${this._money(c.monto_disponible, c.moneda)}</div>` : ''}
+          ${c.fecha_vencimiento ? `<div>Vence: ${this._fecha(c.fecha_vencimiento)}</div>` : ''}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirCapacidad('${c.id}')">Editar</button>
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('capacidad-financiera', '${c.id}')">Eliminar</button>
+        </div>
+      </div>
+    `).join('')}</div>`;
+  },
+
+  abrirCapacidad(id) {
+    const c = id ? this.data.capacidad.find(x => x.id === id) : { tipo: 'LINEA_CREDITO', moneda: 'DOP' };
+    this._openModal(id ? 'Editar capacidad financiera' : 'Nueva capacidad financiera', `
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">Tipo *</label>
+          <select class="bm-select" id="f-tipo">
+            <option value="LINEA_CREDITO" ${c.tipo==='LINEA_CREDITO'?'selected':''}>Línea de crédito</option>
+            <option value="CERTIFICADO_AHORRO" ${c.tipo==='CERTIFICADO_AHORRO'?'selected':''}>Certificado de ahorro</option>
+            <option value="SOLVENCIA_BANCARIA" ${c.tipo==='SOLVENCIA_BANCARIA'?'selected':''}>Solvencia bancaria</option>
+            <option value="DEPOSITO_A_PLAZO" ${c.tipo==='DEPOSITO_A_PLAZO'?'selected':''}>Depósito a plazo</option>
+          </select>
+        </div>
+        <div class="bm-form-row"><label class="bm-label">Institución *</label><input class="bm-input" id="f-institucion_financiera" placeholder="Banco Popular" value="${this._esc(c.institucion_financiera)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Monto *</label><input class="bm-input" type="number" id="f-monto" value="${c.monto || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Monto disponible</label><input class="bm-input" type="number" id="f-monto_disponible" value="${c.monto_disponible || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Fecha emisión</label><input class="bm-input" type="date" id="f-fecha_emision" value="${c.fecha_emision || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Fecha vencimiento</label><input class="bm-input" type="date" id="f-fecha_vencimiento" value="${c.fecha_vencimiento || ''}"></div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Archivo (carta / certificación)</label>
+        ${this._uploadWidget('archivo_url', 'capacidad', c.archivo_url)}
+      </div>
+    `, async () => {
+      const data = this._collectForm(['tipo','institucion_financiera','monto','monto_disponible','fecha_emision','fecha_vencimiento','archivo_url']);
+      if (id) await this._put(`/capacidad-financiera/${id}`, data);
+      else await this._post('/capacidad-financiera', data);
+      this.toast('Capacidad guardada', 'ok');
+      this.cerrarModal();
+      await this.refresh();
+    });
+  },
+
+  // ── REFERENCIAS COMERCIALES ───────────────────────────
+  _renderReferencias() {
+    const cont = document.getElementById('bm-referencias-list');
+    if (!cont) return;
+    if (!this.data.referencias.length) {
+      cont.innerHTML = this._emptyState('RC', 'No has agregado referencias comerciales.');
+      return;
+    }
+    cont.innerHTML = `<div class="bm-grid">${this.data.referencias.map(r => `
+      <div class="bm-card">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${r.proveedor_nombre}</h4>
+            <div class="bm-card-subtitle">${r.relacion_anios ? r.relacion_anios+' años de relación' : ''}</div>
+          </div>
+        </div>
+        <div class="bm-card-body">
+          ${r.monto_credito ? `<div>Crédito: <strong>${this._money(r.monto_credito, r.moneda)}</strong></div>` : ''}
+          ${r.plazo_credito_dias ? `<div>Plazo: ${r.plazo_credito_dias} días</div>` : ''}
+          ${r.proveedor_telefono ? `<div>Tel: ${r.proveedor_telefono}</div>` : ''}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirReferencia('${r.id}')">Editar</button>
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('referencias-comerciales', '${r.id}')">Eliminar</button>
+        </div>
+      </div>
+    `).join('')}</div>`;
+  },
+
+  abrirReferencia(id) {
+    const r = id ? this.data.referencias.find(x => x.id === id) : { moneda: 'DOP' };
+    this._openModal(id ? 'Editar referencia' : 'Nueva referencia comercial', `
+      <div class="bm-form-row"><label class="bm-label">Proveedor *</label><input class="bm-input" id="f-proveedor_nombre" placeholder="Ferretería Americana" value="${this._esc(r.proveedor_nombre)}"></div>
+      <div class="bm-form-grid">
+        <div class="bm-form-row"><label class="bm-label">RNC proveedor</label><input class="bm-input" id="f-proveedor_rnc" value="${this._esc(r.proveedor_rnc)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Contacto</label><input class="bm-input" id="f-proveedor_contacto" value="${this._esc(r.proveedor_contacto)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Teléfono</label><input class="bm-input" id="f-proveedor_telefono" value="${this._esc(r.proveedor_telefono)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Monto crédito</label><input class="bm-input" type="number" id="f-monto_credito" value="${r.monto_credito || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Plazo (días)</label><input class="bm-input" type="number" id="f-plazo_credito_dias" value="${r.plazo_credito_dias || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Años de relación</label><input class="bm-input" type="number" id="f-relacion_anios" value="${r.relacion_anios || ''}"></div>
+        <div class="bm-form-row"><label class="bm-label">Fecha carta</label><input class="bm-input" type="date" id="f-fecha_carta" value="${r.fecha_carta || ''}"></div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Carta de referencia</label>
+        ${this._uploadWidget('archivo_url', 'referencias', r.archivo_url)}
+      </div>
+    `, async () => {
+      const data = this._collectForm(['proveedor_nombre','proveedor_rnc','proveedor_contacto','proveedor_telefono','monto_credito','plazo_credito_dias','relacion_anios','fecha_carta','archivo_url']);
+      if (id) await this._put(`/referencias-comerciales/${id}`, data);
+      else await this._post('/referencias-comerciales', data);
+      this.toast('Referencia guardada', 'ok');
+      this.cerrarModal();
+      await this.refresh();
+    });
+  },
+
+  // ── ELIMINAR (genérico) ───────────────────────────────
+  async eliminar(recurso, id) {
+    if (!confirm('¿Eliminar este registro? Esta acción no se puede deshacer.')) return;
+    try {
+      await this._delete(`/${recurso}/${id}`);
+      this.toast('Eliminado', 'ok');
+      await this.refresh();
+    } catch (e) {
+      this.toast('Error al eliminar', 'err');
+    }
+  },
+
+  // ── MODAL genérico ────────────────────────────────────
+  _openModal(title, bodyHtml, onSave) {
+    document.getElementById('bm-modal-title').textContent = title;
+    document.getElementById('bm-modal-body').innerHTML = bodyHtml;
+    document.getElementById('bm-modal-footer').innerHTML = `
+      <button class="bm-btn bm-btn-ghost" onclick="BidManager.cerrarModal()">Cancelar</button>
+      <button class="bm-btn bm-btn-primary" id="bm-modal-save">Guardar</button>
+    `;
+    document.getElementById('bm-modal').classList.add('bm-active');
+    document.getElementById('bm-modal-save').onclick = async (e) => {
+      const btn = e.target;
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
+      try { await onSave(); }
+      catch (err) { this.toast('Error: ' + err.message, 'err'); btn.disabled = false; btn.textContent = 'Guardar'; }
+    };
+  },
+
+  cerrarModal() {
+    document.getElementById('bm-modal').classList.remove('bm-active');
+  },
+
+  _collectForm(campos) {
+    const data = {};
+    campos.forEach(c => {
+      const el = document.getElementById('f-' + c);
+      if (!el) return;
+      let v = el.value.trim();
+      if (v === '') { data[c] = null; return; }
+      if (el.type === 'number') v = Number(v);
+      data[c] = v;
+    });
+    return data;
+  },
+
+  _emptyState(icon, text) {
+    return `<div class="bm-empty"><div class="bm-empty-icon">${icon}</div><div class="bm-empty-text">${text}</div></div>`;
+  },
+
+  // ── Toast ─────────────────────────────────────────────
+  toast(msg, type = 'ok') {
+    const t = document.getElementById('bm-toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.className = 'bm-toast bm-show bm-toast-' + type;
+    setTimeout(() => t.classList.remove('bm-show'), 2500);
+  },
+
+  // ── Helpers formato ───────────────────────────────────
+  _esc(v) {
+    if (v === null || v === undefined) return '';
+    return String(v).replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  },
+
+  _money(v, moneda = 'DOP') {
+    if (v === null || v === undefined) return '—';
+    const n = Number(v);
+    const simbolo = moneda === 'USD' ? '$' : 'RD$';
+    return simbolo + ' ' + n.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  },
+
+  _fecha(f) {
+    if (!f) return '—';
+    try {
+      return new Date(f).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch(e) { return f; }
+  },
+
+  // ═══════════════════════════════════════════════════════
+  // UPLOAD WIDGET — Reemplaza los inputs de URL manuales
+  // ═══════════════════════════════════════════════════════
+  // Uso dentro de un modal:
+  //   ${this._uploadWidget('archivo_url', 'certificaciones', c.archivo_url)}
+  //
+  // El helper renderiza:
+  //   - <input type="hidden" id="f-{field}"> con el path guardado
+  //   - Un div visible que muestra o "elegir archivo" o el archivo cargado
+  //
+  // _collectForm() sigue funcionando sin cambios (lee el hidden por su id).
+  // El valor guardado en BD es el path del bucket (ej: "abc-uuid/certificaciones/xyz.pdf"),
+  // no una URL directa. Al presionar Ver, se pide una signed URL de 1h.
+  //
+  // Retro-compatibilidad: si el valor ya guardado empieza con "http", se trata
+  // como URL externa legacy y "Ver" abre esa URL directa.
+  // ═══════════════════════════════════════════════════════
+
+  _uploadWidget(field, categoria, currentValue) {
+    const inputId = `f-${field}`;
+    const widgetId = `bm-upload-${field}`;
+    const val = currentValue || '';
+    return `
+      <input type="hidden" id="${inputId}" value="${this._esc(val)}">
+      <div class="bm-upload-widget" id="${widgetId}" data-field="${field}" data-categoria="${categoria}">
+        ${this._renderUploadWidget(field, val)}
+      </div>
+    `;
+  },
+
+  _renderUploadWidget(field, val) {
+    if (val) {
+      let displayName;
+      if (val.startsWith('http')) {
+        displayName = 'Archivo externo (legacy)';
+      } else {
+        const last = val.split('/').pop() || val;
+        displayName = last.replace(/^[0-9a-f]{8}_/, '');
       }
-    ],
-    "personal": [
-      {
-        "cargo": "Director de Obra",
-        "titulaciones": ["ingeniero civil", "arquitecto", "ingeniero electromecanico"],
-        "anios_min": 5,
-        "requiere_maestria": true,
-        "area_maestria": "hidraulica, sanitaria o afines",
-        "requiere_colegiatura": true,
-        "certificaciones_funcion_min": 2,
-        "cantidad": 1,
-        "por_lote": false,
-        "obligatorio": true,
-        "subsanable": null,
-        "texto_original": "Director de Obra: Titulo de Ingeniero Civil, Arquitecto o Ingeniero Electromecanico...",
-        "puntaje": {"puntos_max": 11, "tramos_anios": [{"min": 10, "puntos": 4}, {"min": 5, "puntos": 2}], "puntos_maestria": 3, "tramos_certificaciones": [{"min": 6, "puntos": 4}, {"min": 3, "puntos": 2}, {"min": 2, "puntos": 1}]}
+      return `
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;background:var(--bg2,#f8f9fa);border:1px solid var(--border,#e5e7eb);border-radius:6px">
+          <span style="flex:1;min-width:120px;font-size:13px;color:var(--text,#111);word-break:break-all">${this._esc(displayName)}</span>
+          <button type="button" class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._viewFile('${field}')">Ver</button>
+          <button type="button" class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._replaceFile('${field}')">Cambiar</button>
+          <button type="button" class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager._clearFile('${field}')">Quitar</button>
+        </div>
+      `;
+    }
+    return `
+      <label style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:1.5px dashed var(--border,#d1d5db);border-radius:6px;cursor:pointer;color:var(--text2,#6b7280);font-size:13px;transition:all .15s;background:var(--bg2,#fafafa)" onmouseover="this.style.borderColor='var(--green,#16a34a)';this.style.color='var(--green,#16a34a)'" onmouseout="this.style.borderColor='var(--border,#d1d5db)';this.style.color='var(--text2,#6b7280)'">
+        <span style="font-weight:600">+</span>
+        <span>Elegir archivo (máx. 25 MB)</span>
+        <input type="file" style="display:none" onchange="BidManager._doUpload(event, '${field}')">
+      </label>
+    `;
+  },
+
+  // ═══════════════════════════════════════════════════════
+  // CASCADA DE DOCUMENTOS — un selector de tipo + subir
+  // ═══════════════════════════════════════════════════════
+  // En vez de un cajón de upload por cada documento posible,
+  // muestra: [select tipo de documento] [Subir] y debajo la
+  // lista de documentos ya cargados con Ver / Quitar.
+  //
+  // Uso:
+  //   ${this._docCascade('personal', 'personal', [
+  //     {field:'cv_url', label:'Curriculum (CV)'},
+  //     {field:'cedula_url', label:'Cédula'},
+  //     ...
+  //     {field:'fotos_url', label:'Foto del proyecto', array:true}
+  //   ], p)}
+  //
+  // - Campos normales: hidden f-{field} con el path (compatible _collectForm)
+  // - Campos array:true: hidden f-{field} con JSON '["path1","path2"]'
+  //   → el handler de guardado debe parsearlo manualmente.
+  // ═══════════════════════════════════════════════════════
+
+  _cascadeReg: {},
+
+  _docCascade(cid, categoria, tipos, record) {
+    this._cascadeReg[cid] = { categoria, tipos };
+    record = record || {};
+    const hiddens = tipos.map(t => {
+      let v = record[t.field];
+      if (t.array || t.custom) v = JSON.stringify(Array.isArray(v) ? v : (v ? [v] : []));
+      else v = v || '';
+      return `<input type="hidden" id="f-${t.field}" value="${this._esc(v)}">`;
+    }).join('');
+    const hayCustom = tipos.some(t => t.custom);
+    return `
+      ${hiddens}
+      <div class="bm-cascade" id="bm-cascade-${cid}" style="border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:14px;background:var(--bg2,#fafafa)">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select class="bm-select" id="bm-cascade-sel-${cid}" style="flex:1;min-width:180px" ${hayCustom ? `onchange="BidManager._cascadeSelChange('${cid}')"` : ''}>
+            ${tipos.map(t => `<option value="${t.field}">${t.label}</option>`).join('')}
+          </select>
+          <label class="bm-btn bm-btn-primary bm-btn-sm" style="cursor:pointer;margin:0">
+            Subir
+            <input type="file" style="display:none" onchange="BidManager._cascadeUpload(event, '${cid}')">
+          </label>
+        </div>
+        ${hayCustom ? `<input class="bm-input" id="bm-cascade-name-${cid}" placeholder="Nombre del documento (ej: Permiso del ayuntamiento)" style="display:none;margin-top:8px">` : ''}
+        <div id="bm-cascade-list-${cid}" style="margin-top:10px">
+          ${this._cascadeListHtml(cid, record)}
+        </div>
+      </div>
+    `;
+  },
+
+  _cascadeSelChange(cid) {
+    const reg = this._cascadeReg[cid];
+    const sel = document.getElementById(`bm-cascade-sel-${cid}`);
+    const nameInput = document.getElementById(`bm-cascade-name-${cid}`);
+    if (!reg || !sel || !nameInput) return;
+    const tipo = reg.tipos.find(t => t.field === sel.value);
+    nameInput.style.display = (tipo && tipo.custom) ? 'block' : 'none';
+  },
+
+  _cascadeListHtml(cid, record) {
+    const reg = this._cascadeReg[cid];
+    if (!reg) return '';
+    const filas = [];
+    reg.tipos.forEach(t => {
+      let val;
+      if (record) {
+        // Primer render: los hidden aún no están en el DOM → leer del registro
+        val = record[t.field];
+        if (t.array || t.custom) val = JSON.stringify(Array.isArray(val) ? val : (val ? [val] : []));
+        else val = val || '';
+      } else {
+        const el = document.getElementById(`f-${t.field}`);
+        if (!el) return;
+        val = el.value;
       }
-    ],
-    "equipos": [
-      {
-        "tipo": "camion volteo",
-        "cantidad": 4,
-        "capacidad_min": "12 m3",
-        "anio_minimo": null,
-        "admite_alquilado": true,
-        "subsanable": false,
-        "texto_original": "Camiones volteo (de 12 m3 minimo). 4",
-        "notas": ""
+      if (t.custom) {
+        let arr = [];
+        try { arr = JSON.parse(val || '[]'); } catch(e) { arr = []; }
+        arr.forEach((item, idx) => {
+          if (item && item.path) filas.push(this._cascadeRowHtml(cid, t, item.path, idx, item.label));
+        });
+      } else if (t.array) {
+        let arr = [];
+        try { arr = JSON.parse(val || '[]'); } catch(e) { arr = []; }
+        arr.forEach((p, idx) => filas.push(this._cascadeRowHtml(cid, t, p, idx)));
+      } else if (val) {
+        filas.push(this._cascadeRowHtml(cid, t, val, null));
       }
-    ],
-    "experiencia": {
-      "criterio_similitud": "monto_acumulado",
-      "naturaleza": ["vial_asfalto"],
-      "cantidad_obras_min": 3,
-      "monto_min_por_obra": null,
-      "monto_min_acumulado": 258823485.45,
-      "acepta_en_curso_pct": 60,
-      "acepta_proyectos_propios": true,
-      "requiere_acta": true,
-      "pct_portafolio": null,
-      "ventana_anios": null,
-      "volumenes": [
-        {"categoria": "movimiento_tierra", "unidad": "m3", "cantidad": 4653.0, "lote": 1}
-      ],
-      "subsanable": null,
-      "texto_original": "frase literal del pliego que define la experiencia requerida",
-      "puntaje": {"puntos_max": 20, "tramos_certificaciones": [{"min": 6, "puntos": 20}, {"min": 3, "puntos": 15}, {"min": 2, "puntos": 10}]},
-      "notas": ""
-    },
-    "puntaje_blandos": [
-      {"nombre": "Enfoque, metodologia y plan de trabajo", "puntos_max": 20},
-      {"nombre": "Cronograma de ejecucion y flujo de caja", "puntos_max": 20}
-    ],
-    "otros": [
-      {"nombre": "Planta de asfalto en el Gran Santo Domingo", "texto_original": "...", "subsanable": null}
-    ]
+    });
+    if (!filas.length) {
+      return `<div style="font-size:12px;color:var(--text2,#9ca3af);padding:4px 2px">Sin documentos cargados todavía.</div>`;
+    }
+    return filas.join('');
+  },
+
+  _cascadeRowHtml(cid, tipo, path, idx, labelOverride) {
+    let name;
+    if (path.startsWith('http')) name = 'Archivo externo';
+    else name = (path.split('/').pop() || path).replace(/^[0-9a-f]{8}_/, '');
+    const idxArg = idx === null ? 'null' : idx;
+    const label = labelOverride || tipo.label;
+    return `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:6px;background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:6px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;color:var(--text,#111)">${this._esc(label)}</div>
+          <div style="font-size:12px;color:var(--text2,#6b7280);word-break:break-all">${this._esc(name)}</div>
+        </div>
+        <button type="button" class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._openStoragePath('${this._esc(path)}')">Ver</button>
+        <button type="button" class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager._cascadeRemove('${cid}','${tipo.field}',${idxArg})">Quitar</button>
+      </div>
+    `;
+  },
+
+  _cascadeRefresh(cid) {
+    const cont = document.getElementById(`bm-cascade-list-${cid}`);
+    if (cont) cont.innerHTML = this._cascadeListHtml(cid);
+  },
+
+  async _cascadeUpload(evt, cid) {
+    const file = evt.target.files && evt.target.files[0];
+    evt.target.value = '';
+    if (!file) return;
+    const reg = this._cascadeReg[cid];
+    if (!reg) return;
+    const sel = document.getElementById(`bm-cascade-sel-${cid}`);
+    const field = sel ? sel.value : null;
+    const tipo = reg.tipos.find(t => t.field === field);
+    if (!tipo) return;
+
+    // Documento "Otro": requiere nombre antes de subir
+    let customLabel = null;
+    if (tipo.custom) {
+      const nameInput = document.getElementById(`bm-cascade-name-${cid}`);
+      customLabel = nameInput ? nameInput.value.trim() : '';
+      if (!customLabel) {
+        this.toast('Escribe el nombre del documento antes de subirlo', 'err');
+        return;
+      }
+    }
+
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) { this.toast('Archivo excede 25 MB', 'err'); return; }
+    if (file.size === 0) { this.toast('Archivo vacío', 'err'); return; }
+
+    const cont = document.getElementById(`bm-cascade-list-${cid}`);
+    if (cont) cont.insertAdjacentHTML('afterbegin', `
+      <div id="bm-cascade-uploading-${cid}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-top:6px;background:#fff;border:1px solid var(--border,#e5e7eb);border-radius:6px">
+        <div style="width:14px;height:14px;border:2px solid var(--green,#16a34a);border-top-color:transparent;border-radius:50%;animation:bm-spin .7s linear infinite"></div>
+        <span style="font-size:12px;color:var(--text2,#6b7280)">Subiendo ${this._esc(file.name)} como <strong>${this._esc(tipo.label)}</strong>...</span>
+      </div>
+    `);
+
+    try {
+      const form = new FormData();
+      form.append('categoria', reg.categoria);
+      form.append('file', file);
+      const r = await this._fetchAuth('/api/bid/upload', {
+        method: 'POST',
+        body: form
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `Upload → ${r.status}`);
+      }
+      const res = await r.json();
+      const hidden = document.getElementById(`f-${field}`);
+      if (hidden) {
+        if (tipo.custom) {
+          let arr = [];
+          try { arr = JSON.parse(hidden.value || '[]'); } catch(e) { arr = []; }
+          arr.push({ label: customLabel, path: res.path });
+          hidden.value = JSON.stringify(arr);
+          const nameInput = document.getElementById(`bm-cascade-name-${cid}`);
+          if (nameInput) nameInput.value = '';
+        } else if (tipo.array) {
+          let arr = [];
+          try { arr = JSON.parse(hidden.value || '[]'); } catch(e) { arr = []; }
+          arr.push(res.path);
+          hidden.value = JSON.stringify(arr);
+        } else {
+          hidden.value = res.path;
+        }
+      }
+      this.toast('Documento subido', 'ok');
+    } catch (e) {
+      this.toast('Error subiendo: ' + e.message, 'err');
+    } finally {
+      const up = document.getElementById(`bm-cascade-uploading-${cid}`);
+      if (up) up.remove();
+      this._cascadeRefresh(cid);
+    }
+  },
+
+  async _cascadeRemove(cid, field, idx) {
+    const reg = this._cascadeReg[cid];
+    const tipo = reg ? reg.tipos.find(t => t.field === field) : null;
+    const hidden = document.getElementById(`f-${field}`);
+    if (!hidden || !tipo) return;
+
+    let path;
+    if (tipo.custom) {
+      let arr = [];
+      try { arr = JSON.parse(hidden.value || '[]'); } catch(e) { arr = []; }
+      path = arr[idx] ? arr[idx].path : null;
+      arr.splice(idx, 1);
+      hidden.value = JSON.stringify(arr);
+    } else if (tipo.array) {
+      let arr = [];
+      try { arr = JSON.parse(hidden.value || '[]'); } catch(e) { arr = []; }
+      path = arr[idx];
+      arr.splice(idx, 1);
+      hidden.value = JSON.stringify(arr);
+    } else {
+      path = hidden.value;
+      hidden.value = '';
+    }
+
+    if (path && !path.startsWith('http')) {
+      try {
+        await this._fetchAuth(`/api/bid/upload?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+      } catch(e) { /* silencioso */ }
+    }
+    this._cascadeRefresh(cid);
+    this.toast('Documento quitado', 'ok');
+  },
+
+  // Recoge un hidden array (JSON) y devuelve el array parseado
+  _collectArray(field) {
+    const el = document.getElementById(`f-${field}`);
+    if (!el) return [];
+    try { return JSON.parse(el.value || '[]'); } catch(e) { return []; }
+  },
+
+  // ═══════════════════════════════════════════════════════
+  // EXTRACCIÓN IA — Estados financieros / IR-2
+  // ═══════════════════════════════════════════════════════
+  // Sube el PDF al storage (categoría financieros/ir2) y en
+  // paralelo lo manda a /financieros/extraer para que Gemini
+  // devuelva los valores y pre-llenar el formulario.
+  // El usuario siempre revisa antes de guardar.
+  // ═══════════════════════════════════════════════════════
+
+  // Análisis por LOTE: varios PDFs (estados + IR-2 de distintos años) de una vez.
+  // El backend extrae cada uno, detecta el tipo, sube el PDF y CREA los registros.
+  // Los indicadores se calculan solos al insertarse (columnas GENERATED).
+  _loteAbort: null,
+
+  async _extraerLoteIA(evt) {
+    const files = Array.from(evt.target.files || []);
+    evt.target.value = '';
+    if (!files.length) return;
+    if (files.length > 6) { this.toast('Máximo 6 PDFs por lote', 'err'); return; }
+
+    const status = document.getElementById('bm-ia-lote-status');
+    const resultCont = document.getElementById('bm-ia-lote-resultados');
+    const setStatus = (t) => { if (status) status.textContent = t; };
+
+    const MAX = 25 * 1024 * 1024;
+    for (const f of files) {
+      if (f.size > MAX) { this.toast(`${f.name} excede 25 MB`, 'err'); return; }
+    }
+
+    setStatus(`Analizando ${files.length} PDF(s) con IA... esto puede tomar 1-3 minutos`);
+    if (resultCont) {
+      resultCont.innerHTML = `
+        <button type="button" class="bm-btn bm-btn-danger bm-btn-sm" id="bm-ia-lote-stop"
+                onclick="BidManager._detenerLoteIA()">Detener análisis</button>
+      `;
+    }
+
+    this._loteAbort = new AbortController();
+
+    try {
+      const form = new FormData();
+      files.forEach(f => form.append('files', f));
+      const r = await this._fetchAuth('/api/bid/financieros/extraer-lote', {
+        method: 'POST',
+        body: form,
+        signal: this._loteAbort.signal
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `Lote → ${r.status}`);
+      }
+      const { resultados } = await r.json();
+
+      const oks = resultados.filter(x => x.ok).length;
+      setStatus(`Completado: ${oks}/${resultados.length} procesados correctamente.`);
+
+      if (resultCont) {
+        resultCont.innerHTML = resultados.map(res => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-top:6px;background:#fff;border:1px solid ${res.ok ? 'var(--green,#16a34a)' : '#dc2626'};border-radius:6px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:600">${this._esc(res.archivo)}</div>
+              <div style="font-size:12px;color:var(--text2,#6b7280)">
+                ${res.ok
+                  ? `${res.tipo} · Período ${this._esc(res.periodo || '?')} · Confianza: ${res.confianza || 'media'}${res.notas ? ' · ' + this._esc(res.notas) : ''}`
+                  : `Error: ${this._esc(res.error || 'desconocido')}`}
+              </div>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      if (oks > 0) {
+        this.toast(`${oks} registro(s) creados. Revisa los valores en Estados/IR-2.`, 'ok');
+        await this.refresh();
+      } else {
+        this.toast('Ningún PDF pudo procesarse', 'err');
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        setStatus('Análisis detenido por el usuario.');
+        if (resultCont) resultCont.innerHTML = '';
+        this.toast('Análisis detenido', 'ok');
+      } else {
+        setStatus('');
+        if (resultCont) resultCont.innerHTML = '';
+        this.toast('Error en análisis por lote: ' + e.message, 'err');
+      }
+    } finally {
+      this._loteAbort = null;
+    }
+  },
+
+  _detenerLoteIA() {
+    if (this._loteAbort) this._loteAbort.abort();
+  },
+
+  // ═══════════════════════════════════════════════════════
+  // MATCHING FINANCIERO — Pliego vs Expediente
+  // ═══════════════════════════════════════════════════════
+
+  async _analizarPliegoMatching(evt) {
+    const file = evt.target.files && evt.target.files[0];
+    evt.target.value = '';
+    if (!file) return;
+
+    const status = document.getElementById('bm-matching-status');
+    const setStatus = (t) => { if (status) status.textContent = t; };
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) { this.toast('El pliego excede 25 MB', 'err'); return; }
+
+    const montoInput = document.getElementById('bm-matching-monto');
+    const monto = montoInput && montoInput.value ? montoInput.value.trim() : '';
+
+    setStatus('Analizando pliego con IA... esto toma 1-2 minutos');
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      if (monto) form.append('monto_ofertado', monto);
+      const r = await this._fetchAuth('/api/bid/matching/analizar', {
+        method: 'POST',
+        body: form
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `Análisis → ${r.status}`);
+      }
+      const reg = await r.json();
+      setStatus('');
+      if (montoInput) montoInput.value = '';
+      const cumple = reg.resultado && (reg.resultado.cumple_global !== undefined ? reg.resultado.cumple_global : reg.resultado.cumple_financiero);
+      const nFalt = reg.resultado && reg.resultado.faltantes ? reg.resultado.faltantes.length : 0;
+      this.toast(cumple === true ? 'Análisis listo: CUMPLES los requisitos del pliego'
+               : cumple === false ? `Análisis listo: NO cumples (${nFalt} faltante${nFalt === 1 ? '' : 's'} identificado${nFalt === 1 ? '' : 's'})`
+               : 'Análisis listo: revisa el detalle', cumple === false ? 'err' : 'ok');
+      await this.refresh();
+    } catch (e) {
+      setStatus('');
+      this.toast('Error analizando pliego: ' + e.message, 'err');
+    }
+  },
+
+  _renderMatching() {
+    const cont = document.getElementById('bm-matching-list');
+    if (!cont) return;
+    const lista = this.data.matching || [];
+    if (!lista.length) {
+      cont.innerHTML = this._emptyState('M', 'Sube un pliego para ver si cumples sus requisitos: financieros, líneas de crédito, personal, equipos y experiencia.');
+      return;
+    }
+    cont.innerHTML = lista.map(m => this._matchingCardHtml(m)).join('');
+  },
+
+  _matchingCardHtml(m) {
+    const res = m.resultado || {};
+    if (res.version_evaluador >= 2 && res.secciones) return this._matchingCardV2(m, res);
+    return this._matchingCardV1(m, res);
+  },
+
+  // ── Tarjeta v2: financiero + lineas + personal + equipos + experiencia ──
+  _fmtRD(n) {
+    return 'RD$ ' + Number(n).toLocaleString('es-DO', { maximumFractionDigits: 2 });
+  },
+
+  _semaforo(cumple) {
+    if (cumple === true) return '<span style="color:var(--green,#16a34a);font-weight:700">CUMPLE</span>';
+    if (cumple === false) return '<span style="color:#dc2626;font-weight:700">NO CUMPLE</span>';
+    return '<span style="color:#d97706;font-weight:700">SIN DATOS</span>';
+  },
+
+  _seccionDetails(titulo, cumple, innerHtml, abierta) {
+    const punto = cumple === true ? '#16a34a' : cumple === false ? '#dc2626' : '#d97706';
+    return `
+      <details ${abierta ? 'open' : ''} style="border:1px solid var(--border,#eee);border-radius:8px;margin-bottom:8px;background:#fff">
+        <summary style="padding:10px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;list-style:none">
+          <span style="width:10px;height:10px;border-radius:50%;background:${punto};flex-shrink:0"></span>
+          ${titulo}
+          <span style="margin-left:auto;font-size:11px;font-weight:400;color:var(--text2,#6b7280)">${cumple === true ? 'Cumple' : cumple === false ? 'No cumple' : 'Sin datos para evaluar'}</span>
+        </summary>
+        <div style="padding:4px 12px 12px">${innerHtml}</div>
+      </details>`;
+  },
+
+  _matchingCardV2(m, res) {
+    const sec = res.secciones || {};
+    const cumple = res.cumple_global;
+    const badge = cumple === true
+      ? '<div class="bm-badge bm-badge-ok">CUMPLE</div>'
+      : cumple === false
+        ? '<div class="bm-badge bm-badge-err">NO CUMPLE</div>'
+        : '<div class="bm-badge bm-badge-warn">REVISAR</div>';
+
+    // ── Faltantes: el entregable real, arriba de todo ──
+    const faltantes = res.faltantes || [];
+    const faltantesHtml = faltantes.length ? `
+      <div style="border:1px solid #fecaca;background:#fef2f2;border-radius:8px;padding:10px 12px;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;color:#991b1b;margin-bottom:6px">Lo que te falta para cumplir (${faltantes.length})</div>
+        ${faltantes.map(f => `
+          <div style="font-size:12px;color:#7f1d1d;padding:3px 0;display:flex;gap:6px">
+            <span style="flex-shrink:0">–</span>
+            <span>${this._esc(f.texto)}${f.subsanable === true ? ' <span style="color:#d97706;font-weight:600">(subsanable)</span>' : f.subsanable === false ? ' <span style="font-weight:700">(NO subsanable)</span>' : ''}</span>
+          </div>`).join('')}
+      </div>` : (cumple === true ? '<div style="border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#166534;font-weight:600">Tu expediente cumple todo lo evaluable de este pliego.</div>' : '');
+
+    // ── Puntaje estimado (metodologia combinada) ──
+    const pj = res.puntaje;
+    let puntajeHtml = '';
+    if (pj) {
+      const okUmbral = pj.cumple_umbral;
+      const color = okUmbral === true ? '#16a34a' : okUmbral === false ? '#dc2626' : '#d97706';
+      const durosHtml = (pj.detalle_duros || []).map(d =>
+        `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${this._esc(d.criterio)}</span><span><strong>${d.estimado}</strong> / ${d.puntos_max}</span></div>`).join('');
+      const blandosHtml = (pj.detalle_blandos || []).map(b =>
+        `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:var(--text2,#6b7280)"><span>${this._esc(b.nombre)} (asumido)</span><span>${b.puntos_max} / ${b.puntos_max}</span></div>`).join('');
+      puntajeHtml = `
+        <div style="border:1px solid var(--border,#eee);border-radius:8px;padding:10px 12px;margin-bottom:10px;background:#fff">
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+            <div style="font-size:12px;font-weight:700">Puntaje técnico estimado (metodología combinada)</div>
+            <div style="font-size:18px;font-weight:800;color:${color}">${pj.estimado}${pj.puntaje_total ? ' / ' + pj.puntaje_total : ''}</div>
+            ${pj.puntaje_minimo ? `<div style="font-size:11px;color:var(--text2,#6b7280)">mínimo para pasar a Sobre B: <strong>${pj.puntaje_minimo}</strong></div>` : ''}
+          </div>
+          <div style="margin-top:6px">${durosHtml}${blandosHtml}</div>
+          <div style="font-size:11px;color:var(--text2,#6b7280);margin-top:6px">${this._esc(pj.nota || '')}</div>
+        </div>`;
+    }
+
+    // ── Seccion: financieros ──
+    const fin = sec.financieros || {};
+    const finFilas = (fin.detalle || []).map(d => {
+      const valor = d.valor !== null && d.valor !== undefined
+        ? (Math.abs(d.valor) >= 1000 ? this._fmtRD(d.valor) : Number(d.valor).toFixed(2)) : '—';
+      return `<tr style="border-bottom:1px solid var(--border,#eee)">
+        <td style="padding:6px 8px;font-size:12px"><div style="font-weight:600">${this._esc(d.nombre || d.tipo)}</div><div style="color:var(--text2,#6b7280);font-size:11px">${this._esc(d.formula || '')}${d.base_calculo === 'promedio' ? ' · sobre la media' : ''}</div></td>
+        <td style="padding:6px 8px;font-size:12px;color:var(--text2,#6b7280)">${this._esc(d.limite_desc || '')}</td>
+        <td style="padding:6px 8px;font-size:12px">${valor}${d.periodo_desc ? `<div style="font-size:11px;color:var(--text2,#6b7280)">${this._esc(d.periodo_desc)}</div>` : ''}</td>
+        <td style="padding:6px 8px;font-size:12px">${this._semaforo(d.cumple)}${d.faltante ? `<div style="font-size:11px;color:#dc2626">Faltan ${this._fmtRD(d.faltante)}</div>` : ''}</td>
+      </tr>`;
+    }).join('');
+    const finHtml = fin.sin_estados
+      ? '<div style="font-size:12px;color:#d97706">No hay estados financieros cargados. Sube al menos uno.</div>'
+      : (finFilas ? `<table style="width:100%;border-collapse:collapse"><tr style="background:var(--bg2,#f8f9fa)"><th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Requisito</th><th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Límite</th><th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Tu valor</th><th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Resultado</th></tr>${finFilas}</table>` : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no trae índices financieros evaluables.</div>');
+
+    // ── Seccion: lineas de credito ──
+    const lin = sec.lineas_credito || {};
+    const linEsc = lin.escenarios_lote && lin.escenarios_lote.length ? lin.escenarios_lote
+      : (lin.detalle && lin.detalle.length ? [{ lote: null, requisitos: lin.detalle }] : []);
+    const linHtml = linEsc.length ? linEsc.map(e => `
+      ${e.lote ? `<div style="font-size:12px;font-weight:700;margin:6px 0 2px">${this._esc(e.lote)}</div>` : ''}
+      ${(e.requisitos || []).map(r => `
+        <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border,#eee)">
+          <span>Línea ${this._esc(r.tipo)}${r.pct_aplicado ? ` (${Math.round(r.pct_aplicado * 100)}%${r.es_mipyme ? ' MIPYME' : ''})` : ''}</span>
+          <span>${r.requerido !== null && r.requerido !== undefined ? `necesitas <strong>${this._fmtRD(r.requerido)}</strong> · tienes ${this._fmtRD(r.disponible || 0)}` : 'monto base no disponible'} ${this._semaforo(r.cumple)}</span>
+        </div>`).join('')}
+    `).join('') : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no exige líneas de crédito.</div>';
+
+    // ── Seccion: personal ──
+    const per = sec.personal || {};
+    const perHtml = (per.detalle || []).length ? `
+      ${(per.detalle || []).map(d => `
+        <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px dashed var(--border,#eee)">
+          <span><strong>${this._esc(d.cargo)}</strong> (${d.cubiertos}/${d.puestos})
+            <span style="color:var(--text2,#6b7280)">${(d.titulaciones || []).join(' o ')}${d.anios_min ? ` · ${d.anios_min}+ años` : ''}${d.requiere_maestria ? ' · maestría' + (d.area_maestria ? ' en ' + this._esc(d.area_maestria) : '') : ''}</span>
+          </span>
+          <span>${this._semaforo(d.cumple)}</span>
+        </div>`).join('')}
+      ${(per.asignaciones || []).length ? `<div style="font-size:11px;color:var(--text2,#6b7280);margin-top:6px">Asignación propuesta: ${(per.asignaciones || []).map(a => `${this._esc(a.nombre)} → ${this._esc(a.cargo)}`).join(' · ')}</div>` : ''}
+      ${(per.checklist_documentos || []).length ? `<div style="margin-top:6px;padding:8px;background:rgba(217,119,6,0.06);border-radius:6px">${(per.checklist_documentos || []).map(c => `<div style="font-size:11px;color:#92400e">Docs: ${this._esc(c)}</div>`).join('')}</div>` : ''}
+    ` : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no detalla personal mínimo.</div>';
+
+    // ── Seccion: equipos ──
+    const eq = sec.equipos || {};
+    const eqHtml = (eq.detalle || []).length ? (eq.detalle || []).map(d => `
+      <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border,#eee)">
+        <span><strong>${this._esc(d.tipo)}</strong>${d.capacidad_min ? ` (${this._esc(d.capacidad_min)})` : ''}${d.admite_alquilado === false ? ' · solo propios' : ''}</span>
+        <span>tienes ${d.disponible} de ${d.requerido} ${this._semaforo(d.cumple)}</span>
+      </div>
+      ${(d.revision_manual || []).map(r => `<div style="font-size:11px;color:#d97706;padding-left:8px">${this._esc(r)}</div>`).join('')}
+    `).join('') : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no lista equipos mínimos.</div>';
+
+    // ── Seccion: experiencia ──
+    const exp = sec.experiencia || {};
+    const volHtml = (exp.escenarios_volumen || []) ? (exp.escenarios_volumen || []).map(v => `
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0">
+        <span>${this._esc(v.lote)}: ${this._esc(v.categoria)}</span>
+        <span>${Number(v.ejecutado).toLocaleString('es-DO')} de ${Number(v.requerido).toLocaleString('es-DO')} ${this._esc(v.unidad || '')} ${this._semaforo(v.cumple)}</span>
+      </div>`).join('') : '';
+    const descHtml = (exp.obras_descartadas || []).map(o => o.obra
+      ? `<div style="font-size:11px;color:var(--text2,#6b7280)">${this._esc(o.obra)}: ${(o.descartada_por || []).join('; ')}</div>`
+      : `<div style="font-size:11px;color:#d97706">${this._esc(o.nota || '')}</div>`).join('');
+    const expHtml = (exp.checks || []).length || volHtml || exp.obras_calificadas !== undefined ? `
+      <div style="font-size:12px;margin-bottom:4px">Obras que califican: <strong>${exp.obras_calificadas ?? 0}</strong>${exp.monto_acumulado ? ` · acumulado ${this._fmtRD(exp.monto_acumulado)}` : ''}</div>
+      ${(exp.checks || []).map(c => `
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0">
+          <span>${this._esc(c.criterio)}</span><span>${this._semaforo(c.cumple)}</span>
+        </div>`).join('')}
+      ${volHtml}
+      ${descHtml ? `<div style="margin-top:6px">${descHtml}</div>` : ''}
+    ` : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no detalla experiencia mínima evaluable.</div>';
+
+    // ── Otros requisitos (ubicacion de plantas, etc.) ──
+    const otros = res.otros_requisitos || [];
+    const otrosHtml = otros.length ? this._seccionDetails('Otros requisitos (revisión manual)', null,
+      otros.map(o => `<div style="font-size:12px;padding:2px 0"><strong>${this._esc(o.nombre)}</strong>${o.texto_original ? `<div style="font-size:11px;color:var(--text2,#6b7280)">${this._esc(o.texto_original)}</div>` : ''}</div>`).join(''), false) : '';
+
+    const metodologia = res.metodologia === 'combinada'
+      ? '<span style="font-size:11px;background:rgba(59,130,246,0.1);color:#1d4ed8;padding:2px 8px;border-radius:10px;font-weight:600">Metodología combinada</span>' : '';
+
+    return `
+      <div class="bm-card" style="margin-bottom:16px">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${this._esc(m.referencia || 'Sin referencia')}</h4>
+            <div class="bm-card-subtitle">${this._esc(m.institucion || '')}${m.nombre_proceso ? ' · ' + this._esc(m.nombre_proceso) : ''} ${metodologia}</div>
+          </div>
+          ${badge}
+        </div>
+        <div class="bm-card-body">
+          <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text2,#6b7280);margin-bottom:10px">
+            ${m.presupuesto_base ? `<div>Presupuesto base: <strong>${this._fmtRD(m.presupuesto_base)}</strong></div>` : ''}
+            ${m.monto_ofertado ? `<div>Monto evaluado: <strong>${this._fmtRD(m.monto_ofertado)}</strong></div>` : ''}
+            ${(res.lotes || []).length ? `<div>Lotes: <strong>${res.lotes.length}</strong></div>` : ''}
+            ${res.naturaleza_proceso ? `<div>Naturaleza: <strong>${this._esc(res.naturaleza_proceso.replace(/_/g, ' '))}</strong></div>` : ''}
+          </div>
+          ${faltantesHtml}
+          ${puntajeHtml}
+          ${this._seccionDetails('Financieros', fin.cumple, finHtml, fin.cumple === false)}
+          ${this._seccionDetails('Líneas de crédito', lin.cumple, linHtml, lin.cumple === false)}
+          ${this._seccionDetails('Personal', per.cumple, perHtml, per.cumple === false)}
+          ${this._seccionDetails('Equipos', eq.cumple, eqHtml, eq.cumple === false)}
+          ${this._seccionDetails('Experiencia', exp.cumple, expHtml, exp.cumple === false)}
+          ${otrosHtml}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._reevaluarMatching('${m.id}')">Reevaluar</button>
+          ${m.pliego_url ? `<button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._openStoragePath('${this._esc(m.pliego_url)}')">Ver pliego</button>` : ''}
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('matching', '${m.id}')">Eliminar</button>
+        </div>
+      </div>
+    `;
+  },
+
+  // ── Tarjeta v1 (analisis viejos, solo financieros) ──
+  _matchingCardV1(m, res) {
+    const detalle = res.detalle || [];
+    const cumple = res.cumple_financiero;
+    const badge = cumple === true
+      ? '<div class="bm-badge bm-badge-ok">CUMPLE</div>'
+      : cumple === false
+        ? '<div class="bm-badge bm-badge-err">NO CUMPLE</div>'
+        : '<div class="bm-badge bm-badge-warn">REVISAR</div>';
+
+    const filas = detalle.map(d => {
+      const estado = d.cumple === true
+        ? '<span style="color:var(--green,#16a34a);font-weight:700">CUMPLE</span>'
+        : d.cumple === false
+          ? '<span style="color:#dc2626;font-weight:700">NO CUMPLE</span>'
+          : '<span style="color:#d97706;font-weight:700">MANUAL</span>';
+      const valor = d.valor !== null && d.valor !== undefined
+        ? (Math.abs(d.valor) >= 1000 ? 'RD$ ' + Number(d.valor).toLocaleString('es-DO', {maximumFractionDigits:2}) : Number(d.valor).toFixed(2))
+        : '—';
+      const faltante = d.faltante
+        ? `<div style="font-size:11px;color:#dc2626">Faltan RD$ ${Number(d.faltante).toLocaleString('es-DO', {maximumFractionDigits:2})}</div>`
+        : '';
+      return `
+        <tr style="border-bottom:1px solid var(--border,#eee)">
+          <td style="padding:8px 10px;font-size:12px">
+            <div style="font-weight:600">${this._esc(d.nombre || d.tipo)}</div>
+            <div style="color:var(--text2,#6b7280);font-size:11px">${this._esc(d.formula || '')}</div>
+          </td>
+          <td style="padding:8px 10px;font-size:12px;color:var(--text2,#6b7280)">${this._esc(d.limite_desc || '')}</td>
+          <td style="padding:8px 10px;font-size:12px">
+            ${valor}
+            ${d.valor_desc ? `<div style="font-size:11px;color:var(--text2,#6b7280)">${this._esc(d.valor_desc)}</div>` : ''}
+          </td>
+          <td style="padding:8px 10px;font-size:12px">${estado}${faltante}</td>
+        </tr>`;
+    }).join('');
+
+    const aviso = res.sin_estados
+      ? '<div style="padding:8px 12px;background:rgba(217,119,6,0.08);border-radius:6px;font-size:12px;color:#d97706;margin-bottom:8px">No hay estados financieros cargados en tu expediente. Sube al menos uno para evaluar.</div>'
+      : '';
+
+    return `
+      <div class="bm-card" style="margin-bottom:16px">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${this._esc(m.referencia || 'Sin referencia')}</h4>
+            <div class="bm-card-subtitle">${this._esc(m.institucion || '')}${m.nombre_proceso ? ' · ' + this._esc(m.nombre_proceso) : ''}</div>
+          </div>
+          ${badge}
+        </div>
+        <div class="bm-card-body">
+          ${aviso}
+          <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text2,#6b7280);margin-bottom:10px">
+            ${m.presupuesto_base ? `<div>Presupuesto base: <strong>RD$ ${Number(m.presupuesto_base).toLocaleString('es-DO', {maximumFractionDigits:2})}</strong></div>` : ''}
+            ${m.monto_ofertado ? `<div>Monto evaluado: <strong>RD$ ${Number(m.monto_ofertado).toLocaleString('es-DO', {maximumFractionDigits:2})}</strong></div>` : ''}
+            ${res.periodo_usado ? `<div>Período usado: <strong>${this._esc(res.periodo_usado)}</strong></div>` : ''}
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border,#eee);border-radius:6px">
+              <tr style="background:var(--bg2,#f8f9fa)">
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Requisito</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Límite del pliego</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Tu valor</th>
+                <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Resultado</th>
+              </tr>
+              ${filas}
+            </table>
+          </div>
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._reevaluarMatching('${m.id}')">Reevaluar</button>
+          ${m.pliego_url ? `<button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._openStoragePath('${this._esc(m.pliego_url)}')">Ver pliego</button>` : ''}
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('matching', '${m.id}')">Eliminar</button>
+        </div>
+      </div>
+    `;
+  },
+
+  async _reevaluarMatching(id) {
+    const nuevoMonto = prompt('Monto a ofertar (deja vacío para mantener el actual):');
+    if (nuevoMonto === null) return; // canceló
+    try {
+      const body = nuevoMonto.trim() ? { monto_ofertado: Number(nuevoMonto.trim()) } : {};
+      await this._post(`/matching/${id}/reevaluar`, body);
+      this.toast('Matching recalculado con tus datos actuales', 'ok');
+      await this.refresh();
+    } catch (e) {
+      this.toast('Error reevaluando: ' + e.message, 'err');
+    }
+  },
+
+  async _extraerFinancierosIA(evt, modo) {
+    const file = evt.target.files && evt.target.files[0];
+    evt.target.value = '';
+    if (!file) return;
+
+    const status = document.getElementById(`bm-ia-status-${modo}`);
+    const setStatus = (t) => { if (status) status.textContent = t; };
+
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) { this.toast('PDF excede 25 MB', 'err'); return; }
+
+    setStatus('Analizando con IA... esto toma 20-60 segundos');
+
+    try {
+      const categoria = modo === 'ir2' ? 'ir2' : 'financieros';
+
+      // 1) Subir al storage (para que quede guardado como respaldo)
+      const formUp = new FormData();
+      formUp.append('categoria', categoria);
+      formUp.append('file', file);
+      const upPromise = this._fetchAuth('/api/bid/upload', {
+        method: 'POST',
+        body: formUp
+      }).then(r => r.ok ? r.json() : null).catch(() => null);
+
+      // 2) Extraer con IA
+      const formIA = new FormData();
+      formIA.append('file', file);
+      const iaResp = await this._fetchAuth('/api/bid/financieros/extraer', {
+        method: 'POST',
+        body: formIA
+      });
+      if (!iaResp.ok) {
+        const err = await iaResp.json().catch(() => ({}));
+        throw new Error(err.detail || `Extracción → ${iaResp.status}`);
+      }
+      const { extraido } = await iaResp.json();
+
+      // 3) Guardar el path del PDF subido en f-pdf_url
+      const up = await upPromise;
+      if (up && up.path) {
+        const hidden = document.getElementById('f-pdf_url');
+        if (hidden) {
+          hidden.value = up.path;
+          const widget = document.getElementById('bm-upload-pdf_url');
+          if (widget) widget.innerHTML = this._renderUploadWidget('pdf_url', up.path);
+        }
+      }
+
+      // 4) Pre-llenar los campos según el modo
+      const setVal = (fid, v) => {
+        const el = document.getElementById('f-' + fid);
+        if (el && v !== null && v !== undefined && v !== 0) el.value = v;
+        else if (el && v === 0) el.value = 0;
+      };
+
+      if (modo === 'ir2') {
+        setVal('periodo_fiscal', extraido.periodo);
+        setVal('fecha_cierre_fiscal', extraido.fecha_cierre);
+        setVal('ingresos_brutos', extraido.ingresos_brutos ?? extraido.ingresos);
+        setVal('costos_y_gastos', extraido.costos_y_gastos);
+        setVal('renta_neta_imponible', extraido.renta_neta_imponible);
+        setVal('impuesto_liquidado', extraido.impuesto_liquidado);
+        setVal('total_activos', extraido.activos_totales);
+        setVal('total_pasivos', extraido.pasivos_totales);
+        setVal('patrimonio', extraido.patrimonio_neto);
+      } else {
+        setVal('periodo', extraido.periodo);
+        setVal('fecha_cierre', extraido.fecha_cierre);
+        setVal('activos_corrientes', extraido.activos_corrientes);
+        setVal('activos_no_corrientes', extraido.activos_no_corrientes);
+        setVal('activos_totales', extraido.activos_totales);
+        setVal('pasivos_corrientes', extraido.pasivos_corrientes);
+        setVal('pasivos_no_corrientes', extraido.pasivos_no_corrientes);
+        setVal('pasivos_totales', extraido.pasivos_totales);
+        setVal('patrimonio_neto', extraido.patrimonio_neto);
+        setVal('ingresos', extraido.ingresos ?? extraido.ingresos_brutos);
+        setVal('costo_ventas', extraido.costo_ventas);
+        setVal('utilidad_bruta', extraido.utilidad_bruta);
+        setVal('gastos_operativos', extraido.gastos_operativos);
+        setVal('utilidad_operativa', extraido.utilidad_operativa);
+        setVal('utilidad_neta', extraido.utilidad_neta);
+      }
+
+      const conf = extraido.confianza || 'media';
+      setStatus(`Listo. Confianza: ${conf}.${extraido.notas ? ' ' + extraido.notas : ''} Revisa los valores antes de guardar.`);
+      this.toast('Valores extraídos. Revísalos antes de guardar.', 'ok');
+    } catch (e) {
+      setStatus('');
+      this.toast('Error extrayendo: ' + e.message, 'err');
+    }
+  },
+
+  async _doUpload(evt, field) {
+    const file = evt.target.files && evt.target.files[0];
+    if (!file) return;
+
+    const widget = document.getElementById(`bm-upload-${field}`);
+    if (!widget) return;
+    const categoria = widget.dataset.categoria;
+
+    // Validación cliente-side (backend valida también)
+    const MAX = 25 * 1024 * 1024;
+    if (file.size > MAX) {
+      this.toast('Archivo excede 25 MB. Comprime o divide.', 'err');
+      evt.target.value = '';
+      return;
+    }
+    if (file.size === 0) {
+      this.toast('Archivo vacío', 'err');
+      evt.target.value = '';
+      return;
+    }
+
+    // Estado visual: subiendo
+    widget.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:var(--bg2,#f8f9fa);border:1px solid var(--border,#e5e7eb);border-radius:6px">
+        <div style="width:16px;height:16px;border:2px solid var(--green,#16a34a);border-top-color:transparent;border-radius:50%;animation:bm-spin 0.7s linear infinite"></div>
+        <span style="font-size:13px;color:var(--text2,#6b7280);flex:1">Subiendo <strong>${this._esc(file.name)}</strong> (${(file.size/1024/1024).toFixed(2)} MB)...</span>
+      </div>
+    `;
+
+    try {
+      const form = new FormData();
+      form.append('categoria', categoria);
+      form.append('file', file);
+
+      const r = await this._fetchAuth('/api/bid/upload', {
+        method: 'POST',
+        body: form
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `Upload → ${r.status}`);
+      }
+      const res = await r.json();
+
+      // Guardar path en el input hidden (así _collectForm lo recoge)
+      const hidden = document.getElementById(`f-${field}`);
+      if (hidden) hidden.value = res.path;
+
+      // Re-render widget con el archivo cargado
+      widget.innerHTML = this._renderUploadWidget(field, res.path);
+      this.toast('Archivo subido', 'ok');
+    } catch (e) {
+      this.toast('Error subiendo: ' + e.message, 'err');
+      widget.innerHTML = this._renderUploadWidget(field, '');
+    }
+  },
+
+  async _viewFile(field) {
+    const path = (document.getElementById(`f-${field}`) || {}).value || '';
+    return this._openStoragePath(path);
+  },
+
+  // Utilidad pública: abrir cualquier path/URL guardado en storage
+  // (uso desde tarjetas fuera del modal, ej: link "Ver archivo" en certificaciones)
+  async _openStoragePath(path) {
+    if (!path) return;
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      window.open(path, '_blank', 'noopener');
+      return;
+    }
+    try {
+      const r = await this._fetchAuth(`/api/bid/signed-url?path=${encodeURIComponent(path)}`);
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || `Signed URL → ${r.status}`);
+      }
+      const { url } = await r.json();
+      window.open(url, '_blank', 'noopener');
+    } catch (e) {
+      this.toast('Error abriendo archivo: ' + e.message, 'err');
+    }
+  },
+
+  _replaceFile(field) {
+    const widget = document.getElementById(`bm-upload-${field}`);
+    if (!widget) return;
+    // Vaciar el hidden y renderizar el selector; luego auto-click para abrir picker
+    const hidden = document.getElementById(`f-${field}`);
+    if (hidden) hidden.value = '';
+    widget.innerHTML = this._renderUploadWidget(field, '');
+    const input = widget.querySelector('input[type="file"]');
+    if (input) input.click();
+  },
+
+  async _clearFile(field) {
+    const hidden = document.getElementById(`f-${field}`);
+    const path = hidden ? hidden.value : '';
+    if (!path) return;
+
+    // Si es path del bucket (no URL externa), intentar borrar del storage.
+    // Silencioso: si falla, seguimos y limpiamos el campo igual.
+    if (!path.startsWith('http')) {
+      try {
+        await this._fetchAuth(`/api/bid/upload?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+      } catch(e) { /* silencioso */ }
+    }
+
+    if (hidden) hidden.value = '';
+    const widget = document.getElementById(`bm-upload-${field}`);
+    if (widget) widget.innerHTML = this._renderUploadWidget(field, '');
+    this.toast('Archivo quitado', 'ok');
   }
-}
-Reglas de extraccion:
-- FINANCIEROS: los pliegos piden 2 a 4 de: solvencia (Activo/Pasivo), liquidez corriente (AC/PC), endeudamiento (Pasivo Total/Patrimonio Neto, a veces Pasivo/Activo: copia la formula TAL CUAL), capital de trabajo (AC-PC). Extrae SOLO los que pide, con limite y operador EXACTOS: "Mayor 1.20" es ">" 1.20; "Igual o mayor a 1.50" es ">=" 1.50; "Menor 1.50" es "<"; "Igual o Menor 1.40" es "<=".
-- "base_calculo": "ultimo" si dice "sobre el ultimo balance" (los otros para tendencias); "promedio" si dice "sobre la media de estos balances" o similar. Default "ultimo".
-- "tipo" financiero: solvencia, liquidez, capital_trabajo, endeudamiento, patrimonio, ingresos, otro.
-- LINEAS DE CREDITO: si el pliego exige certificacion de linea financiera/bancaria o linea comercial/de suplidores por un % del presupuesto o del lote (patron tipico: 25% o 30% para grandes, 15% para MIPYMES segun circular DGCP44-PNP-2023-0011), extraelas en "lineas_credito" con tipo "bancaria" o "comercial", los porcentajes como fraccion (0.25) y "base": "lote" o "contratacion". NO las metas en financieros.
-- PERSONAL: un objeto por cargo pedido. "titulaciones" es LISTA con todas las alternativas que acepta el pliego ("Ingeniero Civil o Arquitecto" = ["ingeniero civil","arquitecto"]). "anios_min" son los anos desde el titulo. Si pide maestria, "requiere_maestria": true y "area_maestria" con el area textual. "certificaciones_funcion_min": cuantas certificaciones de obras en esa funcion pide. "por_lote": true si exige uno DISTINTO por lote. Si pide "Residente I" y "Residente II" con el mismo perfil, puedes unificarlos en un requisito con "cantidad": 2. Si el requisito trae puntaje (metodologia combinada), llena "puntaje" con los tramos reales del pliego; si no, "puntaje": null.
-- EQUIPOS: un objeto por tipo. "tipo" en minusculas y singular, usando estos nombres canonicos cuando apliquen: camion volteo, retroexcavadora, retropala, excavadora, motoniveladora, bulldozer, cargador frontal, minicargador, grua telescopica, camion grua, camion cama baja, camion cisterna, camion distribucion asfalto, pavimentadora, barredora, rodillo, compactador manual, compresor, planta electrica, torre de luz, bomba de achique, ligadora, vibrador hormigon, soldadora, camioneta, equipo topografia, maquina perforacion pozos, diferencial. Sinonimos: gradar/gredar/greda = motoniveladora; maquito = compactador manual; bobcat = minicargador; camion de agua = camion cisterna. "capacidad_min" con numero y unidad tal cual el pliego ("12 m3", "170 HP", "2000 galones", "12 ton", "40 KW"); null si no especifica.
-- EXPERIENCIA (de la EMPRESA como contratista, no del personal): "criterio_similitud" es uno de: naturaleza (solo pide obras similares por tipo), monto (monto minimo POR obra), monto_acumulado (la SUMA de las obras debe alcanzar un monto, tipico "alcance o supere el presupuesto base"), volumen_partidas (pide volumenes ejecutados por categoria, ej. m3 de movimiento de tierra por lote), cantidad_intervenciones (ej. 50 puntos de bacheo), porcentaje_portafolio (ej. minimo 30% de la experiencia a nivel hospitalario, usar pct_portafolio: 30). "acepta_en_curso_pct": % minimo de ejecucion si acepta obras en curso (ej. 60 CAASD, 40 MIVHED); null si solo concluidas. "requiere_acta": true si exige carta de recepcion final/definitiva/finiquito/recibido conforme.
-- "naturaleza_proceso" y "naturaleza" usan esta taxonomia: hidraulica_sanitaria, vial_asfalto, edificacion, edificacion_hospitalaria, edificacion_educativa, acueducto_alcantarillado, electromecanica, otra.
-- METODOLOGIA: "cumple_no_cumple" o "combinada" (cuando hay puntaje tecnico con umbral, tipico 70 puntos con minimo 49 o 56). Extrae "puntaje_total" y "puntaje_minimo" si existen. Los criterios puntuados que NO dependen del expediente (enfoque, plan de trabajo, metodologia, cronograma, planes de seguridad/riesgo/ambiental) van en "puntaje_blandos" con sus puntos maximos.
-- "subsanable": true/false si el pliego lo marca para ese requisito (los pliegos estandar lo indican requisito por requisito); null si no lo dice.
-- "texto_original": SIEMPRE la frase literal del pliego de donde salio el requisito (maximo 300 caracteres). Es obligatorio para poder auditar.
-- Requisitos que no encajan en ninguna seccion (ubicacion de plantas, certificaciones especiales) van en "otros".
-- Si el proceso NO tiene lotes, "lotes": []. Si una seccion no aparece en el pliego, devuelvela vacia ([] o null). NUNCA inventes requisitos.
-- Numeros sin separadores de miles."""
+};
 
-
-# ── Helpers de normalizacion y parseo ─────────────────────────
-
-def _norm(txt) -> str:
-    """minusculas, sin acentos, sin signos; colapsa espacios."""
-    if not txt:
-        return ""
-    s = str(txt).lower()
-    for a, b in (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"),
-                 ("ü", "u"), ("ñ", "n")):
-        s = s.replace(a, b)
-    s = "".join(c if (c.isalnum() or c == " ") else " " for c in s)
-    return " ".join(s.split())
-
-
-def _stem(tok: str) -> str:
-    """Recorte burdo de plurales/derivaciones: primeros 6 chars alfanumericos."""
-    return tok[:6]
-
-
-def _tokens(txt) -> set:
-    return {_stem(t) for t in _norm(txt).split() if len(t) > 2}
-
-
-# Alias reales sacados de pliegos RD (CAASD, INAPA, DIE, CEIZTUR, CPADP, SNS)
-_EQUIPO_ALIAS = {
-    "gradar": "motoniveladora", "gredar": "motoniveladora", "greda": "motoniveladora",
-    "niveladora": "motoniveladora", "motoniveladora": "motoniveladora",
-    "maquito": "compactador manual", "maquitos": "compactador manual",
-    "bobcat": "minicargador", "mini cargador": "minicargador",
-    "minicargador frontal": "minicargador", "minicargador": "minicargador",
-    "camion de agua": "camion cisterna", "camion cisterna de agua": "camion cisterna",
-    "cisterna": "camion cisterna",
-    "torre portatil de iluminacion": "torre de luz", "torres de luz": "torre de luz",
-    "torre de iluminacion": "torre de luz",
-    "retro pala": "retropala", "retro-pala": "retropala",
-    "camiones volteo": "camion volteo", "camion de volteo": "camion volteo",
-    "volqueta": "camion volteo",
-    "tractor bulldozer": "bulldozer", "tractor d6": "bulldozer", "tractor d 6": "bulldozer",
-    "pala mecanica": "excavadora",
-    "cargadora frontal": "cargador frontal",
-    "ligadora de hormigon": "ligadora",
-    "vibrador electrico": "vibrador hormigon", "vibrador para hormigon": "vibrador hormigon",
-    "generador electrico": "planta electrica", "generador": "planta electrica",
-    "rodillo liso vibratorio": "rodillo", "rodillo compactador": "rodillo",
-    "rodillo vibrador": "rodillo", "rodillo de mano": "rodillo",
-    "soldadora de arco": "soldadora",
-    "grua": "grua telescopica",
-}
-
-
-def _canon_equipo(txt) -> str:
-    """Lleva un nombre de equipo a su tipo canonico usando alias + normalizacion."""
-    n = _norm(txt)
-    if not n:
-        return ""
-    if n in _EQUIPO_ALIAS:
-        return _EQUIPO_ALIAS[n]
-    # busca el alias mas largo contenido en el texto
-    mejor = ""
-    for alias, canon in _EQUIPO_ALIAS.items():
-        if alias in n and len(alias) > len(mejor):
-            mejor = alias
-            n_canon = canon
-    if mejor:
-        return n_canon
-    return n
-
-
-_UNIDADES = {
-    "m3": "m3", "m³": "m3", "mts3": "m3", "metros cubicos": "m3",
-    "m2": "m2", "m²": "m2", "metros cuadrados": "m2",
-    "hp": "hp", "kw": "kw", "kva": "kw",
-    "ton": "ton", "tons": "ton", "toneladas": "ton", "tonelada": "ton", "tn": "ton",
-    "gal": "gal", "galones": "gal", "gl": "gal",
-    "amp": "amp", "amperios": "amp",
-    "pl": "pl", "pies": "pl",
-    "pulg": "pulg", "pulgadas": "pulg",
-    "m": "m", "mts": "m", "metros": "m",
-    "ml": "ml",
-}
-
-
-def _parse_capacidad(txt):
-    """'12 m3' → (12.0, 'm3'). ('1.5-2 fundas', modelos, etc.) → (None, None):
-    lo que no parsea va a revision manual, nunca se adivina."""
-    if txt is None:
-        return None, None
-    n = _norm(str(txt).replace(",", ""))  # comas de miles fuera antes de normalizar
-    if not n:
-        return None, None
-    num = ""
-    resto = ""
-    for i, c in enumerate(n):
-        if c.isdigit() or c in ".,":
-            num += c
-        elif num:
-            resto = n[i:].strip()
-            break
-    if not num:
-        return None, None
-    try:
-        valor = float(num.replace(",", ""))
-    except ValueError:
-        return None, None
-    unidad_tok = resto.split()[0] if resto else ""
-    unidad = _UNIDADES.get(unidad_tok)
-    if unidad is None and resto:
-        for k, v in _UNIDADES.items():
-            if resto.startswith(k):
-                unidad = v
-                break
-    return (valor, unidad) if unidad else (None, None)
-
-
-def _anios_desde(fecha_str):
-    """Anos completos desde una fecha ISO (fecha_graduacion) hasta hoy."""
-    if not fecha_str:
-        return None
-    try:
-        f = datetime.fromisoformat(str(fecha_str)[:10])
-    except ValueError:
-        return None
-    hoy = datetime.utcnow()
-    return hoy.year - f.year - (1 if (hoy.month, hoy.day) < (f.month, f.day) else 0)
-
-
-def _num_or_none(v):
-    try:
-        return float(v) if v is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _cmp(valor, operador, limite):
-    op = (operador or ">=").strip()
-    if op in (">", "mayor"):
-        return valor > limite
-    if op in ("<", "menor"):
-        return valor < limite
-    if op in ("<=", "≤", "menor_igual"):
-        return valor <= limite
-    return valor >= limite  # default >=
-
-
-# Taxonomia de naturaleza → palabras clave para matchear contra el expediente
-_NATURALEZA_KEYWORDS = {
-    "hidraulica_sanitaria": ["hidraulica", "sanitaria", "sanitario", "canada", "cañada",
-                             "saneamiento", "pluvial", "drenaje", "alcantarillado"],
-    "vial_asfalto": ["asfalto", "asfaltico", "vial", "carretera", "bacheo", "pavimento",
-                     "calle", "camino", "conten", "cuneta"],
-    "edificacion": ["edificacion", "edificio", "vivienda", "construccion", "remodelacion",
-                    "readecuacion", "rehabilitacion"],
-    "edificacion_hospitalaria": ["hospital", "hospitalaria", "salud", "clinica",
-                                 "centro de salud", "medica"],
-    "edificacion_educativa": ["escuela", "educativo", "politecnico", "aula", "liceo",
-                              "centro educativo", "deportiva"],
-    "acueducto_alcantarillado": ["acueducto", "agua potable", "alcantarillado", "pozo",
-                                 "tuberia", "redes de agua", "linea de impulsion"],
-    "electromecanica": ["electromecanica", "electrica", "subestacion", "bombeo",
-                        "planta de tratamiento"],
-}
-
-
-def _obra_matchea_naturaleza(obra: dict, naturalezas: list) -> bool:
-    if not naturalezas:
-        return True
-    texto = " ".join([
-        _norm(obra.get("tipo_obra")), _norm(obra.get("nombre_proyecto")),
-        _norm(obra.get("descripcion")), _norm(obra.get("alcance_detallado")),
-        " ".join(_norm(x) for x in (obra.get("categorias_obra") or [])),
-        " ".join(_norm(x) for x in (obra.get("especialidad") or [])),
-    ])
-    for nat in naturalezas:
-        kws = _NATURALEZA_KEYWORDS.get(nat, [nat.replace("_", " ")])
-        if any(_norm(kw) in texto for kw in kws):
-            return True
-    return False
-
-
-# ── Evaluador: financieros ────────────────────────────────────
-
-def _evaluar_financieros(eid: str, reqs: list, monto) -> dict:
-    fin_rows = _sb.table("bid_financieros") \
-        .select("periodo, fecha_cierre, activos_totales, pasivos_totales, "
-                "activos_corrientes, pasivos_corrientes, patrimonio_neto, ingresos, "
-                "solvencia, liquidez_corriente, capital_trabajo, endeudamiento") \
-        .eq("empresa_id", eid) \
-        .not_.is_("activos_totales", "null") \
-        .order("fecha_cierre", desc=True) \
-        .limit(2).execute().data or []
-    fin = fin_rows[0] if fin_rows else None
-
-    cap_rows = _sb.table("bid_capacidad_financiera") \
-        .select("tipo, monto, monto_disponible, estado, fecha_vencimiento") \
-        .eq("empresa_id", eid).execute().data or []
-    hoy = datetime.utcnow().date().isoformat()
-    vigentes = [r for r in cap_rows
-                if (r.get("estado") or "vigente").lower() not in ("vencido", "cancelado", "inactivo")
-                and (not r.get("fecha_vencimiento") or str(r["fecha_vencimiento"]) >= hoy)]
-    lineas_total = sum(_num_or_none(r.get("monto_disponible")) or _num_or_none(r.get("monto")) or 0
-                       for r in vigentes)
-
-    def _indicador(row, tipo, req):
-        if tipo == "solvencia":
-            return _num_or_none(row.get("solvencia")), None
-        if tipo == "liquidez":
-            return _num_or_none(row.get("liquidez_corriente")), None
-        if tipo == "capital_trabajo":
-            base = _num_or_none(row.get("capital_trabajo")) or 0
-            if req.get("incluye_lineas_credito"):
-                return base + lineas_total, f"CT RD$ {base:,.2f} + lineas RD$ {lineas_total:,.2f}"
-            return base, None
-        if tipo == "endeudamiento":
-            formula_txt = _norm(req.get("formula"))
-            if "activo" in formula_txt:
-                pt, at = _num_or_none(row.get("pasivos_totales")), _num_or_none(row.get("activos_totales"))
-                return ((pt / at) if (pt is not None and at) else None), "Pasivo Total / Activo Total"
-            return _num_or_none(row.get("endeudamiento")), "Pasivo Total / Patrimonio"
-        if tipo == "patrimonio":
-            return _num_or_none(row.get("patrimonio_neto")), None
-        if tipo == "ingresos":
-            return _num_or_none(row.get("ingresos")), None
-        return None, None
-
-    detalle, faltantes = [], []
-    cumple_todos = True
-    evaluables = 0
-
-    for req in (reqs or []):
-        tipo = (req.get("tipo") or "otro").lower()
-        operador = req.get("operador") or ">="
-        limite = _num_or_none(req.get("limite"))
-        pct = _num_or_none(req.get("pct_monto"))
-        base_calc = (req.get("base_calculo") or "ultimo").lower()
-
-        limite_efectivo = limite
-        limite_desc = f"{operador} {limite}" if limite is not None else ""
-        if pct is not None and monto:
-            limite_efectivo = pct * monto
-            limite_desc = f"{operador} {pct*100:.0f}% del monto (RD$ {limite_efectivo:,.2f})"
-
-        valor, valor_desc, periodo_desc = None, None, None
-        if fin:
-            if base_calc == "promedio" and len(fin_rows) >= 2:
-                vals = []
-                for row in fin_rows[:2]:
-                    v, d = _indicador(row, tipo, req)
-                    if v is not None:
-                        vals.append(v)
-                        valor_desc = d
-                if vals:
-                    valor = sum(vals) / len(vals)
-                    periodo_desc = "promedio " + " y ".join(str(r.get("periodo")) for r in fin_rows[:2])
-            else:
-                valor, valor_desc = _indicador(fin, tipo, req)
-                periodo_desc = str(fin.get("periodo"))
-                if base_calc == "promedio" and len(fin_rows) < 2:
-                    periodo_desc += " (pliego pide promedio; solo hay 1 periodo cargado)"
-
-        cumple, faltante = None, None
-        if valor is not None and limite_efectivo is not None:
-            evaluables += 1
-            cumple = _cmp(valor, operador, limite_efectivo)
-            if cumple is False:
-                cumple_todos = False
-                if operador in (">", ">=", "mayor", "≥", "mayor_igual"):
-                    faltante = limite_efectivo - valor
-                nom = req.get("nombre") or tipo
-                faltantes.append({
-                    "seccion": "financieros",
-                    "texto": f"{nom}: tienes {valor:,.2f}, el pliego pide {limite_desc}",
-                    "subsanable": req.get("subsanable"),
-                })
-
-        detalle.append({
-            "nombre": req.get("nombre"), "tipo": tipo, "formula": req.get("formula"),
-            "base_calculo": base_calc, "periodo_desc": periodo_desc,
-            "limite_desc": limite_desc or (req.get("notas") or "revisar pliego"),
-            "valor": valor, "valor_desc": valor_desc,
-            "cumple": cumple, "faltante": faltante,
-            "subsanable": req.get("subsanable"),
-            "texto_original": req.get("texto_original"),
-            "notas": req.get("notas"),
-        })
-
-    return {
-        "detalle": detalle,
-        "cumple": (cumple_todos if evaluables else None),
-        "faltantes": faltantes,
-        "periodo_usado": fin.get("periodo") if fin else None,
-        "sin_estados": fin is None,
-        "lineas_credito_total": lineas_total,
-    }
-
-
-# ── Evaluador: lineas de credito (% del presupuesto/lote) ─────
-
-def _evaluar_lineas_credito(eid: str, reqs: list, presupuesto, lotes: list) -> dict:
-    if not reqs:
-        return {"detalle": [], "cumple": None, "faltantes": [], "escenarios_lote": []}
-
-    perfil = _sb.table("perfiles_empresa").select("clasificacion_mipyme") \
-        .eq("id", eid).limit(1).execute().data or []
-    es_mipyme = bool(perfil) and str(perfil[0].get("clasificacion_mipyme") or "").strip().upper() in ("SI", "SÍ", "S", "TRUE", "1")
-
-    cap_rows = _sb.table("bid_capacidad_financiera") \
-        .select("tipo, institucion_financiera, monto, monto_disponible, estado, fecha_vencimiento") \
-        .eq("empresa_id", eid).execute().data or []
-    hoy = datetime.utcnow().date().isoformat()
-
-    def _suma(tipo_linea):
-        total = 0.0
-        for r in cap_rows:
-            t = _norm(r.get("tipo"))
-            estado = (r.get("estado") or "vigente").lower()
-            if estado in ("vencido", "cancelado", "inactivo"):
-                continue
-            if r.get("fecha_vencimiento") and str(r["fecha_vencimiento"]) < hoy:
-                continue
-            es_com = any(k in t for k in ("comercial", "suplidor", "ferreteria"))
-            if tipo_linea == "comercial" and not es_com:
-                continue
-            if tipo_linea == "bancaria" and es_com:
-                continue
-            total += _num_or_none(r.get("monto_disponible")) or _num_or_none(r.get("monto")) or 0
-        return total
-
-    escenarios = []
-    detalle, faltantes = [], []
-    cumple_global = True
-    evaluado = False
-
-    bases = []
-    if lotes:
-        for l in (lotes or []):
-            p = _num_or_none(l.get("presupuesto"))
-            bases.append((f"Lote {l.get('numero')}", p))
-    if not bases:
-        bases = [("Proceso completo", _num_or_none(presupuesto))]
-
-    for etiqueta, base_monto in bases:
-        esc = {"lote": etiqueta, "requisitos": [], "cumple": None}
-        esc_cumple = True
-        esc_eval = False
-        for req in reqs:
-            tipo_linea = (req.get("tipo") or "bancaria").lower()
-            pct = _num_or_none(req.get("pct_mipyme") if es_mipyme else req.get("pct_grande"))
-            disponible = _suma(tipo_linea)
-            requerido = (pct * base_monto) if (pct is not None and base_monto) else None
-            cumple = None
-            if requerido is not None:
-                esc_eval = True
-                evaluado = True
-                cumple = disponible >= requerido
-                if not cumple:
-                    esc_cumple = False
-                    cumple_global = False
-                    faltantes.append({
-                        "seccion": "lineas_credito",
-                        "texto": (f"Linea {tipo_linea} ({etiqueta}): necesitas RD$ {requerido:,.2f} "
-                                  f"({pct*100:.0f}% {'MIPYME' if es_mipyme else ''}), "
-                                  f"tienes RD$ {disponible:,.2f} vigente"),
-                        "subsanable": req.get("subsanable"),
-                    })
-            esc["requisitos"].append({
-                "tipo": tipo_linea, "pct_aplicado": pct, "es_mipyme": es_mipyme,
-                "requerido": requerido, "disponible": disponible, "cumple": cumple,
-                "texto_original": req.get("texto_original"),
-            })
-        esc["cumple"] = esc_cumple if esc_eval else None
-        escenarios.append(esc)
-
-    detalle = escenarios[0]["requisitos"] if len(escenarios) == 1 else []
-    return {
-        "detalle": detalle,
-        "escenarios_lote": escenarios if len(escenarios) > 1 else [],
-        "cumple": (cumple_global if evaluado else None),
-        "faltantes": faltantes,
-        "es_mipyme": es_mipyme,
-    }
-
-
-# ── Evaluador: personal (asignacion unica greedy) ─────────────
-
-def _persona_elegible(p: dict, req: dict) -> tuple:
-    """(elegible: bool, razones_no: list[str])"""
-    razones = []
-    titulaciones = req.get("titulaciones") or []
-    if titulaciones:
-        texto_perfil = " ".join([
-            _norm(p.get("profesion")), _norm(p.get("formacion_academica")),
-            " ".join(_norm(x) for x in (p.get("especialidades") or [])),
-        ])
-        toks_perfil = {_stem(t) for t in texto_perfil.split() if len(t) > 2}
-        ok_titulo = False
-        for t in titulaciones:
-            toks_req = {_stem(x) for x in _norm(t).split() if len(x) > 2}
-            if toks_req and toks_req.issubset(toks_perfil):
-                ok_titulo = True
-                break
-        if not ok_titulo:
-            razones.append("titulacion no coincide")
-
-    anios_min = _num_or_none(req.get("anios_min"))
-    anios_p = _anios_desde(p.get("fecha_graduacion"))
-    if anios_p is None:
-        anios_p = _num_or_none(p.get("experiencia_general_anios"))
-    if anios_min is not None:
-        if anios_p is None or anios_p < anios_min:
-            razones.append(f"anos insuficientes ({anios_p if anios_p is not None else 'sin dato'} < {anios_min:g})")
-
-    if req.get("requiere_maestria"):
-        if not p.get("tiene_maestria"):
-            razones.append("sin maestria")
-        else:
-            area = req.get("area_maestria")
-            if area and "afin" not in _norm(area):
-                toks_area = _tokens(area)
-                toks_m = _tokens(p.get("maestria_descripcion"))
-                # basta con que UN token del area aparezca (las areas vienen como
-                # "hidraulica, sanitaria o afines")
-                if toks_area and toks_m and not (toks_area & toks_m):
-                    razones.append(f"maestria en otra area (pide {area})")
-
-    if req.get("requiere_colegiatura") and not (p.get("codia") or "").strip():
-        razones.append("sin CODIA")
-
-    return (len(razones) == 0), razones, (anios_p or 0)
-
-
-def _evaluar_personal(eid: str, reqs: list, lotes: list) -> dict:
-    if not reqs:
-        return {"detalle": [], "cumple": None, "faltantes": [], "asignaciones": []}
-
-    personas = _sb.table("bid_personal") \
-        .select("id, nombre_completo, profesion, formacion_academica, especialidades, "
-                "experiencia_general_anios, experiencia_especifica_anios, codia, "
-                "tiene_maestria, maestria_descripcion, fecha_graduacion, activo, disponible") \
-        .eq("empresa_id", eid).execute().data or []
-    personas = [p for p in personas if p.get("activo") is not False and p.get("disponible") is not False]
-
-    # Expandir requisitos: cantidad N = N puestos; por_lote = un puesto por lote
-    puestos = []
-    n_lotes = max(1, len(lotes or []))
-    for req in reqs:
-        cantidad = int(_num_or_none(req.get("cantidad")) or 1)
-        multiplicador = n_lotes if (req.get("por_lote") and n_lotes > 1) else 1
-        for i in range(cantidad * multiplicador):
-            puestos.append({"req": req, "n": i + 1})
-
-    # Greedy: puestos mas exigentes primero (maestria > anos > colegiatura)
-    def _exigencia(p):
-        r = p["req"]
-        return (1 if r.get("requiere_maestria") else 0,
-                _num_or_none(r.get("anios_min")) or 0,
-                1 if r.get("requiere_colegiatura") else 0)
-    puestos.sort(key=_exigencia, reverse=True)
-
-    usadas = set()
-    asignaciones, faltantes, detalle_reqs = [], [], {}
-    cumple_todos = True
-
-    for puesto in puestos:
-        req = puesto["req"]
-        cargo = req.get("cargo") or "puesto"
-        candidatos = []
-        for p in personas:
-            if p["id"] in usadas:
-                continue
-            ok, razones, anios = _persona_elegible(p, req)
-            if ok:
-                candidatos.append((anios, p))
-        if candidatos:
-            # el candidato con MENOS anos que igual cumple, para guardar a los
-            # mas fuertes para puestos mas duros que vengan despues
-            candidatos.sort(key=lambda c: c[0])
-            anios_c, elegido = candidatos[0]
-            usadas.add(elegido["id"])
-            asignaciones.append({
-                "cargo": cargo, "puesto_n": puesto["n"],
-                "personal_id": elegido["id"], "nombre": elegido.get("nombre_completo"),
-                "anios": anios_c,
-            })
-            detalle_reqs.setdefault(cargo, {"req": req, "cubiertos": 0, "total": 0})
-            detalle_reqs[cargo]["cubiertos"] += 1
-        else:
-            cumple_todos = False
-            partes = []
-            if req.get("titulaciones"):
-                partes.append(" o ".join(req["titulaciones"]))
-            if req.get("anios_min"):
-                partes.append(f"{req['anios_min']:g}+ anos desde el titulo")
-            if req.get("requiere_maestria"):
-                partes.append(f"maestria{' en ' + req['area_maestria'] if req.get('area_maestria') else ''}")
-            if req.get("requiere_colegiatura"):
-                partes.append("CODIA vigente")
-            faltantes.append({
-                "seccion": "personal",
-                "texto": f"Falta 1 {cargo}: " + ", ".join(partes) if partes else f"Falta 1 {cargo}",
-                "subsanable": req.get("subsanable"),
-            })
-        detalle_reqs.setdefault(cargo, {"req": req, "cubiertos": 0, "total": 0})
-        detalle_reqs[cargo]["total"] += 1
-
-    detalle = []
-    checklist_docs = []
-    for cargo, info in detalle_reqs.items():
-        req = info["req"]
-        detalle.append({
-            "cargo": cargo,
-            "puestos": info["total"], "cubiertos": info["cubiertos"],
-            "cumple": info["cubiertos"] >= info["total"],
-            "titulaciones": req.get("titulaciones"),
-            "anios_min": req.get("anios_min"),
-            "requiere_maestria": req.get("requiere_maestria"),
-            "area_maestria": req.get("area_maestria"),
-            "subsanable": req.get("subsanable"),
-            "texto_original": req.get("texto_original"),
-        })
-        certs_min = _num_or_none(req.get("certificaciones_funcion_min"))
-        if certs_min:
-            checklist_docs.append(
-                f"{cargo}: preparar {certs_min:g}+ certificaciones de obras desempenando esa funcion "
-                f"(el pliego las exige como soporte)")
-
-    return {
-        "detalle": detalle,
-        "asignaciones": asignaciones,
-        "cumple": cumple_todos if puestos else None,
-        "faltantes": faltantes,
-        "checklist_documentos": checklist_docs,
-    }
-
-
-# ── Evaluador: equipos ────────────────────────────────────────
-
-def _evaluar_equipos(eid: str, reqs: list) -> dict:
-    if not reqs:
-        return {"detalle": [], "cumple": None, "faltantes": []}
-
-    equipos = _sb.table("bid_equipos") \
-        .select("id, tipo, descripcion, cantidad, capacidad, anio, propiedad, activo") \
-        .eq("empresa_id", eid).execute().data or []
-    equipos = [e for e in equipos if e.get("activo") is not False]
-
-    detalle, faltantes = [], []
-    cumple_todos = True
-    evaluado = False
-
-    for req in reqs:
-        canon_req = _canon_equipo(req.get("tipo"))
-        cant_req = int(_num_or_none(req.get("cantidad")) or 1)
-        cap_req, unidad_req = _parse_capacidad(req.get("capacidad_min"))
-        anio_min = _num_or_none(req.get("anio_minimo"))
-        admite_alq = req.get("admite_alquilado")
-        admite_alq = True if admite_alq is None else bool(admite_alq)
-
-        disponibles = 0
-        revision = []
-        for e in equipos:
-            canon_e = _canon_equipo(e.get("tipo") or e.get("descripcion"))
-            if not canon_e or canon_e != canon_req:
-                # segundo intento: tokens del tipo requerido dentro de la descripcion
-                toks_req = _tokens(canon_req)
-                toks_e = _tokens((e.get("tipo") or "") + " " + (e.get("descripcion") or ""))
-                if not (toks_req and toks_req.issubset(toks_e)):
-                    continue
-            if not admite_alq and _norm(e.get("propiedad")) not in ("propio", "propia"):
-                continue
-            if anio_min is not None and e.get("anio") and float(e["anio"]) < anio_min:
-                continue
-            if cap_req is not None:
-                cap_e, unidad_e = _parse_capacidad(e.get("capacidad"))
-                if cap_e is None or unidad_e != unidad_req:
-                    revision.append(f"{e.get('descripcion') or e.get('tipo')}: capacidad "
-                                    f"'{e.get('capacidad') or 'sin dato'}' no comparable con "
-                                    f"'{req.get('capacidad_min')}' — verificar manual")
-                    continue
-                if cap_e < cap_req:
-                    continue
-            disponibles += int(_num_or_none(e.get("cantidad")) or 1)
-
-        evaluado = True
-        cumple = disponibles >= cant_req
-        if not cumple:
-            cumple_todos = False
-            extra = f" ({req.get('capacidad_min')})" if req.get("capacidad_min") else ""
-            propio_txt = "" if admite_alq else " PROPIOS (no admite alquilados)"
-            faltantes.append({
-                "seccion": "equipos",
-                "texto": (f"Faltan {cant_req - disponibles} {req.get('tipo')}{extra}{propio_txt}: "
-                          f"tienes {disponibles}, piden {cant_req}"),
-                "subsanable": req.get("subsanable"),
-            })
-
-        detalle.append({
-            "tipo": req.get("tipo"), "tipo_canonico": canon_req,
-            "requerido": cant_req, "disponible": disponibles,
-            "capacidad_min": req.get("capacidad_min"),
-            "admite_alquilado": admite_alq, "cumple": cumple,
-            "revision_manual": revision or None,
-            "subsanable": req.get("subsanable"),
-            "texto_original": req.get("texto_original"),
-        })
-
-    return {
-        "detalle": detalle,
-        "cumple": cumple_todos if evaluado else None,
-        "faltantes": faltantes,
-    }
-
-
-# ── Evaluador: experiencia de la empresa ──────────────────────
-
-def _evaluar_experiencia(eid: str, req: dict, presupuesto, lotes: list) -> dict:
-    if not req:
-        return {"detalle": None, "cumple": None, "faltantes": []}
-
-    obras = _sb.table("bid_experiencia") \
-        .select("id, nombre_proyecto, cliente, tipo_obra, descripcion, alcance_detallado, "
-                "monto_contrato, monto_ejecutado, moneda, fecha_inicio, fecha_fin, estado, "
-                "porcentaje_avance, categorias_obra, especialidad, volumenes_partidas, "
-                "acta_recepcion_url, recepcion_definitiva_url, finiquito_url, "
-                "certificacion_url, cubicaciones_url") \
-        .eq("empresa_id", eid).execute().data or []
-
-    naturalezas = req.get("naturaleza") or []
-    en_curso_pct = _num_or_none(req.get("acepta_en_curso_pct"))
-    requiere_acta = bool(req.get("requiere_acta"))
-    ventana = _num_or_none(req.get("ventana_anios"))
-    monto_min_obra = _num_or_none(req.get("monto_min_por_obra"))
-    monto_min_acum = _num_or_none(req.get("monto_min_acumulado"))
-    cant_min = _num_or_none(req.get("cantidad_obras_min"))
-    pct_portafolio = _num_or_none(req.get("pct_portafolio"))
-    criterio = (req.get("criterio_similitud") or "naturaleza").lower()
-
-    hoy = datetime.utcnow()
-    faltantes, notas = [], []
-    calificadas = []
-
-    for o in obras:
-        estado = _norm(o.get("estado"))
-        avance = _num_or_none(o.get("porcentaje_avance"))
-        terminada = estado in ("terminado", "terminada", "concluido", "concluida",
-                               "finalizado", "finalizada", "completado", "completada") \
-            or (avance is not None and avance >= 100)
-        razones = []
-
-        if not terminada:
-            if en_curso_pct is not None and avance is not None and avance >= en_curso_pct:
-                if not o.get("cubicaciones_url"):
-                    razones.append(f"en curso ({avance:g}%) pero sin cubicacion cargada para validarla")
-            else:
-                razones.append("no concluida" + (f" (avance {avance:g}% < {en_curso_pct:g}%)"
-                                                 if (en_curso_pct is not None and avance is not None) else
-                                                 " y el pliego no acepta obras en curso" if en_curso_pct is None else ""))
-
-        if not _obra_matchea_naturaleza(o, naturalezas):
-            razones.append("naturaleza distinta a la del proceso")
-
-        if ventana is not None and o.get("fecha_fin"):
-            try:
-                ff = datetime.fromisoformat(str(o["fecha_fin"])[:10])
-                if (hoy - ff).days > ventana * 365.25:
-                    razones.append(f"fuera de la ventana de {ventana:g} anos")
-            except ValueError:
-                pass
-
-        monto_o = _num_or_none(o.get("monto_ejecutado")) or _num_or_none(o.get("monto_contrato")) or 0
-        if terminada is False and avance and en_curso_pct is not None:
-            monto_o = monto_o * (avance / 100.0)  # magnitud proporcional a lo cubicado (patron MIVHED)
-        if monto_min_obra is not None and monto_o < monto_min_obra:
-            razones.append(f"monto RD$ {monto_o:,.2f} < minimo por obra RD$ {monto_min_obra:,.2f}")
-
-        if requiere_acta:
-            tiene_acta = any(o.get(k) for k in ("acta_recepcion_url", "recepcion_definitiva_url",
-                                                "finiquito_url", "certificacion_url"))
-            if not terminada:
-                tiene_acta = tiene_acta or bool(o.get("cubicaciones_url"))
-            if not tiene_acta:
-                razones.append("sin acta de recepcion/finiquito cargada (el pliego la exige)")
-
-        if not razones:
-            calificadas.append({"obra": o, "monto": monto_o})
-        else:
-            notas.append({"obra": o.get("nombre_proyecto"), "descartada_por": razones})
-
-    n_ok = len(calificadas)
-    monto_acum = sum(c["monto"] for c in calificadas)
-
-    checks = []
-    cumple = True
-
-    if cant_min is not None:
-        ok = n_ok >= cant_min
-        checks.append({"criterio": f"minimo {cant_min:g} obras similares",
-                       "valor": n_ok, "cumple": ok})
-        if not ok:
-            cumple = False
-            faltantes.append({
-                "seccion": "experiencia",
-                "texto": f"Faltan {int(cant_min - n_ok)} obras similares que califiquen: tienes {n_ok}, piden {cant_min:g}",
-                "subsanable": req.get("subsanable"),
-            })
-
-    if monto_min_acum is not None:
-        ok = monto_acum >= monto_min_acum
-        checks.append({"criterio": f"monto acumulado >= RD$ {monto_min_acum:,.2f}",
-                       "valor": monto_acum, "cumple": ok})
-        if not ok:
-            cumple = False
-            faltantes.append({
-                "seccion": "experiencia",
-                "texto": (f"Monto acumulado insuficiente: tus obras calificadas suman RD$ {monto_acum:,.2f}, "
-                          f"el pliego exige RD$ {monto_min_acum:,.2f} (faltan RD$ {monto_min_acum - monto_acum:,.2f})"),
-                "subsanable": req.get("subsanable"),
-            })
-
-    if pct_portafolio is not None and obras:
-        pct_real = 100.0 * n_ok / len(obras)
-        ok = pct_real >= pct_portafolio
-        checks.append({"criterio": f">= {pct_portafolio:g}% del portafolio en la naturaleza pedida",
-                       "valor": round(pct_real, 1), "cumple": ok})
-        if not ok:
-            cumple = False
-            faltantes.append({
-                "seccion": "experiencia",
-                "texto": (f"Solo {pct_real:.0f}% de tu experiencia es de la naturaleza pedida; "
-                          f"el pliego exige minimo {pct_portafolio:g}%"),
-                "subsanable": req.get("subsanable"),
-            })
-
-    escenarios_vol = []
-    for v in (req.get("volumenes") or []):
-        cat = _norm(v.get("categoria")).replace(" ", "_")
-        unidad = v.get("unidad")
-        cant_v = _num_or_none(v.get("cantidad"))
-        if cant_v is None:
-            continue
-        total = 0.0
-        for c in calificadas:
-            vp = c["obra"].get("volumenes_partidas") or {}
-            for k, val in (vp.items() if isinstance(vp, dict) else []):
-                if _norm(k).replace(" ", "_").startswith(cat[:10]):
-                    total += _num_or_none(val) or 0
-        ok = total >= cant_v
-        etiqueta = f"Lote {v['lote']}" if v.get("lote") else "Proceso"
-        escenarios_vol.append({"lote": etiqueta, "categoria": v.get("categoria"),
-                               "requerido": cant_v, "unidad": unidad,
-                               "ejecutado": total, "cumple": ok})
-        if not ok:
-            # volumenes por lote son escenarios: solo tumban el cumple global si
-            # el proceso no tiene lotes (si hay lotes, el usuario elige donde entrar)
-            if not v.get("lote"):
-                cumple = False
-            faltantes.append({
-                "seccion": "experiencia",
-                "texto": (f"{etiqueta}: volumen de {v.get('categoria')} insuficiente "
-                          f"({total:,.2f} de {cant_v:,.2f} {unidad or ''}) — "
-                          f"carga los volumenes por partida de tus obras si los tienes"),
-                "subsanable": req.get("subsanable"),
-            })
-
-    if criterio == "cantidad_intervenciones":
-        notas.append({"nota": "El pliego mide la experiencia por cantidad de intervenciones "
-                              "(ej. puntos de bacheo); revisar manualmente contra el texto original."})
-        cumple = None if not checks else cumple
-
-    evaluado = bool(checks or escenarios_vol)
-    return {
-        "criterio_similitud": criterio,
-        "naturaleza": naturalezas,
-        "obras_calificadas": n_ok,
-        "monto_acumulado": monto_acum,
-        "checks": checks,
-        "escenarios_volumen": escenarios_vol or None,
-        "obras_descartadas": notas or None,
-        "cumple": (cumple if evaluado else None),
-        "faltantes": faltantes,
-        "texto_original": req.get("texto_original"),
-    }
-
-
-# ── Puntaje estimado (metodologia combinada) ──────────────────
-
-def _estimar_puntaje(requisitos: dict, sec_personal: dict, sec_exp: dict) -> dict:
-    blandos = requisitos.get("puntaje_blandos") or []
-    pts_blandos = sum(_num_or_none(b.get("puntos_max")) or 0 for b in blandos)
-
-    pts_duros, detalle_duros = 0.0, []
-
-    # Personal: tramos de anos + maestria + certificaciones por cargo
-    asignados = {a["cargo"]: a for a in (sec_personal.get("asignaciones") or [])}
-    for req in (requisitos.get("personal") or []):
-        pj = req.get("puntaje")
-        if not pj:
-            continue
-        cargo = req.get("cargo")
-        asig = asignados.get(cargo)
-        obtenidos = 0.0
-        maximo = _num_or_none(pj.get("puntos_max")) or 0
-        if asig:
-            anios = _num_or_none(asig.get("anios")) or 0
-            for tramo in sorted(pj.get("tramos_anios") or [], key=lambda t: -(t.get("min") or 0)):
-                if anios >= (_num_or_none(tramo.get("min")) or 0):
-                    obtenidos += _num_or_none(tramo.get("puntos")) or 0
-                    break
-            if req.get("requiere_maestria") or pj.get("puntos_maestria"):
-                # si fue asignado con requiere_maestria, ya la tiene
-                obtenidos += _num_or_none(pj.get("puntos_maestria")) or 0
-            # certificaciones por funcion: siguiendo la regla acordada, si cumple
-            # anos se asume que cumple las certificaciones → tramo mas alto
-            tramos_c = pj.get("tramos_certificaciones") or []
-            if tramos_c:
-                obtenidos += max(_num_or_none(t.get("puntos")) or 0 for t in tramos_c)
-        pts_duros += min(obtenidos, maximo) if maximo else obtenidos
-        detalle_duros.append({"criterio": f"Personal: {cargo}", "puntos_max": maximo,
-                              "estimado": min(obtenidos, maximo) if maximo else obtenidos,
-                              "asignado": bool(asig)})
-
-    # Experiencia empresa: tramos por cantidad de certificaciones/obras
-    exp_req = requisitos.get("experiencia") or {}
-    pj = exp_req.get("puntaje")
-    if pj:
-        n_ok = sec_exp.get("obras_calificadas") or 0
-        maximo = _num_or_none(pj.get("puntos_max")) or 0
-        obtenidos = 0.0
-        for tramo in sorted(pj.get("tramos_certificaciones") or [], key=lambda t: -(t.get("min") or 0)):
-            if n_ok >= (_num_or_none(tramo.get("min")) or 0):
-                obtenidos = _num_or_none(tramo.get("puntos")) or 0
-                break
-        pts_duros += min(obtenidos, maximo) if maximo else obtenidos
-        detalle_duros.append({"criterio": "Experiencia como contratista", "puntos_max": maximo,
-                              "estimado": obtenidos, "obras_calificadas": n_ok})
-
-    total_max = _num_or_none(requisitos.get("puntaje_total"))
-    minimo = _num_or_none(requisitos.get("puntaje_minimo"))
-    estimado = pts_blandos + pts_duros
-
-    return {
-        "puntaje_total": total_max,
-        "puntaje_minimo": minimo,
-        "estimado": round(estimado, 2),
-        "asumido_blandos": round(pts_blandos, 2),
-        "verificado_duros": round(pts_duros, 2),
-        "detalle_blandos": blandos,
-        "detalle_duros": detalle_duros,
-        "cumple_umbral": (estimado >= minimo) if minimo is not None else None,
-        "nota": ("Los puntos 'blandos' (enfoque, planes, cronograma) se asumen completos: "
-                 "dependen de la calidad de redaccion de tu oferta, no del expediente."),
-    }
-
-
-# ── Orquestador ───────────────────────────────────────────────
-
-def _evaluar_matching(eid: str, requisitos, monto: float | None,
-                      presupuesto: float | None = None) -> dict:
-    """Evalua todos los requisitos del pliego contra el expediente.
-    Retrocompatible: si 'requisitos' es una lista (analisis viejos, solo
-    financieros), se envuelve como {"financieros": [...]}."""
-    if isinstance(requisitos, list):
-        requisitos = {"financieros": requisitos}
-    requisitos = requisitos or {}
-
-    lotes = requisitos.get("lotes") or []
-    base_pct = presupuesto if presupuesto is not None else monto
-
-    sec_fin = _evaluar_financieros(eid, requisitos.get("financieros") or [], monto)
-    sec_lin = _evaluar_lineas_credito(eid, requisitos.get("lineas_credito") or [], base_pct, lotes)
-    sec_per = _evaluar_personal(eid, requisitos.get("personal") or [], lotes)
-    sec_eq = _evaluar_equipos(eid, requisitos.get("equipos") or [])
-    sec_exp = _evaluar_experiencia(eid, requisitos.get("experiencia") or None, base_pct, lotes)
-
-    faltantes = (sec_fin.get("faltantes", []) + sec_lin.get("faltantes", []) +
-                 sec_per.get("faltantes", []) + sec_eq.get("faltantes", []) +
-                 sec_exp.get("faltantes", []))
-
-    secciones = {
-        "financieros": sec_fin, "lineas_credito": sec_lin,
-        "personal": sec_per, "equipos": sec_eq, "experiencia": sec_exp,
-    }
-    estados = [s.get("cumple") for s in secciones.values()]
-    evaluadas = [e for e in estados if e is not None]
-    cumple_global = (all(evaluadas) if evaluadas else None)
-
-    metodologia = (requisitos.get("metodologia") or "cumple_no_cumple").lower()
-    puntaje = None
-    if metodologia == "combinada":
-        puntaje = _estimar_puntaje(requisitos, sec_per, sec_exp)
-        if puntaje.get("cumple_umbral") is False:
-            cumple_global = False
-            faltantes.append({
-                "seccion": "puntaje",
-                "texto": (f"Puntaje estimado {puntaje['estimado']:g}/{puntaje.get('puntaje_total') or '?'} "
-                          f"por debajo del minimo de {puntaje['puntaje_minimo']:g} puntos, "
-                          f"aun asumiendo los criterios de redaccion completos"),
-                "subsanable": False,
-            })
-
-    otros = requisitos.get("otros") or []
-
-    return {
-        "evaluado_en": datetime.utcnow().isoformat(),
-        "version_evaluador": 2,
-        "metodologia": metodologia,
-        "naturaleza_proceso": requisitos.get("naturaleza_proceso"),
-        "lotes": lotes or None,
-        "monto_usado": monto,
-        "cumple_global": cumple_global,
-        "puntaje": puntaje,
-        "faltantes": faltantes,
-        "secciones": secciones,
-        "otros_requisitos": otros or None,
-        "checklist_documentos": sec_per.get("checklist_documentos") or None,
-        # Campos legado para que el frontend actual no se rompa hasta actualizarlo:
-        "cumple_financiero": sec_fin.get("cumple"),
-        "detalle": sec_fin.get("detalle"),
-        "periodo_usado": sec_fin.get("periodo_usado"),
-        "lineas_credito_total": sec_fin.get("lineas_credito_total"),
-        "sin_estados": sec_fin.get("sin_estados"),
-    }
-
-
-@bid_manager_router.post("/matching/analizar")
-async def matching_analizar(
-    file: UploadFile = File(...),
-    monto_ofertado: str = Form(None),
-    authorization: str | None = Header(default=None),
-):
-    """Sube el pliego, extrae requisitos (financieros + tecnicos) con IA,
-    guarda y evalua contra el expediente completo."""
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-
-    contenido = await file.read()
-    if not contenido:
-        raise HTTPException(400, "Archivo vacío")
-    if len(contenido) > STORAGE_MAX_BYTES:
-        raise HTTPException(413, "El pliego excede 25 MB")
-
-    # Extraer con Gemini
-    if not GEMINI_API_KEY:
-        raise HTTPException(503, "Extracción IA no configurada (falta GEMINI_API_KEY)")
-    payload = {
-        "contents": [{"parts": [
-            {"inline_data": {"mime_type": "application/pdf",
-                             "data": base64.b64encode(contenido).decode()}},
-            {"text": _PROMPT_MATCHING},
-        ]}],
-        "generationConfig": {"temperature": 0.1, "response_mime_type": "application/json"},
-    }
-    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
-    try:
-        req = _urlreq.Request(url, data=_json.dumps(payload).encode(),
-                              headers={"Content-Type": "application/json"}, method="POST")
-        with _urlreq.urlopen(req, timeout=180) as resp:
-            body = _json.loads(resp.read().decode())
-        texto = body["candidates"][0]["content"]["parts"][0]["text"].strip()
-        if texto.startswith("```"):
-            texto = texto.strip("`")
-            if texto.lower().startswith("json"):
-                texto = texto[4:]
-        extraido = _json.loads(texto)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Error extrayendo requisitos del pliego: {str(e)}")
-
-    # Subir pliego al storage
-    safe_name = _sanitize_filename(file.filename or "pliego.pdf")
-    path = f"{eid}/matching/{safe_name}"
-    try:
-        _sb.storage.from_(STORAGE_BUCKET).upload(
-            path=path, file=contenido,
-            file_options={"content-type": "application/pdf", "upsert": "false"})
-    except Exception:
-        path = None  # no bloquear el análisis por fallo de storage
-
-    presupuesto = None
-    try:
-        presupuesto = float(extraido.get("presupuesto_base")) if extraido.get("presupuesto_base") else None
-    except (TypeError, ValueError):
-        pass
-
-    monto = None
-    try:
-        monto = float(monto_ofertado) if monto_ofertado else None
-    except (TypeError, ValueError):
-        pass
-    if monto is None:
-        monto = presupuesto
-
-    # El prompt v2 devuelve requisitos como objeto de secciones; metodologia,
-    # puntajes y lotes vienen al nivel raiz y se anidan dentro de requisitos
-    # para que reevaluar los tenga disponibles.
-    requisitos = extraido.get("requisitos") or {}
-    if isinstance(requisitos, list):
-        requisitos = {"financieros": requisitos}
-    for campo in ("metodologia", "puntaje_total", "puntaje_minimo",
-                  "naturaleza_proceso", "lotes"):
-        if extraido.get(campo) is not None and campo not in requisitos:
-            requisitos[campo] = extraido[campo]
-
-    resultado = _evaluar_matching(eid, requisitos, monto, presupuesto)
-
-    registro = {
-        "empresa_id": eid,
-        "referencia": extraido.get("referencia"),
-        "nombre_proceso": extraido.get("nombre_proceso"),
-        "institucion": extraido.get("institucion"),
-        "presupuesto_base": presupuesto,
-        "monto_ofertado": monto,
-        "anios_estados_requeridos": extraido.get("anios_estados_requeridos"),
-        "requisitos": requisitos,
-        "resultado": resultado,
-        "pliego_url": path,
-    }
-    res = _sb.table("bid_matching_pliegos").insert(registro).execute()
-    return res.data[0] if res.data else registro
-
-
-@bid_manager_router.get("/matching")
-def matching_listar(authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    return _sb.table("bid_matching_pliegos").select("*") \
-        .eq("empresa_id", eid).order("creado_en", desc=True).execute().data or []
-
-
-@bid_manager_router.get("/matching/por-referencia/{referencia}")
-def matching_por_referencia(referencia: str, authorization: str | None = Header(default=None)):
-    """Devuelve el analisis de matching mas reciente de esta empresa para un
-    codigo de proceso (referencia). Lo usa el detalle del proceso en el portal
-    para mostrar la compatibilidad sin re-analizar. 404 si no existe."""
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    rows = _sb.table("bid_matching_pliegos").select("*") \
-        .eq("empresa_id", eid).eq("referencia", referencia) \
-        .order("creado_en", desc=True).limit(1).execute().data or []
-    if not rows:
-        raise HTTPException(404, "Sin analisis para esta referencia")
-    return rows[0]
-
-
-@bid_manager_router.post("/matching/analizar-proceso")
-async def matching_analizar_proceso(request: dict,
-                                    authorization: str | None = Header(default=None)):
-    """Compatibilidad Expediente vs proceso del portal, sin subir PDF a mano.
-    Body: {"codigo_proceso": "...", "monto_ofertado": opcional, "forzar": opcional}
-    - Si ya hay un analisis para esa referencia y no se fuerza, REEVALUA con
-      los datos actuales del expediente (rapido, sin Gemini) y lo devuelve.
-    - Si no hay, descarga el pliego del portal DGCP (misma maquinaria del
-      analisis general), extrae los requisitos con Gemini y evalua.
-    """
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    codigo = (request or {}).get("codigo_proceso")
-    if not codigo:
-        raise HTTPException(400, "codigo_proceso requerido")
-    forzar = bool((request or {}).get("forzar"))
-
-    monto = None
-    try:
-        if (request or {}).get("monto_ofertado") is not None:
-            monto = float(request["monto_ofertado"])
-    except (TypeError, ValueError):
-        monto = None
-
-    # ── Cache: ya existe un analisis para esta referencia ──
-    rows = _sb.table("bid_matching_pliegos").select("*") \
-        .eq("empresa_id", eid).eq("referencia", codigo) \
-        .order("creado_en", desc=True).limit(1).execute().data or []
-    existente = rows[0] if rows else None
-
-    if existente and not forzar:
-        m = monto if monto is not None else \
-            (float(existente.get("monto_ofertado") or existente.get("presupuesto_base") or 0) or None)
-        presupuesto_prev = None
-        try:
-            presupuesto_prev = float(existente.get("presupuesto_base")) if existente.get("presupuesto_base") else None
-        except (TypeError, ValueError):
-            pass
-        resultado = _evaluar_matching(eid, existente.get("requisitos") or {}, m, presupuesto_prev)
-        upd = {"resultado": resultado, "actualizado_en": datetime.utcnow().isoformat()}
-        if monto is not None:
-            upd["monto_ofertado"] = monto
-        res = _sb.table("bid_matching_pliegos").update(upd) \
-            .eq("id", existente["id"]).eq("empresa_id", eid).execute()
-        return res.data[0] if res.data else {**existente, **upd}
-
-    if not GEMINI_API_KEY:
-        raise HTTPException(503, "Extracción IA no configurada (falta GEMINI_API_KEY)")
-
-    # ── Localizar el proceso y bajar el pliego del portal ──
-    proc_rows = _sb.table("procesos") \
-        .select("codigo_proceso, titulo, unidad_compra, monto_estimado, url") \
-        .eq("codigo_proceso", codigo).limit(1).execute().data or []
-    if not proc_rows:
-        raise HTTPException(404, "Proceso no encontrado")
-    proc = proc_rows[0]
-    if not proc.get("url"):
-        raise HTTPException(422, "El proceso no tiene URL de documentos en el portal")
-
-    try:
-        from main import descargar_y_extraer_texto_pdf  # lazy: evita import circular
-        res_pdf = descargar_y_extraer_texto_pdf(proc["url"])
-        texto_pliego = res_pdf.get("__texto") if isinstance(res_pdf, dict) else res_pdf
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"No se pudo descargar el pliego del portal: {str(e)}")
-    if not texto_pliego or len(texto_pliego.strip()) < 100:
-        raise HTTPException(422, "El pliego descargado no tiene texto legible")
-    texto_pliego = texto_pliego[:400000]  # margen amplio para gemini-2.5-flash
-
-    payload = {
-        "contents": [{"parts": [
-            {"text": _PROMPT_MATCHING + "\n\n=== TEXTO DEL PLIEGO (extraido del portal) ===\n" + texto_pliego},
-        ]}],
-        "generationConfig": {"temperature": 0.1, "response_mime_type": "application/json"},
-    }
-    url_g = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-             f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
-    try:
-        req = _urlreq.Request(url_g, data=_json.dumps(payload).encode(),
-                              headers={"Content-Type": "application/json"}, method="POST")
-        with _urlreq.urlopen(req, timeout=180) as resp:
-            body = _json.loads(resp.read().decode())
-        texto = body["candidates"][0]["content"]["parts"][0]["text"].strip()
-        if texto.startswith("```"):
-            texto = texto.strip("`")
-            if texto.lower().startswith("json"):
-                texto = texto[4:]
-        extraido = _json.loads(texto)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Error extrayendo requisitos del pliego: {str(e)}")
-
-    presupuesto = None
-    try:
-        presupuesto = float(extraido.get("presupuesto_base")) if extraido.get("presupuesto_base") else None
-    except (TypeError, ValueError):
-        pass
-    if presupuesto is None:
-        try:
-            presupuesto = float(proc.get("monto_estimado")) if proc.get("monto_estimado") else None
-        except (TypeError, ValueError):
-            pass
-    if monto is None:
-        monto = presupuesto
-
-    requisitos = extraido.get("requisitos") or {}
-    if isinstance(requisitos, list):
-        requisitos = {"financieros": requisitos}
-    for campo in ("metodologia", "puntaje_total", "puntaje_minimo",
-                  "naturaleza_proceso", "lotes"):
-        if extraido.get(campo) is not None and campo not in requisitos:
-            requisitos[campo] = extraido[campo]
-
-    resultado = _evaluar_matching(eid, requisitos, monto, presupuesto)
-
-    registro = {
-        "empresa_id": eid,
-        "referencia": codigo,
-        "nombre_proceso": extraido.get("nombre_proceso") or proc.get("titulo"),
-        "institucion": extraido.get("institucion") or proc.get("unidad_compra"),
-        "presupuesto_base": presupuesto,
-        "monto_ofertado": monto,
-        "anios_estados_requeridos": extraido.get("anios_estados_requeridos"),
-        "requisitos": requisitos,
-        "resultado": resultado,
-        "pliego_url": None,  # el pliego vive en el portal, no en storage
-    }
-    if existente:  # forzar=true sobre un analisis previo: actualizar, no duplicar
-        registro["actualizado_en"] = datetime.utcnow().isoformat()
-        res = _sb.table("bid_matching_pliegos").update(registro) \
-            .eq("id", existente["id"]).eq("empresa_id", eid).execute()
-        return res.data[0] if res.data else registro
-    res = _sb.table("bid_matching_pliegos").insert(registro).execute()
-    return res.data[0] if res.data else registro
-
-
-@bid_manager_router.post("/matching/{id}/reevaluar")
-async def matching_reevaluar(id: str, request: dict = None,
-                             authorization: str | None = Header(default=None)):
-    """Recalcula el matching con los datos ACTUALES del expediente.
-    Body opcional: {"monto_ofertado": 123456.78}"""
-    uid = _auth(authorization)
-    eid = _empresa_id(uid)
-    reg = _obtener("bid_matching_pliegos", id, eid)
-
-    monto = None
-    if request and request.get("monto_ofertado") is not None:
-        try:
-            monto = float(request["monto_ofertado"])
-        except (TypeError, ValueError):
-            monto = None
-    if monto is None:
-        monto = float(reg.get("monto_ofertado") or reg.get("presupuesto_base") or 0) or None
-
-    presupuesto = None
-    try:
-        presupuesto = float(reg.get("presupuesto_base")) if reg.get("presupuesto_base") else None
-    except (TypeError, ValueError):
-        pass
-
-    resultado = _evaluar_matching(eid, reg.get("requisitos") or {}, monto, presupuesto)
-    upd = {"resultado": resultado, "actualizado_en": datetime.utcnow().isoformat()}
-    if monto is not None:
-        upd["monto_ofertado"] = monto
-    res = _sb.table("bid_matching_pliegos").update(upd) \
-        .eq("id", id).eq("empresa_id", eid).execute()
-    return res.data[0] if res.data else {**reg, **upd}
-
-
-@bid_manager_router.delete("/matching/{id}")
-def matching_eliminar(id: str, authorization: str | None = Header(default=None)):
-    uid = _auth(authorization)
-    return _eliminar("bid_matching_pliegos", id, _empresa_id(uid))
+// Exponer al scope global para que switchTab2 lo pueda llamar
+window.BidManager = BidManager;
