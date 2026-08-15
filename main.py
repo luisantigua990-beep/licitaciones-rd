@@ -3416,6 +3416,7 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
         user_ids = list(set(s["user_id"] for s in seg.data))
         emails_destino = []
         nombres_destino = []
+        uids_destino = []
 
         for uid in user_ids:
             try:
@@ -3438,6 +3439,7 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
                     if email:
                         emails_destino.append(email)
                         nombres_destino.append(nombre)
+                        uids_destino.append(uid)
                 else:
                     print(f"⚠️ Auth API {resp_auth.status_code} para user {uid}: {resp_auth.text[:100]}")
             except Exception as e:
@@ -3471,12 +3473,12 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
         APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
         FROM_EMAIL = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
 
-        for email, nombre in zip(emails_destino, nombres_destino):
+        for email, nombre, uid_dest in zip(emails_destino, nombres_destino, uids_destino):
             payload = {
                 "from": FROM_EMAIL,
                 "to": [email],
                 "subject": f"📋 Análisis listo: {proceso_id}",
-                "html": html_body.replace("{{nombre}}", nombre),
+                "html": html_body.replace("{nombre}", nombre).replace("{compatibilidad}", construir_html_compatibilidad(uid_dest, proceso_id)),
             }
             # Retry hasta 3 veces por el error de ConnectionTerminated en HTTP/2
             enviado = False
@@ -3506,6 +3508,124 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
     except Exception as e:
         # El email no debe romper el flujo principal
         print(f"⚠️ Error en envío de email para {proceso_id}: {e}")
+
+
+def construir_html_compatibilidad(user_id: str, proceso_id: str) -> str:
+    """HTML (email-safe, estilos inline) con la compatibilidad del Expediente
+    Digital del usuario contra este pliego. Devuelve "" si el usuario no tiene
+    expediente o no se ha corrido el matching para esta referencia."""
+    try:
+        perfil = supabase_admin.table("perfiles_empresa").select("id") \
+            .eq("user_id", user_id).limit(1).execute().data or []
+        if not perfil:
+            return ""
+        eid = perfil[0]["id"]
+        rows = supabase_admin.table("bid_matching_pliegos") \
+            .select("resultado, presupuesto_base, monto_ofertado") \
+            .eq("empresa_id", eid).eq("referencia", proceso_id) \
+            .order("creado_en", desc=True).limit(1).execute().data or []
+        if not rows:
+            return ""
+        res = rows[0].get("resultado") or {}
+    except Exception as e:
+        print(f"compat email: error para user {user_id}: {e}")
+        return ""
+
+    cumple = res.get("cumple_global", res.get("cumple_financiero"))
+    if cumple is True:
+        badge = '<span style="background:#16a34a;color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:900;">CUMPLES</span>'
+        borde = "#16a34a"
+    elif cumple is False:
+        badge = '<span style="background:#dc2626;color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:900;">NO CUMPLES</span>'
+        borde = "#dc2626"
+    else:
+        badge = '<span style="background:#d97706;color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:900;">SIN DATOS</span>'
+        borde = "#d97706"
+
+    secciones = res.get("secciones") or {}
+    nombres_sec = [("financieros", "Financieros"), ("lineas_credito", "Lineas de credito"),
+                   ("personal", "Personal"), ("equipos", "Equipos"), ("experiencia", "Experiencia")]
+    chips = ""
+    for clave, nombre in nombres_sec:
+        c = (secciones.get(clave) or {}).get("cumple")
+        col = "#16a34a" if c is True else "#dc2626" if c is False else "#d97706"
+        chips += (f'<span style="display:inline-block;margin:2px 4px 2px 0;padding:3px 10px;'
+                  f'border:1px solid #e5e7eb;border-radius:12px;font-size:11px;color:#374151;">'
+                  f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;'
+                  f'background:{col};margin-right:5px;"></span>{nombre}</span>')
+
+    pj = res.get("puntaje")
+    pj_html = ""
+    if pj:
+        okc = "#16a34a" if pj.get("cumple_umbral") else "#dc2626" if pj.get("cumple_umbral") is False else "#d97706"
+        tot = f" / {pj['puntaje_total']}" if pj.get("puntaje_total") else ""
+        minimo = f" (minimo {pj['puntaje_minimo']})" if pj.get("puntaje_minimo") else ""
+        pj_html = (f'<p style="margin:8px 0 0;font-size:13px;color:#374151;">Puntaje tecnico estimado: '
+                   f'<strong style="color:{okc};">{pj.get("estimado")}{tot}</strong>{minimo} '
+                   f'<span style="font-size:11px;color:#9ca3af;">(asumiendo tus documentos de redaccion completos)</span></p>')
+
+    # ── Con que cumples: candidatos por cargo, obras y equipos usables ──
+    cumples_html = ""
+    lineas_cumples = []
+    for d in ((secciones.get("personal") or {}).get("detalle") or []):
+        cands = d.get("candidatos") or []
+        if cands:
+            nombres = ", ".join(
+                f"<strong>{c.get('nombre','')}</strong>" +
+                (f" ({c.get('anios'):g} anos)" if c.get("anios") else "")
+                for c in cands[:5])
+            extra = f" y {len(cands)-5} mas" if len(cands) > 5 else ""
+            lineas_cumples.append(f"Para <strong>{d.get('cargo')}</strong> puedes usar a: {nombres}{extra}")
+    obras_u = (secciones.get("experiencia") or {}).get("obras_usables") or []
+    if obras_u:
+        obras_txt = " &middot; ".join(
+            f"<strong>{o.get('nombre','')}</strong>" +
+            (f" (RD$ {o['monto']:,.2f})" if o.get("monto") else "") +
+            (" [en curso]" if o.get("en_curso") else "")
+            for o in obras_u[:4])
+        extra_o = f" y {len(obras_u)-4} mas" if len(obras_u) > 4 else ""
+        lineas_cumples.append(f"Experiencia que puedes presentar: {obras_txt}{extra_o}")
+    for d in ((secciones.get("equipos") or {}).get("detalle") or []):
+        if d.get("cumple") and d.get("usables"):
+            lineas_cumples.append(f"Para <strong>{d.get('tipo')}</strong> cuentan: " +
+                                  " &middot; ".join(d["usables"][:4]))
+    if lineas_cumples:
+        filas_c = "".join(
+            f'<tr><td style="padding:4px 0;font-size:12px;color:#14532d;line-height:1.5;">&ndash; {l}</td></tr>'
+            for l in lineas_cumples[:8])
+        cumples_html = ('<p style="margin:10px 0 4px;font-size:12px;font-weight:bold;color:#166534;">'
+                        'Con que cumples (para armar la oferta)</p>'
+                        f'<table width="100%" cellpadding="0" cellspacing="0">{filas_c}</table>')
+
+    faltantes = res.get("faltantes") or []
+    falt_html = ""
+    if faltantes:
+        filas = ""
+        for f in faltantes[:8]:
+            sub = f.get("subsanable")
+            tag = (' <strong style="color:#d97706;">(subsanable)</strong>' if sub is True
+                   else ' <strong style="color:#dc2626;">(NO subsanable)</strong>' if sub is False else "")
+            filas += (f'<tr><td style="padding:4px 0;font-size:12px;color:#7f1d1d;line-height:1.5;">'
+                      f'&ndash; {f.get("texto","")}{tag}</td></tr>')
+        extra = (f'<tr><td style="padding:4px 0;font-size:11px;color:#9ca3af;">+{len(faltantes)-8} mas en la app</td></tr>'
+                 if len(faltantes) > 8 else "")
+        falt_html = (f'<p style="margin:10px 0 4px;font-size:12px;font-weight:bold;color:#991b1b;">'
+                     f'Lo que te falta para cumplir ({len(faltantes)})</p>'
+                     f'<table width="100%" cellpadding="0" cellspacing="0">{filas}{extra}</table>')
+    elif cumple is True:
+        falt_html = ('<p style="margin:10px 0 0;font-size:12px;color:#166534;font-weight:bold;">'
+                     'Tu expediente cumple todo lo evaluable de este pliego.</p>')
+
+    return (f'<tr><td style="padding:8px 28px;">'
+            f'<div style="border:1px solid {borde};border-left:4px solid {borde};border-radius:8px;padding:12px 14px;background:#fff;">'
+            f'<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+            f'<td><p style="margin:0;font-size:13px;font-weight:bold;color:#1e293b;">Compatibilidad con tu Expediente Digital</p></td>'
+            f'<td style="text-align:right;">{badge}</td></tr></table>'
+            f'<div style="margin-top:8px;">{chips}</div>'
+            f'{pj_html}{cumples_html}{falt_html}'
+            f'<p style="margin:10px 0 0;font-size:11px;color:#9ca3af;">El detalle por seccion esta en la app: '
+            f'Expediente Digital &rarr; Financieros &rarr; Matching.</p>'
+            f'</div></td></tr>')
 
 
 def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
@@ -3871,6 +3991,8 @@ def construir_html_email(proceso_id: str, proceso: dict, analisis: dict) -> str:
   {'<tr><td style="padding:8px 28px;"><div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:12px 14px;border-radius:0 8px 8px 0;"><p style="margin:0;font-size:13px;color:#1e40af;font-weight:bold;">💡 Resumen ejecutivo</p><p style="margin:6px 0 0;font-size:13px;color:#1e3a8a;line-height:1.5;">' + resumen + '</p></div></td></tr>' if resumen else ''}
 
   {'<tr><td style="padding:8px 28px;"><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td><p style="margin:0;font-size:13px;font-weight:bold;color:#1e293b;">📊 Evaluación de competitividad</p><p style="margin:4px 0 0;font-size:12px;color:#64748b;">' + razon_dif + '</p></td><td style="text-align:right;vertical-align:top;">' + (f'<span style="background:{color_score};color:white;padding:6px 12px;border-radius:20px;font-size:18px;font-weight:900;">{score_base}/100</span><br>' if score_base is not None else '') + '<span style="background:' + color_dif + ';color:white;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:bold;">Dificultad: ' + dificultad + '</span><br><span style="font-size:11px;color:#64748b;display:block;margin-top:4px;">' + recomendacion + '</span></td></tr></table></div></td></tr>' if dificultad or score_base is not None else ''}
+
+  {{compatibilidad}}
 
   {'<tr><td style="padding:4px 28px 8px;">' + veredicto_html + '</td></tr>' if veredicto_html else ''}
 
