@@ -41,16 +41,53 @@ const BidManager = {
   },
 
   // ── API helpers ───────────────────────────────────────
+  // Fetch con retry-refresh: si el token expiró (401) mientras se llenaba
+  // el expediente, refresca una vez y reintenta sin perder el formulario.
+  async _refreshToken() {
+    const rt = localStorage.getItem('sb_refresh_token');
+    if (!rt || typeof SUPABASE_URL === 'undefined' || typeof SUPABASE_ANON_KEY === 'undefined') return null;
+    try {
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+        body: JSON.stringify({ refresh_token: rt })
+      });
+      const d = await r.json();
+      if (d.access_token) {
+        localStorage.setItem('sb_token', d.access_token);
+        if (d.refresh_token) localStorage.setItem('sb_refresh_token', d.refresh_token);
+        if (typeof _syncSesionCookies === 'function') _syncSesionCookies();
+        return d.access_token;
+      }
+    } catch (e) {
+      console.error('BidManager: error refrescando token', e);
+    }
+    return null;
+  },
+
+  async _fetchAuth(url, options = {}) {
+    const doReq = (tok) => {
+      const headers = Object.assign({}, options.headers || {}, { 'Authorization': 'Bearer ' + tok });
+      return fetch(url, Object.assign({}, options, { headers }));
+    };
+    let r = await doReq(this._token());
+    if (r.status === 401) {
+      const nuevo = await this._refreshToken();
+      if (nuevo) r = await doReq(nuevo);
+    }
+    return r;
+  },
+
   async _get(path) {
-    const r = await fetch(`/api/bid${path}`, { headers: this._authHeaders(false) });
+    const r = await this._fetchAuth(`/api/bid${path}`);
     if (!r.ok) throw new Error(`GET ${path} → ${r.status}`);
     return r.json();
   },
 
   async _post(path, body) {
-    const r = await fetch(`/api/bid${path}`, {
+    const r = await this._fetchAuth(`/api/bid${path}`, {
       method: 'POST',
-      headers: this._authHeaders(),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     if (!r.ok) {
@@ -61,9 +98,9 @@ const BidManager = {
   },
 
   async _put(path, body) {
-    const r = await fetch(`/api/bid${path}`, {
+    const r = await this._fetchAuth(`/api/bid${path}`, {
       method: 'PUT',
-      headers: this._authHeaders(),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     if (!r.ok) throw new Error(`PUT ${path} → ${r.status}`);
@@ -71,10 +108,7 @@ const BidManager = {
   },
 
   async _delete(path) {
-    const r = await fetch(`/api/bid${path}`, {
-      method: 'DELETE',
-      headers: this._authHeaders(false)
-    });
+    const r = await this._fetchAuth(`/api/bid${path}`, { method: 'DELETE' });
     if (!r.ok) throw new Error(`DELETE ${path} → ${r.status}`);
     return r.json();
   },
@@ -639,6 +673,7 @@ const BidManager = {
         <div class="bm-form-row"><label class="bm-label">Cargo en la empresa</label><input class="bm-input" id="f-cargo_empresa" placeholder="Director de Obra" value="${this._esc(p.cargo_empresa)}"></div>
         <div class="bm-form-row"><label class="bm-label">Profesión</label><input class="bm-input" id="f-profesion" placeholder="Ingeniero Civil" value="${this._esc(p.profesion)}"></div>
         <div class="bm-form-row"><label class="bm-label">CODIA</label><input class="bm-input" id="f-codia" value="${this._esc(p.codia)}"></div>
+        <div class="bm-form-row"><label class="bm-label">Fecha de graduación</label><input class="bm-input" type="date" id="f-fecha_graduacion" value="${p.fecha_graduacion || ''}"><div style="font-size:11px;color:var(--text2,#6b7280);margin-top:2px">Los pliegos cuentan los años "a partir del título". Si la pones, manda sobre los años manuales.</div></div>
         <div class="bm-form-row"><label class="bm-label">Años de experiencia</label><input class="bm-input" type="number" id="f-experiencia_general_anios" value="${p.experiencia_general_anios || ''}"></div>
         <div class="bm-form-row"><label class="bm-label">Teléfono</label><input class="bm-input" id="f-telefono" value="${this._esc(p.telefono)}"></div>
         <div class="bm-form-row"><label class="bm-label">Email</label><input class="bm-input" type="email" id="f-email" value="${this._esc(p.email)}"></div>
@@ -662,6 +697,8 @@ const BidManager = {
       </div>
     `, async () => {
       const data = this._collectForm(['nombre_completo','cedula','cargo_empresa','profesion','codia','experiencia_general_anios','telefono','email','maestria_descripcion','cv_url','cedula_url','foto_url','firma_url','codia_url','exequatur_url','maestria_url','carta_trabajo_url']);
+      const fg = document.getElementById('f-fecha_graduacion');
+      data.fecha_graduacion = fg && fg.value ? fg.value : null;
       const espText = document.getElementById('f-especialidades').value.trim();
       data.especialidades = espText ? espText.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : [];
       data.tiene_maestria = document.getElementById('f-tiene_maestria').checked;
@@ -687,7 +724,7 @@ const BidManager = {
         <div class="bm-card-header">
           <div>
             <h4 class="bm-card-title">${eq.descripcion}</h4>
-            <div class="bm-card-subtitle">${eq.marca || ''} ${eq.modelo || ''} ${eq.anio || ''}</div>
+            <div class="bm-card-subtitle">${eq.tipo ? '<strong>' + eq.tipo + '</strong> · ' : ''}${eq.marca || ''} ${eq.modelo || ''} ${eq.anio || ''}</div>
           </div>
           <div class="bm-badge ${eq.propiedad==='propio'?'bm-badge-ok':'bm-badge-info'}">${eq.propiedad}</div>
         </div>
@@ -704,10 +741,30 @@ const BidManager = {
     `).join('')}</div>`;
   },
 
+  // Tipos canonicos de equipos, sacados de pliegos reales RD (CAASD, INAPA,
+  // DIE, CEIZTUR, CPADP, SNS). Deben coincidir con el prompt del backend.
+  _TIPOS_EQUIPO: [
+    'camion volteo','retroexcavadora','retropala','excavadora','motoniveladora',
+    'bulldozer','cargador frontal','minicargador','grua telescopica','camion grua',
+    'camion cama baja','camion cisterna','camion distribucion asfalto','pavimentadora',
+    'barredora','rodillo','compactador manual','compresor','planta electrica',
+    'torre de luz','bomba de achique','ligadora','vibrador hormigon','soldadora',
+    'camioneta','equipo topografia','maquina perforacion pozos','diferencial','otro'
+  ],
+
   abrirEquipo(id) {
     const eq = id ? this.data.equipos.find(x => x.id === id) : { propiedad: 'propio', cantidad: 1 };
+    const tipoOpts = this._TIPOS_EQUIPO.map(t =>
+      `<option value="${t}" ${eq.tipo === t ? 'selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`).join('');
     this._openModal(id ? 'Editar equipo' : 'Nuevo equipo', `
-      <div class="bm-form-row"><label class="bm-label">Descripción *</label><input class="bm-input" id="f-descripcion" placeholder="Ej: Retroexcavadora" value="${this._esc(eq.descripcion)}"></div>
+      <div class="bm-form-row"><label class="bm-label">Tipo de equipo *</label>
+        <select class="bm-select" id="f-tipo">
+          <option value="">— Selecciona el tipo —</option>
+          ${tipoOpts}
+        </select>
+        <div style="font-size:11px;color:var(--text2,#6b7280);margin-top:2px">El tipo es lo que se cruza contra los pliegos en el matching. Marca, modelo y detalles van abajo.</div>
+      </div>
+      <div class="bm-form-row"><label class="bm-label">Descripción *</label><input class="bm-input" id="f-descripcion" placeholder="Ej: Retroexcavadora CAT 420D" value="${this._esc(eq.descripcion)}"></div>
       <div class="bm-form-grid">
         <div class="bm-form-row"><label class="bm-label">Marca</label><input class="bm-input" id="f-marca" value="${this._esc(eq.marca)}"></div>
         <div class="bm-form-row"><label class="bm-label">Modelo</label><input class="bm-input" id="f-modelo" value="${this._esc(eq.modelo)}"></div>
@@ -750,7 +807,7 @@ const BidManager = {
         ], eq)}
       </div>
     `, async () => {
-      const data = this._collectForm(['descripcion','marca','modelo','anio','cantidad','capacidad','matricula','propiedad','estado','empresa_alquiler','empresa_alquiler_rnc','empresa_alquiler_telefono','empresa_alquiler_contacto','carta_disponibilidad_equipo_url','matricula_url','factura_url','foto_url','contrato_alquiler_url']);
+      const data = this._collectForm(['tipo','descripcion','marca','modelo','anio','cantidad','capacidad','matricula','propiedad','estado','empresa_alquiler','empresa_alquiler_rnc','empresa_alquiler_telefono','empresa_alquiler_contacto','carta_disponibilidad_equipo_url','matricula_url','factura_url','foto_url','contrato_alquiler_url']);
       data.otros_documentos = this._collectArray('otros_documentos');
       if (id) await this._put(`/equipos/${id}`, data);
       else await this._post('/equipos', data);
@@ -1474,9 +1531,8 @@ const BidManager = {
       const form = new FormData();
       form.append('categoria', reg.categoria);
       form.append('file', file);
-      const r = await fetch('/api/bid/upload', {
+      const r = await this._fetchAuth('/api/bid/upload', {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + this._token() },
         body: form
       });
       if (!r.ok) {
@@ -1538,10 +1594,7 @@ const BidManager = {
 
     if (path && !path.startsWith('http')) {
       try {
-        await fetch(`/api/bid/upload?path=${encodeURIComponent(path)}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': 'Bearer ' + this._token() }
-        });
+        await this._fetchAuth(`/api/bid/upload?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
       } catch(e) { /* silencioso */ }
     }
     this._cascadeRefresh(cid);
@@ -1597,9 +1650,8 @@ const BidManager = {
     try {
       const form = new FormData();
       files.forEach(f => form.append('files', f));
-      const r = await fetch('/api/bid/financieros/extraer-lote', {
+      const r = await this._fetchAuth('/api/bid/financieros/extraer-lote', {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + this._token() },
         body: form,
         signal: this._loteAbort.signal
       });
@@ -1674,9 +1726,8 @@ const BidManager = {
       const form = new FormData();
       form.append('file', file);
       if (monto) form.append('monto_ofertado', monto);
-      const r = await fetch('/api/bid/matching/analizar', {
+      const r = await this._fetchAuth('/api/bid/matching/analizar', {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + this._token() },
         body: form
       });
       if (!r.ok) {
@@ -1686,9 +1737,10 @@ const BidManager = {
       const reg = await r.json();
       setStatus('');
       if (montoInput) montoInput.value = '';
-      const cumple = reg.resultado && reg.resultado.cumple_financiero;
-      this.toast(cumple === true ? 'Análisis listo: CUMPLES los requisitos financieros'
-               : cumple === false ? 'Análisis listo: NO cumples todos los requisitos'
+      const cumple = reg.resultado && (reg.resultado.cumple_global !== undefined ? reg.resultado.cumple_global : reg.resultado.cumple_financiero);
+      const nFalt = reg.resultado && reg.resultado.faltantes ? reg.resultado.faltantes.length : 0;
+      this.toast(cumple === true ? 'Análisis listo: CUMPLES los requisitos del pliego'
+               : cumple === false ? `Análisis listo: NO cumples (${nFalt} faltante${nFalt === 1 ? '' : 's'} identificado${nFalt === 1 ? '' : 's'})`
                : 'Análisis listo: revisa el detalle', cumple === false ? 'err' : 'ok');
       await this.refresh();
     } catch (e) {
@@ -1702,7 +1754,7 @@ const BidManager = {
     if (!cont) return;
     const lista = this.data.matching || [];
     if (!lista.length) {
-      cont.innerHTML = this._emptyState('M', 'Sube un pliego para ver si cumples sus requisitos financieros.');
+      cont.innerHTML = this._emptyState('M', 'Sube un pliego para ver si cumples sus requisitos: financieros, líneas de crédito, personal, equipos y experiencia.');
       return;
     }
     cont.innerHTML = lista.map(m => this._matchingCardHtml(m)).join('');
@@ -1710,6 +1762,194 @@ const BidManager = {
 
   _matchingCardHtml(m) {
     const res = m.resultado || {};
+    if (res.version_evaluador >= 2 && res.secciones) return this._matchingCardV2(m, res);
+    return this._matchingCardV1(m, res);
+  },
+
+  // ── Tarjeta v2: financiero + lineas + personal + equipos + experiencia ──
+  _fmtRD(n) {
+    return 'RD$ ' + Number(n).toLocaleString('es-DO', { maximumFractionDigits: 2 });
+  },
+
+  _semaforo(cumple) {
+    if (cumple === true) return '<span style="color:var(--green,#16a34a);font-weight:700">CUMPLE</span>';
+    if (cumple === false) return '<span style="color:#dc2626;font-weight:700">NO CUMPLE</span>';
+    return '<span style="color:#d97706;font-weight:700">SIN DATOS</span>';
+  },
+
+  _seccionDetails(titulo, cumple, innerHtml, abierta) {
+    const punto = cumple === true ? '#16a34a' : cumple === false ? '#dc2626' : '#d97706';
+    return `
+      <details ${abierta ? 'open' : ''} style="border:1px solid var(--border,#eee);border-radius:8px;margin-bottom:8px;background:#fff">
+        <summary style="padding:10px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;list-style:none">
+          <span style="width:10px;height:10px;border-radius:50%;background:${punto};flex-shrink:0"></span>
+          ${titulo}
+          <span style="margin-left:auto;font-size:11px;font-weight:400;color:var(--text2,#6b7280)">${cumple === true ? 'Cumple' : cumple === false ? 'No cumple' : 'Sin datos para evaluar'}</span>
+        </summary>
+        <div style="padding:4px 12px 12px">${innerHtml}</div>
+      </details>`;
+  },
+
+  _matchingCardV2(m, res) {
+    const sec = res.secciones || {};
+    const cumple = res.cumple_global;
+    const badge = cumple === true
+      ? '<div class="bm-badge bm-badge-ok">CUMPLE</div>'
+      : cumple === false
+        ? '<div class="bm-badge bm-badge-err">NO CUMPLE</div>'
+        : '<div class="bm-badge bm-badge-warn">REVISAR</div>';
+
+    // ── Faltantes: el entregable real, arriba de todo ──
+    const faltantes = res.faltantes || [];
+    const faltantesHtml = faltantes.length ? `
+      <div style="border:1px solid #fecaca;background:#fef2f2;border-radius:8px;padding:10px 12px;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;color:#991b1b;margin-bottom:6px">Lo que te falta para cumplir (${faltantes.length})</div>
+        ${faltantes.map(f => `
+          <div style="font-size:12px;color:#7f1d1d;padding:3px 0;display:flex;gap:6px">
+            <span style="flex-shrink:0">–</span>
+            <span>${this._esc(f.texto)}${f.subsanable === true ? ' <span style="color:#d97706;font-weight:600">(subsanable)</span>' : f.subsanable === false ? ' <span style="font-weight:700">(NO subsanable)</span>' : ''}</span>
+          </div>`).join('')}
+      </div>` : (cumple === true ? '<div style="border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#166534;font-weight:600">Tu expediente cumple todo lo evaluable de este pliego.</div>' : '');
+
+    // ── Puntaje estimado (metodologia combinada) ──
+    const pj = res.puntaje;
+    let puntajeHtml = '';
+    if (pj) {
+      const okUmbral = pj.cumple_umbral;
+      const color = okUmbral === true ? '#16a34a' : okUmbral === false ? '#dc2626' : '#d97706';
+      const durosHtml = (pj.detalle_duros || []).map(d =>
+        `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${this._esc(d.criterio)}</span><span><strong>${d.estimado}</strong> / ${d.puntos_max}</span></div>`).join('');
+      const blandosHtml = (pj.detalle_blandos || []).map(b =>
+        `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;color:var(--text2,#6b7280)"><span>${this._esc(b.nombre)} (asumido)</span><span>${b.puntos_max} / ${b.puntos_max}</span></div>`).join('');
+      puntajeHtml = `
+        <div style="border:1px solid var(--border,#eee);border-radius:8px;padding:10px 12px;margin-bottom:10px;background:#fff">
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+            <div style="font-size:12px;font-weight:700">Puntaje técnico estimado (metodología combinada)</div>
+            <div style="font-size:18px;font-weight:800;color:${color}">${pj.estimado}${pj.puntaje_total ? ' / ' + pj.puntaje_total : ''}</div>
+            ${pj.puntaje_minimo ? `<div style="font-size:11px;color:var(--text2,#6b7280)">mínimo para pasar a Sobre B: <strong>${pj.puntaje_minimo}</strong></div>` : ''}
+          </div>
+          <div style="margin-top:6px">${durosHtml}${blandosHtml}</div>
+          <div style="font-size:11px;color:var(--text2,#6b7280);margin-top:6px">${this._esc(pj.nota || '')}</div>
+        </div>`;
+    }
+
+    // ── Seccion: financieros ──
+    const fin = sec.financieros || {};
+    const finFilas = (fin.detalle || []).map(d => {
+      const valor = d.valor !== null && d.valor !== undefined
+        ? (Math.abs(d.valor) >= 1000 ? this._fmtRD(d.valor) : Number(d.valor).toFixed(2)) : '—';
+      return `<tr style="border-bottom:1px solid var(--border,#eee)">
+        <td style="padding:6px 8px;font-size:12px"><div style="font-weight:600">${this._esc(d.nombre || d.tipo)}</div><div style="color:var(--text2,#6b7280);font-size:11px">${this._esc(d.formula || '')}${d.base_calculo === 'promedio' ? ' · sobre la media' : ''}</div></td>
+        <td style="padding:6px 8px;font-size:12px;color:var(--text2,#6b7280)">${this._esc(d.limite_desc || '')}</td>
+        <td style="padding:6px 8px;font-size:12px">${valor}${d.periodo_desc ? `<div style="font-size:11px;color:var(--text2,#6b7280)">${this._esc(d.periodo_desc)}</div>` : ''}</td>
+        <td style="padding:6px 8px;font-size:12px">${this._semaforo(d.cumple)}${d.faltante ? `<div style="font-size:11px;color:#dc2626">Faltan ${this._fmtRD(d.faltante)}</div>` : ''}</td>
+      </tr>`;
+    }).join('');
+    const finHtml = fin.sin_estados
+      ? '<div style="font-size:12px;color:#d97706">No hay estados financieros cargados. Sube al menos uno.</div>'
+      : (finFilas ? `<table style="width:100%;border-collapse:collapse"><tr style="background:var(--bg2,#f8f9fa)"><th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Requisito</th><th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Límite</th><th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Tu valor</th><th style="text-align:left;padding:6px 8px;font-size:11px;text-transform:uppercase;color:var(--text2,#6b7280)">Resultado</th></tr>${finFilas}</table>` : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no trae índices financieros evaluables.</div>');
+
+    // ── Seccion: lineas de credito ──
+    const lin = sec.lineas_credito || {};
+    const linEsc = lin.escenarios_lote && lin.escenarios_lote.length ? lin.escenarios_lote
+      : (lin.detalle && lin.detalle.length ? [{ lote: null, requisitos: lin.detalle }] : []);
+    const linHtml = linEsc.length ? linEsc.map(e => `
+      ${e.lote ? `<div style="font-size:12px;font-weight:700;margin:6px 0 2px">${this._esc(e.lote)}</div>` : ''}
+      ${(e.requisitos || []).map(r => `
+        <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border,#eee)">
+          <span>Línea ${this._esc(r.tipo)}${r.pct_aplicado ? ` (${Math.round(r.pct_aplicado * 100)}%${r.es_mipyme ? ' MIPYME' : ''})` : ''}</span>
+          <span>${r.requerido !== null && r.requerido !== undefined ? `necesitas <strong>${this._fmtRD(r.requerido)}</strong> · tienes ${this._fmtRD(r.disponible || 0)}` : 'monto base no disponible'} ${this._semaforo(r.cumple)}</span>
+        </div>`).join('')}
+    `).join('') : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no exige líneas de crédito.</div>';
+
+    // ── Seccion: personal ──
+    const per = sec.personal || {};
+    const perHtml = (per.detalle || []).length ? `
+      ${(per.detalle || []).map(d => `
+        <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px dashed var(--border,#eee)">
+          <span><strong>${this._esc(d.cargo)}</strong> (${d.cubiertos}/${d.puestos})
+            <span style="color:var(--text2,#6b7280)">${(d.titulaciones || []).join(' o ')}${d.anios_min ? ` · ${d.anios_min}+ años` : ''}${d.requiere_maestria ? ' · maestría' + (d.area_maestria ? ' en ' + this._esc(d.area_maestria) : '') : ''}</span>
+          </span>
+          <span>${this._semaforo(d.cumple)}</span>
+        </div>`).join('')}
+      ${(per.asignaciones || []).length ? `<div style="font-size:11px;color:var(--text2,#6b7280);margin-top:6px">Asignación propuesta: ${(per.asignaciones || []).map(a => `${this._esc(a.nombre)} → ${this._esc(a.cargo)}`).join(' · ')}</div>` : ''}
+      ${(per.checklist_documentos || []).length ? `<div style="margin-top:6px;padding:8px;background:rgba(217,119,6,0.06);border-radius:6px">${(per.checklist_documentos || []).map(c => `<div style="font-size:11px;color:#92400e">Docs: ${this._esc(c)}</div>`).join('')}</div>` : ''}
+    ` : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no detalla personal mínimo.</div>';
+
+    // ── Seccion: equipos ──
+    const eq = sec.equipos || {};
+    const eqHtml = (eq.detalle || []).length ? (eq.detalle || []).map(d => `
+      <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border,#eee)">
+        <span><strong>${this._esc(d.tipo)}</strong>${d.capacidad_min ? ` (${this._esc(d.capacidad_min)})` : ''}${d.admite_alquilado === false ? ' · solo propios' : ''}</span>
+        <span>tienes ${d.disponible} de ${d.requerido} ${this._semaforo(d.cumple)}</span>
+      </div>
+      ${(d.revision_manual || []).map(r => `<div style="font-size:11px;color:#d97706;padding-left:8px">${this._esc(r)}</div>`).join('')}
+    `).join('') : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no lista equipos mínimos.</div>';
+
+    // ── Seccion: experiencia ──
+    const exp = sec.experiencia || {};
+    const volHtml = (exp.escenarios_volumen || []) ? (exp.escenarios_volumen || []).map(v => `
+      <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0">
+        <span>${this._esc(v.lote)}: ${this._esc(v.categoria)}</span>
+        <span>${Number(v.ejecutado).toLocaleString('es-DO')} de ${Number(v.requerido).toLocaleString('es-DO')} ${this._esc(v.unidad || '')} ${this._semaforo(v.cumple)}</span>
+      </div>`).join('') : '';
+    const descHtml = (exp.obras_descartadas || []).map(o => o.obra
+      ? `<div style="font-size:11px;color:var(--text2,#6b7280)">${this._esc(o.obra)}: ${(o.descartada_por || []).join('; ')}</div>`
+      : `<div style="font-size:11px;color:#d97706">${this._esc(o.nota || '')}</div>`).join('');
+    const expHtml = (exp.checks || []).length || volHtml || exp.obras_calificadas !== undefined ? `
+      <div style="font-size:12px;margin-bottom:4px">Obras que califican: <strong>${exp.obras_calificadas ?? 0}</strong>${exp.monto_acumulado ? ` · acumulado ${this._fmtRD(exp.monto_acumulado)}` : ''}</div>
+      ${(exp.checks || []).map(c => `
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0">
+          <span>${this._esc(c.criterio)}</span><span>${this._semaforo(c.cumple)}</span>
+        </div>`).join('')}
+      ${volHtml}
+      ${descHtml ? `<div style="margin-top:6px">${descHtml}</div>` : ''}
+    ` : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no detalla experiencia mínima evaluable.</div>';
+
+    // ── Otros requisitos (ubicacion de plantas, etc.) ──
+    const otros = res.otros_requisitos || [];
+    const otrosHtml = otros.length ? this._seccionDetails('Otros requisitos (revisión manual)', null,
+      otros.map(o => `<div style="font-size:12px;padding:2px 0"><strong>${this._esc(o.nombre)}</strong>${o.texto_original ? `<div style="font-size:11px;color:var(--text2,#6b7280)">${this._esc(o.texto_original)}</div>` : ''}</div>`).join(''), false) : '';
+
+    const metodologia = res.metodologia === 'combinada'
+      ? '<span style="font-size:11px;background:rgba(59,130,246,0.1);color:#1d4ed8;padding:2px 8px;border-radius:10px;font-weight:600">Metodología combinada</span>' : '';
+
+    return `
+      <div class="bm-card" style="margin-bottom:16px">
+        <div class="bm-card-header">
+          <div>
+            <h4 class="bm-card-title">${this._esc(m.referencia || 'Sin referencia')}</h4>
+            <div class="bm-card-subtitle">${this._esc(m.institucion || '')}${m.nombre_proceso ? ' · ' + this._esc(m.nombre_proceso) : ''} ${metodologia}</div>
+          </div>
+          ${badge}
+        </div>
+        <div class="bm-card-body">
+          <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--text2,#6b7280);margin-bottom:10px">
+            ${m.presupuesto_base ? `<div>Presupuesto base: <strong>${this._fmtRD(m.presupuesto_base)}</strong></div>` : ''}
+            ${m.monto_ofertado ? `<div>Monto evaluado: <strong>${this._fmtRD(m.monto_ofertado)}</strong></div>` : ''}
+            ${(res.lotes || []).length ? `<div>Lotes: <strong>${res.lotes.length}</strong></div>` : ''}
+            ${res.naturaleza_proceso ? `<div>Naturaleza: <strong>${this._esc(res.naturaleza_proceso.replace(/_/g, ' '))}</strong></div>` : ''}
+          </div>
+          ${faltantesHtml}
+          ${puntajeHtml}
+          ${this._seccionDetails('Financieros', fin.cumple, finHtml, fin.cumple === false)}
+          ${this._seccionDetails('Líneas de crédito', lin.cumple, linHtml, lin.cumple === false)}
+          ${this._seccionDetails('Personal', per.cumple, perHtml, per.cumple === false)}
+          ${this._seccionDetails('Equipos', eq.cumple, eqHtml, eq.cumple === false)}
+          ${this._seccionDetails('Experiencia', exp.cumple, expHtml, exp.cumple === false)}
+          ${otrosHtml}
+        </div>
+        <div class="bm-card-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._reevaluarMatching('${m.id}')">Reevaluar</button>
+          ${m.pliego_url ? `<button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager._openStoragePath('${this._esc(m.pliego_url)}')">Ver pliego</button>` : ''}
+          <button class="bm-btn bm-btn-danger bm-btn-sm" onclick="BidManager.eliminar('matching', '${m.id}')">Eliminar</button>
+        </div>
+      </div>
+    `;
+  },
+
+  // ── Tarjeta v1 (analisis viejos, solo financieros) ──
+  _matchingCardV1(m, res) {
     const detalle = res.detalle || [];
     const cumple = res.cumple_financiero;
     const badge = cumple === true
@@ -1819,18 +2059,16 @@ const BidManager = {
       const formUp = new FormData();
       formUp.append('categoria', categoria);
       formUp.append('file', file);
-      const upPromise = fetch('/api/bid/upload', {
+      const upPromise = this._fetchAuth('/api/bid/upload', {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + this._token() },
         body: formUp
       }).then(r => r.ok ? r.json() : null).catch(() => null);
 
       // 2) Extraer con IA
       const formIA = new FormData();
       formIA.append('file', file);
-      const iaResp = await fetch('/api/bid/financieros/extraer', {
+      const iaResp = await this._fetchAuth('/api/bid/financieros/extraer', {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + this._token() },
         body: formIA
       });
       if (!iaResp.ok) {
@@ -1928,9 +2166,8 @@ const BidManager = {
       form.append('categoria', categoria);
       form.append('file', file);
 
-      const r = await fetch('/api/bid/upload', {
+      const r = await this._fetchAuth('/api/bid/upload', {
         method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + this._token() },
         body: form
       });
       if (!r.ok) {
@@ -1966,9 +2203,7 @@ const BidManager = {
       return;
     }
     try {
-      const r = await fetch(`/api/bid/signed-url?path=${encodeURIComponent(path)}`, {
-        headers: { 'Authorization': 'Bearer ' + this._token() }
-      });
+      const r = await this._fetchAuth(`/api/bid/signed-url?path=${encodeURIComponent(path)}`);
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         throw new Error(err.detail || `Signed URL → ${r.status}`);
@@ -2000,10 +2235,7 @@ const BidManager = {
     // Silencioso: si falla, seguimos y limpiamos el campo igual.
     if (!path.startsWith('http')) {
       try {
-        await fetch(`/api/bid/upload?path=${encodeURIComponent(path)}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': 'Bearer ' + this._token() }
-        });
+        await this._fetchAuth(`/api/bid/upload?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
       } catch(e) { /* silencioso */ }
     }
 
