@@ -1879,7 +1879,8 @@ const BidManager = {
         <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border,#eee)">
           <span>Línea ${this._esc(r.tipo)}${r.pct_aplicado ? ` (${Math.round(r.pct_aplicado * 100)}%${r.es_mipyme ? ' MIPYME' : ''})` : ''}</span>
           <span>${r.requerido !== null && r.requerido !== undefined ? `necesitas <strong>${this._fmtRD(r.requerido)}</strong> · tienes ${this._fmtRD(r.disponible || 0)}` : 'monto base no disponible'} ${this._semaforo(r.cumple)}</span>
-        </div>`).join('')}
+        </div>
+        ${(r.fuentes || []).length ? `<div style="font-size:11px;color:var(--text2,#6b7280);padding:1px 0 4px 8px">Suman: ${(r.fuentes || []).map(f => this._esc(f)).join(' · ')}</div>` : ''}`).join('')}
     `).join('') : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no exige líneas de crédito.</div>';
 
     // ── Seccion: personal ──
@@ -1891,7 +1892,8 @@ const BidManager = {
             <span style="color:var(--text2,#6b7280)">${(d.titulaciones || []).join(' o ')}${d.anios_min ? ` · ${d.anios_min}+ años` : ''}${d.requiere_maestria ? ' · maestría' + (d.area_maestria ? ' en ' + this._esc(d.area_maestria) : '') : ''}</span>
           </span>
           <span>${this._semaforo(d.cumple)}</span>
-        </div>`).join('')}
+        </div>
+        ${(d.candidatos || []).length ? `<div style="font-size:11px;color:var(--text2,#6b7280);padding:2px 0 5px 8px">Puedes usar a: ${(d.candidatos || []).map(c => `<strong>${this._esc(c.nombre)}</strong>${c.anios ? ` (${c.anios} años)` : ''}`).join(', ')}</div>` : (d.cumple === false ? '<div style="font-size:11px;color:#dc2626;padding:2px 0 5px 8px">Nadie en tu personal califica para este cargo.</div>' : '')}`).join('')}
       ${(per.asignaciones || []).length ? `<div style="font-size:11px;color:var(--text2,#6b7280);margin-top:6px">Asignación propuesta: ${(per.asignaciones || []).map(a => `${this._esc(a.nombre)} → ${this._esc(a.cargo)}`).join(' · ')}</div>` : ''}
       ${(per.checklist_documentos || []).length ? `<div style="margin-top:6px;padding:8px;background:rgba(217,119,6,0.06);border-radius:6px">${(per.checklist_documentos || []).map(c => `<div style="font-size:11px;color:#92400e">Docs: ${this._esc(c)}</div>`).join('')}</div>` : ''}
     ` : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no detalla personal mínimo.</div>';
@@ -1903,6 +1905,7 @@ const BidManager = {
         <span><strong>${this._esc(d.tipo)}</strong>${d.capacidad_min ? ` (${this._esc(d.capacidad_min)})` : ''}${d.admite_alquilado === false ? ' · solo propios' : ''}</span>
         <span>tienes ${d.disponible} de ${d.requerido} ${this._semaforo(d.cumple)}</span>
       </div>
+      ${(d.usables || []).length ? `<div style="font-size:11px;color:var(--text2,#6b7280);padding:1px 0 4px 8px">Cuentan: ${(d.usables || []).map(u => this._esc(u)).join(' · ')}</div>` : ''}
       ${(d.revision_manual || []).map(r => `<div style="font-size:11px;color:#d97706;padding-left:8px">${this._esc(r)}</div>`).join('')}
     `).join('') : '<div style="font-size:12px;color:var(--text2,#6b7280)">El pliego no lista equipos mínimos.</div>';
 
@@ -1918,6 +1921,7 @@ const BidManager = {
       : `<div style="font-size:11px;color:#d97706">${this._esc(o.nota || '')}</div>`).join('');
     const expHtml = (exp.checks || []).length || volHtml || exp.obras_calificadas !== undefined ? `
       <div style="font-size:12px;margin-bottom:4px">Obras que califican: <strong>${exp.obras_calificadas ?? 0}</strong>${exp.monto_acumulado ? ` · acumulado ${this._fmtRD(exp.monto_acumulado)}` : ''}</div>
+      ${(exp.obras_usables || []).length ? `<div style="font-size:11px;color:var(--text2,#6b7280);padding:1px 0 5px">Puedes presentar: ${(exp.obras_usables || []).map(o => `<strong>${this._esc(o.nombre)}</strong>${o.cliente ? ` (${this._esc(o.cliente)}${o.monto ? ', ' + this._fmtRD(o.monto) : ''})` : (o.monto ? ` (${this._fmtRD(o.monto)})` : '')}${o.en_curso ? ' [en curso]' : ''}`).join(' · ')}</div>` : ''}
       ${(exp.checks || []).map(c => `
         <div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0">
           <span>${this._esc(c.criterio)}</span><span>${this._semaforo(c.cumple)}</span>
