@@ -9147,6 +9147,22 @@ function _compatSemaforo(v) {
   return '<span style="color:var(--amber);font-weight:800">SIN DATOS</span>';
 }
 
+function _compatFmtRD(n) {
+  return 'RD$ ' + Number(n).toLocaleString('es-DO', { maximumFractionDigits: 2 });
+}
+
+function _compatDetails(titulo, cumple, inner, abierta) {
+  const col = cumple === true ? 'var(--green)' : cumple === false ? 'var(--red)' : 'var(--amber)';
+  const estado = cumple === true ? 'Cumple' : cumple === false ? 'No cumple' : 'Sin datos';
+  return `<details ${abierta ? 'open' : ''} style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--bg)">
+    <summary style="padding:9px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;list-style:none;color:var(--text)">
+      <span style="width:9px;height:9px;border-radius:50%;background:${col};flex-shrink:0"></span>${titulo}
+      <span style="margin-left:auto;font-size:11px;font-weight:600;color:${col}">${estado}</span>
+    </summary>
+    <div style="padding:2px 12px 10px">${inner}</div>
+  </details>`;
+}
+
 function _renderCompatCard(codigo, m) {
   const cont = document.getElementById(`compat-exp-${codigo}`);
   if (!cont) return;
@@ -9156,22 +9172,82 @@ function _renderCompatCard(codigo, m) {
   const sec = res.secciones || {};
   const pj = res.puntaje;
 
-  const chips = [
-    ['Financieros', (sec.financieros || {}).cumple],
-    ['Líneas de crédito', (sec.lineas_credito || {}).cumple],
-    ['Personal', (sec.personal || {}).cumple],
-    ['Equipos', (sec.equipos || {}).cumple],
-    ['Experiencia', (sec.experiencia || {}).cumple],
-  ].map(([n, c]) => {
-    const col = c === true ? 'var(--green)' : c === false ? 'var(--red)' : 'var(--amber)';
-    return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 9px;border:1px solid var(--border);border-radius:12px;background:var(--bg2)"><span style="width:8px;height:8px;border-radius:50%;background:${col}"></span>${n}</span>`;
-  }).join(' ');
-
+  // ── Faltantes (accionable, arriba) ──
   const topFalt = faltantes.slice(0, 5).map(f =>
-    `<div style="font-size:12px;color:var(--text2);padding:3px 0;display:flex;gap:6px"><span>–</span><span>${f.texto}${f.subsanable === true ? ' <strong style="color:var(--amber)">(subsanable)</strong>' : f.subsanable === false ? ' <strong style="color:var(--red)">(NO subsanable)</strong>' : ''}</span></div>`
-  ).join('') + (faltantes.length > 5 ? `<div style="font-size:11px;color:var(--muted);padding-top:4px">+${faltantes.length - 5} más en Expediente Digital → Financieros → Matching</div>` : '');
+    `<div style="font-size:12px;color:var(--text2);padding:3px 0;display:flex;gap:6px"><span>&ndash;</span><span>${f.texto}${f.subsanable === true ? ' <strong style="color:var(--amber)">(subsanable)</strong>' : f.subsanable === false ? ' <strong style="color:var(--red)">(NO subsanable)</strong>' : ''}</span></div>`
+  ).join('') + (faltantes.length > 5 ? `<div style="font-size:11px;color:var(--muted);padding-top:4px">+${faltantes.length - 5} más abajo en el detalle por sección</div>` : '');
 
-  const pjHtml = pj ? `<div style="font-size:12px;color:var(--text2);margin-top:6px">Puntaje técnico estimado: <strong>${pj.estimado}${pj.puntaje_total ? ' / ' + pj.puntaje_total : ''}</strong>${pj.puntaje_minimo ? ` (mínimo ${pj.puntaje_minimo})` : ''} — asumiendo tus documentos de redacción completos</div>` : '';
+  const pjHtml = pj ? `
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:8px 0 4px">
+      <span style="font-size:12px;font-weight:800;color:var(--text2)">Puntaje técnico estimado</span>
+      <span style="font-size:18px;font-weight:900;color:${pj.cumple_umbral === true ? 'var(--green)' : pj.cumple_umbral === false ? 'var(--red)' : 'var(--amber)'}">${pj.estimado}${pj.puntaje_total ? ' / ' + pj.puntaje_total : ''}</span>
+      ${pj.puntaje_minimo ? `<span style="font-size:11px;color:var(--muted)">mínimo para Sobre B: <strong>${pj.puntaje_minimo}</strong></span>` : ''}
+      <span style="font-size:11px;color:var(--muted)">(${pj.verificado_duros} verificados de tu expediente + ${pj.asumido_blandos} asumidos por redacción)</span>
+    </div>` : `<div style="font-size:11px;color:var(--muted);margin:6px 0 2px">Metodología: ${res.metodologia === 'combinada' ? 'combinada (con puntaje)' : 'Cumple / No Cumple'}</div>`;
+
+  // ── Seccion: financieros ──
+  const fin = sec.financieros || {};
+  const finInner = fin.sin_estados
+    ? '<div style="font-size:12px;color:var(--amber)">No hay estados financieros en tu expediente.</div>'
+    : ((fin.detalle || []).map(d => {
+        const val = d.valor !== null && d.valor !== undefined ? (Math.abs(d.valor) >= 1000 ? _compatFmtRD(d.valor) : Number(d.valor).toFixed(2)) : '—';
+        return `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border)">
+          <span>${d.nombre || d.tipo}${d.base_calculo === 'promedio' ? ' <span style="color:var(--muted);font-size:11px">(sobre la media)</span>' : ''}</span>
+          <span>pide <strong>${d.limite_desc || '—'}</strong> · tienes <strong>${val}</strong> ${_compatSemaforo(d.cumple)}</span>
+        </div>`;
+      }).join('') || '<div style="font-size:12px;color:var(--muted)">El pliego no trae índices evaluables.</div>');
+
+  // ── Seccion: lineas ──
+  const lin = sec.lineas_credito || {};
+  const linEsc = (lin.escenarios_lote && lin.escenarios_lote.length) ? lin.escenarios_lote
+    : (lin.detalle && lin.detalle.length ? [{ lote: null, requisitos: lin.detalle }] : []);
+  const linInner = linEsc.length ? linEsc.map(e => `
+    ${e.lote ? `<div style="font-size:12px;font-weight:700;margin:5px 0 2px">${e.lote}</div>` : ''}
+    ${(e.requisitos || []).map(r => `
+      <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border)">
+        <span>Línea ${r.tipo}${r.pct_aplicado ? ` (${Math.round(r.pct_aplicado * 100)}%${r.es_mipyme ? ' MIPYME' : ''})` : ''}</span>
+        <span>${r.requerido != null ? `necesitas <strong>${_compatFmtRD(r.requerido)}</strong> · tienes ${_compatFmtRD(r.disponible || 0)}` : 'monto base no disponible'} ${_compatSemaforo(r.cumple)}</span>
+      </div>
+      ${(r.fuentes || []).length ? `<div style="font-size:11px;color:var(--muted);padding:1px 0 4px 8px">Suman: ${(r.fuentes || []).join(' · ')}</div>` : ''}`).join('')}`).join('')
+    : '<div style="font-size:12px;color:var(--muted)">El pliego no exige líneas de crédito.</div>';
+
+  // ── Seccion: personal ──
+  const per = sec.personal || {};
+  const perInner = (per.detalle || []).length ? `
+    ${(per.detalle || []).map(d => `
+      <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border)">
+        <span><strong>${d.cargo}</strong> <span style="color:var(--muted)">${(d.titulaciones || []).join(' o ')}${d.anios_min ? ` · ${d.anios_min}+ años` : ''}${d.requiere_maestria ? ' · maestría' + (d.area_maestria ? ' en ' + d.area_maestria : '') : ''}</span></span>
+        <span>cubierto ${d.cubiertos}/${d.puestos} ${_compatSemaforo(d.cumple)}</span>
+      </div>
+      ${(d.candidatos || []).length ? `<div style="font-size:11px;color:var(--text2);padding:2px 0 5px 8px">Puedes usar a: ${(d.candidatos || []).map(c => `<strong>${c.nombre}</strong>${c.anios ? ` (${c.anios} años)` : ''}`).join(', ')}</div>` : (d.cumple === false ? '<div style="font-size:11px;color:var(--red);padding:2px 0 5px 8px">Nadie en tu personal califica para este cargo.</div>' : '')}`).join('')}
+    ${(per.asignaciones || []).length ? `<div style="font-size:11px;color:var(--muted);margin-top:5px">Asignación propuesta: ${(per.asignaciones || []).map(a => `${a.nombre} → ${a.cargo}`).join(' · ')}</div>` : ''}
+    ${(per.checklist_documentos || []).length ? `<div style="margin-top:5px;padding:6px 8px;background:var(--bg2);border-radius:6px">${(per.checklist_documentos || []).map(c => `<div style="font-size:11px;color:var(--text2)">Docs: ${c}</div>`).join('')}</div>` : ''}`
+    : '<div style="font-size:12px;color:var(--muted)">El pliego no detalla personal mínimo.</div>';
+
+  // ── Seccion: equipos ──
+  const eq = sec.equipos || {};
+  const eqInner = (eq.detalle || []).length ? (eq.detalle || []).map(d => `
+    <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border)">
+      <span><strong>${d.tipo}</strong>${d.capacidad_min ? ` (${d.capacidad_min})` : ''}${d.admite_alquilado === false ? ' · solo propios' : ''}</span>
+      <span>tienes <strong>${d.disponible}</strong> de ${d.requerido} ${_compatSemaforo(d.cumple)}</span>
+    </div>
+    ${(d.usables || []).length ? `<div style="font-size:11px;color:var(--text2);padding:1px 0 4px 8px">Cuentan: ${(d.usables || []).join(' · ')}</div>` : ''}
+    ${(d.revision_manual || []).map(r => `<div style="font-size:11px;color:var(--amber);padding-left:8px">${r}</div>`).join('')}`).join('')
+    : '<div style="font-size:12px;color:var(--muted)">El pliego no lista equipos mínimos.</div>';
+
+  // ── Seccion: experiencia ──
+  const exp = sec.experiencia || {};
+  const expInner = ((exp.checks || []).length || exp.obras_calificadas !== undefined) ? `
+    <div style="font-size:12px;margin-bottom:3px">Obras tuyas que califican: <strong>${exp.obras_calificadas ?? 0}</strong>${exp.monto_acumulado ? ` · acumulado ${_compatFmtRD(exp.monto_acumulado)}` : ''}${exp.naturaleza && exp.naturaleza.length ? ` · naturaleza pedida: ${exp.naturaleza.map(n => n.replace(/_/g,' ')).join(', ')}` : ''}</div>
+    ${(exp.obras_usables || []).length ? `<div style="font-size:11px;color:var(--text2);padding:1px 0 5px">Puedes presentar: ${(exp.obras_usables || []).map(o => `<strong>${o.nombre}</strong>${o.cliente ? ` (${o.cliente}` : ''}${o.monto ? `${o.cliente ? ', ' : ' ('}${_compatFmtRD(o.monto)})` : (o.cliente ? ')' : '')}${o.en_curso ? ' [en curso]' : ''}`).join(' · ')}</div>` : ''}
+    ${(exp.checks || []).map(c => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${c.criterio}</span><span>${_compatSemaforo(c.cumple)}</span></div>`).join('')}
+    ${(exp.escenarios_volumen || []).map(v => `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>${v.lote}: ${v.categoria}</span><span>${Number(v.ejecutado).toLocaleString('es-DO')} de ${Number(v.requerido).toLocaleString('es-DO')} ${v.unidad || ''} ${_compatSemaforo(v.cumple)}</span></div>`).join('')}
+    ${(exp.obras_descartadas || []).length ? `<div style="margin-top:5px">${(exp.obras_descartadas || []).map(o => o.obra ? `<div style="font-size:11px;color:var(--muted)">${o.obra}: ${(o.descartada_por || []).join('; ')}</div>` : `<div style="font-size:11px;color:var(--amber)">${o.nota || ''}</div>`).join('')}</div>` : ''}`
+    : '<div style="font-size:12px;color:var(--muted)">El pliego no detalla experiencia mínima evaluable.</div>';
+
+  const otros = res.otros_requisitos || [];
+  const otrosHtml = otros.length ? _compatDetails('Otros requisitos (revisión manual)', null,
+    otros.map(o => `<div style="font-size:12px;padding:2px 0"><strong>${o.nombre}</strong>${o.texto_original ? `<div style="font-size:11px;color:var(--muted)">${o.texto_original}</div>` : ''}</div>`).join(''), false) : '';
 
   cont.innerHTML = `
   <div class="ll-card" style="margin-bottom:12px;border-left:3px solid ${cumple === true ? 'var(--green)' : cumple === false ? 'var(--red)' : 'var(--amber)'}">
@@ -9180,14 +9256,19 @@ function _renderCompatCard(codigo, m) {
       <div>${_compatSemaforo(cumple)}</div>
     </div>
     <div class="ll-card__body">
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">${chips}</div>
       ${pjHtml}
-      ${faltantes.length ? `<div style="margin-top:8px"><div style="font-size:12px;font-weight:800;color:var(--text2);margin-bottom:4px">Lo que te falta (${faltantes.length})</div>${topFalt}</div>` : (cumple === true ? '<div style="font-size:12px;color:var(--green);font-weight:700;margin-top:6px">Tu expediente cumple todo lo evaluable de este pliego.</div>' : '')}
+      ${faltantes.length ? `<div style="border:1px solid var(--border);border-left:3px solid var(--red);border-radius:8px;padding:8px 10px;margin:6px 0 10px;background:var(--bg2)"><div style="font-size:12px;font-weight:800;color:var(--text2);margin-bottom:3px">Lo que te falta (${faltantes.length})</div>${topFalt}</div>` : (cumple === true ? '<div style="font-size:12px;color:var(--green);font-weight:700;margin:6px 0 10px">Tu expediente cumple todo lo evaluable de este pliego.</div>' : '')}
+      ${_compatDetails('Financieros', fin.cumple, finInner, fin.cumple === false)}
+      ${_compatDetails('Líneas de crédito', lin.cumple, linInner, lin.cumple === false)}
+      ${_compatDetails('Personal', per.cumple, perInner, per.cumple === false)}
+      ${_compatDetails('Equipos', eq.cumple, eqInner, eq.cumple === false)}
+      ${_compatDetails('Experiencia', exp.cumple, expInner, exp.cumple === false)}
+      ${otrosHtml}
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         <button class="ll-btn ll-btn--ghost ll-btn--sm" onclick="evaluarCompatibilidadExpediente('${codigo}', false)">Actualizar con mi expediente</button>
         <button class="ll-btn ll-btn--ghost ll-btn--sm" onclick="evaluarCompatibilidadExpediente('${codigo}', true)">Re-analizar pliego</button>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px">El detalle completo por sección está en Expediente Digital → Financieros → Matching.</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Este análisis también quedó guardado en Expediente Digital → Financieros → Matching. Completa tu expediente y dale "Actualizar" — no gasta análisis nuevo.</div>
     </div>
   </div>`;
 }
