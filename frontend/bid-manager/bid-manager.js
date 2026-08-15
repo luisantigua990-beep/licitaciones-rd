@@ -880,7 +880,12 @@ const BidManager = {
           ${f.activos_totales ? `<div>Activos: <strong>${this._money(f.activos_totales)}</strong></div>` : ''}
           ${f.patrimonio_neto ? `<div>Patrimonio: <strong>${this._money(f.patrimonio_neto)}</strong></div>` : ''}
           ${f.ingresos ? `<div>Ingresos: ${this._money(f.ingresos)}</div>` : ''}
-          ${f.solvencia ? `<div style="margin-top:6px">Solvencia: <strong>${Number(f.solvencia).toFixed(2)}</strong></div>` : ''}
+          ${f.solvencia || f.liquidez_corriente || f.capital_trabajo ? `
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#eee)">
+            ${f.solvencia ? `<div>Solvencia: <strong>${Number(f.solvencia).toFixed(2)}</strong></div>` : ''}
+            ${f.liquidez_corriente ? `<div>Liquidez corriente: <strong>${Number(f.liquidez_corriente).toFixed(2)}</strong></div>` : ''}
+            ${f.capital_trabajo !== null && f.capital_trabajo !== undefined ? `<div>Capital de trabajo: <strong>${this._money(f.capital_trabajo)}</strong></div>` : ''}
+          </div>` : ''}
         </div>
         <div class="bm-card-actions">
           <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="BidManager.abrirFinanciero('${f.id}')">Editar</button>
