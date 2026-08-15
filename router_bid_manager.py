@@ -1296,196 +1296,1068 @@ def cron_alertas_vencimiento(x_admin_key: str = Header(None)):
 
 
 # ══════════════════════════════════════════════════════════════
-# 18. MATCHING FINANCIERO — Pliego vs Expediente
+# 18. MATCHING PLIEGO vs EXPEDIENTE (financiero + tecnico)
 # ══════════════════════════════════════════════════════════════
 # Flujo:
 #   1. POST /matching/analizar  → sube el pliego, Gemini extrae los
-#      requisitos financieros, se guarda el registro y se evalúa
-#      contra bid_financieros + bid_capacidad_financiera.
-#   2. GET /matching            → historial de análisis.
-#   3. POST /matching/{id}/reevaluar → recalcula con datos actuales
-#      (útil tras actualizar estados o conseguir líneas de crédito).
+#      requisitos (financieros, lineas de credito, personal, equipos,
+#      experiencia, metodologia/puntaje, lotes), se guarda y se evalua
+#      contra todo el expediente.
+#   2. GET /matching            → historial de analisis.
+#   3. POST /matching/{id}/reevaluar → recalcula con datos actuales.
 #   4. DELETE /matching/{id}
+#
+# El esquema de "requisitos" es un objeto de secciones. Se mantiene
+# retrocompatibilidad: si llega una lista (analisis viejos, solo
+# financieros), se envuelve como {"financieros": [...]}.
 # ══════════════════════════════════════════════════════════════
 
-_PROMPT_MATCHING = """Eres un experto en licitaciones públicas dominicanas (Ley 47-25, Decreto 52-26).
-Analiza el PDF adjunto (pliego de condiciones) y extrae SOLO los requisitos de
-DOCUMENTACIÓN FINANCIERA / capacidad financiera exigidos al oferente.
-Responde SOLO con JSON válido, sin markdown, con esta estructura exacta:
+_PROMPT_MATCHING = """Eres un experto en licitaciones publicas dominicanas (Ley 47-25, Decreto 52-26, pliegos estandar SNCC.P.006).
+Analiza el PDF adjunto (pliego de condiciones) y extrae los requisitos exigidos al oferente para el Sobre A.
+Responde SOLO con JSON valido, sin markdown, con esta estructura exacta:
 {
-  "referencia": "MOPC-CCC-LPN-2026-0004",
-  "nombre_proceso": "título corto del objeto",
-  "institucion": "MOPC",
+  "referencia": "INAPA-CCC-LPN-2026-0028",
+  "nombre_proceso": "titulo corto del objeto",
+  "institucion": "INAPA",
   "presupuesto_base": 3702545294.85,
   "anios_estados_requeridos": 2,
-  "requisitos": [
-    {
-      "nombre": "Índice de solvencia",
-      "tipo": "solvencia",
-      "formula": "Activo Total / Pasivo Total",
-      "operador": ">",
-      "limite": 1.20,
-      "pct_monto": null,
-      "incluye_lineas_credito": false,
+  "naturaleza_proceso": "acueducto_alcantarillado",
+  "metodologia": "combinada",
+  "puntaje_total": 70,
+  "puntaje_minimo": 49,
+  "lotes": [
+    {"numero": 1, "nombre": "Lote 1", "presupuesto": 120000000.00}
+  ],
+  "requisitos": {
+    "financieros": [
+      {
+        "nombre": "Indice de solvencia",
+        "tipo": "solvencia",
+        "formula": "Activo Total / Pasivo Total",
+        "operador": ">=",
+        "limite": 1.50,
+        "pct_monto": null,
+        "incluye_lineas_credito": false,
+        "base_calculo": "ultimo",
+        "subsanable": null,
+        "texto_original": "Indice de solvencia = ACTIVO TOTAL / PASIVO TOTAL. Limite establecido: Igual o mayor a 1.50",
+        "notas": ""
+      }
+    ],
+    "lineas_credito": [
+      {
+        "tipo": "bancaria",
+        "pct_grande": 0.25,
+        "pct_mipyme": 0.15,
+        "base": "lote",
+        "subsanable": null,
+        "texto_original": "Linea financiera por el veinticinco (25%) del valor estimado del lote...",
+        "notas": "Certificacion de linea financiera"
+      },
+      {
+        "tipo": "comercial",
+        "pct_grande": 0.25,
+        "pct_mipyme": 0.15,
+        "base": "lote",
+        "subsanable": null,
+        "texto_original": "Linea comercial por el veinticinco (25%)...",
+        "notas": "Certificaciones de ferreterias o entidades comerciales"
+      }
+    ],
+    "personal": [
+      {
+        "cargo": "Director de Obra",
+        "titulaciones": ["ingeniero civil", "arquitecto", "ingeniero electromecanico"],
+        "anios_min": 5,
+        "requiere_maestria": true,
+        "area_maestria": "hidraulica, sanitaria o afines",
+        "requiere_colegiatura": true,
+        "certificaciones_funcion_min": 2,
+        "cantidad": 1,
+        "por_lote": false,
+        "obligatorio": true,
+        "subsanable": null,
+        "texto_original": "Director de Obra: Titulo de Ingeniero Civil, Arquitecto o Ingeniero Electromecanico...",
+        "puntaje": {"puntos_max": 11, "tramos_anios": [{"min": 10, "puntos": 4}, {"min": 5, "puntos": 2}], "puntos_maestria": 3, "tramos_certificaciones": [{"min": 6, "puntos": 4}, {"min": 3, "puntos": 2}, {"min": 2, "puntos": 1}]}
+      }
+    ],
+    "equipos": [
+      {
+        "tipo": "camion volteo",
+        "cantidad": 4,
+        "capacidad_min": "12 m3",
+        "anio_minimo": null,
+        "admite_alquilado": true,
+        "subsanable": false,
+        "texto_original": "Camiones volteo (de 12 m3 minimo). 4",
+        "notas": ""
+      }
+    ],
+    "experiencia": {
+      "criterio_similitud": "monto_acumulado",
+      "naturaleza": ["vial_asfalto"],
+      "cantidad_obras_min": 3,
+      "monto_min_por_obra": null,
+      "monto_min_acumulado": 258823485.45,
+      "acepta_en_curso_pct": 60,
+      "acepta_proyectos_propios": true,
+      "requiere_acta": true,
+      "pct_portafolio": null,
+      "ventana_anios": null,
+      "volumenes": [
+        {"categoria": "movimiento_tierra", "unidad": "m3", "cantidad": 4653.0, "lote": 1}
+      ],
+      "subsanable": null,
+      "texto_original": "frase literal del pliego que define la experiencia requerida",
+      "puntaje": {"puntos_max": 20, "tramos_certificaciones": [{"min": 6, "puntos": 20}, {"min": 3, "puntos": 15}, {"min": 2, "puntos": 10}]},
       "notas": ""
     },
-    {
-      "nombre": "Índice de liquidez corriente",
-      "tipo": "liquidez",
-      "formula": "Activo Corriente / Pasivo Corriente",
-      "operador": ">",
-      "limite": 0.9,
-      "pct_monto": null,
-      "incluye_lineas_credito": false,
-      "notas": ""
-    },
-    {
-      "nombre": "Capital de trabajo",
-      "tipo": "capital_trabajo",
-      "formula": "(AC - PC) + cuentas/certificados/líneas de crédito",
-      "operador": ">=",
-      "limite": null,
-      "pct_monto": 0.20,
-      "incluye_lineas_credito": true,
-      "notas": "≥ 20% del valor total ofertado"
-    },
-    {
-      "nombre": "Índice de endeudamiento",
-      "tipo": "endeudamiento",
-      "formula": "Pasivo Total / Patrimonio",
-      "operador": "<",
-      "limite": 1.5,
-      "pct_monto": null,
-      "incluye_lineas_credito": false,
-      "notas": ""
-    }
-  ]
+    "puntaje_blandos": [
+      {"nombre": "Enfoque, metodologia y plan de trabajo", "puntos_max": 20},
+      {"nombre": "Cronograma de ejecucion y flujo de caja", "puntos_max": 20}
+    ],
+    "otros": [
+      {"nombre": "Planta de asfalto en el Gran Santo Domingo", "texto_original": "...", "subsanable": null}
+    ]
+  }
 }
-Reglas:
-- Los pliegos dominicanos típicamente piden 2 o 3 de estos: solvencia, liquidez corriente, endeudamiento y/o capital de trabajo. Extrae SOLO los que el pliego pide, con sus límites exactos.
-- El endeudamiento puede aparecer como "Pasivo Total / Patrimonio" o "Pasivo Total / Activo Total"; copia la fórmula tal cual la escribe el pliego en "formula"
-- "tipo" debe ser uno de: solvencia, liquidez, capital_trabajo, endeudamiento, patrimonio, ingresos, otro
-- "pct_monto": fracción del monto ofertado/presupuesto si el límite es relativo (ej: 0.20 para 20%); null si el límite es absoluto
-- "limite": valor numérico absoluto; null si el requisito usa pct_monto
-- "incluye_lineas_credito": true si el pliego permite sumar cuentas bancarias, certificados o líneas de crédito
-- Si un requisito no encaja en los tipos conocidos, usa "otro" y describe en notas
-- Números sin separadores de miles
-- Si no encuentras sección financiera, devuelve requisitos: []"""
+Reglas de extraccion:
+- FINANCIEROS: los pliegos piden 2 a 4 de: solvencia (Activo/Pasivo), liquidez corriente (AC/PC), endeudamiento (Pasivo Total/Patrimonio Neto, a veces Pasivo/Activo: copia la formula TAL CUAL), capital de trabajo (AC-PC). Extrae SOLO los que pide, con limite y operador EXACTOS: "Mayor 1.20" es ">" 1.20; "Igual o mayor a 1.50" es ">=" 1.50; "Menor 1.50" es "<"; "Igual o Menor 1.40" es "<=".
+- "base_calculo": "ultimo" si dice "sobre el ultimo balance" (los otros para tendencias); "promedio" si dice "sobre la media de estos balances" o similar. Default "ultimo".
+- "tipo" financiero: solvencia, liquidez, capital_trabajo, endeudamiento, patrimonio, ingresos, otro.
+- LINEAS DE CREDITO: si el pliego exige certificacion de linea financiera/bancaria o linea comercial/de suplidores por un % del presupuesto o del lote (patron tipico: 25% o 30% para grandes, 15% para MIPYMES segun circular DGCP44-PNP-2023-0011), extraelas en "lineas_credito" con tipo "bancaria" o "comercial", los porcentajes como fraccion (0.25) y "base": "lote" o "contratacion". NO las metas en financieros.
+- PERSONAL: un objeto por cargo pedido. "titulaciones" es LISTA con todas las alternativas que acepta el pliego ("Ingeniero Civil o Arquitecto" = ["ingeniero civil","arquitecto"]). "anios_min" son los anos desde el titulo. Si pide maestria, "requiere_maestria": true y "area_maestria" con el area textual. "certificaciones_funcion_min": cuantas certificaciones de obras en esa funcion pide. "por_lote": true si exige uno DISTINTO por lote. Si pide "Residente I" y "Residente II" con el mismo perfil, puedes unificarlos en un requisito con "cantidad": 2. Si el requisito trae puntaje (metodologia combinada), llena "puntaje" con los tramos reales del pliego; si no, "puntaje": null.
+- EQUIPOS: un objeto por tipo. "tipo" en minusculas y singular, usando estos nombres canonicos cuando apliquen: camion volteo, retroexcavadora, retropala, excavadora, motoniveladora, bulldozer, cargador frontal, minicargador, grua telescopica, camion grua, camion cama baja, camion cisterna, camion distribucion asfalto, pavimentadora, barredora, rodillo, compactador manual, compresor, planta electrica, torre de luz, bomba de achique, ligadora, vibrador hormigon, soldadora, camioneta, equipo topografia, maquina perforacion pozos, diferencial. Sinonimos: gradar/gredar/greda = motoniveladora; maquito = compactador manual; bobcat = minicargador; camion de agua = camion cisterna. "capacidad_min" con numero y unidad tal cual el pliego ("12 m3", "170 HP", "2000 galones", "12 ton", "40 KW"); null si no especifica.
+- EXPERIENCIA (de la EMPRESA como contratista, no del personal): "criterio_similitud" es uno de: naturaleza (solo pide obras similares por tipo), monto (monto minimo POR obra), monto_acumulado (la SUMA de las obras debe alcanzar un monto, tipico "alcance o supere el presupuesto base"), volumen_partidas (pide volumenes ejecutados por categoria, ej. m3 de movimiento de tierra por lote), cantidad_intervenciones (ej. 50 puntos de bacheo), porcentaje_portafolio (ej. minimo 30% de la experiencia a nivel hospitalario, usar pct_portafolio: 30). "acepta_en_curso_pct": % minimo de ejecucion si acepta obras en curso (ej. 60 CAASD, 40 MIVHED); null si solo concluidas. "requiere_acta": true si exige carta de recepcion final/definitiva/finiquito/recibido conforme.
+- "naturaleza_proceso" y "naturaleza" usan esta taxonomia: hidraulica_sanitaria, vial_asfalto, edificacion, edificacion_hospitalaria, edificacion_educativa, acueducto_alcantarillado, electromecanica, otra.
+- METODOLOGIA: "cumple_no_cumple" o "combinada" (cuando hay puntaje tecnico con umbral, tipico 70 puntos con minimo 49 o 56). Extrae "puntaje_total" y "puntaje_minimo" si existen. Los criterios puntuados que NO dependen del expediente (enfoque, plan de trabajo, metodologia, cronograma, planes de seguridad/riesgo/ambiental) van en "puntaje_blandos" con sus puntos maximos.
+- "subsanable": true/false si el pliego lo marca para ese requisito (los pliegos estandar lo indican requisito por requisito); null si no lo dice.
+- "texto_original": SIEMPRE la frase literal del pliego de donde salio el requisito (maximo 300 caracteres). Es obligatorio para poder auditar.
+- Requisitos que no encajan en ninguna seccion (ubicacion de plantas, certificaciones especiales) van en "otros".
+- Si el proceso NO tiene lotes, "lotes": []. Si una seccion no aparece en el pliego, devuelvela vacia ([] o null). NUNCA inventes requisitos.
+- Numeros sin separadores de miles."""
 
 
-def _evaluar_matching(eid: str, requisitos: list, monto: float | None) -> dict:
-    """Evalúa los requisitos del pliego contra los datos del expediente."""
-    # Último estado financiero CON datos (ignora registros vacíos)
+# ── Helpers de normalizacion y parseo ─────────────────────────
+
+def _norm(txt) -> str:
+    """minusculas, sin acentos, sin signos; colapsa espacios."""
+    if not txt:
+        return ""
+    s = str(txt).lower()
+    for a, b in (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u"),
+                 ("ü", "u"), ("ñ", "n")):
+        s = s.replace(a, b)
+    s = "".join(c if (c.isalnum() or c == " ") else " " for c in s)
+    return " ".join(s.split())
+
+
+def _stem(tok: str) -> str:
+    """Recorte burdo de plurales/derivaciones: primeros 6 chars alfanumericos."""
+    return tok[:6]
+
+
+def _tokens(txt) -> set:
+    return {_stem(t) for t in _norm(txt).split() if len(t) > 2}
+
+
+# Alias reales sacados de pliegos RD (CAASD, INAPA, DIE, CEIZTUR, CPADP, SNS)
+_EQUIPO_ALIAS = {
+    "gradar": "motoniveladora", "gredar": "motoniveladora", "greda": "motoniveladora",
+    "niveladora": "motoniveladora", "motoniveladora": "motoniveladora",
+    "maquito": "compactador manual", "maquitos": "compactador manual",
+    "bobcat": "minicargador", "mini cargador": "minicargador",
+    "minicargador frontal": "minicargador", "minicargador": "minicargador",
+    "camion de agua": "camion cisterna", "camion cisterna de agua": "camion cisterna",
+    "cisterna": "camion cisterna",
+    "torre portatil de iluminacion": "torre de luz", "torres de luz": "torre de luz",
+    "torre de iluminacion": "torre de luz",
+    "retro pala": "retropala", "retro-pala": "retropala",
+    "camiones volteo": "camion volteo", "camion de volteo": "camion volteo",
+    "volqueta": "camion volteo",
+    "tractor bulldozer": "bulldozer", "tractor d6": "bulldozer", "tractor d 6": "bulldozer",
+    "pala mecanica": "excavadora",
+    "cargadora frontal": "cargador frontal",
+    "ligadora de hormigon": "ligadora",
+    "vibrador electrico": "vibrador hormigon", "vibrador para hormigon": "vibrador hormigon",
+    "generador electrico": "planta electrica", "generador": "planta electrica",
+    "rodillo liso vibratorio": "rodillo", "rodillo compactador": "rodillo",
+    "rodillo vibrador": "rodillo", "rodillo de mano": "rodillo",
+    "soldadora de arco": "soldadora",
+    "grua": "grua telescopica",
+}
+
+
+def _canon_equipo(txt) -> str:
+    """Lleva un nombre de equipo a su tipo canonico usando alias + normalizacion."""
+    n = _norm(txt)
+    if not n:
+        return ""
+    if n in _EQUIPO_ALIAS:
+        return _EQUIPO_ALIAS[n]
+    # busca el alias mas largo contenido en el texto
+    mejor = ""
+    for alias, canon in _EQUIPO_ALIAS.items():
+        if alias in n and len(alias) > len(mejor):
+            mejor = alias
+            n_canon = canon
+    if mejor:
+        return n_canon
+    return n
+
+
+_UNIDADES = {
+    "m3": "m3", "m³": "m3", "mts3": "m3", "metros cubicos": "m3",
+    "m2": "m2", "m²": "m2", "metros cuadrados": "m2",
+    "hp": "hp", "kw": "kw", "kva": "kw",
+    "ton": "ton", "tons": "ton", "toneladas": "ton", "tonelada": "ton", "tn": "ton",
+    "gal": "gal", "galones": "gal", "gl": "gal",
+    "amp": "amp", "amperios": "amp",
+    "pl": "pl", "pies": "pl",
+    "pulg": "pulg", "pulgadas": "pulg",
+    "m": "m", "mts": "m", "metros": "m",
+    "ml": "ml",
+}
+
+
+def _parse_capacidad(txt):
+    """'12 m3' → (12.0, 'm3'). ('1.5-2 fundas', modelos, etc.) → (None, None):
+    lo que no parsea va a revision manual, nunca se adivina."""
+    if txt is None:
+        return None, None
+    n = _norm(str(txt).replace(",", ""))  # comas de miles fuera antes de normalizar
+    if not n:
+        return None, None
+    num = ""
+    resto = ""
+    for i, c in enumerate(n):
+        if c.isdigit() or c in ".,":
+            num += c
+        elif num:
+            resto = n[i:].strip()
+            break
+    if not num:
+        return None, None
+    try:
+        valor = float(num.replace(",", ""))
+    except ValueError:
+        return None, None
+    unidad_tok = resto.split()[0] if resto else ""
+    unidad = _UNIDADES.get(unidad_tok)
+    if unidad is None and resto:
+        for k, v in _UNIDADES.items():
+            if resto.startswith(k):
+                unidad = v
+                break
+    return (valor, unidad) if unidad else (None, None)
+
+
+def _anios_desde(fecha_str):
+    """Anos completos desde una fecha ISO (fecha_graduacion) hasta hoy."""
+    if not fecha_str:
+        return None
+    try:
+        f = datetime.fromisoformat(str(fecha_str)[:10])
+    except ValueError:
+        return None
+    hoy = datetime.utcnow()
+    return hoy.year - f.year - (1 if (hoy.month, hoy.day) < (f.month, f.day) else 0)
+
+
+def _num_or_none(v):
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _cmp(valor, operador, limite):
+    op = (operador or ">=").strip()
+    if op in (">", "mayor"):
+        return valor > limite
+    if op in ("<", "menor"):
+        return valor < limite
+    if op in ("<=", "≤", "menor_igual"):
+        return valor <= limite
+    return valor >= limite  # default >=
+
+
+# Taxonomia de naturaleza → palabras clave para matchear contra el expediente
+_NATURALEZA_KEYWORDS = {
+    "hidraulica_sanitaria": ["hidraulica", "sanitaria", "sanitario", "canada", "cañada",
+                             "saneamiento", "pluvial", "drenaje", "alcantarillado"],
+    "vial_asfalto": ["asfalto", "asfaltico", "vial", "carretera", "bacheo", "pavimento",
+                     "calle", "camino", "conten", "cuneta"],
+    "edificacion": ["edificacion", "edificio", "vivienda", "construccion", "remodelacion",
+                    "readecuacion", "rehabilitacion"],
+    "edificacion_hospitalaria": ["hospital", "hospitalaria", "salud", "clinica",
+                                 "centro de salud", "medica"],
+    "edificacion_educativa": ["escuela", "educativo", "politecnico", "aula", "liceo",
+                              "centro educativo", "deportiva"],
+    "acueducto_alcantarillado": ["acueducto", "agua potable", "alcantarillado", "pozo",
+                                 "tuberia", "redes de agua", "linea de impulsion"],
+    "electromecanica": ["electromecanica", "electrica", "subestacion", "bombeo",
+                        "planta de tratamiento"],
+}
+
+
+def _obra_matchea_naturaleza(obra: dict, naturalezas: list) -> bool:
+    if not naturalezas:
+        return True
+    texto = " ".join([
+        _norm(obra.get("tipo_obra")), _norm(obra.get("nombre_proyecto")),
+        _norm(obra.get("descripcion")), _norm(obra.get("alcance_detallado")),
+        " ".join(_norm(x) for x in (obra.get("categorias_obra") or [])),
+        " ".join(_norm(x) for x in (obra.get("especialidad") or [])),
+    ])
+    for nat in naturalezas:
+        kws = _NATURALEZA_KEYWORDS.get(nat, [nat.replace("_", " ")])
+        if any(_norm(kw) in texto for kw in kws):
+            return True
+    return False
+
+
+# ── Evaluador: financieros ────────────────────────────────────
+
+def _evaluar_financieros(eid: str, reqs: list, monto) -> dict:
     fin_rows = _sb.table("bid_financieros") \
         .select("periodo, fecha_cierre, activos_totales, pasivos_totales, "
                 "activos_corrientes, pasivos_corrientes, patrimonio_neto, ingresos, "
                 "solvencia, liquidez_corriente, capital_trabajo, endeudamiento") \
         .eq("empresa_id", eid) \
         .not_.is_("activos_totales", "null") \
-        .order("periodo", desc=True) \
-        .limit(1).execute().data or []
+        .order("fecha_cierre", desc=True) \
+        .limit(2).execute().data or []
     fin = fin_rows[0] if fin_rows else None
 
-    # Capacidad financiera (líneas de crédito, certificados, cuentas)
     cap_rows = _sb.table("bid_capacidad_financiera") \
-        .select("monto, monto_disponible") \
+        .select("tipo, monto, monto_disponible, estado, fecha_vencimiento") \
         .eq("empresa_id", eid).execute().data or []
-    lineas_total = sum(float(r.get("monto_disponible") or r.get("monto") or 0) for r in cap_rows)
+    hoy = datetime.utcnow().date().isoformat()
+    vigentes = [r for r in cap_rows
+                if (r.get("estado") or "vigente").lower() not in ("vencido", "cancelado", "inactivo")
+                and (not r.get("fecha_vencimiento") or str(r["fecha_vencimiento"]) >= hoy)]
+    lineas_total = sum(_num_or_none(r.get("monto_disponible")) or _num_or_none(r.get("monto")) or 0
+                       for r in vigentes)
 
-    def _num(v):
-        try:
-            return float(v) if v is not None else None
-        except (TypeError, ValueError):
-            return None
+    def _indicador(row, tipo, req):
+        if tipo == "solvencia":
+            return _num_or_none(row.get("solvencia")), None
+        if tipo == "liquidez":
+            return _num_or_none(row.get("liquidez_corriente")), None
+        if tipo == "capital_trabajo":
+            base = _num_or_none(row.get("capital_trabajo")) or 0
+            if req.get("incluye_lineas_credito"):
+                return base + lineas_total, f"CT RD$ {base:,.2f} + lineas RD$ {lineas_total:,.2f}"
+            return base, None
+        if tipo == "endeudamiento":
+            formula_txt = _norm(req.get("formula"))
+            if "activo" in formula_txt:
+                pt, at = _num_or_none(row.get("pasivos_totales")), _num_or_none(row.get("activos_totales"))
+                return ((pt / at) if (pt is not None and at) else None), "Pasivo Total / Activo Total"
+            return _num_or_none(row.get("endeudamiento")), "Pasivo Total / Patrimonio"
+        if tipo == "patrimonio":
+            return _num_or_none(row.get("patrimonio_neto")), None
+        if tipo == "ingresos":
+            return _num_or_none(row.get("ingresos")), None
+        return None, None
 
-    detalle = []
+    detalle, faltantes = [], []
     cumple_todos = True
     evaluables = 0
 
-    for req in (requisitos or []):
+    for req in (reqs or []):
         tipo = (req.get("tipo") or "otro").lower()
         operador = req.get("operador") or ">="
-        limite = _num(req.get("limite"))
-        pct = _num(req.get("pct_monto"))
+        limite = _num_or_none(req.get("limite"))
+        pct = _num_or_none(req.get("pct_monto"))
+        base_calc = (req.get("base_calculo") or "ultimo").lower()
 
-        # Límite efectivo (absoluto o % del monto)
         limite_efectivo = limite
         limite_desc = f"{operador} {limite}" if limite is not None else ""
         if pct is not None and monto:
             limite_efectivo = pct * monto
             limite_desc = f"{operador} {pct*100:.0f}% del monto (RD$ {limite_efectivo:,.2f})"
 
-        valor = None
-        valor_desc = None
+        valor, valor_desc, periodo_desc = None, None, None
         if fin:
-            if tipo == "solvencia":
-                valor = _num(fin.get("solvencia"))
-            elif tipo == "liquidez":
-                valor = _num(fin.get("liquidez_corriente"))
-            elif tipo == "capital_trabajo":
-                base = _num(fin.get("capital_trabajo")) or 0
-                if req.get("incluye_lineas_credito"):
-                    valor = base + lineas_total
-                    valor_desc = f"CT RD$ {base:,.2f} + líneas RD$ {lineas_total:,.2f}"
-                else:
-                    valor = base
-            elif tipo == "endeudamiento":
-                # La fórmula varía por pliego: Pasivo/Patrimonio (default de la BD)
-                # o Pasivo/Activo. Usar la que indique el pliego.
-                formula_txt = (req.get("formula") or "").lower()
-                if "activo" in formula_txt:
-                    pt = _num(fin.get("pasivos_totales"))
-                    at = _num(fin.get("activos_totales"))
-                    valor = (pt / at) if (pt is not None and at) else None
-                    valor_desc = "Pasivo Total / Activo Total"
-                else:
-                    valor = _num(fin.get("endeudamiento"))
-                    valor_desc = "Pasivo Total / Patrimonio"
-            elif tipo == "patrimonio":
-                valor = _num(fin.get("patrimonio_neto"))
-            elif tipo == "ingresos":
-                valor = _num(fin.get("ingresos"))
+            if base_calc == "promedio" and len(fin_rows) >= 2:
+                vals = []
+                for row in fin_rows[:2]:
+                    v, d = _indicador(row, tipo, req)
+                    if v is not None:
+                        vals.append(v)
+                        valor_desc = d
+                if vals:
+                    valor = sum(vals) / len(vals)
+                    periodo_desc = "promedio " + " y ".join(str(r.get("periodo")) for r in fin_rows[:2])
+            else:
+                valor, valor_desc = _indicador(fin, tipo, req)
+                periodo_desc = str(fin.get("periodo"))
+                if base_calc == "promedio" and len(fin_rows) < 2:
+                    periodo_desc += " (pliego pide promedio; solo hay 1 periodo cargado)"
 
-        # Evaluar
-        cumple = None
-        faltante = None
+        cumple, faltante = None, None
         if valor is not None and limite_efectivo is not None:
             evaluables += 1
-            if operador in (">", "mayor"):
-                cumple = valor > limite_efectivo
-            elif operador in (">=", "≥", "mayor_igual"):
-                cumple = valor >= limite_efectivo
-            elif operador in ("<", "menor"):
-                cumple = valor < limite_efectivo
-            elif operador in ("<=", "≤", "menor_igual"):
-                cumple = valor <= limite_efectivo
-            else:
-                cumple = valor >= limite_efectivo
+            cumple = _cmp(valor, operador, limite_efectivo)
             if cumple is False:
                 cumple_todos = False
                 if operador in (">", ">=", "mayor", "≥", "mayor_igual"):
                     faltante = limite_efectivo - valor
+                nom = req.get("nombre") or tipo
+                faltantes.append({
+                    "seccion": "financieros",
+                    "texto": f"{nom}: tienes {valor:,.2f}, el pliego pide {limite_desc}",
+                    "subsanable": req.get("subsanable"),
+                })
 
         detalle.append({
-            "nombre": req.get("nombre"),
-            "tipo": tipo,
-            "formula": req.get("formula"),
+            "nombre": req.get("nombre"), "tipo": tipo, "formula": req.get("formula"),
+            "base_calculo": base_calc, "periodo_desc": periodo_desc,
             "limite_desc": limite_desc or (req.get("notas") or "revisar pliego"),
-            "valor": valor,
-            "valor_desc": valor_desc,
-            "cumple": cumple,           # true / false / null (no evaluable)
-            "faltante": faltante,
+            "valor": valor, "valor_desc": valor_desc,
+            "cumple": cumple, "faltante": faltante,
+            "subsanable": req.get("subsanable"),
+            "texto_original": req.get("texto_original"),
             "notas": req.get("notas"),
         })
 
     return {
-        "evaluado_en": datetime.utcnow().isoformat(),
-        "periodo_usado": fin.get("periodo") if fin else None,
-        "lineas_credito_total": lineas_total,
-        "monto_usado": monto,
-        "cumple_financiero": cumple_todos if evaluables else None,
         "detalle": detalle,
+        "cumple": (cumple_todos if evaluables else None),
+        "faltantes": faltantes,
+        "periodo_usado": fin.get("periodo") if fin else None,
         "sin_estados": fin is None,
+        "lineas_credito_total": lineas_total,
+    }
+
+
+# ── Evaluador: lineas de credito (% del presupuesto/lote) ─────
+
+def _evaluar_lineas_credito(eid: str, reqs: list, presupuesto, lotes: list) -> dict:
+    if not reqs:
+        return {"detalle": [], "cumple": None, "faltantes": [], "escenarios_lote": []}
+
+    perfil = _sb.table("perfiles_empresa").select("clasificacion_mipyme") \
+        .eq("id", eid).limit(1).execute().data or []
+    es_mipyme = bool(perfil) and str(perfil[0].get("clasificacion_mipyme") or "").strip().upper() in ("SI", "SÍ", "S", "TRUE", "1")
+
+    cap_rows = _sb.table("bid_capacidad_financiera") \
+        .select("tipo, institucion_financiera, monto, monto_disponible, estado, fecha_vencimiento") \
+        .eq("empresa_id", eid).execute().data or []
+    hoy = datetime.utcnow().date().isoformat()
+
+    def _suma(tipo_linea):
+        total = 0.0
+        for r in cap_rows:
+            t = _norm(r.get("tipo"))
+            estado = (r.get("estado") or "vigente").lower()
+            if estado in ("vencido", "cancelado", "inactivo"):
+                continue
+            if r.get("fecha_vencimiento") and str(r["fecha_vencimiento"]) < hoy:
+                continue
+            es_com = any(k in t for k in ("comercial", "suplidor", "ferreteria"))
+            if tipo_linea == "comercial" and not es_com:
+                continue
+            if tipo_linea == "bancaria" and es_com:
+                continue
+            total += _num_or_none(r.get("monto_disponible")) or _num_or_none(r.get("monto")) or 0
+        return total
+
+    escenarios = []
+    detalle, faltantes = [], []
+    cumple_global = True
+    evaluado = False
+
+    bases = []
+    if lotes:
+        for l in (lotes or []):
+            p = _num_or_none(l.get("presupuesto"))
+            bases.append((f"Lote {l.get('numero')}", p))
+    if not bases:
+        bases = [("Proceso completo", _num_or_none(presupuesto))]
+
+    for etiqueta, base_monto in bases:
+        esc = {"lote": etiqueta, "requisitos": [], "cumple": None}
+        esc_cumple = True
+        esc_eval = False
+        for req in reqs:
+            tipo_linea = (req.get("tipo") or "bancaria").lower()
+            pct = _num_or_none(req.get("pct_mipyme") if es_mipyme else req.get("pct_grande"))
+            disponible = _suma(tipo_linea)
+            requerido = (pct * base_monto) if (pct is not None and base_monto) else None
+            cumple = None
+            if requerido is not None:
+                esc_eval = True
+                evaluado = True
+                cumple = disponible >= requerido
+                if not cumple:
+                    esc_cumple = False
+                    cumple_global = False
+                    faltantes.append({
+                        "seccion": "lineas_credito",
+                        "texto": (f"Linea {tipo_linea} ({etiqueta}): necesitas RD$ {requerido:,.2f} "
+                                  f"({pct*100:.0f}% {'MIPYME' if es_mipyme else ''}), "
+                                  f"tienes RD$ {disponible:,.2f} vigente"),
+                        "subsanable": req.get("subsanable"),
+                    })
+            esc["requisitos"].append({
+                "tipo": tipo_linea, "pct_aplicado": pct, "es_mipyme": es_mipyme,
+                "requerido": requerido, "disponible": disponible, "cumple": cumple,
+                "texto_original": req.get("texto_original"),
+            })
+        esc["cumple"] = esc_cumple if esc_eval else None
+        escenarios.append(esc)
+
+    detalle = escenarios[0]["requisitos"] if len(escenarios) == 1 else []
+    return {
+        "detalle": detalle,
+        "escenarios_lote": escenarios if len(escenarios) > 1 else [],
+        "cumple": (cumple_global if evaluado else None),
+        "faltantes": faltantes,
+        "es_mipyme": es_mipyme,
+    }
+
+
+# ── Evaluador: personal (asignacion unica greedy) ─────────────
+
+def _persona_elegible(p: dict, req: dict) -> tuple:
+    """(elegible: bool, razones_no: list[str])"""
+    razones = []
+    titulaciones = req.get("titulaciones") or []
+    if titulaciones:
+        texto_perfil = " ".join([
+            _norm(p.get("profesion")), _norm(p.get("formacion_academica")),
+            " ".join(_norm(x) for x in (p.get("especialidades") or [])),
+        ])
+        toks_perfil = {_stem(t) for t in texto_perfil.split() if len(t) > 2}
+        ok_titulo = False
+        for t in titulaciones:
+            toks_req = {_stem(x) for x in _norm(t).split() if len(x) > 2}
+            if toks_req and toks_req.issubset(toks_perfil):
+                ok_titulo = True
+                break
+        if not ok_titulo:
+            razones.append("titulacion no coincide")
+
+    anios_min = _num_or_none(req.get("anios_min"))
+    anios_p = _anios_desde(p.get("fecha_graduacion"))
+    if anios_p is None:
+        anios_p = _num_or_none(p.get("experiencia_general_anios"))
+    if anios_min is not None:
+        if anios_p is None or anios_p < anios_min:
+            razones.append(f"anos insuficientes ({anios_p if anios_p is not None else 'sin dato'} < {anios_min:g})")
+
+    if req.get("requiere_maestria"):
+        if not p.get("tiene_maestria"):
+            razones.append("sin maestria")
+        else:
+            area = req.get("area_maestria")
+            if area and "afin" not in _norm(area):
+                toks_area = _tokens(area)
+                toks_m = _tokens(p.get("maestria_descripcion"))
+                # basta con que UN token del area aparezca (las areas vienen como
+                # "hidraulica, sanitaria o afines")
+                if toks_area and toks_m and not (toks_area & toks_m):
+                    razones.append(f"maestria en otra area (pide {area})")
+
+    if req.get("requiere_colegiatura") and not (p.get("codia") or "").strip():
+        razones.append("sin CODIA")
+
+    return (len(razones) == 0), razones, (anios_p or 0)
+
+
+def _evaluar_personal(eid: str, reqs: list, lotes: list) -> dict:
+    if not reqs:
+        return {"detalle": [], "cumple": None, "faltantes": [], "asignaciones": []}
+
+    personas = _sb.table("bid_personal") \
+        .select("id, nombre_completo, profesion, formacion_academica, especialidades, "
+                "experiencia_general_anios, experiencia_especifica_anios, codia, "
+                "tiene_maestria, maestria_descripcion, fecha_graduacion, activo, disponible") \
+        .eq("empresa_id", eid).execute().data or []
+    personas = [p for p in personas if p.get("activo") is not False and p.get("disponible") is not False]
+
+    # Expandir requisitos: cantidad N = N puestos; por_lote = un puesto por lote
+    puestos = []
+    n_lotes = max(1, len(lotes or []))
+    for req in reqs:
+        cantidad = int(_num_or_none(req.get("cantidad")) or 1)
+        multiplicador = n_lotes if (req.get("por_lote") and n_lotes > 1) else 1
+        for i in range(cantidad * multiplicador):
+            puestos.append({"req": req, "n": i + 1})
+
+    # Greedy: puestos mas exigentes primero (maestria > anos > colegiatura)
+    def _exigencia(p):
+        r = p["req"]
+        return (1 if r.get("requiere_maestria") else 0,
+                _num_or_none(r.get("anios_min")) or 0,
+                1 if r.get("requiere_colegiatura") else 0)
+    puestos.sort(key=_exigencia, reverse=True)
+
+    usadas = set()
+    asignaciones, faltantes, detalle_reqs = [], [], {}
+    cumple_todos = True
+
+    for puesto in puestos:
+        req = puesto["req"]
+        cargo = req.get("cargo") or "puesto"
+        candidatos = []
+        for p in personas:
+            if p["id"] in usadas:
+                continue
+            ok, razones, anios = _persona_elegible(p, req)
+            if ok:
+                candidatos.append((anios, p))
+        if candidatos:
+            # el candidato con MENOS anos que igual cumple, para guardar a los
+            # mas fuertes para puestos mas duros que vengan despues
+            candidatos.sort(key=lambda c: c[0])
+            anios_c, elegido = candidatos[0]
+            usadas.add(elegido["id"])
+            asignaciones.append({
+                "cargo": cargo, "puesto_n": puesto["n"],
+                "personal_id": elegido["id"], "nombre": elegido.get("nombre_completo"),
+                "anios": anios_c,
+            })
+            detalle_reqs.setdefault(cargo, {"req": req, "cubiertos": 0, "total": 0})
+            detalle_reqs[cargo]["cubiertos"] += 1
+        else:
+            cumple_todos = False
+            partes = []
+            if req.get("titulaciones"):
+                partes.append(" o ".join(req["titulaciones"]))
+            if req.get("anios_min"):
+                partes.append(f"{req['anios_min']:g}+ anos desde el titulo")
+            if req.get("requiere_maestria"):
+                partes.append(f"maestria{' en ' + req['area_maestria'] if req.get('area_maestria') else ''}")
+            if req.get("requiere_colegiatura"):
+                partes.append("CODIA vigente")
+            faltantes.append({
+                "seccion": "personal",
+                "texto": f"Falta 1 {cargo}: " + ", ".join(partes) if partes else f"Falta 1 {cargo}",
+                "subsanable": req.get("subsanable"),
+            })
+        detalle_reqs.setdefault(cargo, {"req": req, "cubiertos": 0, "total": 0})
+        detalle_reqs[cargo]["total"] += 1
+
+    detalle = []
+    checklist_docs = []
+    for cargo, info in detalle_reqs.items():
+        req = info["req"]
+        detalle.append({
+            "cargo": cargo,
+            "puestos": info["total"], "cubiertos": info["cubiertos"],
+            "cumple": info["cubiertos"] >= info["total"],
+            "titulaciones": req.get("titulaciones"),
+            "anios_min": req.get("anios_min"),
+            "requiere_maestria": req.get("requiere_maestria"),
+            "area_maestria": req.get("area_maestria"),
+            "subsanable": req.get("subsanable"),
+            "texto_original": req.get("texto_original"),
+        })
+        certs_min = _num_or_none(req.get("certificaciones_funcion_min"))
+        if certs_min:
+            checklist_docs.append(
+                f"{cargo}: preparar {certs_min:g}+ certificaciones de obras desempenando esa funcion "
+                f"(el pliego las exige como soporte)")
+
+    return {
+        "detalle": detalle,
+        "asignaciones": asignaciones,
+        "cumple": cumple_todos if puestos else None,
+        "faltantes": faltantes,
+        "checklist_documentos": checklist_docs,
+    }
+
+
+# ── Evaluador: equipos ────────────────────────────────────────
+
+def _evaluar_equipos(eid: str, reqs: list) -> dict:
+    if not reqs:
+        return {"detalle": [], "cumple": None, "faltantes": []}
+
+    equipos = _sb.table("bid_equipos") \
+        .select("id, tipo, descripcion, cantidad, capacidad, anio, propiedad, activo") \
+        .eq("empresa_id", eid).execute().data or []
+    equipos = [e for e in equipos if e.get("activo") is not False]
+
+    detalle, faltantes = [], []
+    cumple_todos = True
+    evaluado = False
+
+    for req in reqs:
+        canon_req = _canon_equipo(req.get("tipo"))
+        cant_req = int(_num_or_none(req.get("cantidad")) or 1)
+        cap_req, unidad_req = _parse_capacidad(req.get("capacidad_min"))
+        anio_min = _num_or_none(req.get("anio_minimo"))
+        admite_alq = req.get("admite_alquilado")
+        admite_alq = True if admite_alq is None else bool(admite_alq)
+
+        disponibles = 0
+        revision = []
+        for e in equipos:
+            canon_e = _canon_equipo(e.get("tipo") or e.get("descripcion"))
+            if not canon_e or canon_e != canon_req:
+                # segundo intento: tokens del tipo requerido dentro de la descripcion
+                toks_req = _tokens(canon_req)
+                toks_e = _tokens((e.get("tipo") or "") + " " + (e.get("descripcion") or ""))
+                if not (toks_req and toks_req.issubset(toks_e)):
+                    continue
+            if not admite_alq and _norm(e.get("propiedad")) not in ("propio", "propia"):
+                continue
+            if anio_min is not None and e.get("anio") and float(e["anio"]) < anio_min:
+                continue
+            if cap_req is not None:
+                cap_e, unidad_e = _parse_capacidad(e.get("capacidad"))
+                if cap_e is None or unidad_e != unidad_req:
+                    revision.append(f"{e.get('descripcion') or e.get('tipo')}: capacidad "
+                                    f"'{e.get('capacidad') or 'sin dato'}' no comparable con "
+                                    f"'{req.get('capacidad_min')}' — verificar manual")
+                    continue
+                if cap_e < cap_req:
+                    continue
+            disponibles += int(_num_or_none(e.get("cantidad")) or 1)
+
+        evaluado = True
+        cumple = disponibles >= cant_req
+        if not cumple:
+            cumple_todos = False
+            extra = f" ({req.get('capacidad_min')})" if req.get("capacidad_min") else ""
+            propio_txt = "" if admite_alq else " PROPIOS (no admite alquilados)"
+            faltantes.append({
+                "seccion": "equipos",
+                "texto": (f"Faltan {cant_req - disponibles} {req.get('tipo')}{extra}{propio_txt}: "
+                          f"tienes {disponibles}, piden {cant_req}"),
+                "subsanable": req.get("subsanable"),
+            })
+
+        detalle.append({
+            "tipo": req.get("tipo"), "tipo_canonico": canon_req,
+            "requerido": cant_req, "disponible": disponibles,
+            "capacidad_min": req.get("capacidad_min"),
+            "admite_alquilado": admite_alq, "cumple": cumple,
+            "revision_manual": revision or None,
+            "subsanable": req.get("subsanable"),
+            "texto_original": req.get("texto_original"),
+        })
+
+    return {
+        "detalle": detalle,
+        "cumple": cumple_todos if evaluado else None,
+        "faltantes": faltantes,
+    }
+
+
+# ── Evaluador: experiencia de la empresa ──────────────────────
+
+def _evaluar_experiencia(eid: str, req: dict, presupuesto, lotes: list) -> dict:
+    if not req:
+        return {"detalle": None, "cumple": None, "faltantes": []}
+
+    obras = _sb.table("bid_experiencia") \
+        .select("id, nombre_proyecto, cliente, tipo_obra, descripcion, alcance_detallado, "
+                "monto_contrato, monto_ejecutado, moneda, fecha_inicio, fecha_fin, estado, "
+                "porcentaje_avance, categorias_obra, especialidad, volumenes_partidas, "
+                "acta_recepcion_url, recepcion_definitiva_url, finiquito_url, "
+                "certificacion_url, cubicaciones_url") \
+        .eq("empresa_id", eid).execute().data or []
+
+    naturalezas = req.get("naturaleza") or []
+    en_curso_pct = _num_or_none(req.get("acepta_en_curso_pct"))
+    requiere_acta = bool(req.get("requiere_acta"))
+    ventana = _num_or_none(req.get("ventana_anios"))
+    monto_min_obra = _num_or_none(req.get("monto_min_por_obra"))
+    monto_min_acum = _num_or_none(req.get("monto_min_acumulado"))
+    cant_min = _num_or_none(req.get("cantidad_obras_min"))
+    pct_portafolio = _num_or_none(req.get("pct_portafolio"))
+    criterio = (req.get("criterio_similitud") or "naturaleza").lower()
+
+    hoy = datetime.utcnow()
+    faltantes, notas = [], []
+    calificadas = []
+
+    for o in obras:
+        estado = _norm(o.get("estado"))
+        avance = _num_or_none(o.get("porcentaje_avance"))
+        terminada = estado in ("terminado", "terminada", "concluido", "concluida",
+                               "finalizado", "finalizada", "completado", "completada") \
+            or (avance is not None and avance >= 100)
+        razones = []
+
+        if not terminada:
+            if en_curso_pct is not None and avance is not None and avance >= en_curso_pct:
+                if not o.get("cubicaciones_url"):
+                    razones.append(f"en curso ({avance:g}%) pero sin cubicacion cargada para validarla")
+            else:
+                razones.append("no concluida" + (f" (avance {avance:g}% < {en_curso_pct:g}%)"
+                                                 if (en_curso_pct is not None and avance is not None) else
+                                                 " y el pliego no acepta obras en curso" if en_curso_pct is None else ""))
+
+        if not _obra_matchea_naturaleza(o, naturalezas):
+            razones.append("naturaleza distinta a la del proceso")
+
+        if ventana is not None and o.get("fecha_fin"):
+            try:
+                ff = datetime.fromisoformat(str(o["fecha_fin"])[:10])
+                if (hoy - ff).days > ventana * 365.25:
+                    razones.append(f"fuera de la ventana de {ventana:g} anos")
+            except ValueError:
+                pass
+
+        monto_o = _num_or_none(o.get("monto_ejecutado")) or _num_or_none(o.get("monto_contrato")) or 0
+        if terminada is False and avance and en_curso_pct is not None:
+            monto_o = monto_o * (avance / 100.0)  # magnitud proporcional a lo cubicado (patron MIVHED)
+        if monto_min_obra is not None and monto_o < monto_min_obra:
+            razones.append(f"monto RD$ {monto_o:,.2f} < minimo por obra RD$ {monto_min_obra:,.2f}")
+
+        if requiere_acta:
+            tiene_acta = any(o.get(k) for k in ("acta_recepcion_url", "recepcion_definitiva_url",
+                                                "finiquito_url", "certificacion_url"))
+            if not terminada:
+                tiene_acta = tiene_acta or bool(o.get("cubicaciones_url"))
+            if not tiene_acta:
+                razones.append("sin acta de recepcion/finiquito cargada (el pliego la exige)")
+
+        if not razones:
+            calificadas.append({"obra": o, "monto": monto_o})
+        else:
+            notas.append({"obra": o.get("nombre_proyecto"), "descartada_por": razones})
+
+    n_ok = len(calificadas)
+    monto_acum = sum(c["monto"] for c in calificadas)
+
+    checks = []
+    cumple = True
+
+    if cant_min is not None:
+        ok = n_ok >= cant_min
+        checks.append({"criterio": f"minimo {cant_min:g} obras similares",
+                       "valor": n_ok, "cumple": ok})
+        if not ok:
+            cumple = False
+            faltantes.append({
+                "seccion": "experiencia",
+                "texto": f"Faltan {int(cant_min - n_ok)} obras similares que califiquen: tienes {n_ok}, piden {cant_min:g}",
+                "subsanable": req.get("subsanable"),
+            })
+
+    if monto_min_acum is not None:
+        ok = monto_acum >= monto_min_acum
+        checks.append({"criterio": f"monto acumulado >= RD$ {monto_min_acum:,.2f}",
+                       "valor": monto_acum, "cumple": ok})
+        if not ok:
+            cumple = False
+            faltantes.append({
+                "seccion": "experiencia",
+                "texto": (f"Monto acumulado insuficiente: tus obras calificadas suman RD$ {monto_acum:,.2f}, "
+                          f"el pliego exige RD$ {monto_min_acum:,.2f} (faltan RD$ {monto_min_acum - monto_acum:,.2f})"),
+                "subsanable": req.get("subsanable"),
+            })
+
+    if pct_portafolio is not None and obras:
+        pct_real = 100.0 * n_ok / len(obras)
+        ok = pct_real >= pct_portafolio
+        checks.append({"criterio": f">= {pct_portafolio:g}% del portafolio en la naturaleza pedida",
+                       "valor": round(pct_real, 1), "cumple": ok})
+        if not ok:
+            cumple = False
+            faltantes.append({
+                "seccion": "experiencia",
+                "texto": (f"Solo {pct_real:.0f}% de tu experiencia es de la naturaleza pedida; "
+                          f"el pliego exige minimo {pct_portafolio:g}%"),
+                "subsanable": req.get("subsanable"),
+            })
+
+    escenarios_vol = []
+    for v in (req.get("volumenes") or []):
+        cat = _norm(v.get("categoria")).replace(" ", "_")
+        unidad = v.get("unidad")
+        cant_v = _num_or_none(v.get("cantidad"))
+        if cant_v is None:
+            continue
+        total = 0.0
+        for c in calificadas:
+            vp = c["obra"].get("volumenes_partidas") or {}
+            for k, val in (vp.items() if isinstance(vp, dict) else []):
+                if _norm(k).replace(" ", "_").startswith(cat[:10]):
+                    total += _num_or_none(val) or 0
+        ok = total >= cant_v
+        etiqueta = f"Lote {v['lote']}" if v.get("lote") else "Proceso"
+        escenarios_vol.append({"lote": etiqueta, "categoria": v.get("categoria"),
+                               "requerido": cant_v, "unidad": unidad,
+                               "ejecutado": total, "cumple": ok})
+        if not ok:
+            # volumenes por lote son escenarios: solo tumban el cumple global si
+            # el proceso no tiene lotes (si hay lotes, el usuario elige donde entrar)
+            if not v.get("lote"):
+                cumple = False
+            faltantes.append({
+                "seccion": "experiencia",
+                "texto": (f"{etiqueta}: volumen de {v.get('categoria')} insuficiente "
+                          f"({total:,.2f} de {cant_v:,.2f} {unidad or ''}) — "
+                          f"carga los volumenes por partida de tus obras si los tienes"),
+                "subsanable": req.get("subsanable"),
+            })
+
+    if criterio == "cantidad_intervenciones":
+        notas.append({"nota": "El pliego mide la experiencia por cantidad de intervenciones "
+                              "(ej. puntos de bacheo); revisar manualmente contra el texto original."})
+        cumple = None if not checks else cumple
+
+    evaluado = bool(checks or escenarios_vol)
+    return {
+        "criterio_similitud": criterio,
+        "naturaleza": naturalezas,
+        "obras_calificadas": n_ok,
+        "monto_acumulado": monto_acum,
+        "checks": checks,
+        "escenarios_volumen": escenarios_vol or None,
+        "obras_descartadas": notas or None,
+        "cumple": (cumple if evaluado else None),
+        "faltantes": faltantes,
+        "texto_original": req.get("texto_original"),
+    }
+
+
+# ── Puntaje estimado (metodologia combinada) ──────────────────
+
+def _estimar_puntaje(requisitos: dict, sec_personal: dict, sec_exp: dict) -> dict:
+    blandos = requisitos.get("puntaje_blandos") or []
+    pts_blandos = sum(_num_or_none(b.get("puntos_max")) or 0 for b in blandos)
+
+    pts_duros, detalle_duros = 0.0, []
+
+    # Personal: tramos de anos + maestria + certificaciones por cargo
+    asignados = {a["cargo"]: a for a in (sec_personal.get("asignaciones") or [])}
+    for req in (requisitos.get("personal") or []):
+        pj = req.get("puntaje")
+        if not pj:
+            continue
+        cargo = req.get("cargo")
+        asig = asignados.get(cargo)
+        obtenidos = 0.0
+        maximo = _num_or_none(pj.get("puntos_max")) or 0
+        if asig:
+            anios = _num_or_none(asig.get("anios")) or 0
+            for tramo in sorted(pj.get("tramos_anios") or [], key=lambda t: -(t.get("min") or 0)):
+                if anios >= (_num_or_none(tramo.get("min")) or 0):
+                    obtenidos += _num_or_none(tramo.get("puntos")) or 0
+                    break
+            if req.get("requiere_maestria") or pj.get("puntos_maestria"):
+                # si fue asignado con requiere_maestria, ya la tiene
+                obtenidos += _num_or_none(pj.get("puntos_maestria")) or 0
+            # certificaciones por funcion: siguiendo la regla acordada, si cumple
+            # anos se asume que cumple las certificaciones → tramo mas alto
+            tramos_c = pj.get("tramos_certificaciones") or []
+            if tramos_c:
+                obtenidos += max(_num_or_none(t.get("puntos")) or 0 for t in tramos_c)
+        pts_duros += min(obtenidos, maximo) if maximo else obtenidos
+        detalle_duros.append({"criterio": f"Personal: {cargo}", "puntos_max": maximo,
+                              "estimado": min(obtenidos, maximo) if maximo else obtenidos,
+                              "asignado": bool(asig)})
+
+    # Experiencia empresa: tramos por cantidad de certificaciones/obras
+    exp_req = requisitos.get("experiencia") or {}
+    pj = exp_req.get("puntaje")
+    if pj:
+        n_ok = sec_exp.get("obras_calificadas") or 0
+        maximo = _num_or_none(pj.get("puntos_max")) or 0
+        obtenidos = 0.0
+        for tramo in sorted(pj.get("tramos_certificaciones") or [], key=lambda t: -(t.get("min") or 0)):
+            if n_ok >= (_num_or_none(tramo.get("min")) or 0):
+                obtenidos = _num_or_none(tramo.get("puntos")) or 0
+                break
+        pts_duros += min(obtenidos, maximo) if maximo else obtenidos
+        detalle_duros.append({"criterio": "Experiencia como contratista", "puntos_max": maximo,
+                              "estimado": obtenidos, "obras_calificadas": n_ok})
+
+    total_max = _num_or_none(requisitos.get("puntaje_total"))
+    minimo = _num_or_none(requisitos.get("puntaje_minimo"))
+    estimado = pts_blandos + pts_duros
+
+    return {
+        "puntaje_total": total_max,
+        "puntaje_minimo": minimo,
+        "estimado": round(estimado, 2),
+        "asumido_blandos": round(pts_blandos, 2),
+        "verificado_duros": round(pts_duros, 2),
+        "detalle_blandos": blandos,
+        "detalle_duros": detalle_duros,
+        "cumple_umbral": (estimado >= minimo) if minimo is not None else None,
+        "nota": ("Los puntos 'blandos' (enfoque, planes, cronograma) se asumen completos: "
+                 "dependen de la calidad de redaccion de tu oferta, no del expediente."),
+    }
+
+
+# ── Orquestador ───────────────────────────────────────────────
+
+def _evaluar_matching(eid: str, requisitos, monto: float | None,
+                      presupuesto: float | None = None) -> dict:
+    """Evalua todos los requisitos del pliego contra el expediente.
+    Retrocompatible: si 'requisitos' es una lista (analisis viejos, solo
+    financieros), se envuelve como {"financieros": [...]}."""
+    if isinstance(requisitos, list):
+        requisitos = {"financieros": requisitos}
+    requisitos = requisitos or {}
+
+    lotes = requisitos.get("lotes") or []
+    base_pct = presupuesto if presupuesto is not None else monto
+
+    sec_fin = _evaluar_financieros(eid, requisitos.get("financieros") or [], monto)
+    sec_lin = _evaluar_lineas_credito(eid, requisitos.get("lineas_credito") or [], base_pct, lotes)
+    sec_per = _evaluar_personal(eid, requisitos.get("personal") or [], lotes)
+    sec_eq = _evaluar_equipos(eid, requisitos.get("equipos") or [])
+    sec_exp = _evaluar_experiencia(eid, requisitos.get("experiencia") or None, base_pct, lotes)
+
+    faltantes = (sec_fin.get("faltantes", []) + sec_lin.get("faltantes", []) +
+                 sec_per.get("faltantes", []) + sec_eq.get("faltantes", []) +
+                 sec_exp.get("faltantes", []))
+
+    secciones = {
+        "financieros": sec_fin, "lineas_credito": sec_lin,
+        "personal": sec_per, "equipos": sec_eq, "experiencia": sec_exp,
+    }
+    estados = [s.get("cumple") for s in secciones.values()]
+    evaluadas = [e for e in estados if e is not None]
+    cumple_global = (all(evaluadas) if evaluadas else None)
+
+    metodologia = (requisitos.get("metodologia") or "cumple_no_cumple").lower()
+    puntaje = None
+    if metodologia == "combinada":
+        puntaje = _estimar_puntaje(requisitos, sec_per, sec_exp)
+        if puntaje.get("cumple_umbral") is False:
+            cumple_global = False
+            faltantes.append({
+                "seccion": "puntaje",
+                "texto": (f"Puntaje estimado {puntaje['estimado']:g}/{puntaje.get('puntaje_total') or '?'} "
+                          f"por debajo del minimo de {puntaje['puntaje_minimo']:g} puntos, "
+                          f"aun asumiendo los criterios de redaccion completos"),
+                "subsanable": False,
+            })
+
+    otros = requisitos.get("otros") or []
+
+    return {
+        "evaluado_en": datetime.utcnow().isoformat(),
+        "version_evaluador": 2,
+        "metodologia": metodologia,
+        "naturaleza_proceso": requisitos.get("naturaleza_proceso"),
+        "lotes": lotes or None,
+        "monto_usado": monto,
+        "cumple_global": cumple_global,
+        "puntaje": puntaje,
+        "faltantes": faltantes,
+        "secciones": secciones,
+        "otros_requisitos": otros or None,
+        "checklist_documentos": sec_per.get("checklist_documentos") or None,
+        # Campos legado para que el frontend actual no se rompa hasta actualizarlo:
+        "cumple_financiero": sec_fin.get("cumple"),
+        "detalle": sec_fin.get("detalle"),
+        "periodo_usado": sec_fin.get("periodo_usado"),
+        "lineas_credito_total": sec_fin.get("lineas_credito_total"),
+        "sin_estados": sec_fin.get("sin_estados"),
     }
 
 
@@ -1495,7 +2367,8 @@ async def matching_analizar(
     monto_ofertado: str = Form(None),
     authorization: str | None = Header(default=None),
 ):
-    """Sube el pliego, extrae requisitos financieros con IA, guarda y evalúa."""
+    """Sube el pliego, extrae requisitos (financieros + tecnicos) con IA,
+    guarda y evalua contra el expediente completo."""
     uid = _auth(authorization)
     eid = _empresa_id(uid)
 
@@ -1558,8 +2431,18 @@ async def matching_analizar(
     if monto is None:
         monto = presupuesto
 
-    requisitos = extraido.get("requisitos") or []
-    resultado = _evaluar_matching(eid, requisitos, monto)
+    # El prompt v2 devuelve requisitos como objeto de secciones; metodologia,
+    # puntajes y lotes vienen al nivel raiz y se anidan dentro de requisitos
+    # para que reevaluar los tenga disponibles.
+    requisitos = extraido.get("requisitos") or {}
+    if isinstance(requisitos, list):
+        requisitos = {"financieros": requisitos}
+    for campo in ("metodologia", "puntaje_total", "puntaje_minimo",
+                  "naturaleza_proceso", "lotes"):
+        if extraido.get(campo) is not None and campo not in requisitos:
+            requisitos[campo] = extraido[campo]
+
+    resultado = _evaluar_matching(eid, requisitos, monto, presupuesto)
 
     registro = {
         "empresa_id": eid,
@@ -1603,7 +2486,13 @@ async def matching_reevaluar(id: str, request: dict = None,
     if monto is None:
         monto = float(reg.get("monto_ofertado") or reg.get("presupuesto_base") or 0) or None
 
-    resultado = _evaluar_matching(eid, reg.get("requisitos") or [], monto)
+    presupuesto = None
+    try:
+        presupuesto = float(reg.get("presupuesto_base")) if reg.get("presupuesto_base") else None
+    except (TypeError, ValueError):
+        pass
+
+    resultado = _evaluar_matching(eid, reg.get("requisitos") or {}, monto, presupuesto)
     upd = {"resultado": resultado, "actualizado_en": datetime.utcnow().isoformat()}
     if monto is not None:
         upd["monto_ofertado"] = monto
