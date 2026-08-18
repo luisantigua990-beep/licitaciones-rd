@@ -1685,8 +1685,11 @@ const BidManager = {
       setStatus(`Completado: ${oks}/${resultados.length} procesados correctamente.`);
 
       if (resultCont) {
-        resultCont.innerHTML = resultados.map(res => `
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-top:6px;background:#fff;border:1px solid ${res.ok ? 'var(--green,#16a34a)' : '#dc2626'};border-radius:6px">
+        resultCont.innerHTML = resultados.map(res => {
+          const conAlerta = res.ok && res.alertas && res.alertas.length;
+          const borde = res.ok ? (conAlerta ? '#d97706' : 'var(--green,#16a34a)') : '#dc2626';
+          return `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;margin-top:6px;background:#fff;border:1px solid ${borde};border-radius:6px">
             <div style="flex:1;min-width:0">
               <div style="font-size:12px;font-weight:600">${this._esc(res.archivo)}</div>
               <div style="font-size:12px;color:var(--text2,#6b7280)">
@@ -1694,9 +1697,10 @@ const BidManager = {
                   ? `${res.tipo} · Período ${this._esc(res.periodo || '?')} · Confianza: ${res.confianza || 'media'}${res.notas ? ' · ' + this._esc(res.notas) : ''}`
                   : `Error: ${this._esc(res.error || 'desconocido')}`}
               </div>
+              ${conAlerta ? `<div style="font-size:11px;font-weight:600;color:#b45309;margin-top:3px">REVISAR: ${res.alertas.map(a => this._esc(a)).join('<br>')}</div>` : ''}
             </div>
-          </div>
-        `).join('');
+          </div>`;
+        }).join('');
       }
 
       if (oks > 0) {
@@ -2099,7 +2103,7 @@ const BidManager = {
         const err = await iaResp.json().catch(() => ({}));
         throw new Error(err.detail || `Extracción → ${iaResp.status}`);
       }
-      const { extraido } = await iaResp.json();
+      const { extraido, alertas } = await iaResp.json();
 
       // 3) Guardar el path del PDF subido en f-pdf_url
       const up = await upPromise;
@@ -2148,8 +2152,13 @@ const BidManager = {
       }
 
       const conf = extraido.confianza || 'media';
-      setStatus(`Listo. Confianza: ${conf}.${extraido.notas ? ' ' + extraido.notas : ''} Revisa los valores antes de guardar.`);
-      this.toast('Valores extraídos. Revísalos antes de guardar.', 'ok');
+      if (alertas && alertas.length) {
+        setStatus(`ATENCIÓN — las cifras extraídas no cuadran entre sí: ${alertas.join(' · ')}. Corrige contra el PDF antes de guardar.`);
+        this.toast('Las cifras extraídas no cuadran. Revísalas contra el PDF.', 'err');
+      } else {
+        setStatus(`Listo. Confianza: ${conf}.${extraido.notas ? ' ' + extraido.notas : ''} Revisa los valores antes de guardar.`);
+        this.toast('Valores extraídos. Revísalos antes de guardar.', 'ok');
+      }
     } catch (e) {
       setStatus('');
       this.toast('Error extrayendo: ' + e.message, 'err');
