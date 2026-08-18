@@ -990,7 +990,9 @@ async def extraer_financieros_ia(
         raise HTTPException(400, "Solo se aceptan PDFs para extracción IA")
 
     datos = _gemini_extraer_financieros(contenido)
-    return {"extraido": datos, "archivo": file.filename}
+    tipo_det = (datos.get("tipo_detectado") or "").lower()
+    alertas = _alertas_cuadre(datos, "ir2" in tipo_det or "ir-2" in tipo_det)
+    return {"extraido": datos, "archivo": file.filename, "alertas": alertas or None}
 
 
 def _num(v):
@@ -1001,6 +1003,56 @@ def _num(v):
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _alertas_cuadre(datos: dict, es_ir2: bool) -> list:
+    """Verifica que las cifras extraidas por la IA cuadren entre si.
+    Devuelve lista de advertencias (vacia si cuadra o faltan datos).
+    Son avisos de revision manual: NO bloquean el guardado, porque
+    ajustes fiscales legitimos pueden romper el cuadre exacto.
+    Caso real que motiva esto: en el IR-2 2023 de CONSER la IA leyo
+    ingresos brutos de una linea equivocada (65M en vez de 316M) y el
+    error solo se detecto cuadrando ingresos = costos + renta neta."""
+    alertas = []
+
+    def _rel(a, b):
+        base = max(abs(a), abs(b), 1.0)
+        return abs(a - b) / base
+
+    if es_ir2:
+        ing = _num(datos.get("ingresos_brutos")) or _num(datos.get("ingresos"))
+        cyg = _num(datos.get("costos_y_gastos"))
+        rni = _num(datos.get("renta_neta_imponible"))
+        imp = _num(datos.get("impuesto_liquidado"))
+        if ing is not None and cyg is not None and rni is not None:
+            esperado = cyg + rni
+            if _rel(ing, esperado) > 0.02:
+                alertas.append(
+                    f"Ingresos brutos (RD$ {ing:,.2f}) no cuadran con costos+renta neta "
+                    f"(RD$ {esperado:,.2f}); la IA pudo leer la linea equivocada del PDF")
+        if rni is not None and imp is not None and rni > 0 and imp > 0:
+            tasa = imp / rni
+            if not (0.24 <= tasa <= 0.30):
+                alertas.append(
+                    f"Impuesto liquidado es {tasa * 100:.1f}% de la renta neta imponible "
+                    f"(la tasa ISR normal es 27%); revisa ambas cifras")
+    else:
+        ac = _num(datos.get("activos_corrientes"))
+        anc = _num(datos.get("activos_no_corrientes"))
+        at = _num(datos.get("activos_totales"))
+        pt = _num(datos.get("pasivos_totales"))
+        pn = _num(datos.get("patrimonio_neto"))
+        if ac is not None and anc is not None and at is not None \
+                and _rel(at, ac + anc) > 0.02:
+            alertas.append(
+                f"Activos totales (RD$ {at:,.2f}) no cuadran con "
+                f"corrientes+no corrientes (RD$ {ac + anc:,.2f})")
+        if at is not None and pt is not None and pn is not None \
+                and _rel(at, pt + pn) > 0.02:
+            alertas.append(
+                f"Ecuacion contable descuadrada: Activos RD$ {at:,.2f} vs "
+                f"Pasivos+Patrimonio RD$ {pt + pn:,.2f}")
+    return alertas
 
 
 @bid_manager_router.post("/financieros/extraer-lote")
@@ -1038,6 +1090,7 @@ async def extraer_lote_ia(
             datos = _gemini_extraer_financieros(contenido)
             tipo_det = (datos.get("tipo_detectado") or "estados_financieros").lower()
             es_ir2 = "ir2" in tipo_det or "ir-2" in tipo_det
+            alertas = _alertas_cuadre(datos, es_ir2)
 
             # Subir el PDF al storage
             categoria = "ir2" if es_ir2 else "financieros"
@@ -1067,6 +1120,9 @@ async def extraer_lote_ia(
                     "patrimonio": _num(datos.get("patrimonio_neto")),
                     "pdf_url": path,
                 }
+                if alertas:
+                    registro["verificado"] = False
+                    registro["notas"] = "REVISAR (cuadre IA): " + " | ".join(alertas)
                 registro = {k: v for k, v in registro.items() if v is not None}
                 existente = _sb.table("bid_ir2").select("id") \
                     .eq("empresa_id", eid).eq("periodo_fiscal", periodo).execute().data \
@@ -1102,6 +1158,9 @@ async def extraer_lote_ia(
                     "utilidad_neta": _num(datos.get("utilidad_neta")),
                     "pdf_url": path,
                 }
+                if alertas:
+                    registro["verificado"] = False
+                    registro["notas"] = "REVISAR (cuadre IA): " + " | ".join(alertas)
                 registro = {k: v for k, v in registro.items() if v is not None}
                 existente = _sb.table("bid_financieros").select("id") \
                     .eq("empresa_id", eid).eq("periodo", periodo).execute().data \
@@ -1121,6 +1180,7 @@ async def extraer_lote_ia(
             item["periodo"] = periodo
             item["confianza"] = datos.get("confianza")
             item["notas"] = datos.get("notas")
+            item["alertas"] = alertas or None
         except HTTPException as he:
             item["error"] = he.detail
         except Exception as e:
