@@ -224,3 +224,234 @@
 .exp-sec-label { letter-spacing: -0.01em; }
 .exp-rail { box-shadow: var(--shadow-sm, none); }
 .exp-ring-wrap { padding-bottom: var(--space-2, 8px); border-bottom: 1px solid var(--color-border-subtle); }
+
+/* ══════════════════════════════════════════════════════════
+   FASE 2 — Fidelidad prototipo: rail oscuro-activo + tabla densa
+   ══════════════════════════════════════════════════════════ */
+
+/* Ítem activo del rail: negro como el prototipo */
+.exp-sec.exp-activa {
+  background: var(--color-text-primary);
+  border-color: var(--color-text-primary);
+}
+.exp-sec.exp-activa .exp-sec-label { color: var(--color-text-inverse); }
+.exp-sec.exp-activa .exp-sec-meta,
+.exp-sec.exp-activa .exp-sec-count { color: var(--color-text-inverse); opacity: .75; }
+.exp-sec.exp-activa .exp-sec-count { background: none; }
+.exp-sec.exp-activa .exp-sec-bar { background: var(--color-text-inverse); opacity: .35; }
+.exp-sec.exp-activa .exp-sec-bar i { background: var(--color-text-inverse); }
+
+/* Tarjeta del proceso activo (MIDIENDO CONTRA) */
+.exp-proceso-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-3, 12px);
+  background: var(--color-bg-subtle);
+}
+.exp-proceso-ref {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs, 12px);
+  font-weight: 700;
+  color: var(--color-brand);
+  letter-spacing: .02em;
+}
+.exp-proceso-nombre {
+  font-size: var(--text-sm, 14px);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 2px 0;
+}
+.exp-proceso-datos {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-2, 8px);
+}
+
+/* Footer del rail */
+.exp-footer {
+  margin-top: auto;
+  padding-top: var(--space-3, 12px);
+  border-top: 1px solid var(--color-border-subtle);
+}
+.exp-generar {
+  width: 100%;
+  background: var(--color-text-primary);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  padding: 12px;
+  font-weight: 700;
+  font-size: var(--text-sm, 14px);
+  cursor: pointer;
+}
+.exp-generar:disabled { opacity: .45; cursor: not-allowed; }
+.exp-footer-nota {
+  text-align: center;
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-2, 8px);
+}
+
+/* ── Tabla densa (contenido) ── */
+#exp-tabla { grid-column: 2; min-width: 0; }
+
+.exp-cab {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-4, 16px);
+  margin-bottom: var(--space-3, 12px);
+}
+.exp-miga {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-tertiary);
+}
+.exp-miga span { margin: 0 4px; }
+.exp-titulo {
+  font-size: var(--text-2xl, 24px);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 2px 0;
+}
+.exp-desc {
+  font-size: var(--text-sm, 14px);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+.exp-cab-der { display: flex; gap: var(--space-2, 8px); flex: none; }
+.exp-buscar {
+  width: 220px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-bg);
+  font-size: var(--text-sm, 14px);
+}
+.exp-cta {
+  background: var(--color-brand);
+  color: var(--color-brand-contrast);
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: var(--text-sm, 14px);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.exp-cta:hover { background: var(--color-brand-hover); }
+
+/* Chips de filtro */
+.exp-chips {
+  display: flex; align-items: center; gap: var(--space-2, 8px);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3, 12px);
+}
+.exp-chip {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-full, 999px);
+  padding: 6px 14px;
+  font-size: var(--text-sm, 14px);
+  cursor: pointer;
+}
+.exp-chip span { color: var(--color-text-tertiary); margin-left: 4px; font-size: var(--text-xs, 12px); }
+.exp-chip-on {
+  background: var(--color-text-primary);
+  border-color: var(--color-text-primary);
+  color: var(--color-text-inverse);
+}
+.exp-chip-on span { color: var(--color-text-inverse); opacity: .7; }
+.exp-conteo {
+  margin-left: auto;
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-tertiary);
+}
+
+/* La tabla */
+.exp-tabla-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+}
+.exp-table { width: 100%; border-collapse: collapse; }
+.exp-table th {
+  text-align: left;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: capitalize;
+  color: var(--color-text-tertiary);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-subtle);
+}
+.exp-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  vertical-align: middle;
+  font-size: var(--text-sm, 14px);
+  color: var(--color-text-primary);
+}
+.exp-table tbody tr:last-child td { border-bottom: none; }
+.exp-table tbody tr:hover { background: var(--color-hover); }
+
+.exp-c1 { font-weight: 600; color: var(--color-text-primary); }
+.exp-c2 { font-size: var(--text-xs, 12px); color: var(--color-text-tertiary); margin-top: 1px; }
+.exp-mono { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--text-sm, 14px); }
+
+.exp-badge {
+  display: inline-block;
+  border-radius: var(--radius-full, 999px);
+  padding: 3px 10px;
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.exp-badge.ok    { background: var(--color-success-subtle); color: var(--color-success-contrast); border-color: var(--color-success-border); }
+.exp-badge.warn  { background: var(--color-warning-subtle); color: var(--color-warning-contrast); border-color: var(--color-warning-border); }
+.exp-badge.err   { background: var(--color-error-subtle);   color: var(--color-error-contrast);   border-color: var(--color-error-border); }
+.exp-badge.info  { background: var(--color-info-subtle);    color: var(--color-info-contrast);    border-color: var(--color-info-border); }
+.exp-badge.neutro{ background: var(--color-bg-subtle);      color: var(--color-text-secondary);   border-color: var(--color-border); }
+
+.exp-adj {
+  display: inline-block;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  padding: 2px 10px;
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+.exp-adj-warn {
+  background: var(--color-warning-subtle);
+  border-color: var(--color-warning-border);
+  color: var(--color-warning-contrast);
+}
+
+.exp-acciones { text-align: right; }
+.exp-mini {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius-md, 8px);
+  padding: 5px 12px;
+  font-size: var(--text-xs, 12px);
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+.exp-mini:hover { background: var(--color-hover); }
+.exp-vacio {
+  text-align: center;
+  color: var(--color-text-tertiary);
+  padding: var(--space-8, 40px) !important;
+}
+
+@media (max-width: 1079px) {
+  .exp-cab { flex-direction: column; }
+  .exp-cab-der { width: 100%; }
+  .exp-buscar { flex: 1; width: auto; }
+  .exp-tabla-card { overflow-x: auto; }
+  .exp-table { min-width: 720px; }
+  #exp-tabla { display: block; }
+}
