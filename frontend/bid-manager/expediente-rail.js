@@ -104,6 +104,7 @@ const ExpedienteRail = {
       this._htmlAnillo(g, p) +
       this._htmlProceso() +
       this._htmlLente() +
+      `<div class="exp-rail-titulo">Secciones del expediente</div>` +
       `<nav class="exp-secciones" aria-label="Secciones">` +
       g.secciones.map(s => this._htmlSeccion(s)).join('') +
       `</nav>`;
