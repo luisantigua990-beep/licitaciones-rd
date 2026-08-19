@@ -94,9 +94,11 @@
 .exp-sec {
   display: grid;
   grid-template-columns: 10px 1fr auto;
+  grid-template-areas: "dot cuerpo count" ". barra barra";
   align-items: center;
-  gap: var(--space-2, 8px);
-  padding: var(--space-2, 8px) var(--space-2, 8px);
+  row-gap: 6px;
+  column-gap: var(--space-2, 8px);
+  padding: 10px var(--space-2, 8px);
   border-radius: var(--radius-md, 8px);
   cursor: pointer;
   border: 1px solid transparent;
@@ -105,6 +107,9 @@
   width: 100%;
   font: inherit;
 }
+.exp-dot { grid-area: dot; }
+.exp-sec-body { grid-area: cuerpo; display: flex; flex-direction: column; gap: 1px; }
+.exp-sec-count { grid-area: count; align-self: start; }
 .exp-sec:hover { background: var(--color-hover); }
 .exp-sec.exp-activa {
   background: var(--color-brand-subtle);
@@ -127,6 +132,8 @@
   font-size: var(--text-xs, 12px);
   color: var(--color-text-tertiary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 100%;
+  display: block;
 }
 .exp-sec-meta.warn { color: var(--color-warning-contrast); }
 .exp-sec-meta.err  { color: var(--color-error-contrast); }
@@ -138,14 +145,13 @@
   padding: 1px 8px;
 }
 
-/* Medidor fino por sección */
+/* Medidor fino por sección — fila propia, nunca debajo del texto */
 .exp-sec-bar {
-  grid-column: 2 / -1;
+  grid-area: barra;
   height: 3px;
   border-radius: 2px;
   background: var(--color-border-subtle);
   overflow: hidden;
-  margin-top: 3px;
 }
 .exp-sec-bar i { display: block; height: 100%; background: var(--color-brand); }
 
@@ -204,3 +210,17 @@
   .exp-ring { width: 64px; height: 64px; }
   .exp-sec { min-height: 44px; } /* target táctil */
 }
+
+
+/* ── Acercamiento visual al prototipo ── */
+.exp-rail-titulo {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: var(--space-2, 8px) 0 2px;
+}
+.exp-sec-label { letter-spacing: -0.01em; }
+.exp-rail { box-shadow: var(--shadow-sm, none); }
+.exp-ring-wrap { padding-bottom: var(--space-2, 8px); border-bottom: 1px solid var(--color-border-subtle); }
