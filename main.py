@@ -413,6 +413,10 @@ app.include_router(bid_manager_router)
 from router_bid_archivos import bid_archivos_router
 app.include_router(bid_archivos_router)
 
+# ── Expediente Digital v2 — Fase 1: resumen (regla D1) + prefs ──
+from router_bid_resumen import bid_resumen_router
+app.include_router(bid_resumen_router)
+
 
 
 # ── Semáforo de Pago por institución (InfoPago DGCP) ─────────────
