@@ -1,0 +1,206 @@
+/* ============================================================
+   expediente-rail.css — Rail de navegación del Expediente v2
+   ============================================================
+   Regla: CERO hex nuevos. Solo tokens de licitacionlab-tokens.css.
+   Se activa únicamente cuando ExpedienteRail monta (flag expediente_v2).
+   ============================================================ */
+
+/* Layout: rail 296px + contenido */
+.bm-container.exp-v2 {
+  display: grid;
+  grid-template-columns: 296px 1fr;
+  gap: var(--space-6, 24px);
+  align-items: start;
+}
+.bm-container.exp-v2 > .bm-header,
+.bm-container.exp-v2 > #exp-bloqueos {
+  grid-column: 1 / -1;
+}
+/* La UI vieja de navegación se oculta con el flag prendido */
+.bm-container.exp-v2 .bm-progress-card,
+.bm-container.exp-v2 #bm-tabs { display: none; }
+/* Los paneles ocupan la columna de contenido */
+.bm-container.exp-v2 .bm-panel { grid-column: 2; min-width: 0; }
+.bm-container.exp-v2 #bm-alerts-container { grid-column: 2; }
+
+/* ── Rail ── */
+.exp-rail {
+  grid-column: 1;
+  grid-row: 3 / span 30;
+  position: sticky;
+  top: var(--space-4, 16px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-5, 20px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+}
+
+/* Anillo de completitud */
+.exp-ring-wrap { display: flex; align-items: center; gap: var(--space-4, 16px); }
+.exp-ring { width: 84px; height: 84px; flex: none; }
+.exp-ring circle { fill: none; stroke-width: 8; }
+.exp-ring .exp-ring-bg { stroke: var(--color-border-subtle); }
+.exp-ring .exp-ring-fg {
+  stroke: var(--color-brand);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset var(--dur-slow, .4s) var(--ease-out, ease);
+}
+.exp-ring-pct {
+  font-size: var(--text-xl, 20px);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.exp-ring-label {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-secondary);
+}
+.exp-ring-proceso {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+.exp-ring-proceso strong { color: var(--color-text-primary); }
+
+/* Selector de proceso */
+.exp-proceso select {
+  width: 100%;
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm, 14px);
+}
+.exp-proceso-vacio {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-1, 4px);
+}
+
+/* Toggle de lente */
+.exp-lente {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: var(--text-sm, 14px); color: var(--color-text-secondary);
+}
+.exp-lente input { accent-color: var(--color-brand); }
+
+/* Lista de secciones */
+.exp-secciones { display: flex; flex-direction: column; gap: 2px; }
+.exp-sec {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding: var(--space-2, 8px) var(--space-2, 8px);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: none;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+}
+.exp-sec:hover { background: var(--color-hover); }
+.exp-sec.exp-activa {
+  background: var(--color-brand-subtle);
+  border-color: var(--color-brand-border);
+}
+.exp-sec:focus-visible { outline: 2px solid var(--color-focus-ring); outline-offset: 1px; }
+
+.exp-dot { width: 8px; height: 8px; border-radius: 50%; }
+.exp-dot.ok   { background: var(--color-success); }
+.exp-dot.warn { background: var(--color-warning); }
+.exp-dot.err  { background: var(--color-error); }
+
+.exp-sec-body { min-width: 0; }
+.exp-sec-label {
+  font-size: var(--text-sm, 14px);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.exp-sec-meta {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-tertiary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exp-sec-meta.warn { color: var(--color-warning-contrast); }
+.exp-sec-meta.err  { color: var(--color-error-contrast); }
+.exp-sec-count {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-full, 999px);
+  padding: 1px 8px;
+}
+
+/* Medidor fino por sección */
+.exp-sec-bar {
+  grid-column: 2 / -1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-border-subtle);
+  overflow: hidden;
+  margin-top: 3px;
+}
+.exp-sec-bar i { display: block; height: 100%; background: var(--color-brand); }
+
+/* Tarjeta de bloqueos del proceso */
+#exp-bloqueos { margin-top: var(--space-2, 8px); }
+.exp-bloqueos-card {
+  border: 1px solid var(--color-error-border);
+  background: var(--color-error-subtle);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-4, 16px);
+}
+.exp-bloqueos-titulo {
+  font-weight: 700;
+  font-size: var(--text-sm, 14px);
+  color: var(--color-error-contrast);
+  margin-bottom: var(--space-2, 8px);
+}
+.exp-bloqueo {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-3, 12px);
+  padding: var(--space-2, 8px) 0;
+  border-top: 1px solid var(--color-error-border);
+  font-size: var(--text-sm, 14px);
+  color: var(--color-text-primary);
+}
+.exp-bloqueo:first-of-type { border-top: none; }
+.exp-bloqueo button {
+  flex: none;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-md, 8px);
+  padding: 4px 10px;
+  font-size: var(--text-xs, 12px);
+  cursor: pointer;
+}
+.exp-bloqueo button:hover { background: var(--color-hover); }
+
+/* ── Responsive ──
+   1080–1439: rail más angosto. <1080: rail arriba, horizontal. */
+@media (max-width: 1439px) {
+  .bm-container.exp-v2 { grid-template-columns: 240px 1fr; }
+}
+@media (max-width: 1079px) {
+  .bm-container.exp-v2 { display: block; }
+  .exp-rail { position: static; margin-bottom: var(--space-4, 16px); }
+  .exp-secciones {
+    flex-direction: row; overflow-x: auto;
+    padding-bottom: var(--space-1, 4px);
+    -webkit-overflow-scrolling: touch;
+  }
+  .exp-sec { flex: none; grid-template-columns: 10px auto; }
+  .exp-sec-meta, .exp-sec-bar, .exp-sec-count { display: none; }
+}
+@media (max-width: 767px) {
+  .exp-ring { width: 64px; height: 64px; }
+  .exp-sec { min-height: 44px; } /* target táctil */
+}
