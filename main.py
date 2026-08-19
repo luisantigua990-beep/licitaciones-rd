@@ -409,6 +409,10 @@ from router_resend_webhook import resend_webhook_router
 app.include_router(resend_webhook_router)
 app.include_router(bid_manager_router)
 
+# ── Expediente Digital v2 — Fase 0: adjuntos por registro + auditoría ──
+from router_bid_archivos import bid_archivos_router
+app.include_router(bid_archivos_router)
+
 
 
 # ── Semáforo de Pago por institución (InfoPago DGCP) ─────────────
