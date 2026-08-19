@@ -102,12 +102,17 @@ const ExpedienteRail = {
 
     rail.innerHTML =
       this._htmlAnillo(g, p) +
+      `<div class="exp-rail-titulo">Midiendo contra</div>` +
       this._htmlProceso() +
       this._htmlLente() +
       `<div class="exp-rail-titulo">Secciones del expediente</div>` +
       `<nav class="exp-secciones" aria-label="Secciones">` +
       g.secciones.map(s => this._htmlSeccion(s)).join('') +
-      `</nav>`;
+      `</nav>` +
+      `<div class="exp-footer">
+         <button class="exp-generar" disabled title="Disponible en la próxima fase">Generar Sobre A</button>
+         <div class="exp-footer-nota">Generación granular — próximamente</div>
+       </div>`;
 
     this._bind(rail);
     this._renderBloqueos(p);
@@ -152,7 +157,16 @@ const ExpedienteRail = {
         const nom = (pr.nombre_proceso || pr.referencia || '').slice(0, 48);
         return `<option value="${pr.referencia}"${sel}>${pr.referencia} · ${nom}</option>`;
       }));
-    return `<div class="exp-proceso">
+    const pAct = this.procesos.find(pr => pr.referencia === act);
+    const detalle = pAct ? `
+      <div class="exp-proceso-ref">${pAct.referencia}</div>
+      <div class="exp-proceso-nombre">${pAct.nombre_proceso || ''}</div>
+      <div class="exp-proceso-datos">${[
+        pAct.institucion,
+        pAct.presupuesto_base ? 'RD$ ' + Number(pAct.presupuesto_base).toLocaleString('es-DO') : null,
+      ].filter(Boolean).join(' · ')}</div>` : '';
+    return `<div class="exp-proceso ${pAct ? 'exp-proceso-card' : ''}">
+      ${detalle}
       <select id="exp-proceso-sel" aria-label="Proceso activo">${ops.join('')}</select>
     </div>`;
   },
@@ -220,7 +234,12 @@ const ExpedienteRail = {
 
   ir(sec) {
     const panel = this.PANEL[sec] || sec;
-    BidManager.switchPanel(panel);
+    if (window.ExpedienteTabla && ExpedienteTabla.esTabla(panel)) {
+      ExpedienteTabla.mostrar(panel);
+    } else {
+      if (window.ExpedienteTabla) ExpedienteTabla.ocultar();
+      BidManager.switchPanel(panel);
+    }
     this._marcarActiva(panel);
     const ref = this.prefs.proceso_activo;
     const hash = `#bid/${panel}` + (ref ? `?ref=${encodeURIComponent(ref)}` : '');
@@ -244,7 +263,13 @@ const ExpedienteRail = {
       this._cargarResumen().then(() => this._render());
     }
     if (this.PANEL[sec]) {
-      BidManager.switchPanel(this.PANEL[sec]);
+      const panel = this.PANEL[sec];
+      if (window.ExpedienteTabla && ExpedienteTabla.esTabla(panel)) {
+        ExpedienteTabla.mostrar(panel);
+      } else {
+        if (window.ExpedienteTabla) ExpedienteTabla.ocultar();
+        BidManager.switchPanel(panel);
+      }
       this._marcarActiva(sec);
     }
   },
