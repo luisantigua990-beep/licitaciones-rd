@@ -35,15 +35,16 @@ PESOS = {
 
 # Campos de perfiles_empresa que alimentan los formularios SNCC.
 # Si falta uno, la sección Empresa no llega a 100 y la meta lo dice.
+# Cada entrada: (campos equivalentes — basta con que UNO esté lleno, etiqueta)
 CAMPOS_EMPRESA_CLAVE = [
-    ("razon_social", "Razón social"),
-    ("rnc", "RNC"),
-    ("rpe", "RPE"),
-    ("email_empresa", "Correo institucional"),
-    ("telefono_principal", "Teléfono"),
-    ("direccion_completa", "Dirección"),
-    ("clasificacion_mipyme", "Clasificación MIPYME"),
-    ("fecha_constitucion", "Fecha de constitución"),
+    (("razon_social",), "Razón social"),
+    (("rnc",), "RNC"),
+    (("rpe",), "RPE"),
+    (("email_empresa",), "Correo institucional"),
+    (("telefono_principal", "telefono"), "Teléfono"),
+    (("direccion_completa", "domicilio", "direccion"), "Dirección"),
+    (("clasificacion_mipyme",), "Clasificación MIPYME"),
+    (("fecha_constitucion",), "Fecha de constitución"),
 ]
 
 PREFS_PERMITIDAS = {"lente", "densidad", "proceso_activo", "seccion_activa"}
@@ -72,7 +73,8 @@ def resumen_v2(referencia: str | None = None,
     emp_rows = (_sb.table("perfiles_empresa").select("*")
                 .eq("id", eid).limit(1).execute().data or [{}])
     emp = emp_rows[0]
-    faltan = [label for campo, label in CAMPOS_EMPRESA_CLAVE if not emp.get(campo)]
+    faltan = [label for campos, label in CAMPOS_EMPRESA_CLAVE
+              if not any(emp.get(c) for c in campos)]
     llenos = len(CAMPOS_EMPRESA_CLAVE) - len(faltan)
     sec_empresa = _sec(
         "empresa", len(CAMPOS_EMPRESA_CLAVE),
