@@ -43,11 +43,21 @@ const ExpedienteRail = {
 
     this._css();
     cont.classList.add('exp-v2');
-    cont.insertAdjacentHTML(
-      'beforeend',
+
+    // Reorganizar el DOM: rail a la izquierda + columna de contenido.
+    // (El orden del DOM viejo no sirve para el layout del prototipo.)
+    const layout = document.createElement('div');
+    layout.className = 'exp-layout';
+    layout.innerHTML =
       '<aside class="exp-rail" id="exp-rail" aria-label="Navegación del expediente"></aside>' +
-      '<div id="exp-bloqueos"></div>'
-    );
+      '<div class="exp-main" id="exp-main"><div id="exp-bloqueos"></div></div>';
+    cont.appendChild(layout);
+
+    const main = layout.querySelector('#exp-main');
+    // Mover alertas y todos los paneles viejos dentro de la columna de contenido
+    const alertas = cont.querySelector('#bm-alerts-container');
+    if (alertas) main.appendChild(alertas);
+    cont.querySelectorAll(':scope > .bm-panel').forEach(p => main.appendChild(p));
     this.montado = true;
 
     // Prefs primero (proceso activo persiste entre sesiones)
