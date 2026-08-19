@@ -157,7 +157,8 @@ const ExpedienteTabla = {
     if (!cont) {
       cont = document.createElement('div');
       cont.id = 'exp-tabla';
-      document.querySelector('.bm-container.exp-v2')?.appendChild(cont);
+      (document.getElementById('exp-main')
+        || document.querySelector('.bm-container.exp-v2'))?.appendChild(cont);
     }
     cont.style.display = '';
     this._render();
