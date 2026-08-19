@@ -138,6 +138,12 @@ const BidManager = {
 
     await this.refresh();
     this.loaded = true;
+
+    // ── Expediente v2 (Fase 1): rail de navegación tras flag ──
+    // Activar: localStorage.setItem('expediente_v2','1') y recargar.
+    try {
+      if (window.ExpedienteRail && ExpedienteRail.activo) await ExpedienteRail.init();
+    } catch (e) { console.error('ExpedienteRail:', e); }
   },
 
   // ── Refrescar toda la data ────────────────────────────
