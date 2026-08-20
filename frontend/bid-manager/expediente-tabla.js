@@ -207,12 +207,13 @@ const ExpedienteTabla = {
   esTabla(sec) { return !!this.DEFS[sec]; },
 
   // ── Mostrar entidad ──
-  async mostrar(entidad) {
+  async mostrar(entidad, filtro = null) {
     const def = this.DEFS[entidad];
     if (!def) return this.ocultar();
     const cambia = this.entidadActual !== entidad;
     this.entidadActual = entidad;
     if (cambia) { this.filtro = 'todos'; this.q = ''; this.cerrarPanel(); }
+    if (filtro) this.filtro = filtro;
 
     document.querySelectorAll('.bm-panel').forEach(p => p.classList.remove('bm-active'));
     let cont = document.getElementById('exp-tabla');
