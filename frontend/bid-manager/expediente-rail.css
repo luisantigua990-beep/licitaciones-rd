@@ -453,3 +453,122 @@
   .exp-tabla-card { overflow-x: auto; }
   .exp-table { min-width: 720px; }
 }
+
+/* ══════════════════════════════════════════════════════════
+   PANEL DE DETALLE (392px) — Fase 2 completa
+   ══════════════════════════════════════════════════════════ */
+#exp-panel {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: 392px;
+  max-width: 92vw;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg, -8px 0 24px rgba(0,0,0,.08));
+  padding: var(--space-5, 20px);
+  overflow-y: auto;
+  z-index: 900;
+}
+body.exp-panel-abierto #exp-main,
+body.exp-panel-abierto .exp-main { padding-right: 0; }
+@media (min-width: 1440px) {
+  body.exp-panel-abierto .exp-main { padding-right: 400px; } /* empuja en pantallas anchas */
+}
+
+.exp-p-head { display: flex; justify-content: space-between; align-items: center; }
+.exp-p-x {
+  border: none; background: none; cursor: pointer;
+  font-size: var(--text-lg, 18px); color: var(--color-text-tertiary);
+  padding: 4px 8px; border-radius: var(--radius-md, 8px);
+}
+.exp-p-x:hover { background: var(--color-hover); color: var(--color-text-primary); }
+.exp-p-titulo {
+  font-size: var(--text-xl, 20px); font-weight: 700;
+  color: var(--color-text-primary);
+  margin: var(--space-2, 8px) 0 2px;
+}
+.exp-p-sub { font-size: var(--text-sm, 14px); color: var(--color-text-secondary); }
+.exp-p-acciones { display: flex; gap: var(--space-2, 8px); margin: var(--space-4, 16px) 0; }
+.exp-p-acciones .exp-cta { flex: 1; }
+
+.exp-p-campos { border-top: 1px solid var(--color-border-subtle); }
+.exp-p-campo {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.exp-p-k {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-tertiary);
+  margin-bottom: 1px;
+}
+.exp-p-v { font-size: var(--text-sm, 14px); color: var(--color-text-primary); font-weight: 500; }
+
+.exp-p-sec {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: var(--space-5, 20px) 0 var(--space-2, 8px);
+  display: flex; justify-content: space-between;
+}
+.exp-p-sec span { font-family: inherit; text-transform: none; letter-spacing: 0; }
+
+.exp-p-arch {
+  display: flex; align-items: center; gap: var(--space-3, 12px);
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  margin-bottom: var(--space-2, 8px);
+}
+.exp-p-ext {
+  flex: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px; font-weight: 700;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 8px 6px;
+  color: var(--color-text-secondary);
+}
+.exp-p-arch-info { flex: 1; min-width: 0; }
+.exp-p-arch-nombre {
+  font-size: var(--text-sm, 14px); font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exp-p-dl {
+  flex: none; border: 1px solid var(--color-border); background: var(--color-surface);
+  border-radius: var(--radius-md, 8px); padding: 6px 10px; cursor: pointer;
+}
+.exp-p-dl:hover { background: var(--color-hover); }
+
+.exp-p-drop {
+  display: block;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-3, 12px);
+  text-align: center;
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  background: var(--color-bg-subtle);
+}
+.exp-p-drop:hover { border-color: var(--color-brand); color: var(--color-brand); }
+
+.exp-p-tz { display: flex; gap: var(--space-2, 8px); align-items: flex-start; padding: 6px 0; }
+.exp-p-tz .exp-dot { margin-top: 5px; }
+.exp-p-tz-t { font-size: var(--text-sm, 14px); color: var(--color-text-primary); }
+.exp-p-cargando { font-size: var(--text-xs, 12px); color: var(--color-text-tertiary); padding: var(--space-2, 8px) 0; }
+
+.exp-table tr.exp-sel td { background: var(--color-brand-subtle); }
+.exp-table tbody tr { cursor: pointer; }
+
+@media (max-width: 767px) {
+  #exp-panel {
+    top: auto; left: 0; width: 100%; max-width: none;
+    height: 88vh;
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+    border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
+  }
+}
