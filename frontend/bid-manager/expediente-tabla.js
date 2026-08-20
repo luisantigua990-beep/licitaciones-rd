@@ -422,6 +422,15 @@ const ExpedienteTabla = {
     });
     panel.querySelector('#exp-p-file').addEventListener('change', ev =>
       this._subirArchivos(def.tablaApi, id, ev.target.files));
+    const drop = panel.querySelector('#exp-p-drop');
+    ['dragover', 'dragenter'].forEach(evn => drop.addEventListener(evn, ev => {
+      ev.preventDefault(); drop.classList.add('exp-p-drop-on');
+    }));
+    ['dragleave', 'drop'].forEach(evn => drop.addEventListener(evn, ev => {
+      ev.preventDefault(); drop.classList.remove('exp-p-drop-on');
+    }));
+    drop.addEventListener('drop', ev =>
+      this._subirArchivos(def.tablaApi, id, ev.dataTransfer?.files));
 
     this._cargarArchivos(def.tablaApi, id);
     this._cargarTraza(def.tablaApi, id);
@@ -455,10 +464,42 @@ const ExpedienteTabla = {
         <span class="exp-p-ext">${EXT(a.mime)}</span>
         <div class="exp-p-arch-info">
           <div class="exp-p-arch-nombre">${this._esc(a.nombre)}</div>
-          <div class="exp-c2">${this._kb(a.tamano)} · ${a.estado === 'validado' ? 'verificado' : this._esc(a.estado)}</div>
+          <div class="exp-c2">${this._kb(a.tamano)} · ${a.estado === 'validado' ? 'verificado ✓' : this._esc(a.estado)}</div>
         </div>
+        ${a.estado !== 'validado'
+          ? `<button class="exp-p-dl" data-ok="${this._esc(a.id)}" title="Marcar como verificado">✓</button>` : ''}
         <button class="exp-p-dl" data-dl="${this._esc(a.id)}" title="Descargar">⬇</button>
+        <button class="exp-p-dl exp-p-del" data-del="${this._esc(a.id)}"
+                data-nombre="${this._esc(a.nombre)}" title="Eliminar">🗑</button>
       </div>`).join('');
+    box.querySelectorAll('[data-ok]').forEach(b =>
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          await BidManager._fetchAuth(`/api/bid/expediente/archivos/${b.dataset.ok}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ estado: 'validado' }),
+          });
+        } catch { /* silencioso */ }
+        await this._cargarArchivos(entidadApi, id);
+        this._cargarTraza(entidadApi, id);
+      }));
+    box.querySelectorAll('[data-del]').forEach(b =>
+      b.addEventListener('click', async () => {
+        if (!confirm(`¿Eliminar "${b.dataset.nombre}"?\nPodrás volver a subirlo si lo necesitas.`)) return;
+        b.disabled = true;
+        try {
+          const r = await BidManager._fetchAuth(`/api/bid/expediente/archivos/${b.dataset.del}`,
+            { method: 'DELETE' });
+          if (!r.ok) alert('No se pudo eliminar el archivo');
+        } catch { alert('Error de conexión al eliminar'); }
+        this.invalidar(this.entidadActual);
+        await this._cargarArchivos(entidadApi, id);
+        this._cargarTraza(entidadApi, id);
+        this.mostrar(this.entidadActual);      // conteos de la tabla
+        window.ExpedienteRail?.refresh?.();    // anillo y metas
+      }));
     box.querySelectorAll('[data-dl]').forEach(b =>
       b.addEventListener('click', async () => {
         b.disabled = true;
