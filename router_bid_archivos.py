@@ -227,23 +227,37 @@ def descargar_archivo(
     uid = _auth(authorization)
     eid = _empresa_id(uid)
     a = _archivo_de_empresa(archivo_id, eid)
+    def _extraer_url(res):
+        """El SDK ha devuelto dict, str u objeto según la versión — aceptar todo."""
+        if not res:
+            return None
+        if isinstance(res, str):
+            return res
+        if isinstance(res, dict):
+            return (res.get("signedURL") or res.get("signedUrl")
+                    or res.get("signed_url") or res.get("url"))
+        return (getattr(res, "signedURL", None) or getattr(res, "signedUrl", None)
+                or getattr(res, "signed_url", None) or getattr(res, "url", None))
+
+    bucket = _sb.storage.from_(STORAGE_BUCKET)
+    signed, err = None, None
+    # 1er intento: con descarga directa y nombre original.
+    # Si el SDK de Railway no soporta options o falla por el nombre, caemos
+    # al modo simple: preferible una URL cruda que un 500.
     try:
-        # {"download": nombre} fuerza descarga con el nombre original del
-        # archivo, en vez de navegar a la URL cruda de Supabase.
-        try:
-            res = _sb.storage.from_(STORAGE_BUCKET).create_signed_url(
-                a["storage_path"], SIGNED_URL_SEG, {"download": a["nombre"]})
-        except TypeError:  # versiones viejas del SDK sin options
-            res = _sb.storage.from_(STORAGE_BUCKET).create_signed_url(
-                a["storage_path"], SIGNED_URL_SEG)
-        signed = (res or {}).get("signedURL") or (res or {}).get("signed_url")
-        if not signed:
-            raise HTTPException(500, "No se pudo generar la URL firmada")
-        return {"url": signed, "expires_in": SIGNED_URL_SEG, "nombre": a["nombre"]}
-    except HTTPException:
-        raise
+        signed = _extraer_url(bucket.create_signed_url(
+            a["storage_path"], SIGNED_URL_SEG, {"download": a["nombre"]}))
     except Exception as e:
-        raise HTTPException(500, f"Error generando URL firmada: {e}")
+        err = e
+    if not signed:
+        try:
+            signed = _extraer_url(bucket.create_signed_url(
+                a["storage_path"], SIGNED_URL_SEG))
+        except Exception as e:
+            err = e
+    if not signed:
+        raise HTTPException(500, f"Error generando URL firmada: {err}")
+    return {"url": signed, "expires_in": SIGNED_URL_SEG, "nombre": a["nombre"]}
 
 
 @bid_archivos_router.patch("/archivos/{archivo_id}")
