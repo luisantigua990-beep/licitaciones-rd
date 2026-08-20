@@ -158,15 +158,21 @@ const ExpedienteRail = {
     const fmt = f => { try {
       return new Date(f + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short' });
     } catch { return f || ''; } };
-    const vencidos = certs.filter(c => c.estado === 'vencido');
-    const porVencer = certs.filter(c => c.estado === 'por_vencer');
+    let ocultas = {};
+    try { ocultas = JSON.parse(localStorage.getItem('exp_alertas_ocultas') || '{}'); } catch {}
+    const clave = c => `${c.id}:${c.fecha_vencimiento || ''}`;   // si renueva, la alerta vuelve
+    const vencidos = certs.filter(c => c.estado === 'vencido' && !ocultas[clave(c)]);
+    const porVencer = certs.filter(c => c.estado === 'por_vencer' && !ocultas[clave(c)]);
     if (!vencidos.length && !porVencer.length) { box.innerHTML = ''; return; }
 
     const item = (c, tono) => `
-      <button class="exp-al-item" data-al-filtro="${tono === 'err' ? 'vencido' : 'por_vencer'}">
-        <span>${esc(c.nombre_display || c.tipo)}</span>
-        <span class="exp-al-fecha">${tono === 'err' ? 'venció' : 'vence'} ${fmt(c.fecha_vencimiento)} →</span>
-      </button>`;
+      <div class="exp-al-fila">
+        <button class="exp-al-item" data-al-filtro="${tono === 'err' ? 'vencido' : 'por_vencer'}">
+          <span>${esc(c.nombre_display || c.tipo)}</span>
+          <span class="exp-al-fecha">${tono === 'err' ? 'venció' : 'vence'} ${fmt(c.fecha_vencimiento)} →</span>
+        </button>
+        <button class="exp-al-x" data-al-x="${esc(clave(c))}" title="Descartar esta alerta">✕</button>
+      </div>`;
     box.innerHTML =
       (vencidos.length ? `<div class="exp-alerta exp-alerta-err">
           <div class="exp-al-t">Vencido${vencidos.length > 1 ? 's' : ''} — renovar para poder ofertar</div>
@@ -178,6 +184,13 @@ const ExpedienteRail = {
         </div>` : '');
     box.querySelectorAll('[data-al-filtro]').forEach(b =>
       b.addEventListener('click', () => this.ir('certificaciones', b.dataset.alFiltro)));
+    box.querySelectorAll('[data-al-x]').forEach(b =>
+      b.addEventListener('click', ev => {
+        ev.stopPropagation();
+        ocultas[b.dataset.alX] = true;
+        try { localStorage.setItem('exp_alertas_ocultas', JSON.stringify(ocultas)); } catch {}
+        this._renderAlertas();
+      }));
   },
 
   _htmlAnillo(g, p) {
@@ -225,6 +238,11 @@ const ExpedienteRail = {
       ${items}
       ${act ? `<button class="exp-pr-quitar" id="exp-pr-quitar">× Quitar proceso activo</button>` : ''}
       ${resto > 0 ? `<button class="exp-pr-mas" id="exp-pr-mas">${this._verMas ? 'Ver menos' : `Ver ${resto} más`}</button>` : ''}
+      <div class="exp-pr-add">
+        <input id="exp-pr-codigo" placeholder="Código de otro proceso… (LPN-…)" autocomplete="off">
+        <button id="exp-pr-medir" title="Descarga el pliego, extrae requisitos y los cruza con tu expediente">Medir</button>
+      </div>
+      <div class="exp-proceso-vacio" id="exp-pr-msg"></div>
     </div>`;
   },
 
@@ -285,6 +303,34 @@ const ExpedienteRail = {
     rail.querySelector('#exp-pr-mas')?.addEventListener('click', () => {
       this._verMas = !this._verMas; this._render();
     });
+    const inputC = rail.querySelector('#exp-pr-codigo');
+    const btnM = rail.querySelector('#exp-pr-medir');
+    const msg = rail.querySelector('#exp-pr-msg');
+    const medir = async () => {
+      const codigo = (inputC?.value || '').trim();
+      if (!codigo) return;
+      btnM.disabled = true; btnM.textContent = 'Midiendo…';
+      if (msg) msg.textContent = 'Descargando pliego y cruzando con tu expediente (puede tomar ~1 min)…';
+      try {
+        const r = await BidManager._fetchAuth('/api/bid/matching/analizar-proceso', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ codigo_proceso: codigo }),
+        });
+        if (!r.ok) {
+          const e = await r.json().catch(() => null);
+          if (msg) msg.textContent = e?.detail?.message || e?.detail ||
+            'No se pudo medir contra ese proceso. Revisa el código.';
+        } else {
+          await this._cargarProcesos();
+          await elegir(codigo);
+          return;
+        }
+      } catch { if (msg) msg.textContent = 'Error de conexión.'; }
+      btnM.disabled = false; btnM.textContent = 'Medir';
+    };
+    btnM?.addEventListener('click', medir);
+    inputC?.addEventListener('keydown', ev => { if (ev.key === 'Enter') medir(); });
 
     const chk = rail.querySelector('#exp-lente-chk');
     if (chk) chk.addEventListener('change', () => {
