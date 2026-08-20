@@ -144,7 +144,40 @@ const ExpedienteRail = {
 
     this._bind(rail);
     this._renderBloqueos(p);
+    this._renderAlertas();
     this._marcarActiva(this._panelActual());
+  },
+
+  // ── Alertas con nombre y apellido: qué documento y a cuánto está ──
+  _renderAlertas() {
+    const box = document.getElementById('bm-alerts-container');
+    const certs = BidManager.data?.certificaciones || [];
+    if (!box || !certs.length) return;
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const fmt = f => { try {
+      return new Date(f + 'T12:00:00').toLocaleDateString('es-DO', { day: '2-digit', month: 'short' });
+    } catch { return f || ''; } };
+    const vencidos = certs.filter(c => c.estado === 'vencido');
+    const porVencer = certs.filter(c => c.estado === 'por_vencer');
+    if (!vencidos.length && !porVencer.length) { box.innerHTML = ''; return; }
+
+    const item = (c, tono) => `
+      <button class="exp-al-item" data-al-filtro="${tono === 'err' ? 'vencido' : 'por_vencer'}">
+        <span>${esc(c.nombre_display || c.tipo)}</span>
+        <span class="exp-al-fecha">${tono === 'err' ? 'venció' : 'vence'} ${fmt(c.fecha_vencimiento)} →</span>
+      </button>`;
+    box.innerHTML =
+      (vencidos.length ? `<div class="exp-alerta exp-alerta-err">
+          <div class="exp-al-t">Vencido${vencidos.length > 1 ? 's' : ''} — renovar para poder ofertar</div>
+          ${vencidos.map(c => item(c, 'err')).join('')}
+        </div>` : '') +
+      (porVencer.length ? `<div class="exp-alerta exp-alerta-warn">
+          <div class="exp-al-t">Por vencer en los próximos días</div>
+          ${porVencer.map(c => item(c, 'warn')).join('')}
+        </div>` : '');
+    box.querySelectorAll('[data-al-filtro]').forEach(b =>
+      b.addEventListener('click', () => this.ir('certificaciones', b.dataset.alFiltro)));
   },
 
   _htmlAnillo(g, p) {
@@ -175,27 +208,23 @@ const ExpedienteRail = {
     const act = this.prefs.proceso_activo || '';
     if (!this.procesos.length) {
       return `<div class="exp-proceso">
-        <select disabled aria-label="Proceso activo"><option>Sin procesos analizados</option></select>
         <div class="exp-proceso-vacio">Analiza un pliego desde la pestaña Matching para medir tu expediente contra un proceso.</div>
       </div>`;
     }
-    const ops = ['<option value="">— Sin proceso activo —</option>']
-      .concat(this.procesos.map(pr => {
-        const sel = pr.referencia === act ? ' selected' : '';
-        const nom = (pr.nombre_proceso || pr.referencia || '').slice(0, 48);
-        return `<option value="${pr.referencia}"${sel}>${pr.referencia} · ${nom}</option>`;
-      }));
-    const pAct = this.procesos.find(pr => pr.referencia === act);
-    const detalle = pAct ? `
-      <div class="exp-proceso-ref">${pAct.referencia}</div>
-      <div class="exp-proceso-nombre">${pAct.nombre_proceso || ''}</div>
-      <div class="exp-proceso-datos">${[
-        pAct.institucion,
-        pAct.presupuesto_base ? 'RD$ ' + Number(pAct.presupuesto_base).toLocaleString('es-DO') : null,
-      ].filter(Boolean).join(' · ')}</div>` : '';
-    return `<div class="exp-proceso ${pAct ? 'exp-proceso-card' : ''}">
-      ${detalle}
-      <select id="exp-proceso-sel" aria-label="Proceso activo">${ops.join('')}</select>
+    const visibles = this._verMas ? this.procesos : this.procesos.slice(0, 5);
+    const items = visibles.map(pr => {
+      const on = pr.referencia === act;
+      const nom = (pr.nombre_proceso || '').slice(0, 60);
+      return `<button class="exp-pr-item ${on ? 'exp-pr-on' : ''}" data-ref="${pr.referencia}">
+        <span class="exp-proceso-ref">${pr.referencia}</span>
+        <span class="exp-pr-nombre">${nom}</span>
+      </button>`;
+    }).join('');
+    const resto = this.procesos.length - 5;
+    return `<div class="exp-proceso">
+      ${items}
+      ${act ? `<button class="exp-pr-quitar" id="exp-pr-quitar">× Quitar proceso activo</button>` : ''}
+      ${resto > 0 ? `<button class="exp-pr-mas" id="exp-pr-mas">${this._verMas ? 'Ver menos' : `Ver ${resto} más`}</button>` : ''}
     </div>`;
   },
 
@@ -244,13 +273,17 @@ const ExpedienteRail = {
     rail.querySelectorAll('.exp-sec').forEach(el =>
       el.addEventListener('click', () => this.ir(el.dataset.sec)));
 
-    const sel = rail.querySelector('#exp-proceso-sel');
-    if (sel) sel.addEventListener('change', async () => {
-      const ref = sel.value || null;
+    const elegir = async (ref) => {
       this.prefs.proceso_activo = ref;
       this._guardarPref({ proceso_activo: ref });
       await this._cargarResumen();
       this._render();
+    };
+    rail.querySelectorAll('.exp-pr-item').forEach(b =>
+      b.addEventListener('click', () => elegir(b.dataset.ref)));
+    rail.querySelector('#exp-pr-quitar')?.addEventListener('click', () => elegir(null));
+    rail.querySelector('#exp-pr-mas')?.addEventListener('click', () => {
+      this._verMas = !this._verMas; this._render();
     });
 
     const chk = rail.querySelector('#exp-lente-chk');
@@ -260,10 +293,10 @@ const ExpedienteRail = {
     });
   },
 
-  ir(sec) {
+  ir(sec, filtro = null) {
     const panel = this.PANEL[sec] || sec;
     if (window.ExpedienteTabla && ExpedienteTabla.esTabla(panel)) {
-      ExpedienteTabla.mostrar(panel);
+      ExpedienteTabla.mostrar(panel, filtro);
     } else {
       if (window.ExpedienteTabla) ExpedienteTabla.ocultar();
       BidManager.switchPanel(panel);
