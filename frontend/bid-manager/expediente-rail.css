@@ -624,3 +624,57 @@ body.exp-panel-abierto .exp-main { padding-right: 0; }
   color: var(--color-brand);
   background: var(--color-brand-subtle);
 }
+
+/* ── Alertas detalladas: qué documento, cuándo vence, clic para ir ── */
+.exp-alerta {
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-3, 12px) var(--space-4, 16px);
+  margin-bottom: var(--space-3, 12px);
+  border: 1px solid;
+}
+.exp-alerta-err  { background: var(--color-error-subtle);   border-color: var(--color-error-border); }
+.exp-alerta-warn { background: var(--color-warning-subtle); border-color: var(--color-warning-border); }
+.exp-al-t { font-weight: 700; font-size: var(--text-sm, 14px); margin-bottom: 4px; }
+.exp-alerta-err .exp-al-t  { color: var(--color-error-contrast); }
+.exp-alerta-warn .exp-al-t { color: var(--color-warning-contrast); }
+.exp-al-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  width: 100%; text-align: left;
+  background: none; border: none; cursor: pointer;
+  padding: 6px 0; font: inherit;
+  font-size: var(--text-sm, 14px);
+  color: var(--color-text-primary);
+  border-top: 1px solid transparent;
+}
+.exp-al-item:hover span:first-child { text-decoration: underline; }
+.exp-al-fecha { flex: none; font-size: var(--text-xs, 12px); color: var(--color-text-secondary); }
+
+/* ── Lista de procesos analizados en el rail ── */
+.exp-pr-item {
+  display: block; width: 100%; text-align: left;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius-md, 8px);
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  cursor: pointer; font: inherit;
+}
+.exp-pr-item:hover { background: var(--color-hover); }
+.exp-pr-on {
+  background: var(--color-brand-subtle);
+  border-color: var(--color-brand);
+}
+.exp-pr-nombre {
+  display: block;
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exp-pr-mas, .exp-pr-quitar {
+  background: none; border: none; cursor: pointer; font: inherit;
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-secondary);
+  padding: 4px 0;
+  display: block;
+}
+.exp-pr-mas:hover, .exp-pr-quitar:hover { color: var(--color-text-primary); text-decoration: underline; }
