@@ -572,3 +572,37 @@ body.exp-panel-abierto .exp-main { padding-right: 0; }
     border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
   }
 }
+
+/* ══════════════════════════════════════════════════════════
+   PULIDO POST-PRUEBA REAL — columnas, scroll, panel
+   ══════════════════════════════════════════════════════════ */
+
+/* La tabla siempre puede desplazarse horizontal: nada se corta */
+.exp-tabla-card { overflow-x: auto; }
+.exp-table { min-width: 880px; }
+
+/* Nombres y textos largos: una línea con ellipsis, no 4 renglones */
+.exp-table .exp-c1 {
+  max-width: 240px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exp-table .exp-c2 {
+  max-width: 260px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exp-table td:nth-child(2) .exp-c1 { max-width: 280px; } /* Especialidad respira más */
+
+/* Chips y badges jamás se parten en dos líneas */
+.exp-adj, .exp-badge { white-space: nowrap; }
+.exp-table td { white-space: nowrap; }
+.exp-table td:first-child, .exp-table td:nth-child(2) { white-space: normal; }
+
+/* Backdrop del panel: clic fuera cierra; suave, no bloquea la vista */
+#exp-backdrop {
+  position: fixed; inset: 0;
+  background: transparent;
+  z-index: 890;
+}
+@media (max-width: 1439px) {
+  #exp-backdrop { background: rgba(0, 0, 0, 0.18); }
+}
