@@ -612,3 +612,15 @@ body.exp-panel-abierto .exp-main { padding-right: 0; }
 .exp-main > * { min-width: 0; max-width: 100%; }
 .bm-container.exp-v2 .bm-panel { overflow-x: hidden; }
 .bm-container.exp-v2 .bm-panel .bm-section-header { flex-wrap: wrap; gap: 8px; }
+
+/* Acciones de archivo en el panel: verificar / descargar / eliminar */
+.exp-p-arch .exp-p-dl { padding: 6px 8px; font-size: 13px; line-height: 1; }
+.exp-p-del:hover {
+  background: var(--color-error-subtle);
+  border-color: var(--color-error-border);
+}
+.exp-p-drop-on {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+  background: var(--color-brand-subtle);
+}
