@@ -1,61 +1,91 @@
--- Expediente Digital v2 — Fase 0 (YA APLICADA en producción el 18 ago 2026
--- vía Supabase MCP, migración: expediente_v2_fase0_archivos_auditoria).
--- Se versiona aquí como registro. Aditiva: no toca tablas existentes.
+-- ============================================================
+-- EXPEDIENTE DIGITAL v2 — FASE 4: Generar Sobre A (asíncrono)
+-- Fecha: 2026-08-20
+-- Aplicada en producción vía MCP el 2026-08-20.
+-- Este archivo es la copia versionada. NO re-ejecutar a mano:
+-- es idempotente (IF NOT EXISTS) pero ya está aplicada.
+-- ============================================================
 
-create table if not exists bid_archivos (
-  id            uuid primary key default gen_random_uuid(),
-  empresa_id    uuid not null references perfiles_empresa(id) on delete cascade,
-  entidad       text not null check (entidad in
-                  ('personal','equipos','experiencia','socios',
-                   'representantes','certificaciones','financieros')),
-  registro_id   uuid not null,
-  nombre        text not null,
-  storage_path  text not null,
-  mime          text not null,
-  tamano_bytes  bigint not null check (tamano_bytes > 0),
-  estado        text not null default 'pendiente'
-                check (estado in ('validado','pendiente','rechazado')),
-  subido_por    uuid,
-  creado_en     timestamptz not null default now(),
-  actualizado_en timestamptz,
-  eliminado_en  timestamptz
-);
-create index if not exists idx_bid_archivos_registro
-  on bid_archivos (empresa_id, entidad, registro_id) where eliminado_en is null;
-create index if not exists idx_bid_archivos_purga
-  on bid_archivos (eliminado_en) where eliminado_en is not null;
+-- Jobs asíncronos de generación de Sobre A.
+-- Un job = una solicitud de generación (paquete completo o pieza individual).
+-- El worker (BackgroundTasks) actualiza progreso/resultado/pendientes.
+CREATE TABLE IF NOT EXISTS bid_sobre_jobs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa_id uuid NOT NULL,
+  referencia text NOT NULL,
 
-create table if not exists bid_auditoria (
-  id          bigint generated always as identity primary key,
-  empresa_id  uuid not null references perfiles_empresa(id) on delete cascade,
-  actor       text not null,
-  accion      text not null,
-  entidad     text,
-  registro_id uuid,
-  detalle     jsonb,
-  creado_en   timestamptz not null default now()
-);
-create index if not exists idx_bid_auditoria_empresa on bid_auditoria (empresa_id, creado_en desc);
-create index if not exists idx_bid_auditoria_registro on bid_auditoria (empresa_id, entidad, registro_id, creado_en desc);
+  -- piezas solicitadas: ["f034","f042","doc:certificaciones:<uuid>", ...] o ["todas"]
+  piezas jsonb NOT NULL DEFAULT '[]'::jsonb,
 
-create table if not exists bid_propuesta_cache (
-  empresa_id       uuid not null references perfiles_empresa(id) on delete cascade,
-  referencia       text not null,
-  hash_expediente  text not null,
-  payload          jsonb not null,
-  creado_en        timestamptz not null default now(),
-  primary key (empresa_id, referencia)
+  -- 'docx' (formularios editables) | 'pdf' (requiere LibreOffice en el runtime)
+  formato text NOT NULL DEFAULT 'docx',
+
+  -- en_cola -> procesando -> listo | error
+  estado text NOT NULL DEFAULT 'en_cola',
+
+  -- {"pieza_actual": "SNCC.F.034", "completadas": 3, "total": 12}
+  progreso jsonb NOT NULL DEFAULT '{}'::jsonb,
+
+  -- {"url_firmada": "...", "nombre": "Sobre_A_REF_fecha.zip", "bytes": 123, "paginas": 45}
+  resultado jsonb NOT NULL DEFAULT '{}'::jsonb,
+
+  -- hoja de pendientes: [{"pieza":"...", "motivo":"...", "campos":[...]}]
+  pendientes jsonb NOT NULL DEFAULT '[]'::jsonb,
+
+  error text,
+  creado_en timestamptz NOT NULL DEFAULT now(),
+  actualizado_en timestamptz NOT NULL DEFAULT now(),
+
+  -- el ZIP en el bucket vence a los 7 días; el cron de purga lo usa
+  expira_en timestamptz
 );
 
-create table if not exists bid_user_prefs (
-  user_id     uuid not null,
-  clave       text not null,
-  valor       jsonb not null,
-  actualizado_en timestamptz not null default now(),
-  primary key (user_id, clave)
-);
+CREATE INDEX IF NOT EXISTS idx_sobre_jobs_empresa
+  ON bid_sobre_jobs (empresa_id, creado_en DESC);
 
-alter table bid_archivos        enable row level security;
-alter table bid_auditoria       enable row level security;
-alter table bid_propuesta_cache enable row level security;
-alter table bid_user_prefs      enable row level security;
+-- parcial: solo jobs vivos, para que el worker/monitor los encuentre barato
+CREATE INDEX IF NOT EXISTS idx_sobre_jobs_estado
+  ON bid_sobre_jobs (estado) WHERE estado IN ('en_cola','procesando');
+
+-- RLS activo SIN policies = acceso solo con service key (patrón Fase 0).
+ALTER TABLE bid_sobre_jobs ENABLE ROW LEVEL SECURITY;
+
+-- NOTA: la firma digital del representante NO necesita DDL:
+-- se guarda en bid_archivos (polimórfica) con entidad='empresa', tipo='firma'.
+
+-- ============================================================
+-- FASE 4b (2026-08-20, aplicada vía MCP): formularios del portal
+-- ============================================================
+
+-- Formularios propios del proceso descargados del portal transaccional
+-- (FR-CYC-002, CEI, SGI, etc.). El usuario los llena y sube su versión
+-- llenada en llenado_storage_path.
+CREATE TABLE IF NOT EXISTS bid_formularios_proceso (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa_id uuid NOT NULL,
+  referencia text NOT NULL,
+  requisito text,
+  nombre_archivo text NOT NULL,
+  storage_path text NOT NULL,
+  mime text,
+  tamano_bytes bigint,
+  llenado_storage_path text,
+  llenado_nombre text,
+  origen text NOT NULL DEFAULT 'portal',
+  creado_en timestamptz NOT NULL DEFAULT now(),
+  actualizado_en timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (empresa_id, referencia, nombre_archivo)
+);
+CREATE INDEX IF NOT EXISTS idx_form_proceso_ref ON bid_formularios_proceso (empresa_id, referencia);
+ALTER TABLE bid_formularios_proceso ENABLE ROW LEVEL SECURITY;
+
+-- Control de intentos de scraping (máx. 1 cada 6 horas por proceso)
+CREATE TABLE IF NOT EXISTS bid_formularios_sync (
+  empresa_id uuid NOT NULL,
+  referencia text NOT NULL,
+  ultimo_intento timestamptz NOT NULL DEFAULT now(),
+  exito boolean NOT NULL DEFAULT false,
+  detalle text,
+  PRIMARY KEY (empresa_id, referencia)
+);
+ALTER TABLE bid_formularios_sync ENABLE ROW LEVEL SECURITY;
