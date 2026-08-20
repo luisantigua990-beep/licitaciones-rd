@@ -2641,19 +2641,39 @@ async def matching_analizar_proceso(request: dict,
     try:
         from main import descargar_y_extraer_texto_pdf  # lazy: evita import circular
         res_pdf = descargar_y_extraer_texto_pdf(proc["url"])
-        texto_pliego = res_pdf.get("__texto") if isinstance(res_pdf, dict) else res_pdf
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(502, f"No se pudo descargar el pliego del portal: {str(e)}")
-    if not texto_pliego or len(texto_pliego.strip()) < 100:
-        raise HTTPException(422, "El pliego descargado no tiene texto legible")
+
+    # PDF escaneado: descargar_y_extraer_texto_pdf devuelve un dict con los
+    # bytes en base64 para que Gemini Vision haga el OCR (mismo patron que
+    # ejecutar_analisis_gemini en main.py). Antes solo se leia __texto (vacio
+    # en escaneados) y el endpoint moria con 422 — la mayoria de pliegos de
+    # DGCP son escaneados, asi que este es el camino principal, no el borde.
+    pdf_bytes_b64 = None
+    if isinstance(res_pdf, dict) and "__pdf_bytes_b64" in res_pdf:
+        pdf_bytes_b64 = res_pdf["__pdf_bytes_b64"]
+        texto_pliego = res_pdf.get("__texto") or ""
+        print(f"🔬 Matching en modo Vision — PDF escaneado ({len(texto_pliego)} chars de texto)")
+    else:
+        texto_pliego = res_pdf or ""
+        if not texto_pliego or len(texto_pliego.strip()) < 100:
+            raise HTTPException(422, "El pliego descargado no tiene texto legible")
     texto_pliego = texto_pliego[:400000]  # margen amplio para gemini-2.5-flash
 
-    payload = {
-        "contents": [{"parts": [
+    if pdf_bytes_b64:
+        _parts = [
+            {"text": _PROMPT_MATCHING},
+            {"inline_data": {"mime_type": "application/pdf", "data": pdf_bytes_b64}},
+        ]
+    else:
+        _parts = [
             {"text": _PROMPT_MATCHING + "\n\n=== TEXTO DEL PLIEGO (extraido del portal) ===\n" + texto_pliego},
-        ]}],
+        ]
+
+    payload = {
+        "contents": [{"parts": _parts}],
         "generationConfig": {"temperature": 0.1, "response_mime_type": "application/json"},
     }
     url_g = (f"https://generativelanguage.googleapis.com/v1beta/models/"
