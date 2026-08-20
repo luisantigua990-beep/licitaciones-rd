@@ -370,6 +370,10 @@ const ExpedienteTabla = {
     const info = def.panel(reg);
     let panel = document.getElementById('exp-panel');
     if (!panel) {
+      const back = document.createElement('div');
+      back.id = 'exp-backdrop';
+      back.addEventListener('click', () => this.cerrarPanel());
+      document.body.appendChild(back);
       panel = document.createElement('aside');
       panel.id = 'exp-panel';
       panel.setAttribute('role', 'dialog');
@@ -427,6 +431,7 @@ const ExpedienteTabla = {
     this.selId = null;
     document.body.classList.remove('exp-panel-abierto');
     document.getElementById('exp-panel')?.remove();
+    document.getElementById('exp-backdrop')?.remove();
     if (this.entidadActual) this._renderCuerpo();
   },
 
@@ -456,12 +461,22 @@ const ExpedienteTabla = {
       </div>`).join('');
     box.querySelectorAll('[data-dl]').forEach(b =>
       b.addEventListener('click', async () => {
+        b.disabled = true;
         try {
           const r = await BidManager._get(`/expediente/archivos/${b.dataset.dl}/descargar`);
-          if (r?.url) window.open(r.url, '_blank');
+          if (r?.url) {
+            const a = document.createElement('a');
+            a.href = r.url; a.download = r.nombre || '';
+            document.body.appendChild(a); a.click(); a.remove();
+          }
         } catch { /* silencioso */ }
+        b.disabled = false;
       }));
   },
+
+  DROP_HTML: `<input type="file" id="exp-p-file" multiple hidden
+               accept=".pdf,.doc,.docx,.xls,.xlsx,image/jpeg,image/png">
+        + Subir CV, facturas, actas o fotos · PDF, Word, Excel, JPG`,
 
   async _subirArchivos(entidadApi, id, files) {
     if (!files?.length) return;
@@ -478,6 +493,11 @@ const ExpedienteTabla = {
       }
     } catch { alert('Error de conexión al subir'); }
     this.invalidar(this.entidadActual);
+    if (drop) {                                 // restaurar la dropzone
+      drop.innerHTML = this.DROP_HTML;
+      drop.querySelector('#exp-p-file')?.addEventListener('change', ev =>
+        this._subirArchivos(entidadApi, id, ev.target.files));
+    }
     await this._cargarArchivos(entidadApi, id);
     this._cargarTraza(entidadApi, id);
     this.mostrar(this.entidadActual);          // refresca conteos de la tabla
