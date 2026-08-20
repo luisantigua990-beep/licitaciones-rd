@@ -68,6 +68,24 @@ const ExpedienteRail = {
     this._render();
     this._hashInicial();
     window.addEventListener('hashchange', () => this._hashInicial());
+
+    // Tras cualquier BidManager.refresh() (guardar/eliminar en modales),
+    // repintar tabla y rail para que no queden con datos viejos.
+    if (!BidManager._expV2Wrapped) {
+      const orig = BidManager.refresh.bind(BidManager);
+      BidManager.refresh = async (...a) => {
+        const r = await orig(...a);
+        try {
+          if (window.ExpedienteTabla?.entidadActual) {
+            ExpedienteTabla.invalidar(ExpedienteTabla.entidadActual);
+            ExpedienteTabla.mostrar(ExpedienteTabla.entidadActual);
+          }
+          ExpedienteRail.refresh();
+        } catch {}
+        return r;
+      };
+      BidManager._expV2Wrapped = true;
+    }
   },
 
   _css() {
