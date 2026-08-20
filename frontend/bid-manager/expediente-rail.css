@@ -606,3 +606,9 @@ body.exp-panel-abierto .exp-main { padding-right: 0; }
 @media (max-width: 1439px) {
   #exp-backdrop { background: rgba(0, 0, 0, 0.18); }
 }
+
+/* Vistas viejas (Empresa/Financieros) dentro de la columna nueva:
+   que nunca se desborden ni se corte el botón Editar */
+.exp-main > * { min-width: 0; max-width: 100%; }
+.bm-container.exp-v2 .bm-panel { overflow-x: hidden; }
+.bm-container.exp-v2 .bm-panel .bm-section-header { flex-wrap: wrap; gap: 8px; }
