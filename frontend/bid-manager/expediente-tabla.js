@@ -366,6 +366,7 @@ const ExpedienteTabla = {
     const reg = this._datos().find(r => String(r.id) === String(id));
     if (!def || !reg) return;
     this.selId = id;
+    this._regActual = reg;
     this._renderCuerpo();  // marca la fila seleccionada
 
     const info = def.panel(reg);
@@ -452,15 +453,45 @@ const ExpedienteTabla = {
     try {
       archivos = await BidManager._get(`/expediente/${entidadApi}/${id}/archivos`) || [];
     } catch { box.innerHTML = '<div class="exp-p-cargando">No se pudieron cargar.</div>'; return; }
+    // Documentos: el archivo principal vive en archivo_url (formato viejo).
+    // Mostrarlo junto a los adjuntos nuevos para que TODO esté en el panel.
+    let legacyHtml = '';
+    const legacy = entidadApi === 'certificaciones' && this._regActual?.archivo_url;
+    if (legacy) {
+      const nombreLegacy = String(this._regActual.archivo_url).split('/').pop();
+      legacyHtml = `
+        <div class="exp-p-arch">
+          <span class="exp-p-ext">DOC</span>
+          <div class="exp-p-arch-info">
+            <div class="exp-p-arch-nombre">${this._esc(nombreLegacy)}</div>
+            <div class="exp-c2">archivo del documento</div>
+          </div>
+          <button class="exp-p-dl" data-legacy="${this._esc(this._regActual.archivo_url)}"
+                  title="Descargar">⬇</button>
+        </div>`;
+    }
+    const total = archivos.length + (legacy ? 1 : 0);
     const n = document.getElementById('exp-p-narchivos');
-    if (n) n.textContent = archivos.length ? `${archivos.length} archivo${archivos.length > 1 ? 's' : ''}` : '';
-    if (!archivos.length) {
+    if (n) n.textContent = total ? `${total} archivo${total > 1 ? 's' : ''}` : '';
+    if (!total) {
       box.innerHTML = '<div class="exp-p-cargando">Aún no hay archivos en este registro.</div>';
+      return;
+    }
+    if (!archivos.length) {
+      box.innerHTML = legacyHtml;
+      box.querySelector('[data-legacy]')?.addEventListener('click', async ev => {
+        const btn = ev.currentTarget; btn.disabled = true;
+        try {
+          const r = await BidManager._get(`/signed-url?path=${encodeURIComponent(btn.dataset.legacy)}`);
+          if (r?.url) window.open(r.url, '_blank');
+        } catch {}
+        btn.disabled = false;
+      });
       return;
     }
     const EXT = m => m.includes('pdf') ? 'PDF' : m.includes('image') ? 'IMG'
                  : m.includes('sheet') || m.includes('excel') ? 'XLS' : 'DOC';
-    box.innerHTML = archivos.map(a => `
+    box.innerHTML = legacyHtml + archivos.map(a => `
       <div class="exp-p-arch">
         <span class="exp-p-ext">${EXT(a.mime)}</span>
         <div class="exp-p-arch-info">
@@ -473,6 +504,14 @@ const ExpedienteTabla = {
         <button class="exp-p-dl exp-p-del" data-del="${this._esc(a.id)}"
                 data-nombre="${this._esc(a.nombre)}" title="Eliminar">🗑</button>
       </div>`).join('');
+    box.querySelector('[data-legacy]')?.addEventListener('click', async ev => {
+      const btn = ev.currentTarget; btn.disabled = true;
+      try {
+        const r = await BidManager._get(`/signed-url?path=${encodeURIComponent(btn.dataset.legacy)}`);
+        if (r?.url) window.open(r.url, '_blank');
+      } catch {}
+      btn.disabled = false;
+    });
     box.querySelectorAll('[data-ok]').forEach(b =>
       b.addEventListener('click', async () => {
         b.disabled = true;
