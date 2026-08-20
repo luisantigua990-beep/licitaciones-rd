@@ -1,0 +1,343 @@
+/* ============================================================
+   expediente-sobre.css — Fase 4: modal Generar Sobre A
+   Solo tokens de licitacionlab-tokens.css. Cero hex nuevos.
+   ============================================================ */
+
+#exp-sobre-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-surface-overlay);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4, 16px);
+}
+
+.exp-sobre-modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: var(--shadow-lg);
+  width: 560px;
+  max-width: 100%;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Cabecera ── */
+.exp-sobre-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-4, 16px) var(--space-5, 20px) var(--space-2, 8px);
+}
+.exp-sobre-titulo {
+  font-weight: 700;
+  font-size: var(--text-lg, 17px);
+  color: var(--color-text-primary);
+}
+.exp-sobre-ref {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+.exp-sobre-x {
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 6px);
+}
+.exp-sobre-x:hover { background: var(--color-hover); color: var(--color-text-primary); }
+
+/* ── Tabs ── */
+.exp-sobre-tabs {
+  display: flex;
+  gap: var(--space-1, 4px);
+  padding: 0 var(--space-5, 20px);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.exp-sobre-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  font-size: var(--text-sm, 14px);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.exp-sobre-tab.act {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  border-bottom-color: var(--color-brand);
+}
+
+/* ── Cuerpo ── */
+.exp-sobre-cuerpo {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+}
+.exp-sobre-scroll {
+  overflow-y: auto;
+  padding: var(--space-3, 12px) var(--space-5, 20px);
+  flex: 1;
+}
+.exp-sobre-cargando,
+.exp-sobre-vacio {
+  padding: var(--space-8, 32px);
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm, 14px);
+}
+
+/* ── Secciones y filas de piezas ── */
+.exp-sobre-seccion { margin-bottom: var(--space-4, 16px); }
+.exp-sobre-sec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: var(--text-xs, 12px);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-1, 4px);
+}
+.exp-sobre-fila {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding: var(--space-2, 8px);
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  font-size: var(--text-sm, 14px);
+  color: var(--color-text-primary);
+}
+.exp-sobre-fila:hover { background: var(--color-hover); }
+.exp-sobre-fila.bloq { cursor: not-allowed; opacity: .75; }
+.exp-sobre-fila input[type="checkbox"] { accent-color: var(--color-brand); }
+.exp-sobre-nombre { min-width: 0; overflow-wrap: anywhere; }
+.exp-sobre-motivo {
+  grid-column: 3 / -1;
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-muted);
+}
+.exp-sobre-fila.bloq .exp-sobre-motivo { color: var(--color-error); }
+
+/* dots reutilizan .exp-dot del rail (ok/warn/err) */
+.exp-sobre-fila .exp-dot { width: 8px; height: 8px; border-radius: 50%; }
+.exp-sobre-fila .exp-dot.ok   { background: var(--color-success); }
+.exp-sobre-fila .exp-dot.warn { background: var(--color-warning); }
+.exp-sobre-fila .exp-dot.err  { background: var(--color-error); }
+
+/* ── Pie: hints, formato y CTA ── */
+.exp-sobre-pie {
+  border-top: 1px solid var(--color-border-subtle);
+  padding: var(--space-3, 12px) var(--space-5, 20px) var(--space-4, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  background: var(--color-bg-subtle);
+}
+.exp-sobre-hint {
+  font-size: var(--text-xs, 12px);
+  padding: var(--space-2, 8px);
+  border-radius: var(--radius-sm, 6px);
+}
+.exp-sobre-hint.warn {
+  background: var(--color-warning-subtle);
+  border: 1px solid var(--color-warning-border);
+  color: var(--color-text-primary);
+}
+.exp-sobre-hint.err {
+  background: var(--color-error-subtle);
+  border: 1px solid var(--color-error-border);
+  color: var(--color-text-primary);
+}
+.exp-sobre-opciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3, 12px);
+  align-items: center;
+  font-size: var(--text-sm, 14px);
+}
+.exp-sobre-radio {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+.exp-sobre-radio.off { color: var(--color-text-muted); cursor: not-allowed; }
+.exp-sobre-radio input { accent-color: var(--color-brand); }
+
+.exp-sobre-cta {
+  display: block;
+  width: 100%;
+  text-align: center;
+  background: var(--color-brand);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-3, 12px);
+  font-size: var(--text-sm, 14px);
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+}
+.exp-sobre-cta:hover { background: var(--color-brand-hover); }
+
+.exp-sobre-sync,
+.exp-sobre-mini {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  padding: var(--space-1, 4px) var(--space-2, 8px);
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.exp-sobre-sync:hover,
+.exp-sobre-mini:hover { background: var(--color-hover); color: var(--color-text-primary); }
+.exp-sobre-sync:disabled { opacity: .6; cursor: wait; }
+.exp-sobre-sync { margin-left: auto; }
+
+.exp-sobre-link {
+  background: none;
+  border: none;
+  color: var(--color-brand);
+  font-size: var(--text-xs, 12px);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+/* ── Progreso ── */
+.exp-sobre-prog {
+  padding: var(--space-8, 32px) var(--space-6, 24px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  align-items: center;
+  text-align: center;
+}
+.exp-sobre-prog-txt {
+  font-size: var(--text-sm, 14px);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.exp-sobre-barra {
+  width: 100%;
+  max-width: 380px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-bg-subtle);
+  border: 1px solid var(--color-border-subtle);
+  overflow: hidden;
+}
+.exp-sobre-barra-fill {
+  height: 100%;
+  background: var(--color-brand);
+  border-radius: 999px;
+  transition: width var(--dur-slow, .25s) var(--ease-out, ease-out);
+}
+.exp-sobre-prog-num {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-muted);
+}
+
+/* ── Listo / error ── */
+.exp-sobre-listo {
+  padding: var(--space-8, 32px) var(--space-6, 24px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+  align-items: center;
+  text-align: center;
+  overflow-y: auto;
+}
+.exp-sobre-check {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--color-success-subtle);
+  border: 1px solid var(--color-success-border);
+  color: var(--color-success);
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.exp-sobre-check.err {
+  background: var(--color-error-subtle);
+  border-color: var(--color-error-border);
+  color: var(--color-error);
+}
+.exp-sobre-listo-titulo {
+  font-weight: 700;
+  font-size: var(--text-lg, 17px);
+  color: var(--color-text-primary);
+}
+.exp-sobre-listo-nombre {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-muted);
+}
+.exp-sobre-listo .exp-sobre-cta { max-width: 320px; }
+
+.exp-sobre-pend {
+  width: 100%;
+  text-align: left;
+  background: var(--color-warning-subtle);
+  border: 1px solid var(--color-warning-border);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--space-3, 12px);
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-primary);
+  max-height: 180px;
+  overflow-y: auto;
+}
+.exp-sobre-pend-t { font-weight: 700; margin-bottom: var(--space-1, 4px); }
+.exp-sobre-pend-i { margin-top: 2px; }
+
+/* ── Historial ── */
+.exp-sobre-hjob {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3, 12px);
+  padding: var(--space-3, 12px) var(--space-2, 8px);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.exp-sobre-hjob .exp-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.exp-sobre-hjob .exp-dot.ok   { background: var(--color-success); }
+.exp-sobre-hjob .exp-dot.warn { background: var(--color-warning); }
+.exp-sobre-hjob .exp-dot.err  { background: var(--color-error); }
+.exp-sobre-hinfo { flex: 1; min-width: 0; }
+.exp-sobre-hnombre {
+  font-size: var(--text-sm, 14px);
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+.exp-sobre-hfecha {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-text-muted);
+}
+
+/* ── Móvil: bottom sheet (mismo patrón de la tabla) ── */
+@media (max-width: 640px) {
+  #exp-sobre-overlay { padding: 0; align-items: flex-end; }
+  .exp-sobre-modal {
+    width: 100%;
+    max-height: 92vh;
+    border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
+    border-bottom: none;
+  }
+}
