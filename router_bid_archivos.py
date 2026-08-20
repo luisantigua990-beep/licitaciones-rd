@@ -306,6 +306,34 @@ def eliminar_archivo(
     return None
 
 
+@bid_archivos_router.get("/legacy-descargar")
+def legacy_descargar(path: str, nombre: str | None = None,
+                     authorization: str | None = Header(default=None)):
+    """Descarga (attachment) de archivos del formato viejo (archivo_url de
+    certificaciones, etc.). Ownership: el path DEBE empezar con la empresa
+    del usuario — mismo contrato que /api/bid/signed-url pero forzando
+    descarga con nombre legible en vez de abrir la URL cruda."""
+    uid = _auth(authorization)
+    eid = _empresa_id(uid)
+    if not path or not path.startswith(f"{eid}/"):
+        raise HTTPException(404, "Archivo no encontrado")
+    nombre_final = nombre or path.split("/")[-1]
+    bucket = _sb.storage.from_(STORAGE_BUCKET)
+    signed = None
+    try:
+        res = bucket.create_signed_url(path, SIGNED_URL_SEG, {"download": nombre_final})
+        signed = (res or {}).get("signedURL") or (res or {}).get("signedUrl")
+    except Exception:
+        pass
+    if not signed:
+        try:
+            res = bucket.create_signed_url(path, SIGNED_URL_SEG)
+            signed = (res or {}).get("signedURL") or (res or {}).get("signedUrl")
+        except Exception as e:
+            raise HTTPException(500, f"Error generando URL firmada: {e}")
+    return {"url": signed, "nombre": nombre_final}
+
+
 @bid_archivos_router.post("/cron/purgar-archivos")
 def cron_purgar_archivos(x_admin_key: str = Header(default=None)):
     """
