@@ -148,10 +148,27 @@ FORMULARIOS = {
     "f035": ("SNCC.F.035", "Estructura para brindar soporte técnico al Equipo ofertado"),
     "f036": ("SNCC.F.036", "Listado de Equipos del Oferente"),
     "f037": ("SNCC.F.037", "Personal de Plantilla del Oferente"),
+    "d044": ("SNCC.D.044", "Enfoque Metodológico y Plan de Trabajo"),
     "d045": ("SNCC.D.045", "Currículo del Personal Profesional propuesto"),
+    "d048": ("SNCC.D.048", "Experiencia Profesional del Personal Principal"),
     "d049": ("SNCC.D.049", "Experiencia como Contratista"),
     "djur": ("Declaración Jurada", "Declaración Jurada simple (Art. 14 Ley 340-06 / Art. 38 Ley 47-25)"),
+    "etic": ("Compromiso Ético", "Compromiso Ético de Proveedores(as) del Estado (DGCP)"),
+    "cint": ("Carta de Intención", "Cartas de intención y disponibilidad del personal propuesto"),
+    "ccon": ("Carta de Aceptación", "Carta de aceptación de condiciones de entrega y pago"),
 }
+
+# Formularios PROPIOS de cada institución (debida diligencia FR-CYC-002,
+# constancia CEI, certificación SGI, etc.): sus pliegos indican que "no
+# deberán ser modificados", así que NO se generan — el usuario los baja del
+# portal institucional, los llena y los sube como adjunto. En el catálogo
+# aparecen como aviso para que no se olviden.
+AVISOS_INSTITUCIONALES = [
+    ("aviso_institucional",
+     "Formularios propios de la institución (debida diligencia, código de "
+     "ética, SGI…) — descargarlos del portal de la entidad, llenarlos sin "
+     "modificar su formato y adjuntarlos al expediente"),
+]
 
 # Documentos del expediente que suelen exigir los pliegos (visto en los
 # análisis de bid_matching_pliegos). Cada entrada define de dónde salen.
@@ -198,6 +215,25 @@ def listar_piezas(sb, empresa_id: str, referencia: str) -> list[dict]:
         for a in _adjuntos_entidad(sb, empresa_id, entidad):
             piezas.append(a | {"seccion": seccion})
 
+    # --- Formularios propios del proceso (descargados del portal, Fase 4b) ---
+    try:
+        from sobre_a_adjuntos import piezas_formularios_proceso
+        proc_piezas = piezas_formularios_proceso(sb, empresa_id, referencia)
+    except Exception:
+        proc_piezas = []
+    piezas.extend(proc_piezas)
+
+    # --- Aviso genérico: solo si NO se descargó ningún formulario del portal ---
+    if not proc_piezas:
+        for aid, texto in AVISOS_INSTITUCIONALES:
+            piezas.append({
+                "id": aid, "tipo": "aviso", "nombre": texto,
+                "estado": "warn",
+                "motivo": "No se genera automáticamente: usar la plantilla oficial "
+                          "de la institución sin modificar su formato",
+                "seccion": "Formularios de la institución",
+            })
+
     return piezas
 
 
@@ -233,6 +269,24 @@ def _campos_faltantes(sb, empresa_id: str, clave: str, ctx: dict) -> list[str]:
              .eq("empresa_id", empresa_id).execute().count or 0)
         if n == 0:
             faltan.append("Experiencia registrada")
+    if clave == "d048":
+        n = (sb.table("bid_personal").select("id", count="exact")
+             .eq("empresa_id", empresa_id).eq("activo", True).execute().count or 0)
+        if n == 0:
+            faltan.append("Personal registrado")
+    if clave == "cint":
+        n = (sb.table("bid_personal").select("id", count="exact")
+             .eq("empresa_id", empresa_id).eq("activo", True)
+             .eq("disponible", True).execute().count or 0)
+        if n == 0:
+            faltan.append("Personal disponible registrado")
+    if clave == "etic":
+        req(_v(fir, "nombre_completo"), "Representante")
+        req(_v(fir, "cedula"), "Cédula del representante")
+        req(_v(emp, "rnc"), "RNC")
+        req(_v(emp, "rpe"), "RPE")
+    if clave == "d044":
+        faltan.append("Enfoque metodológico y plan de trabajo (redacción propia)")
     if clave == "f035":
         faltan.append("Descripción de la estructura de soporte")
     return faltan
@@ -591,10 +645,209 @@ def generar_djur(sb, empresa_id: str, ctx: dict) -> bytes:
     return _docx_bytes(doc)
 
 
+def generar_etic(sb, empresa_id: str, ctx: dict) -> bytes:
+    """Compromiso Ético de Proveedores(as) del Estado — texto estándar DGCP
+    (Resolución Núm. PNP-04-2021). Sin logo; datos autollenados."""
+    doc = Document()
+    _p(doc, "COMPROMISO ÉTICO DE PROVEEDORES (AS) DEL ESTADO", bold=True,
+       size=13, center=True)
+    _p(doc, "DIRECCIÓN GENERAL DE CONTRATACIONES PÚBLICAS", bold=True,
+       size=11, center=True)
+    doc.add_paragraph()
+    emp, fir, proc = ctx["empresa"], ctx["firmante"], ctx["proceso"]
+    inst = ctx.get("institucion") or MARCA_PENDIENTE.format(campo="Institución")
+    objeto = _v(proc, "nombre_proceso") or MARCA_PENDIENTE.format(campo="Objeto del proceso")
+    par = doc.add_paragraph()
+    par.add_run(
+        f"Quien suscribe, {_dato(fir, 'Nombre del representante', 'nombre_completo')}, "
+        f"de nacionalidad {_v(fir, 'nacionalidad') or 'dominicana'}, mayor de edad, "
+        f"estado civil {_v(fir, 'estado_civil') or '____________'}, provisto(a) de la "
+        f"cédula de identidad y electoral núm. {_dato(fir, 'Cédula', 'cedula')}, "
+        f"actuando en representación de la persona jurídica "
+        f"{_dato(emp, 'Razón social', 'razon_social', 'nombre_perfil')}, provista del "
+        f"Registro Nacional del Contribuyente (RNC) núm. {_dato(emp, 'RNC', 'rnc')} y "
+        f"del Registro de Proveedores del Estado (RPE) núm. {_dato(emp, 'RPE', 'rpe')}, "
+        f"que participa en el procedimiento de contratación pública núm. "
+        f"{ctx['referencia']}, relativo a {objeto}, llevado a cabo por la institución "
+        f"contratante {inst}, reconoce haber leído y comprendido el Código de Pautas "
+        "de Ética e Integridad del Sistema Nacional de Contrataciones Públicas, "
+        "aprobado por la Dirección General de Contrataciones Públicas en fecha "
+        "29.4.2021, mediante la Resolución Núm. PNP-04-2021, y mediante la presente "
+        "declaración acepta y se adhiere a dar fiel cumplimiento al citado código. "
+        "En ese sentido, se compromete a lo siguiente:")
+    if "[[PENDIENTE" in par.text:
+        _sombrear(par)
+    for texto in [
+        "No ofrecer o conceder, de forma directa o indirecta, a funcionarios o "
+        "servidores públicos, o a terceros, en el contexto de la actividad "
+        "empresarial involucrada, regalos, obsequios u otras ventajas, ya sean en "
+        "metálico o en forma de otras prestaciones.",
+        "No realizar acuerdos ilícitos y anticompetitivos con el fin de "
+        "distorsionar el resultado del procedimiento de contratación pública.",
+        "Actuar de buena fe y con apego irrestricto a lo establecido en las bases "
+        "de la contratación, la oferta presentada, el contrato y la normativa que "
+        "rige el Sistema Nacional de Contrataciones Públicas (SNCP), y entregar "
+        "los bienes y servicios adjudicados con la calidad, especificaciones "
+        "técnicas y en los plazos requeridos en las bases de la contratación.",
+        "Informar a la institución contratante, mediante comunicación escrita, en "
+        "caso de actual o potencial conflicto de interés, a fin de garantizar la "
+        "independencia de actuación del proveedor.",
+        "Mantener un comportamiento ético y responsable siguiendo las políticas, "
+        "normas y procedimientos de la Dirección General de Contrataciones "
+        "Públicas, asumiendo las consecuencias de sus acciones.",
+    ]:
+        doc.add_paragraph(texto, style="List Bullet")
+    doc.add_paragraph()
+    _p(doc, f"La presente declaración ha sido realizada a los {_hoy()}.")
+    _bloque_firma(doc, ctx)
+    return _docx_bytes(doc)
+
+
+def generar_d044(sb, empresa_id: str, ctx: dict) -> bytes:
+    """Enfoque metodológico: estructura guía con huecos (redacción propia).
+    OJO: los pliegos suelen marcarlo NO SUBSANABLE — hay que llenarlo bien."""
+    doc = Document()
+    _cabecera(doc, ctx, "SNCC.D.044", "Enfoque Metodológico y Plan de Trabajo")
+    _p(doc, "NOTA: este documento suele ser NO SUBSANABLE. Complete cada "
+            "capítulo según las especificaciones técnicas del pliego.",
+       bold=True, size=9)
+    doc.add_paragraph()
+    secciones = [
+        ("1. Enfoque Metodológico",
+         "Partes principales del proyecto, aportes y sugerencias, previsiones "
+         "de instalaciones y manera de ejecutar cada componente. Detallar "
+         "interdependencia del plan de obra, programa de ejecución, uso de "
+         "equipos, adquisiciones y recursos por partida."),
+        ("2. Plan de Trabajo",
+         "Actividades principales, contenido y duración, fases y relaciones, "
+         "etapas y fechas de entrega de informes, consistente con el enfoque "
+         "técnico y el cronograma del pliego."),
+        ("3. Organización y Dotación de Personal",
+         "Estructura y composición del equipo, disciplinas, especialistas "
+         "clave, personal técnico y de apoyo; organigrama."),
+        ("4. Plan de Gestión de Riesgos y Cambio Climático",
+         "Riesgos de la fase de construcción, medidas preventivas y de acción "
+         "para reducir impactos."),
+        ("5. Plan de Seguridad, Higiene y Manejo Ambiental",
+         "Medidas para preservar la seguridad de personas, equipos y "
+         "propiedades colindantes, y protección del medio ambiente, conforme "
+         "a la legislación vigente."),
+    ]
+    for titulo, guia in secciones:
+        _p(doc, titulo, bold=True, size=12)
+        _p(doc, f"Guía: {guia}", size=9)
+        _p(doc, MARCA_PENDIENTE.format(campo=f"Redactar {titulo.lower()}"))
+        for _ in range(3):
+            _p(doc, "_" * 90)
+        doc.add_paragraph()
+    _bloque_firma(doc, ctx)
+    return _docx_bytes(doc)
+
+
+def generar_d048(sb, empresa_id: str, ctx: dict) -> bytes:
+    """Experiencia profesional del personal principal (resumen tabulado)."""
+    doc = Document()
+    _cabecera(doc, ctx, "SNCC.D.048", "Experiencia Profesional del Personal Principal")
+    personal = (sb.table("bid_personal").select("*")
+                .eq("empresa_id", empresa_id).eq("activo", True)
+                .order("nombre_completo").execute().data or [])
+    if not personal:
+        _p(doc, MARCA_PENDIENTE.format(campo="Personal registrado en el expediente"))
+    else:
+        filas = [[
+            _v(p, "nombre_completo") or "",
+            _v(p, "cargo_empresa") or "",
+            _v(p, "profesion") or "",
+            str(p.get("experiencia_general_anios") or ""),
+            str(p.get("experiencia_especifica_anios") or ""),
+            ", ".join(p.get("especialidades") or []) or "",
+            str(p.get("fecha_graduacion") or "")[:10],
+        ] for p in personal]
+        _tabla(doc, ["Nombre", "Cargo propuesto", "Profesión", "Exp. gral. (años)",
+                     "Exp. específica (años)", "Especialidades", "Graduación"], filas)
+        _p(doc, "\nSe anexan certificaciones de experiencia del personal, según "
+                "aplique.", size=9)
+    _bloque_firma(doc, ctx)
+    return _docx_bytes(doc)
+
+
+def generar_cint(sb, empresa_id: str, ctx: dict) -> bytes:
+    """Cartas de intención y disponibilidad: UNA POR PERSONA clave, firmadas
+    por el propio técnico si tiene firma_url subida."""
+    doc = Document()
+    personal = (sb.table("bid_personal").select("*")
+                .eq("empresa_id", empresa_id).eq("activo", True)
+                .order("nombre_completo").execute().data or [])
+    proc = ctx["proceso"]
+    inst = ctx.get("institucion") or MARCA_PENDIENTE.format(campo="Institución")
+    objeto = _v(proc, "nombre_proceso") or MARCA_PENDIENTE.format(campo="Objeto")
+    if not personal:
+        _cabecera(doc, ctx, "CARTA DE INTENCIÓN", "Carta de intención y disponibilidad")
+        _p(doc, MARCA_PENDIENTE.format(campo="Personal registrado en el expediente"))
+        return _docx_bytes(doc)
+    for i, p in enumerate(personal):
+        if i:
+            doc.add_page_break()
+        _p(doc, "CARTA DE INTENCIÓN Y DISPONIBILIDAD", bold=True, size=13, center=True)
+        _p(doc, f"Referencia: {ctx['referencia']}", size=10, center=True)
+        _p(doc, f"Fecha: {_hoy()}", size=10, center=True)
+        doc.add_paragraph()
+        _p(doc, "Señores")
+        _p(doc, inst, bold=True, upper=True)
+        doc.add_paragraph()
+        par = doc.add_paragraph()
+        par.add_run(
+            f"Quien suscribe, {_v(p, 'nombre_completo') or ''}, portador(a) de la "
+            f"cédula núm. {_dato(p, 'Cédula', 'cedula')}, de profesión "
+            f"{_dato(p, 'Profesión', 'profesion')}, por medio de la presente "
+            f"manifiesto mi intención y plena disponibilidad para desempeñar el "
+            f"cargo de {_dato(p, 'Cargo', 'cargo_empresa')} en el procedimiento "
+            f"núm. {ctx['referencia']}, relativo a {objeto}, con la dedicación "
+            "exigida en el pliego de condiciones, en caso de que el oferente "
+            f"{_dato(ctx['empresa'], 'Razón social', 'razon_social', 'nombre_perfil')} "
+            "resulte adjudicatario.")
+        if "[[PENDIENTE" in par.text:
+            _sombrear(par)
+        doc.add_paragraph()
+        firma_p = None
+        if p.get("firma_url"):
+            firma_p = _descargar_binario(sb, p["firma_url"])
+        if firma_p:
+            try:
+                fp = doc.add_paragraph()
+                fp.add_run().add_picture(io.BytesIO(firma_p), width=Inches(1.6))
+            except Exception:
+                pass
+        _p(doc, "Firma ____________________________________")
+        _p(doc, _v(p, "nombre_completo") or "")
+    return _docx_bytes(doc)
+
+
+def generar_ccon(sb, empresa_id: str, ctx: dict) -> bytes:
+    """Carta de aceptación de condiciones de entrega y pago del pliego."""
+    doc = Document()
+    _cabecera(doc, ctx, "CARTA DE ACEPTACIÓN",
+              "Aceptación de condiciones de entrega y pago")
+    inst = ctx.get("institucion") or MARCA_PENDIENTE.format(campo="Institución")
+    _p(doc, "Señores")
+    _p(doc, inst, bold=True, upper=True)
+    doc.add_paragraph()
+    _p(doc,
+       f"Por medio de la presente, el oferente "
+       f"{_dato(ctx['empresa'], 'Razón social', 'razon_social', 'nombre_perfil')} "
+       f"declara que ACEPTA los tiempos de entrega, el cronograma de ejecución y "
+       f"las condiciones de pago establecidos en el pliego de condiciones del "
+       f"procedimiento núm. {ctx['referencia']}, sin reservas ni condicionamientos.")
+    _bloque_firma(doc, ctx)
+    return _docx_bytes(doc)
+
+
 GENERADORES = {
     "f034": generar_f034, "f042": generar_f042, "f035": generar_f035,
-    "f036": generar_f036, "f037": generar_f037, "d045": generar_d045,
-    "d049": generar_d049, "djur": generar_djur,
+    "f036": generar_f036, "f037": generar_f037, "d044": generar_d044,
+    "d045": generar_d045, "d048": generar_d048, "d049": generar_d049,
+    "djur": generar_djur, "etic": generar_etic, "cint": generar_cint,
+    "ccon": generar_ccon,
 }
 
 
@@ -771,6 +1024,18 @@ def construir_paquete(sb, empresa_id: str, referencia: str,
     for n, pieza in enumerate(elegidas, 1):
         if progreso_cb:
             progreso_cb(pieza["nombre"], n - 1, total)
+
+        if pieza["tipo"] == "aviso":
+            # Formulario propio de la institución: entra solo el separador
+            # marcado, para que el usuario recuerde llenarlo aparte.
+            sep = hoja_separadora(pieza["nombre"], referencia,
+                                  ctx.get("institucion"), pendiente=True,
+                                  motivo=pieza.get("motivo"))
+            entradas.append((f"Documentos/{n:02d}_Separador_{_slug(pieza['nombre'])}.pdf",
+                             sep, pieza["id"] + ":sep"))
+            indice.append(pieza | {"nombre": pieza["nombre"] + " (solo separador)"})
+            pendientes.append(pieza)
+            continue
 
         if pieza["tipo"] == "formulario":
             contenido = GENERADORES[pieza["id"]](sb, empresa_id, ctx)
