@@ -305,7 +305,15 @@ const ExpedienteRail = {
     rail.querySelectorAll('[data-ver]').forEach(v =>
       v.addEventListener('click', ev => {
         ev.stopPropagation();
-        if (typeof window.verDetalle === 'function') window.verDetalle(v.dataset.ver);
+        if (typeof window.verDetalle !== 'function') return;
+        // verDetalle oculta los tabs "clásicos" pero no conoce el del
+        // Expediente: lo ocultamos nosotros y limpiamos el hash #bid
+        // para que al volver no re-entre en bucle.
+        ExpedienteTabla?.cerrarPanel?.();
+        const tabBid = document.getElementById('tab-bid');
+        if (tabBid) tabBid.style.display = 'none';
+        try { history.replaceState(null, '', '#detalle'); } catch {}
+        window.verDetalle(v.dataset.ver);
       }));
     rail.querySelector('#exp-pr-quitar')?.addEventListener('click', () => elegir(null));
     rail.querySelector('#exp-pr-mas')?.addEventListener('click', () => {
