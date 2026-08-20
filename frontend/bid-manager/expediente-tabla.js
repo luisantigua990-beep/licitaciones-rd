@@ -479,14 +479,7 @@ const ExpedienteTabla = {
     }
     if (!archivos.length) {
       box.innerHTML = legacyHtml;
-      box.querySelector('[data-legacy]')?.addEventListener('click', async ev => {
-        const btn = ev.currentTarget; btn.disabled = true;
-        try {
-          const r = await BidManager._get(`/signed-url?path=${encodeURIComponent(btn.dataset.legacy)}`);
-          if (r?.url) window.open(r.url, '_blank');
-        } catch {}
-        btn.disabled = false;
-      });
+      this._bindLegacy(box);
       return;
     }
     const EXT = m => m.includes('pdf') ? 'PDF' : m.includes('image') ? 'IMG'
@@ -504,14 +497,7 @@ const ExpedienteTabla = {
         <button class="exp-p-dl exp-p-del" data-del="${this._esc(a.id)}"
                 data-nombre="${this._esc(a.nombre)}" title="Eliminar">🗑</button>
       </div>`).join('');
-    box.querySelector('[data-legacy]')?.addEventListener('click', async ev => {
-      const btn = ev.currentTarget; btn.disabled = true;
-      try {
-        const r = await BidManager._get(`/signed-url?path=${encodeURIComponent(btn.dataset.legacy)}`);
-        if (r?.url) window.open(r.url, '_blank');
-      } catch {}
-      btn.disabled = false;
-    });
+    this._bindLegacy(box);
     box.querySelectorAll('[data-ok]').forEach(b =>
       b.addEventListener('click', async () => {
         b.disabled = true;
@@ -605,6 +591,23 @@ const ExpedienteTabla = {
         </div>`).join('')
         : '<div class="exp-p-cargando">Sin actividad registrada aún.</div>';
     } catch { box.innerHTML = ''; }
+  },
+
+  _bindLegacy(box) {
+    box.querySelector('[data-legacy]')?.addEventListener('click', async ev => {
+      const btn = ev.currentTarget; btn.disabled = true;
+      try {
+        const nombre = String(btn.dataset.legacy).split('/').pop();
+        const r = await BidManager._get(
+          `/expediente/legacy-descargar?path=${encodeURIComponent(btn.dataset.legacy)}&nombre=${encodeURIComponent(nombre)}`);
+        if (r?.url) {
+          const a = document.createElement('a');
+          a.href = r.url; a.download = r.nombre || '';
+          document.body.appendChild(a); a.click(); a.remove();
+        }
+      } catch {}
+      btn.disabled = false;
+    });
   },
 
   invalidar(entidad) { delete this.conteos[entidad]; },
