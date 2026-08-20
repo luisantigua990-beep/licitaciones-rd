@@ -678,3 +678,32 @@ body.exp-panel-abierto .exp-main { padding-right: 0; }
   display: block;
 }
 .exp-pr-mas:hover, .exp-pr-quitar:hover { color: var(--color-text-primary); text-decoration: underline; }
+
+/* Alertas descartables */
+.exp-al-fila { display: flex; align-items: center; gap: 4px; }
+.exp-al-fila .exp-al-item { flex: 1; }
+.exp-al-x {
+  flex: none; border: none; background: none; cursor: pointer;
+  color: var(--color-text-tertiary); font-size: 12px;
+  padding: 4px 6px; border-radius: var(--radius-sm, 6px);
+}
+.exp-al-x:hover { background: var(--color-hover); color: var(--color-text-primary); }
+
+/* Medir contra otro proceso */
+.exp-pr-add { display: flex; gap: 6px; margin-top: var(--space-2, 8px); }
+.exp-pr-add input {
+  flex: 1; min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  font-size: var(--text-xs, 12px);
+  background: var(--color-bg);
+}
+.exp-pr-add button {
+  flex: none;
+  background: var(--color-brand); color: var(--color-brand-contrast);
+  border: none; border-radius: var(--radius-md, 8px);
+  padding: 8px 12px; font-weight: 700; font-size: var(--text-xs, 12px);
+  cursor: pointer;
+}
+.exp-pr-add button:disabled { opacity: .55; cursor: wait; }
