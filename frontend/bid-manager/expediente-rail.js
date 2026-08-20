@@ -198,7 +198,9 @@ const ExpedienteRail = {
     const pct = Math.max(0, Math.min(100, g.pct || 0));
     const off = C * (1 - pct / 100);
     const sub = p && p.analizado
-      ? `<div class="exp-ring-proceso"><strong>${p.cumplidos} de ${p.total}</strong> requisitos del proceso</div>`
+      ? (p.total > 0
+        ? `<div class="exp-ring-proceso"><strong>${p.cumplidos} de ${p.total}</strong> requisitos del proceso</div>`
+        : `<div class="exp-ring-proceso">Este pliego no tiene requisitos medibles extraídos</div>`)
       : (p && !p.analizado
         ? `<div class="exp-ring-proceso">Pliego sin analizar aún</div>`
         : `<div class="exp-ring-proceso">Elige un proceso para medirte contra su pliego</div>`);
@@ -231,6 +233,7 @@ const ExpedienteRail = {
       return `<button class="exp-pr-item ${on ? 'exp-pr-on' : ''}" data-ref="${pr.referencia}">
         <span class="exp-proceso-ref">${pr.referencia}</span>
         <span class="exp-pr-nombre">${nom}</span>
+        ${on ? `<span class="exp-pr-ver" data-ver="${pr.referencia}">Ver análisis del pliego →</span>` : ''}
       </button>`;
     }).join('');
     const resto = this.procesos.length - 5;
@@ -299,6 +302,11 @@ const ExpedienteRail = {
     };
     rail.querySelectorAll('.exp-pr-item').forEach(b =>
       b.addEventListener('click', () => elegir(b.dataset.ref)));
+    rail.querySelectorAll('[data-ver]').forEach(v =>
+      v.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (typeof window.verDetalle === 'function') window.verDetalle(v.dataset.ver);
+      }));
     rail.querySelector('#exp-pr-quitar')?.addEventListener('click', () => elegir(null));
     rail.querySelector('#exp-pr-mas')?.addEventListener('click', () => {
       this._verMas = !this._verMas; this._render();
