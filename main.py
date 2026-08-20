@@ -417,6 +417,10 @@ app.include_router(bid_archivos_router)
 from router_bid_resumen import bid_resumen_router
 app.include_router(bid_resumen_router)
 
+# ── Expediente Digital v2 — Fase 4: Generar Sobre A (asíncrono) ──
+from router_sobre_a import sobre_a_router
+app.include_router(sobre_a_router)
+
 
 
 # ── Semáforo de Pago por institución (InfoPago DGCP) ─────────────
