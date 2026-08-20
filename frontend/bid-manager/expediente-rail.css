@@ -707,3 +707,14 @@ body.exp-panel-abierto .exp-main { padding-right: 0; }
   cursor: pointer;
 }
 .exp-pr-add button:disabled { opacity: .55; cursor: wait; }
+
+/* Enlace "Ver análisis del pliego" dentro del proceso activo */
+.exp-pr-ver {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: var(--text-xs, 12px);
+  font-weight: 700;
+  color: var(--color-brand);
+  cursor: pointer;
+}
+.exp-pr-ver:hover { text-decoration: underline; }
