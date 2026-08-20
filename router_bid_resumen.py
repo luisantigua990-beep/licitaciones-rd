@@ -194,6 +194,13 @@ def actualizar_prefs(request: dict | None = None,
                             + ", ".join(sorted(PREFS_PERMITIDAS)))
     ahora = datetime.now(timezone.utc).isoformat()
     for clave, valor in cambios.items():
+        if valor is None:
+            # valor es NOT NULL en bid_user_prefs: null significa "limpiar la
+            # pref" (ej. cerrar el proceso activo) → borramos la fila en vez
+            # de upsert, que antes explotaba con 500 (violacion de constraint)
+            _sb.table("bid_user_prefs").delete() \
+                .eq("user_id", uid).eq("clave", clave).execute()
+            continue
         _sb.table("bid_user_prefs").upsert({
             "user_id": uid, "clave": clave, "valor": valor,
             "actualizado_en": ahora,
