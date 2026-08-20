@@ -228,8 +228,14 @@ def descargar_archivo(
     eid = _empresa_id(uid)
     a = _archivo_de_empresa(archivo_id, eid)
     try:
-        res = _sb.storage.from_(STORAGE_BUCKET).create_signed_url(
-            a["storage_path"], SIGNED_URL_SEG)
+        # {"download": nombre} fuerza descarga con el nombre original del
+        # archivo, en vez de navegar a la URL cruda de Supabase.
+        try:
+            res = _sb.storage.from_(STORAGE_BUCKET).create_signed_url(
+                a["storage_path"], SIGNED_URL_SEG, {"download": a["nombre"]})
+        except TypeError:  # versiones viejas del SDK sin options
+            res = _sb.storage.from_(STORAGE_BUCKET).create_signed_url(
+                a["storage_path"], SIGNED_URL_SEG)
         signed = (res or {}).get("signedURL") or (res or {}).get("signed_url")
         if not signed:
             raise HTTPException(500, "No se pudo generar la URL firmada")
