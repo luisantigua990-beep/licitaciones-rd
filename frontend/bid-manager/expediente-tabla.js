@@ -468,6 +468,8 @@ const ExpedienteTabla = {
           </div>
           <button class="exp-p-dl" data-legacy="${this._esc(this._regActual.archivo_url)}"
                   title="Descargar">⬇</button>
+          <button class="exp-p-dl exp-p-del" data-legacy-del="${this._esc(this._regActual.id)}"
+                  data-nombre="${this._esc(nombreLegacy)}" title="Quitar del documento">🗑</button>
         </div>`;
     }
     const total = archivos.length + (legacy ? 1 : 0);
@@ -594,6 +596,23 @@ const ExpedienteTabla = {
   },
 
   _bindLegacy(box) {
+    box.querySelector('[data-legacy-del]')?.addEventListener('click', async ev => {
+      const btn = ev.currentTarget;
+      if (!confirm(`¿Quitar "${btn.dataset.nombre}" de este documento?`)) return;
+      btn.disabled = true;
+      try {
+        const r = await BidManager._fetchAuth(
+          `/api/bid/certificaciones/${btn.dataset.legacyDel}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ archivo_url: null }),
+          });
+        if (!r.ok) { alert('No se pudo quitar el archivo'); btn.disabled = false; return; }
+      } catch { alert('Error de conexión'); btn.disabled = false; return; }
+      if (this._regActual) this._regActual.archivo_url = null;
+      await BidManager.refresh();                          // recarga datos + tabla + rail
+      this._cargarArchivos('certificaciones', this.selId); // repinta el panel
+    });
     box.querySelector('[data-legacy]')?.addEventListener('click', async ev => {
       const btn = ev.currentTarget; btn.disabled = true;
       try {
