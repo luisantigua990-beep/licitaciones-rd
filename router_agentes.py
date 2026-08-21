@@ -948,7 +948,10 @@ def obtener_contexto(tipo: str) -> dict:
             hace_7_dias = (datetime.utcnow() - _td(days=7)).isoformat()
 
             # Buscar temas no usados en los últimos 7 días (primero los nunca usados)
-            res = supabase.table("temas_educativos") \
+            # NOTA: usa supabase_admin (service_role) porque la tabla temas_educativos
+            # solo tiene policy RLS para service_role — con el cliente anon, el SELECT/UPDATE
+            # fallaba silenciosamente y caía siempre al fallback de 5 temas fijos.
+            res = supabase_admin.table("temas_educativos") \
                 .select("id, tema, categoria") \
                 .eq("activo", True) \
                 .or_(f"usado_en.is.null,usado_en.lt.{hace_7_dias}") \
@@ -959,7 +962,7 @@ def obtener_contexto(tipo: str) -> dict:
             if res.data:
                 tema_row = random.choice(res.data)
                 # Marcar como usado ahora mismo
-                supabase.table("temas_educativos") \
+                supabase_admin.table("temas_educativos") \
                     .update({"usado_en": datetime.utcnow().isoformat()}) \
                     .eq("id", tema_row["id"]) \
                     .execute()
