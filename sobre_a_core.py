@@ -96,7 +96,7 @@ def datos_contexto(sb, empresa_id: str, referencia: str) -> dict:
            .eq("id", empresa_id).limit(1).execute().data or [None])[0] or {}
 
     proc = (sb.table("bid_matching_pliegos")
-            .select("referencia,nombre_proceso,institucion,presupuesto_base")
+            .select("referencia,nombre_proceso,institucion,presupuesto_base,requisitos")
             .eq("empresa_id", empresa_id).eq("referencia", referencia)
             .order("creado_en", desc=True).limit(1).execute().data or [None])[0] or {}
 
@@ -198,13 +198,30 @@ def listar_piezas(sb, empresa_id: str, referencia: str) -> list[dict]:
     piezas: list[dict] = []
 
     # --- Formularios ---
+    try:
+        from sobre_a_plantillas import CLAVES_MANUALES
+    except Exception:
+        CLAVES_MANUALES = set()
     for clave, (codigo, titulo) in FORMULARIOS.items():
+        if clave in CLAVES_MANUALES:
+            # Se personalizan al objeto de la obra: se entrega la plantilla
+            # oficial con la cabecera lista, sin autollenar y desmarcada.
+            piezas.append({
+                "id": clave, "tipo": "formulario",
+                "nombre": f"{codigo} — {titulo}",
+                "estado": "warn",
+                "motivo": "Plantilla oficial con cabecera lista — se llena a "
+                          "mano porque se personaliza al objeto de la obra",
+                "preseleccionada": False,
+                "seccion": "Formularios",
+            })
+            continue
         faltan = _campos_faltantes(sb, empresa_id, clave, ctx)
         piezas.append({
             "id": clave,
             "tipo": "formulario",
-            "nombre": f"{codigo} — {titulo}",
             "estado": "warn" if faltan else "ok",
+            "nombre": f"{codigo} — {titulo}",
             "motivo": (f"Se generará con huecos: {', '.join(faltan[:4])}"
                        + ("…" if len(faltan) > 4 else "")) if faltan else None,
             "seccion": "Formularios",
