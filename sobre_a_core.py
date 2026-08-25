@@ -851,6 +851,22 @@ GENERADORES = {
 }
 
 
+def _generar_con_plantilla(clave: str, sb, empresa_id: str, ctx: dict):
+    """
+    Fase 4c: si existe la plantilla OFICIAL en plantillas_sncc/, se llena esa
+    (formato idéntico al del portal: escudo, recuadros, tablas). Si no existe
+    o falla, cae al generador programático — nunca rompe el job.
+    Devuelve bytes o lista [(sufijo, bytes)] para formularios por persona.
+    """
+    try:
+        from sobre_a_plantillas import PLANTILLA_GENERADORES, hay_plantilla
+        if clave in PLANTILLA_GENERADORES and hay_plantilla(clave):
+            return PLANTILLA_GENERADORES[clave](sb, empresa_id, ctx)
+    except Exception:
+        pass
+    return GENERADORES[clave](sb, empresa_id, ctx)
+
+
 # ══════════════════════════════════════════════════════════════
 # Separadores, carátula e índice (reportlab)
 # ══════════════════════════════════════════════════════════════
@@ -1038,14 +1054,19 @@ def construir_paquete(sb, empresa_id: str, referencia: str,
             continue
 
         if pieza["tipo"] == "formulario":
-            contenido = GENERADORES[pieza["id"]](sb, empresa_id, ctx)
-            ext = "docx"
-            if usar_pdf:
-                pdf = docx_a_pdf(contenido)
-                if pdf:
-                    contenido, ext = pdf, "pdf"
-            nombre_archivo = f"{n:02d}_{_slug(pieza['nombre'])}.{ext}"
-            entradas.append((nombre_archivo, contenido, pieza["id"]))
+            contenido = _generar_con_plantilla(pieza["id"], sb, empresa_id, ctx)
+            # un formulario puede producir varios archivos (uno por técnico)
+            variantes = contenido if isinstance(contenido, list) else [("", contenido)]
+            for sufijo, cont in variantes:
+                ext = "docx"
+                if usar_pdf:
+                    pdf = docx_a_pdf(cont)
+                    if pdf:
+                        cont, ext = pdf, "pdf"
+                extra = f"_{sufijo}" if sufijo else ""
+                nombre_archivo = f"{n:02d}_{_slug(pieza['nombre'])}{extra}.{ext}"
+                entradas.append((nombre_archivo, cont,
+                                 pieza["id"] + (f":{sufijo}" if sufijo else "")))
             indice.append(pieza)
             if pieza["estado"] == "warn":
                 pendientes.append(pieza)
