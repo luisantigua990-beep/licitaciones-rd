@@ -50,6 +50,43 @@ _INST_ORIGEN = ("INSTITUTO NACIONAL DE AGUAS POTABLES Y ALCANTARILLADOS",
 
 W = qn("w:t")
 
+_MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
+          "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+_NUM_LETRAS = {
+    1: "uno", 2: "dos", 3: "tres", 4: "cuatro", 5: "cinco", 6: "seis",
+    7: "siete", 8: "ocho", 9: "nueve", 10: "diez", 11: "once", 12: "doce",
+    13: "trece", 14: "catorce", 15: "quince", 16: "dieciséis",
+    17: "diecisiete", 18: "dieciocho", 19: "diecinueve", 20: "veinte",
+    21: "veintiuno", 22: "veintidós", 23: "veintitrés", 24: "veinticuatro",
+    25: "veinticinco", 26: "veintiséis", 27: "veintisiete", 28: "veintiocho",
+    29: "veintinueve", 30: "treinta", 31: "treinta y uno", 40: "cuarenta",
+    50: "cincuenta", 60: "sesenta", 70: "setenta", 80: "ochenta",
+    90: "noventa",
+}
+
+
+def _num_letras(n: int) -> str:
+    if n in _NUM_LETRAS:
+        return _NUM_LETRAS[n]
+    if 31 < n < 100:
+        d, u = divmod(n, 10)
+        return f"{_NUM_LETRAS[d * 10]} y {_NUM_LETRAS[u]}"
+    return str(n)
+
+
+def _fecha_larga(d: date | None = None) -> str:
+    """'16 de marzo de 2026' — formato de los ejemplos reales llenos."""
+    d = d or date.today()
+    return f"{d.day} de {_MESES[d.month - 1]} de {d.year}"
+
+
+def _fecha_letras(d: date | None = None) -> tuple[str, str, str, str, str]:
+    """('dieciséis','16','marzo','dos mil veintiséis','2026') — para el
+    cierre notarial del Compromiso Ético: 'a los __ (__) de __ del año __ (__)'."""
+    d = d or date.today()
+    anio = f"dos mil {_num_letras(d.year - 2000)}" if d.year >= 2001 else str(d.year)
+    return (_num_letras(d.day), str(d.day), _MESES[d.month - 1], anio, str(d.year))
+
 
 def hay_plantilla(clave: str) -> bool:
     return os.path.exists(os.path.join(DIR_PLANTILLAS, f"{clave}.docx"))
@@ -131,7 +168,7 @@ def _llenar_placeholders(doc: Document, referencia: str) -> None:
     ("Click here to enter text." / "Seleccione la fecha"), que es infalible
     aunque el valor viva dentro de text boxes anidados en los SDT.
     """
-    hoy = date.today().strftime("%d/%m/%Y")
+    hoy = _fecha_larga()
     for t in doc.element.body.iter(W):
         txt = (t.text or "").lower()
         if "click here to enter" in txt or "haga clic aqu" in txt:
@@ -279,55 +316,140 @@ def _llenar_subrayados(doc: Document, pares: list[tuple[str, str]]) -> None:
     for p in doc.element.body.iter(qn("w:p")):
         if p.find(f".//{TXBX}") is not None:
             continue
-        ts = [t for t in p.iter(W)]
+        _rellenar_rayas_p(p, lambda i, prev: _valor_para(prev))
+
+
+_RAYA = re.compile(r"_{3,}")
+
+
+def _rellenar_rayas_p(p, valor_fn) -> bool:
+    """
+    Sustituye las rayas de un párrafo hoja por valores EN NEGRITA preservando
+    el formato run a run del texto que no es raya (negritas ya pintadas por
+    _llenar_rojos incluidas). valor_fn(indice_raya, texto_previo) → str | None
+    (None = la raya se queda). Devuelve True si cambió algo. REGLA DE ORO:
+    jamás run.text=…; los runs sin texto (drawings anclados) se conservan.
+    """
+    runs = [r for r in p.findall(qn("w:r"))]
+    spans = []                      # (run, inicio, fin) sobre el texto global
+    texto, pos = "", 0
+    for r in runs:
+        ts = r.findall(W)
         if not ts:
             continue
-        texto = "".join(t.text or "" for t in ts)
-        if not RAYA.search(texto):
+        tr = "".join(t.text or "" for t in ts)
+        spans.append((r, pos, pos + len(tr)))
+        texto += tr
+        pos += len(tr)
+    if not _RAYA.search(texto):
+        return False
+    rayas = []                      # (inicio, fin, valor | None)
+    for i, m in enumerate(_RAYA.finditer(texto)):
+        valor = valor_fn(i, texto[:m.start()])
+        if valor:
+            antes = texto[:m.start()][-1:]
+            despues = texto[m.end():m.end() + 1]
+            if antes and not antes.isspace() and antes not in "(¡¿":
+                valor = " " + valor
+            if despues and not despues.isspace() and despues not in ".,;:)":
+                valor = valor + " "
+        rayas.append((m.start(), m.end(), valor or None))
+    if not any(v for _, _, v in rayas):
+        return False
+
+    def _rpr_de(run, para_valor: bool):
+        rpr = run.find(qn("w:rPr"))
+        rpr = copy.deepcopy(rpr) if rpr is not None else None
+        if not para_valor:
+            return rpr
+        if rpr is None:
+            rpr = OxmlElement("w:rPr")
+        col = rpr.find(qn("w:color"))
+        if col is not None and (col.get(qn("w:val")) or "").upper() == ROJO:
+            rpr.remove(col)                    # dato en negro, no rojo
+        it = rpr.find(qn("w:i"))
+        if it is not None:
+            rpr.remove(it)                     # dato recto, no cursiva
+        if rpr.find(qn("w:b")) is None:
+            rpr.append(OxmlElement("w:b"))     # todo dato llenado va en negrita
+        return rpr
+
+    def _nuevo_run(rpr, contenido):
+        nr = OxmlElement("w:r")
+        if rpr is not None:
+            nr.append(rpr)
+        t = OxmlElement("w:t")
+        t.set(qn("xml:space"), "preserve")
+        t.text = contenido
+        nr.append(t)
+        return nr
+
+    nuevos = []
+    for r, s0, s1 in spans:
+        cursor = s0
+        for r0, r1, valor in rayas:
+            if r1 <= s0 or r0 >= s1:
+                continue                       # la raya no toca este run
+            if cursor < r0:                    # texto normal antes de la raya
+                nuevos.append(_nuevo_run(_rpr_de(r, False), texto[cursor:r0]))
+            if valor is None:                  # raya sin dato: se queda tal cual
+                nuevos.append(_nuevo_run(_rpr_de(r, False),
+                                         texto[max(cursor, r0):min(s1, r1)]))
+            elif r0 >= s0:                     # el valor se emite donde INICIA
+                nuevos.append(_nuevo_run(_rpr_de(r, True), valor))
+            cursor = min(s1, r1)
+        if cursor < s1:                        # cola del run tras la última raya
+            nuevos.append(_nuevo_run(_rpr_de(r, False), texto[cursor:s1]))
+    # conservar runs sin texto (drawings anclados); reemplazar los de texto
+    for r, _, _ in spans:
+        p.remove(r)
+    for nr in nuevos:
+        p.append(nr)
+    return True
+
+
+def _parrafos_hoja(doc: Document):
+    TXBX = qn("w:txbxContent")
+    for p in doc.element.body.iter(qn("w:p")):
+        if p.find(f".//{TXBX}") is None:
+            yield p
+
+
+def _llenar_rayas_ancla(doc: Document, ancla: str,
+                        valores: list[str | None]) -> None:
+    """
+    Llena POR POSICIÓN las rayas del primer párrafo hoja que contenga el
+    ancla Y tenga rayas. Para bloques donde el contexto es ambiguo, como el
+    cierre del Compromiso Ético ('a los __ (__) de __ del año __ (__)') o el
+    'Nombre __ en calidad de __' del F.034. valores[i]=None deja la raya.
+    """
+    ancla = ancla.lower()
+    for p in _parrafos_hoja(doc):
+        texto = "".join(t.text or "" for t in p.iter(W))
+        if ancla in texto.lower() and _RAYA.search(texto):
+            _rellenar_rayas_p(
+                p, lambda i, prev: valores[i] if i < len(valores) else None)
+            return
+
+
+def _llenar_raya_tras_ancla(doc: Document, ancla: str, valor: str) -> None:
+    """
+    Llena la primera raya del PRIMER párrafo con rayas que aparezca DESPUÉS
+    del párrafo ancla. Para los bloques de líneas en blanco del F.034
+    ('…adendas realizadas a los mismos:' → referencia; '…servicios u
+    Obras:' → denominación de la obra), donde la raya vive en un párrafo
+    aparte sin contexto propio.
+    """
+    ancla = ancla.lower()
+    visto = False
+    for p in _parrafos_hoja(doc):
+        texto = "".join(t.text or "" for t in p.iter(W))
+        if not visto:
+            visto = ancla in texto.lower()
             continue
-        # ¿al menos una raya tiene valor? si no, no tocar el párrafo
-        piezas, pos, cambio = [], 0, False
-        for m in RAYA.finditer(texto):
-            previo = texto[pos:m.start()]
-            piezas.append(("txt", previo))
-            valor = _valor_para(texto[:m.start()])
-            if valor:
-                piezas.append(("val", valor))
-                cambio = True
-            else:
-                piezas.append(("txt", m.group(0)))   # raya sin dato: se queda
-            pos = m.end()
-        piezas.append(("txt", texto[pos:]))
-        if not cambio:
-            continue
-        # reconstrucción: run modelo = primer run con texto
-        runs = [r for r in p.findall(qn("w:r"))]
-        modelo = next((r for r in runs if r.findall(W)), runs[0] if runs else None)
-        if modelo is None:
-            continue
-        rpr_modelo = modelo.find(qn("w:rPr"))
-        # conservar runs sin texto (drawings anclados); eliminar los de texto
-        for r in runs:
-            if r.findall(W):
-                p.remove(r)
-        for tipo, contenido in piezas:
-            if not contenido:
-                continue
-            nr = OxmlElement("w:r")
-            if rpr_modelo is not None:
-                nr.append(copy.deepcopy(rpr_modelo))
-            if tipo == "val":
-                rpr = nr.find(qn("w:rPr"))
-                if rpr is None:
-                    rpr = OxmlElement("w:rPr")
-                    nr.insert(0, rpr)
-                if rpr.find(qn("w:b")) is None:
-                    rpr.append(OxmlElement("w:b"))
-            t = OxmlElement("w:t")
-            t.set(qn("xml:space"), "preserve")
-            t.text = contenido
-            nr.append(t)
-            p.append(nr)
+        if _RAYA.search(texto):
+            _rellenar_rayas_p(p, lambda i, prev: valor if i == 0 else None)
+            return
 
 
 def _quitar_frase(doc: Document, frase: str) -> None:
@@ -435,7 +557,7 @@ def _mapa_comun(ctx: dict) -> list[tuple[str, str]]:
     objeto = _v(proc, "nombre_proceso") or MARCA.format(campo="Objeto del proceso")
     return [
         # instrucciones con dato — primera coincidencia gana
-        ("nombre jurídico de cada miembro", "N/A"),
+        ("nombre jurídico de cada miembro", "No Aplica"),
         ("nombre jurídico del oferente", razon),
         ("poner aquí nombre del oferente", razon),
         ("nombre del oferente", razon),
@@ -462,12 +584,24 @@ def _mapa_comun(ctx: dict) -> list[tuple[str, str]]:
 
 def plantilla_f034(sb, eid: str, ctx: dict) -> bytes:
     doc = _base("f034", ctx, _mapa_comun(ctx))
-    fir, emp = ctx["firmante"], ctx["empresa"]
+    fir, emp, proc = ctx["firmante"], ctx["empresa"], ctx["proceso"]
+    nombre = _dato(fir, "Nombre del representante", "nombre_completo")
+    cargo = _v(fir, "cargo") or "Representante Legal"
+    objeto = _v(proc, "nombre_proceso") or MARCA.format(campo="Objeto del proceso")
+    # a) '…enmiendas/ adendas realizadas a los mismos:' → línea con la referencia
+    #    (como en los ejemplos reales: el oferente pone el número del proceso)
+    _llenar_raya_tras_ancla(doc, "realizadas a los mismos", ctx["referencia"])
+    # b) '…ejecutar los siguientes servicios u Obras:' → denominación de la obra
+    _llenar_raya_tras_ancla(doc, "servicios u obras", objeto)
+    # 'Nombre __ en calidad de __ debidamente autorizado…' (variantes con rayas)
+    _llenar_rayas_ancla(doc, "en calidad de", [nombre, cargo])
+    _llenar_rayas_ancla(doc, "debidamente autorizado", [cargo])
+    # variante de plantilla que sí trae la línea 'Nombre y apellido ____'
     _llenar_nombre_calidad(
-        doc,
-        _dato(fir, "Nombre del representante", "nombre_completo"),
-        _v(fir, "cargo") or "Representante Legal",
+        doc, nombre, cargo,
         _dato(emp, "Razón social", "razon_social", "nombre_perfil"))
+    # 'Fecha: ____' al pie (si la variante la trae)
+    _llenar_subrayados(doc, [("fecha", _fecha_larga())])
     _insertar_firma(doc, ctx.get("firma_png"))
     return _bytes(doc)
 
@@ -480,8 +614,7 @@ def plantilla_f042(sb, eid: str, ctx: dict) -> bytes:
         ("domicilio legal", _dato(emp, "Dirección", "domicilio", "direccion_completa", "direccion")),
     ]
     doc = _base("f042", ctx, mapa)
-    from datetime import date as _d
-    _llenar_subrayados(doc, [("fecha", _d.today().strftime("%d/%m/%Y"))])
+    _llenar_subrayados(doc, [("fecha", _fecha_larga())])
     # celdas del F.042 que van tras los dos puntos y no tienen texto rojo
     _rellenar_tras_etiqueta(doc, "RNC/ Cédula/ Pasaporte", _dato(emp, "RNC", "rnc"))
     _rellenar_tras_etiqueta(doc, "Domicilio legal",
@@ -726,6 +859,17 @@ def plantilla_etic(sb, eid: str, ctx: dict) -> bytes:
         ("relativo a", objeto),
         ("institución contratante", inst),
         ("firma", ""),          # la raya de la firma se queda en blanco
+    ])
+    # Cierre notarial: 'realizada en la ciudad __, provincia __, a los __
+    # (__) de __ del año __ (__).' — 7 rayas por posición. Ciudad/provincia
+    # salen del perfil si existen; si no, la raya queda para llenar a mano.
+    dia_l, dia_n, mes, anio_l, anio_n = _fecha_letras()
+    ciudad = _v(emp, "ciudad", "municipio")
+    provincia = _v(emp, "provincia")
+    _llenar_rayas_ancla(doc, "realizada en la ciudad", [
+        ciudad.upper() if ciudad else None,
+        provincia.upper() if provincia else None,
+        dia_l, dia_n, mes, anio_l, anio_n,
     ])
     _insertar_firma(doc, ctx.get("firma_png"))
     return _bytes(doc)
