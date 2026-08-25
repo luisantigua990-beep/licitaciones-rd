@@ -360,3 +360,41 @@ def test_pieza_formulario_proceso_prefiere_llenado():
                 "llenado_storage_path": "p/cei_lleno.pdf"}]})
     p = adj.piezas_formularios_proceso(SB(), "e", "R")[0]
     assert p["estado"] == "ok" and p["_legacy_path"] == "p/cei_lleno.pdf"
+
+
+# ══ Fase 4d: mapeo milimétrico contra ejemplos reales llenos ══
+
+def test_fecha_larga_y_letras():
+    from datetime import date
+    from sobre_a_plantillas import _fecha_larga, _fecha_letras, _num_letras
+    d = date(2026, 3, 17)
+    assert _fecha_larga(d) == "17 de marzo de 2026"
+    assert _fecha_letras(d) == ("diecisiete", "17", "marzo",
+                                "dos mil veintiséis", "2026")
+    assert _num_letras(31) == "treinta y uno"
+    assert _num_letras(45) == "cuarenta y cinco"
+
+
+def test_rellenar_rayas_preserva_formato_y_espacios():
+    from docx import Document
+    from sobre_a_plantillas import _rellenar_rayas_p, _llenar_rayas_ancla
+    doc = Document()
+    p = doc.add_paragraph()
+    p.add_run("____________en calidad de ")
+    r2 = p.add_run("YA NEGRITA")
+    r2.font.bold = True
+    p.add_run(" (______).")
+    _rellenar_rayas_p(p._p, lambda i, prev: ["FULANO", "2026"][i])
+    texto = p.text
+    assert "FULANO en calidad de" in texto          # espacio inteligente
+    assert "(2026)" in texto                        # sin espacio tras '('
+    negritas = [r.text for r in p.runs if r.font.bold]
+    assert any("FULANO" in t for t in negritas)     # valor en negrita
+    assert any("YA NEGRITA" in t for t in negritas)  # formato previo intacto
+
+    doc2 = Document()
+    doc2.add_paragraph("realizada en la ciudad ______, a los ______ (____).")
+    _llenar_rayas_ancla(doc2, "realizada en la ciudad",
+                        [None, "diecisiete", "17"])
+    t = doc2.paragraphs[0].text
+    assert "______," in t and "diecisiete" in t and "(17)" in t
