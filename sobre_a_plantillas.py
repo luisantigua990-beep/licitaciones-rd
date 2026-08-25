@@ -115,6 +115,7 @@ def _set_texto_run(run, texto: str) -> None:
     ts = run._element.findall(qn("w:t"))
     if ts:
         ts[0].text = texto
+        ts[0].set(qn("xml:space"), "preserve")  # Word recorta espacios finales
         for t in ts[1:]:
             t.text = ""
     elif texto:
@@ -210,7 +211,7 @@ def _pintar_valor(run, valor: str) -> None:
     _set_texto_run(run, valor)
     run.font.color.rgb = None            # hereda (negro/auto)
     run.font.italic = False
-    run.font.bold = False
+    run.font.bold = True                 # todo dato llenado va en negrita
     if "[[PENDIENTE" in valor:
         shd = OxmlElement("w:shd")
         shd.set(qn("w:val"), "clear")
@@ -251,6 +252,82 @@ def _llenar_rojos(doc: Document, mapa: list[tuple[str, str]]) -> None:
         for row in t.rows:
             for cell in row.cells:
                 _proc(cell.paragraphs)
+
+
+def _llenar_subrayados(doc: Document, pares: list[tuple[str, str]]) -> None:
+    """
+    Llena espacios en raya "______" mirando el texto INMEDIATAMENTE anterior
+    a cada raya (últimos 45 caracteres) y buscando la primera palabra clave
+    del mapa que aparezca ahí. Plantillas como el Compromiso Ético no usan
+    textos rojos sino rayas, y el "Fecha: ____" del F.042 también.
+    El párrafo se reconstruye run por run: texto normal + VALORES EN NEGRITA,
+    heredando el formato del primer run. Solo párrafos hoja (sin text boxes).
+    """
+    RAYA = re.compile(r"_{3,}")
+    TXBX = qn("w:txbxContent")
+
+    def _valor_para(contexto_previo: str) -> str | None:
+        prev = contexto_previo[-45:].lower()
+        # gana la palabra clave MÁS CERCANA a la raya (no el orden de la lista)
+        mejor, mejor_pos = None, -1
+        for clave, valor in pares:
+            pos = prev.rfind(clave)
+            if pos > mejor_pos:
+                mejor, mejor_pos = valor, pos
+        return mejor if mejor_pos >= 0 else None
+
+    for p in doc.element.body.iter(qn("w:p")):
+        if p.find(f".//{TXBX}") is not None:
+            continue
+        ts = [t for t in p.iter(W)]
+        if not ts:
+            continue
+        texto = "".join(t.text or "" for t in ts)
+        if not RAYA.search(texto):
+            continue
+        # ¿al menos una raya tiene valor? si no, no tocar el párrafo
+        piezas, pos, cambio = [], 0, False
+        for m in RAYA.finditer(texto):
+            previo = texto[pos:m.start()]
+            piezas.append(("txt", previo))
+            valor = _valor_para(texto[:m.start()])
+            if valor:
+                piezas.append(("val", valor))
+                cambio = True
+            else:
+                piezas.append(("txt", m.group(0)))   # raya sin dato: se queda
+            pos = m.end()
+        piezas.append(("txt", texto[pos:]))
+        if not cambio:
+            continue
+        # reconstrucción: run modelo = primer run con texto
+        runs = [r for r in p.findall(qn("w:r"))]
+        modelo = next((r for r in runs if r.findall(W)), runs[0] if runs else None)
+        if modelo is None:
+            continue
+        rpr_modelo = modelo.find(qn("w:rPr"))
+        # conservar runs sin texto (drawings anclados); eliminar los de texto
+        for r in runs:
+            if r.findall(W):
+                p.remove(r)
+        for tipo, contenido in piezas:
+            if not contenido:
+                continue
+            nr = OxmlElement("w:r")
+            if rpr_modelo is not None:
+                nr.append(copy.deepcopy(rpr_modelo))
+            if tipo == "val":
+                rpr = nr.find(qn("w:rPr"))
+                if rpr is None:
+                    rpr = OxmlElement("w:rPr")
+                    nr.insert(0, rpr)
+                if rpr.find(qn("w:b")) is None:
+                    rpr.append(OxmlElement("w:b"))
+            t = OxmlElement("w:t")
+            t.set(qn("xml:space"), "preserve")
+            t.text = contenido
+            nr.append(t)
+            p.append(nr)
 
 
 def _quitar_frase(doc: Document, frase: str) -> None:
@@ -307,7 +384,7 @@ def _clonar_fila(tabla, indice_modelo: int) -> object:
     return tabla.rows[indice_modelo + 1]
 
 
-def _set_celda(celda, valor) -> None:
+def _set_celda(celda, valor, bold: bool = True) -> None:
     txt = "" if valor is None else str(valor)
     if celda.paragraphs and celda.paragraphs[0].runs:
         _reescribir(celda.paragraphs[0], txt)
@@ -315,6 +392,10 @@ def _set_celda(celda, valor) -> None:
             _reescribir(p, "")
     else:
         celda.text = txt
+    if bold and txt:
+        for p in celda.paragraphs:
+            for r in p.runs:
+                r.font.bold = True
 
 
 def _llenar_tabla(tabla, filas: list[list], fila_datos: int = 1) -> None:
@@ -396,15 +477,15 @@ def plantilla_f042(sb, eid: str, ctx: dict) -> bytes:
     mapa = _mapa_comun(ctx) + [
         ("rnc", _dato(emp, "RNC", "rnc")),
         ("cédula/ pasaporte", _dato(emp, "RNC", "rnc")),
-        ("domicilio legal", _dato(emp, "Dirección", "direccion_completa",
-                                  "domicilio", "direccion")),
+        ("domicilio legal", _dato(emp, "Dirección", "domicilio", "direccion_completa", "direccion")),
     ]
     doc = _base("f042", ctx, mapa)
+    from datetime import date as _d
+    _llenar_subrayados(doc, [("fecha", _d.today().strftime("%d/%m/%Y"))])
     # celdas del F.042 que van tras los dos puntos y no tienen texto rojo
     _rellenar_tras_etiqueta(doc, "RNC/ Cédula/ Pasaporte", _dato(emp, "RNC", "rnc"))
     _rellenar_tras_etiqueta(doc, "Domicilio legal",
-                            _dato(emp, "Dirección", "direccion_completa",
-                                  "domicilio", "direccion"))
+                            _dato(emp, "Dirección", "domicilio", "direccion_completa", "direccion"))
     _insertar_firma(doc, ctx.get("firma_png"))
     return _bytes(doc)
 
@@ -417,7 +498,10 @@ def _rellenar_tras_etiqueta(doc: Document, etiqueta: str, valor: str) -> None:
                 txt = cell.text
                 if etiqueta.lower() in txt.lower() and valor not in txt:
                     partes = txt.rstrip().rstrip(":")
-                    _set_celda(cell, f"{partes}: {valor}")
+                    _set_celda(cell, f"{partes}: ", bold=False)
+                    p0 = cell.paragraphs[0]
+                    r = p0.add_run(valor)
+                    r.font.bold = True
                     return
 
 
@@ -428,26 +512,75 @@ def plantilla_f035(sb, eid: str, ctx: dict) -> bytes:
 
 
 def plantilla_f036(sb, eid: str, ctx: dict) -> bytes:
+    """
+    F.036: se llena con los equipos QUE PIDE EL PLIEGO (requisitos.equipos
+    del análisis), cruzados con bid_equipos de la empresa:
+      - si la empresa lo tiene → P/A según propiedad, con su marca;
+      - si no lo tiene → entra igual con "(no registrado en la empresa)".
+    Si el pliego no lista equipos, cae a la lista de la empresa.
+    """
     doc = _base("f036", ctx, _mapa_comun(ctx))
     _quitar_frase(doc, "la Entidad")
-    equipos = (sb.table("bid_equipos").select("*")
-               .eq("empresa_id", eid).eq("activo", True)
-               .order("descripcion").execute().data or [])
-    if doc.tables and equipos:
-        antiguedad = lambda e: (date.today().year - int(e["anio"])) \
-            if str(e.get("anio") or "").isdigit() else ""
+    mios = (sb.table("bid_equipos").select("*")
+            .eq("empresa_id", eid).eq("activo", True).execute().data or [])
+    pedidos = (ctx.get("proceso") or {}).get("requisitos") or {}
+    pedidos = pedidos.get("equipos") if isinstance(pedidos, dict) else None
+
+    def _match(pedido: dict):
+        base = _tokens_simple(f"{pedido.get('tipo') or ''} {pedido.get('texto_original') or ''}")
+        mejor, pts = None, 0
+        for m in mios:
+            inter = base & _tokens_simple(f"{_v(m,'descripcion') or ''} {_v(m,'tipo') or ''}")
+            if len(inter) > pts:
+                mejor, pts = m, len(inter)
+        return mejor if pts else None
+
+    filas = []
+    if pedidos:
+        for i, req in enumerate(pedidos):
+            desc = _v(req, "texto_original", "tipo") or ""
+            m = _match(req)
+            if m:
+                filas.append([i + 1,
+                              " ".join(x for x in [_v(m, "marca"), desc] if x),
+                              _v(m, "capacidad") or _v(req, "capacidad_min") or "",
+                              m.get("cantidad") or req.get("cantidad") or 1,
+                              _antiguedad(m),
+                              "P" if (_v(m, "propiedad") or "").lower().startswith("prop") else "A",
+                              "", ""])
+            else:
+                filas.append([i + 1,
+                              f"{desc} (no registrado en la empresa)",
+                              _v(req, "capacidad_min") or "",
+                              req.get("cantidad") or "",
+                              "", "", "", ""])
+    elif mios:
         filas = [[i + 1,
                   " ".join(x for x in [_v(e, "marca"), _v(e, "descripcion")] if x),
                   _v(e, "capacidad") or "",
                   e.get("cantidad") or 1,
-                  antiguedad(e),
+                  _antiguedad(e),
                   "P" if (_v(e, "propiedad") or "").lower().startswith("prop") else "A",
-                  "",
-                  ""]
-                 for i, e in enumerate(equipos)]
+                  "", ""]
+                 for i, e in enumerate(mios)]
+    if doc.tables and filas:
         _llenar_tabla(doc.tables[0], filas, fila_datos=1)
     _insertar_firma(doc, ctx.get("firma_png"))
     return _bytes(doc)
+
+
+def _antiguedad(e: dict) -> str:
+    a = str(e.get("anio") or "")
+    return str(date.today().year - int(a)) if a.isdigit() else ""
+
+
+def _tokens_simple(texto: str) -> set:
+    import unicodedata
+    t = unicodedata.normalize("NFD", (texto or "").lower())
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    stop = {"de", "del", "la", "el", "los", "las", "y", "o", "para", "con",
+            "equipo", "equipos", "minimo", "mayor", "igual"}
+    return {w for w in re.findall(r"[a-z0-9]{3,}", t) if w not in stop}
 
 
 def plantilla_f037(sb, eid: str, ctx: dict) -> bytes:
@@ -571,20 +704,56 @@ def plantilla_d048(sb, eid: str, ctx: dict) -> list[tuple[str, bytes]]:
 
 
 def plantilla_etic(sb, eid: str, ctx: dict) -> bytes:
-    emp, fir = ctx["empresa"], ctx["firmante"]
-    mapa = _mapa_comun(ctx) + [
-        ("cédula de identidad", _dato(fir, "Cédula", "cedula")),
+    """Compromiso Ético: la plantilla DGCP usa rayas ____, no textos rojos."""
+    emp, fir, proc = ctx["empresa"], ctx["firmante"], ctx["proceso"]
+    doc = _base("etic", ctx, _mapa_comun(ctx))
+    objeto = _v(proc, "nombre_proceso") or MARCA.format(campo="Objeto")
+    inst = (ctx.get("institucion") or MARCA.format(campo="Institución")).upper()
+    razon = _dato(emp, "Razón social", "razon_social", "nombre_perfil")
+    _llenar_subrayados(doc, [
+        # el orden importa: primera clave que aparezca en el texto previo gana
+        ("suscribe", _dato(fir, "Representante", "nombre_completo")),
         ("nacionalidad", _v(fir, "nacionalidad") or "dominicana"),
-    ]
-    doc = _base("etic", ctx, mapa)
+        ("estado civil", _v(fir, "estado_civil") or "____________"),
+        ("pasaporte núm", _dato(fir, "Cédula", "cedula")),
+        ("electoral o pasaporte", _dato(fir, "Cédula", "cedula")),
+        ("cédula", _dato(fir, "Cédula", "cedula")),
+        ("(rnc) núm", _dato(emp, "RNC", "rnc")),
+        ("(rpe) núm", _dato(emp, "RPE", "rpe")),
+        ("jurídica o consorcio", razon),
+        ("consorcio", razon),
+        ("pública núm", ctx["referencia"]),
+        ("relativo a", objeto),
+        ("institución contratante", inst),
+        ("firma", ""),          # la raya de la firma se queda en blanco
+    ])
     _insertar_firma(doc, ctx.get("firma_png"))
     return _bytes(doc)
 
+
+def plantilla_manual(clave: str):
+    """
+    D.045 / D.048 / D.049 se personalizan al objeto de cada obra: NO se
+    autollenan. Se entrega la plantilla oficial con la cabecera lista
+    (sin logo institucional, institución del proceso, No. de expediente y
+    fecha) y sus instrucciones intactas para llenar a mano.
+    """
+    def _gen(sb, eid: str, ctx: dict) -> bytes:
+        doc = _abrir(clave)
+        _quitar_logo_institucion(doc)
+        _sustituir_institucion(doc, ctx.get("institucion"))
+        _llenar_placeholders(doc, ctx["referencia"])
+        return _bytes(doc)
+    return _gen
+
+
+# Claves que se entregan como plantilla para personalizar (no autollenadas)
+CLAVES_MANUALES = {"d045", "d048", "d049"}
 
 # Registro: clave → generador sobre plantilla oficial
 PLANTILLA_GENERADORES = {
     "f034": plantilla_f034, "f042": plantilla_f042, "f035": plantilla_f035,
     "f036": plantilla_f036, "f037": plantilla_f037, "d044": plantilla_d044,
-    "d045": plantilla_d045, "d048": plantilla_d048, "d049": plantilla_d049,
-    "etic": plantilla_etic,
+    "d045": plantilla_manual("d045"), "d048": plantilla_manual("d048"),
+    "d049": plantilla_manual("d049"), "etic": plantilla_etic,
 }
