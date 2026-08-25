@@ -202,7 +202,7 @@ const ExpedienteSobre = {
 
   _filaPieza(p) {
     const bloqueada = p.estado === 'err' || p.tipo === 'aviso';
-    const marcada = !bloqueada;
+    const marcada = !bloqueada && p.preseleccionada !== false;
     const llenado = p.id.startsWith('formproc:')
       ? `<button class="exp-sobre-mini" title="Subir versión llenada"
                  onclick="ExpedienteSobre.subirLlenado('${this._esc(p.registro_id)}')">⬆ llenado</button>`
