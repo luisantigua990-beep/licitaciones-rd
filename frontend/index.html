@@ -1914,6 +1914,23 @@ body.drawer-open .bottom-nav { display: none !important; }
   font-family: var(--font-body); padding: 0;
 }
 
+/* Móvil: chips en una línea con scroll, Ordenar debajo a la derecha */
+@media (max-width: 767px) {
+  .dash-topbar__filter-row {
+    flex-direction: column; align-items: stretch;
+    gap: 6px; padding: 0 16px 8px;
+  }
+  .dash-topbar__chips {
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; padding-bottom: 2px;
+  }
+  .dash-topbar__chips::-webkit-scrollbar { display: none; }
+  .dash-topbar__chips .dash-chip { flex-shrink: 0; }
+  .dash-topbar__right { justify-content: flex-end; }
+  .dash-topbar__sort-label { font-size: 11.5px; }
+  #beta-banner { padding: 8px 16px !important; }
+}
+
 /* Chips del topbar */
 .dash-chip {
   display: inline-flex; align-items: center; gap: 4px;
