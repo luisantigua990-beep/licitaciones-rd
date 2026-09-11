@@ -17,7 +17,7 @@ import time
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
-from supabase import create_client
+from supabase_client import crear_cliente
 
 load_dotenv()
 
@@ -28,7 +28,7 @@ RESEND_API_KEY       = os.getenv("RESEND_API_KEY", "")
 FROM_EMAIL           = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
 APP_URL              = os.getenv("APP_URL", "https://app.licitacionlab.com")
 
-supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase_admin = crear_cliente(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
 # ─────────────────────────────────────────────────────────────

@@ -21,7 +21,7 @@ import argparse
 import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from supabase import create_client
+from supabase_client import crear_cliente
 
 load_dotenv()
 
@@ -35,7 +35,7 @@ ENDPOINT_CONTRATOS = "/contratos"   # ✅ confirmado
 PAGE_SIZE     = 1000
 DELAY_BETWEEN_PAGES = 0.3  # seg — igual que en monitor.py
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = crear_cliente(SUPABASE_URL, SUPABASE_KEY)
 
 
 # ─────────────────────────────────────────────────────────────

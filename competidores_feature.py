@@ -16,12 +16,12 @@ from typing import Optional
 from datetime import datetime
 
 from fastapi import APIRouter, Query, HTTPException, Depends, Header
-from supabase import create_client
+from supabase_client import crear_cliente
 
 # ── Cliente Supabase ──────────────────────────────────────────
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = crear_cliente(SUPABASE_URL, SUPABASE_KEY)
 
 # ── Admin Key (misma que el resto de la app) ──────────────────
 ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")

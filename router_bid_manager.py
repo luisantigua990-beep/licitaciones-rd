@@ -28,14 +28,14 @@ import re
 import uuid
 from fastapi import APIRouter, HTTPException, Header, Query, UploadFile, File, Form
 from pydantic import BaseModel
-from supabase import create_client
+from supabase_client import crear_cliente
 
 # ── Clientes Supabase ──────────────────────────────────────
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
 
-_sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+_sb = crear_cliente(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 bid_manager_router = APIRouter(prefix="/api/bid", tags=["bid-manager"])
 

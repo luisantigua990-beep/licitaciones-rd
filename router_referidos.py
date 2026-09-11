@@ -24,14 +24,14 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
-from supabase import create_client
+from supabase_client import crear_cliente
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
 APP_URL = os.getenv("APP_URL", "https://app.licitacionlab.com")
 
-_sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+_sb = crear_cliente(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 referidos_router = APIRouter(prefix="/api/referidos", tags=["referidos"])
 

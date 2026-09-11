@@ -29,7 +29,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Request, Header
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
-from supabase import create_client
+from supabase_client import crear_cliente
 
 from pagadito import (
     PagaditoClient, PagaditoError,
@@ -43,7 +43,7 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 FROM_EMAIL = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
 
-_sb_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # escribe pagos/suscripciones (bypassa RLS)
+_sb_admin = crear_cliente(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # escribe pagos/suscripciones (bypassa RLS)
 _pg = PagaditoClient()
 
 pagos_router = APIRouter(prefix="/api/pagos", tags=["pagos"])

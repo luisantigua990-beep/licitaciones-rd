@@ -24,7 +24,7 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException
 from pydantic import BaseModel
-from supabase import create_client
+from supabase_client import crear_cliente
 from PIL import Image, ImageDraw, ImageFont
 import anthropic
 
@@ -39,8 +39,8 @@ AGENT_SECRET      = os.environ.get("AGENT_SECRET", "licitacionlab-growth-2026")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", os.environ.get("TELEGRAM_BOT_TOKEN", ""))
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "817596333")
 
-supabase          = create_client(SUPABASE_URL, SUPABASE_KEY)
-supabase_admin    = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)   # service_role → sin restricciones RLS
+supabase          = crear_cliente(SUPABASE_URL, SUPABASE_KEY)
+supabase_admin    = crear_cliente(SUPABASE_URL, SUPABASE_SERVICE_KEY)   # service_role → sin restricciones RLS
 agentes_router    = APIRouter(prefix="/api/agentes", tags=["agentes"])
 social_router     = APIRouter(prefix="/agente-social", tags=["Agente Social"])
 

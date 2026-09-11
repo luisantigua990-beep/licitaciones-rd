@@ -4,7 +4,7 @@ import math
 import httpx
 from datetime import datetime, timezone
 from fastapi import APIRouter, Header, HTTPException
-from supabase import create_client
+from supabase_client import crear_cliente
 
 # ─── Config ────────────────────────────────────────────────────────────────
 SUPABASE_URL    = os.getenv("SUPABASE_URL")
@@ -15,7 +15,7 @@ AGENT_SECRET    = os.getenv("AGENT_SECRET", "licitacionlab-growth-2026")
 FROM_EMAIL      = "notificaciones@licitacionlab.com"
 APP_URL         = os.getenv("APP_URL", "https://app.licitacionlab.com")
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = crear_cliente(SUPABASE_URL, SUPABASE_KEY)
 router   = APIRouter(prefix="/api/agentes/outreach", tags=["Agente 6 Outreach"])
 
 # ─── Helpers ────────────────────────────────────────────────────────────────

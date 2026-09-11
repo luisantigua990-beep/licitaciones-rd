@@ -29,7 +29,7 @@ from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from dotenv import load_dotenv
-from supabase import create_client
+from supabase_client import crear_cliente
 from google import genai
 
 from monitor import ejecutar_monitor
@@ -79,9 +79,9 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", SUPABASE_KEY)
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = crear_cliente(SUPABASE_URL, SUPABASE_KEY)
 # Cliente admin para tablas con RLS estricto (cron_log, analisis_pliego)
-supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase_admin = crear_cliente(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # ============================================
 # PROTECCIÓN ENDPOINTS ADMIN

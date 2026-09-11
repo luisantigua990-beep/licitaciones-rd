@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Header, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
-from supabase import create_client
+from supabase_client import crear_cliente
 from google import genai
 from google.genai import types
 
@@ -42,8 +42,8 @@ ZAPI_INSTANCE_ID   = os.environ.get("ZAPI_INSTANCE_ID", "")
 ZAPI_TOKEN         = os.environ.get("ZAPI_TOKEN", "")
 ZAPI_CLIENT_TOKEN  = os.environ.get("ZAPI_CLIENT_TOKEN", "")
 
-supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
-supabase_admin = create_client(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_KEY", SUPABASE_KEY))
+supabase       = crear_cliente(SUPABASE_URL, SUPABASE_KEY)
+supabase_admin = crear_cliente(SUPABASE_URL, os.environ.get("SUPABASE_SERVICE_KEY", SUPABASE_KEY))
 
 gemini_client = None
 if GEMINI_API_KEY:

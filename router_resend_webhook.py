@@ -39,13 +39,13 @@ import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
-from supabase import create_client
+from supabase_client import crear_cliente
 
 SUPABASE_URL         = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
 RESEND_WEBHOOK_SECRET = os.getenv("RESEND_WEBHOOK_SECRET", "")
 
-_sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+_sb = crear_cliente(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 resend_webhook_router = APIRouter(prefix="/api/outreach/webhook", tags=["outreach-webhook"])
 

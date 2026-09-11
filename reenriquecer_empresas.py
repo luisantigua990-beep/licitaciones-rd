@@ -21,7 +21,7 @@ import argparse
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
-from supabase import create_client
+from supabase_client import crear_cliente
 
 load_dotenv()
 
@@ -29,7 +29,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY"))
 API_BASE_URL = "https://datosabiertos.dgcp.gob.do/api-dgcp/v1"
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = crear_cliente(SUPABASE_URL, SUPABASE_KEY)
 
 # ── Parámetros de rate limiting ────────────────────────────
 DELAY_ENTRE_CONSULTAS = 0.4   # segundos entre llamadas a la API DGCP

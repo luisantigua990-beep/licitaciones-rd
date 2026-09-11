@@ -10,7 +10,7 @@ import time
 import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from supabase import create_client
+from supabase_client import crear_cliente
 
 load_dotenv()
 
@@ -25,9 +25,9 @@ API_BASE_URL = "https://datosabiertos.dgcp.gob.do/api-dgcp/v1"
 # Ciclo de refresco del Data Warehouse de la DGCP (cada 8 horas)
 CICLO_HORAS_DGCP = 8
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = crear_cliente(SUPABASE_URL, SUPABASE_KEY)
 # Cliente admin para tablas con RLS (user_subscriptions, filtros_usuario)
-supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+supabase_admin = crear_cliente(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 # ============================================
 # CRON LOG

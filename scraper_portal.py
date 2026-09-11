@@ -18,7 +18,7 @@ import requests
 from datetime import datetime
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from supabase import create_client
+from supabase_client import crear_cliente
 
 # Puente de interés profundo: dispara análisis + email a usuarios con interés
 # que coincide con el proceso. Import defensivo: si el módulo no está, el
@@ -41,8 +41,8 @@ PORTAL_URL = (
     "ContractNoticeManagement/Index?currentLanguage=es&Country=DO&Theme=DGCP"
 )
 
-supabase       = create_client(SUPABASE_URL, SUPABASE_KEY)
-supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # bypasa RLS
+supabase       = crear_cliente(SUPABASE_URL, SUPABASE_KEY)
+supabase_admin = crear_cliente(SUPABASE_URL, SUPABASE_SERVICE_KEY)  # bypasa RLS
 
 def registrar_cron_log(job: str, status: str = "ok", detalle: dict = None, duracion_ms: int = None):
     """Registra ejecución del job en cron_log para auditoría."""
