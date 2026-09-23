@@ -4812,25 +4812,12 @@ async function supabaseRequest(endpoint, method, body) {
 }
 
 // ── SOCIAL AUTH (Supabase OAuth) ──
-async function loginSocial(provider) {
-  try {
-    showMsg('Redirigiendo...', 'info');
-    const redirectTo = encodeURIComponent(window.location.origin + window.location.pathname);
-    const res = await fetch(
-      `${SUPABASE_URL}/auth/v1/authorize?provider=${provider}&redirect_to=${redirectTo}`,
-      { method: 'GET', headers: { 'apikey': SUPABASE_ANON_KEY }, redirect: 'manual' }
-    );
-    // Supabase devuelve un redirect — obtenemos la URL del header Location
-    const url = res.url || res.headers?.get('location');
-    if (url && url.startsWith('http')) {
-      window.location.href = url;
-    } else {
-      // Fallback directo
-      window.location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=${provider}&redirect_to=${redirectTo}`;
-    }
-  } catch(e) {
-    window.location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=${provider}&redirect_to=${encodeURIComponent(window.location.origin + window.location.pathname)}`;
-  }
+// Navegación directa a Supabase → Google. Al volver, _procesarCallbackOAuth()
+// guarda la sesión que llega en el #hash.
+function loginSocial(provider) {
+  showMsg('Redirigiendo...', 'info');
+  const redirectTo = encodeURIComponent(window.location.origin + window.location.pathname);
+  window.location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=${encodeURIComponent(provider)}&redirect_to=${redirectTo}`;
 }
 
 async function login() {
