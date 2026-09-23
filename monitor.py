@@ -710,7 +710,7 @@ GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
 RESEND_API_KEY  = os.getenv("RESEND_API_KEY", "")
 SUPABASE_URL_ENV = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_KEY", ""))
-APP_URL         = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+APP_URL         = os.getenv("APP_URL", "https://app.licitacionlab.com")
 FROM_EMAIL      = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
 TEST_EMAIL      = os.getenv("RESEND_TEST_EMAIL", "")
 
