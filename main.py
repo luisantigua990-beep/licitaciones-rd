@@ -27,7 +27,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
 from dotenv import load_dotenv
 from supabase_client import crear_cliente
 from google import genai
@@ -377,6 +377,40 @@ app.add_middleware(
 )
 # Comprimir respuestas > 1KB — reduce tráfico de red 60-80% en listas de procesos
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# ── DOMINIO ÚNICO: web-production-7b940.up.railway.app → app.licitacionlab.com ──
+# La sesión (localStorage) es distinta en cada dominio. Si un usuario abre el
+# dominio de Railway (marcador viejo, correo antiguo) no ve su sesión y le sale
+# el login. Este middleware manda a todos al dominio oficial con un 301.
+#   · Solo redirige GET/HEAD (las páginas). Los POST de webhooks o de clientes
+#     viejos no se tocan, porque un 301 sobre un POST puede perder el cuerpo.
+#   · No toca /api/*, /health ni /sw.js (el navegador rechaza un service
+#     worker redirigido y el de Railway quedaría con error de actualización).
+#   · Conserva ruta y query (?proceso=..., ?ref=...). El #hash lo conserva el
+#     navegador solo, así que el regreso de Google (#access_token=...) sigue funcionando.
+CANONICAL_HOST = os.getenv("CANONICAL_HOST", "app.licitacionlab.com")
+_HOSTS_A_REDIRIGIR = {
+    h.strip().lower()
+    for h in os.getenv("REDIRECT_HOSTS", "web-production-7b940.up.railway.app").split(",")
+    if h.strip()
+}
+_RUTAS_SIN_REDIRECCION = ("/api/", "/health", "/sw.js")
+
+@app.middleware("http")
+async def redirigir_a_dominio_oficial(request: Request, call_next):
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "")
+    host = host.split(",")[0].split(":")[0].strip().lower()
+    path = request.url.path
+    if (
+        host in _HOSTS_A_REDIRIGIR
+        and request.method in ("GET", "HEAD")
+        and not path.startswith(_RUTAS_SIN_REDIRECCION)
+    ):
+        destino = f"https://{CANONICAL_HOST}{path}"
+        if request.url.query:
+            destino += f"?{request.url.query}"
+        return RedirectResponse(destino, status_code=301)
+    return await call_next(request)
 
 # ── Agentes de growth marketing ──────────────────────────
 app.include_router(agentes_router)
@@ -913,7 +947,7 @@ def _resend_send(subject: str, html: str, to_email: str) -> bool:
 
 def _html_wrap(contenido: str, nombre: str) -> str:
     """Envuelve el contenido en el template base del email."""
-    APP_URL   = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    APP_URL   = os.getenv("APP_URL", "https://app.licitacionlab.com")
     WS_NUMBER = os.getenv("WHATSAPP_NUMBER", "18098154457")
     import urllib.parse
     ws_url = f"https://wa.me/{WS_NUMBER}?text={urllib.parse.quote('Hola, tengo una pregunta sobre LicitacionLab.')}"
@@ -944,7 +978,7 @@ def _html_wrap(contenido: str, nombre: str) -> str:
 
 def _html_proceso_row(p: dict) -> str:
     """Genera una fila HTML para un proceso en el email."""
-    APP_URL  = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    APP_URL  = os.getenv("APP_URL", "https://app.licitacionlab.com")
     titulo   = (p.get("titulo") or "Sin título")[:80]
     entidad  = p.get("unidad_compra") or "—"
     monto    = p.get("monto_estimado")
@@ -1012,7 +1046,7 @@ def _obtener_procesos_para_usuario(user_id: str) -> list:
 
 
 def _email2_html(nombre: str, procesos: list, tiene_perfil: bool) -> str:
-    APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    APP_URL = os.getenv("APP_URL", "https://app.licitacionlab.com")
     filas   = "".join(_html_proceso_row(p) for p in procesos[:3])
     perfil_nota = "" if tiene_perfil else f"""
 <div style="margin-top:16px;padding:12px 14px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;">
@@ -1047,7 +1081,7 @@ def _email2_html(nombre: str, procesos: list, tiene_perfil: bool) -> str:
 
 
 def _email3_html(nombre: str) -> str:
-    APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    APP_URL = os.getenv("APP_URL", "https://app.licitacionlab.com")
     contenido = f"""
 <p style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.6;">
   El mayor problema con las licitaciones en República Dominicana no es
@@ -1089,7 +1123,7 @@ def _email3_html(nombre: str) -> str:
 
 
 def _email4_html(nombre: str) -> str:
-    APP_URL   = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    APP_URL   = os.getenv("APP_URL", "https://app.licitacionlab.com")
     WS_NUMBER = os.getenv("WHATSAPP_NUMBER", "18098154457")
     import urllib.parse
     ws_url = f"https://wa.me/{WS_NUMBER}?text={urllib.parse.quote(f'Hola, soy {nombre} y quiero compartir mi experiencia con LicitacionLab.')}"
@@ -1435,7 +1469,7 @@ async def enviar_bienvenida(request: Request):
     """Envía correo de bienvenida al nuevo usuario tras el registro."""
     RESEND_API_KEY = os.getenv("RESEND_API_KEY")
     FROM_EMAIL     = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
-    APP_URL        = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+    APP_URL        = os.getenv("APP_URL", "https://app.licitacionlab.com")
     WS_NUMBER      = os.getenv("WHATSAPP_NUMBER", "18098154457")
     import urllib.parse
     ws_url = f"https://wa.me/{WS_NUMBER}?text={urllib.parse.quote('Hola, acabo de registrarme en LicitacionLab y tengo una pregunta.')}"
@@ -2267,7 +2301,7 @@ async def notificar_seguimiento(_: None = Depends(verificar_admin)):
             if campo == "fecha_fin_recepcion_ofertas" and dias <= 3:
                 urgencia = urgencia.replace("⚡", "🔴").replace("⏰", "🔴").replace("🚨", "🔴")
 
-            APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+            APP_URL = os.getenv("APP_URL", "https://app.licitacionlab.com")
 
             for sub in subs:
                 ok = enviar_push_y_limpiar(
@@ -3482,7 +3516,7 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
         html_body = construir_html_email(proceso_id, proceso, analisis)
 
         # 4. Enviar a cada usuario
-        APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+        APP_URL = os.getenv("APP_URL", "https://app.licitacionlab.com")
         FROM_EMAIL = os.getenv("RESEND_FROM", "LicitacionLab <notificaciones@licitacionlab.com>")
 
         for email, nombre, uid_dest in zip(emails_destino, nombres_destino, uids_destino):
@@ -4380,7 +4414,7 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
 
         # 5. NOTIFICACIÓN PUSH — avisar que el análisis está listo
         try:
-            APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+            APP_URL = os.getenv("APP_URL", "https://app.licitacionlab.com")
             seg = supabase_admin.table("seguimiento_procesos") \
                 .select("user_id").eq("proceso_codigo", proceso_id).execute()
             user_ids_push = list(set(s["user_id"] for s in (seg.data or [])))
