@@ -743,7 +743,7 @@ def notificar_proceso_inmediato(proceso, articulos):
         codigo = proceso.get("codigo_proceso", "")
 
         # ── URL → siempre a la app, con el código del proceso ──
-        APP_URL = os.getenv("APP_URL", "https://web-production-7b940.up.railway.app")
+        APP_URL = os.getenv("APP_URL", "https://app.licitacionlab.com")
         url_notif = f"{APP_URL}?proceso={codigo}"
 
         # ── Calcular días al cierre ──
