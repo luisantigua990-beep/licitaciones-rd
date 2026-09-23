@@ -4721,6 +4721,17 @@ let currentUser = null;
 // iOS borra el localStorage de las PWA instaladas (standalone) entre cierres.
 // Las cookies sobreviven mejor en ese contexto, así que guardamos la sesión en
 // ambos lados y la rehidratamos al arrancar si el localStorage quedó vacío.
+// ── JWT: decodificar payload (base64url → base64) ──
+// atob() falla con los caracteres '-' y '_' del base64url. Los tokens de
+// Google traen avatar_url/nombre en user_metadata y casi siempre los contienen.
+function _jwtPayload(token) {
+  let b = String(token || '').split('.')[1] || '';
+  b = b.replace(/-/g, '+').replace(/_/g, '/');
+  while (b.length % 4) b += '=';
+  const bin = atob(b);
+  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
 function _setCookie(nombre, valor, dias) {
   try {
     const exp = new Date(Date.now() + dias * 864e5).toUTCString();
@@ -4854,7 +4865,7 @@ async function login() {
   let user = data.user;
   if (!user || !user.id) {
     try {
-      const payload = JSON.parse(atob(data.access_token.split('.')[1]));
+      const payload = _jwtPayload(data.access_token);
       user = {
         id: payload.sub,
         email: payload.email || email,
@@ -4919,7 +4930,7 @@ async function obtenerTokenValido() {
   if (!token) return null;
   let vencido = false;
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
+    const payload = _jwtPayload(token);
     vencido = payload.exp && (payload.exp * 1000) < Date.now();
   } catch(e) {}
   if (vencido) {
@@ -8281,8 +8292,67 @@ async function _tryRefreshToken() {
   return false;
 }
 
+// ── CALLBACK OAUTH (Google) ──
+// Tras elegir la cuenta, Supabase regresa a la app con
+//   #access_token=...&refresh_token=...&expires_in=...&token_type=bearer
+// Esa sesión hay que guardarla ANTES de decidir si se muestra login o app.
+// Sin esto, el usuario vuelve a la pantalla de login aunque Google lo autenticó.
+async function _procesarCallbackOAuth() {
+  const hash = window.location.hash || '';
+  if (hash.indexOf('access_token') === -1 && hash.indexOf('error') === -1) return false;
+  const p  = new URLSearchParams(hash.replace(/^#/, ''));
+  const qs = new URLSearchParams(window.location.search);
+  // Recuperación de contraseña: la maneja detectarRecovery()
+  if (p.get('type') === 'recovery' || qs.get('recovery') === '1') return false;
+
+  const limpiarUrl = () => {
+    try { history.replaceState({}, '', window.location.pathname + window.location.search); } catch (e) {}
+  };
+
+  const err = p.get('error_description') || p.get('error');
+  if (err) {
+    limpiarUrl();
+    console.warn('OAuth error:', err);
+    setTimeout(() => { try { showMsg('No se pudo entrar con Google. Intenta de nuevo.', 'error'); } catch (e) {} }, 300);
+    return false;
+  }
+
+  const accessToken  = p.get('access_token');
+  const refreshToken = p.get('refresh_token');
+  if (!accessToken) return false;
+
+  localStorage.setItem('sb_token', accessToken);
+  if (refreshToken) localStorage.setItem('sb_refresh_token', refreshToken);
+
+  // Usuario completo (id, email, user_metadata con nombre/avatar de Google)
+  let user = null;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': `Bearer ${accessToken}` }
+    });
+    if (r.ok) user = await r.json();
+  } catch (e) { console.warn('No se pudo leer /auth/v1/user:', e); }
+  if (!user || !user.id) {
+    try {
+      const pl = _jwtPayload(accessToken);
+      user = { id: pl.sub, email: pl.email, user_metadata: pl.user_metadata || {} };
+    } catch (e) { console.error('JWT de Google ilegible:', e); }
+  }
+  limpiarUrl();
+  if (!user || !user.id) return false;
+
+  localStorage.setItem('sb_user', JSON.stringify(user));
+  currentUser = user;
+  _syncSesionCookies();
+  console.log('✅ Login con Google OK, user:', user.id);
+  try { vincularReferido(); } catch (e) {}
+  try { cargarPerfilEmpresa(); } catch (e) {}
+  return true;
+}
+
 (async function iniciarApp() {
   console.log('%c🟢 LicitacionLab BUILD v13 · orden-real+nav-historial+ux-pack (ptr, skeletons, filtros persistentes)', 'color:#16a34a;font-weight:bold');
+  await _procesarCallbackOAuth();   // ← guarda la sesión si venimos de Google
   _hydratarSesionDesdeCookies();
   const savedToken   = localStorage.getItem('sb_token');
   const savedUser    = localStorage.getItem('sb_user');
@@ -8298,7 +8368,7 @@ async function _tryRefreshToken() {
   try {
     currentUser = JSON.parse(savedUser);
     if (!currentUser?.id && savedToken) {
-      const payload = JSON.parse(atob(savedToken.split('.')[1]));
+      const payload = _jwtPayload(savedToken);
       currentUser = { ...currentUser, id: payload.sub };
     }
   } catch(e) {}
@@ -8308,7 +8378,7 @@ async function _tryRefreshToken() {
   let tokenVencido = true;
   try {
     if (savedToken) {
-      const payload = JSON.parse(atob(savedToken.split('.')[1]));
+      const payload = _jwtPayload(savedToken);
       tokenVencido = payload.exp && (payload.exp * 1000) < Date.now();
     }
   } catch(e) {}
@@ -8336,7 +8406,7 @@ document.addEventListener('visibilitychange', async () => {
   let vencido = true;
   try {
     if (savedToken) {
-      const payload = JSON.parse(atob(savedToken.split('.')[1]));
+      const payload = _jwtPayload(savedToken);
       vencido = payload.exp && (payload.exp * 1000) < Date.now();
     }
   } catch(e) {}
@@ -8521,7 +8591,7 @@ function _entrarModoRecovery() {
           // Solo entrar a modo recovery si el token es de tipo recovery
           if (res.ok && data.access_token) {
             try {
-              const payload = JSON.parse(atob(data.access_token.split('.')[1]));
+              const payload = _jwtPayload(data.access_token);
               // amr/aal no siempre indican recovery; en duda, mostramos el form igual
             } catch(e) {}
             _recoveryToken = data.access_token;
@@ -12577,7 +12647,7 @@ async function pagarPlan(planId, btn) {
     // (la app se muestra aunque el token esté vencido, pero el backend lo rechaza)
     let tokenVencido = false;
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = _jwtPayload(token);
       tokenVencido = payload.exp && (payload.exp * 1000) < Date.now();
     } catch(e) {}
     if (tokenVencido) {
