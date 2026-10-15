@@ -605,7 +605,22 @@ REGLAS_OBJETO = {
             "infraestructura vial", "infraestructura peatonal", "saneamiento",
             "pozo tubular", "pozo filtrante", "parque", "plaza", "canaleta",
             "lona asfaltica", "reparacion de techo", "reparacion de edificio",
-            "electrificacion",
+            "electrificacion", "obra menor", "obras menores",
+        ),
+        # Subclases 72 que en la práctica son mantenimiento, no obra:
+        # ascensores, aires/climatización, extintores, equipos, plantas
+        # eléctricas, fumigación y equipos de comunicación.
+        "excluir_codigos": (
+            "72101506", "72101511", "72101516", "72101517", "72101518",
+            "721021", "72103302",
+        ),
+        # Títulos que no son obra aunque traigan código 72
+        "no_es": (
+            "fumigacion", "plaga", "aire acondicionado", "aires acondicionado",
+            "climatizacion", "manejadora", "fan coil", "extintor",
+            "planta electrica", "plantas electricas", "ascensor", "elevador",
+            "licuadora", "motor electrico", "alquiler", "trampa de grasa",
+            "decoracion", "montaje", "equipo de comunicacion",
         ),
     },
     "consultoria": {
@@ -650,20 +665,29 @@ def _proceso_es_tipo(tipo, proceso, codigos):
     if not regla:
         return False
 
-    # 1) Por segmento UNSPSC de los artículos
-    for c in codigos:
-        if c[:2] in regla["segmentos"]:
-            return True
+    texto_titulo = _norm_txt(proceso.get("titulo", ""))
+
+    # 1) Por segmento UNSPSC de los artículos. Las instituciones usan códigos 72
+    #    también para mantenimiento (aires, fumigación, extintores, plantas...),
+    #    así que para "obras" se descartan esos códigos y esos títulos.
+    excluir_cod = regla.get("excluir_codigos", ())
+    titulo_no_obra = bool(regla.get("no_es") and _regex_lista(tipo + "_no", regla["no_es"]).search(texto_titulo))
+    if not titulo_no_obra:
+        for c in codigos:
+            if c[:2] in regla["segmentos"] and not any(c.startswith(x) for x in excluir_cod):
+                return True
 
     # 2) Respaldo por palabras clave en el TÍTULO (sirve cuando no hay
     #    artículos o vienen con un segmento distinto, p. ej. materiales).
-    texto = _norm_txt(proceso.get("titulo", ""))
+    texto = texto_titulo
     for frase in _FRASES_INSTITUCION:
         texto = texto.replace(frase, " ")
+    if titulo_no_obra:
+        return False
     if tipo == "obras" and _RE_INICIO_COMPRA.match(texto):
         # "Adquisición de materiales para la construcción..." es compra de bienes
         return False
-    return bool(_regex_keywords(tipo).search(texto))
+    return bool(_regex_lista(tipo, regla["keywords"]).search(texto))
 
 
 # Nombres de instituciones que contienen palabras de obra y no dicen nada
@@ -676,12 +700,12 @@ _RE_INICIO_COMPRA = re.compile(r'^\W*(adquisicion|adquisiciones|compra|suministr
 _CACHE_REGEX = {}
 
 
-def _regex_keywords(tipo):
+def _regex_lista(clave, palabras):
     """Regex con límite de palabra al inicio, para no pegar dentro de otras palabras."""
-    if tipo not in _CACHE_REGEX:
-        kws = sorted({_norm_txt(k) for k in REGLAS_OBJETO[tipo]["keywords"]}, key=len, reverse=True)
-        _CACHE_REGEX[tipo] = re.compile(r"\b(" + "|".join(re.escape(k) for k in kws) + ")")
-    return _CACHE_REGEX[tipo]
+    if clave not in _CACHE_REGEX:
+        kws = sorted({_norm_txt(k) for k in palabras}, key=len, reverse=True)
+        _CACHE_REGEX[clave] = re.compile(r"\b(" + "|".join(re.escape(k) for k in kws) + ")")
+    return _CACHE_REGEX[clave]
 
 
 def proceso_coincide_con_intereses(proceso, articulos, intereses_usuario):
@@ -841,6 +865,21 @@ def notificar_proceso_inmediato(proceso, articulos):
 
         if not suscripciones:
             return 0
+
+        # Intereses del perfil por usuario: se usan cuando una suscripción
+        # (p. ej. un navegador viejo) quedó guardada sin intereses.
+        rubros_perfil = {}
+        try:
+            perfiles = (
+                supabase_admin.table("perfiles_empresa")
+                .select("user_id, rubros")
+                .execute()
+                .data
+            ) or []
+            rubros_perfil = {str(pf["user_id"]): (pf.get("rubros") or [])
+                             for pf in perfiles if pf.get("user_id")}
+        except Exception as e:
+            print(f"⚠️ No se pudieron leer rubros de perfiles: {e}")
 
         entidad_raw = proceso.get("unidad_compra", "")
         entidad = abreviar_entidad(entidad_raw)
@@ -1024,6 +1063,8 @@ def notificar_proceso_inmediato(proceso, articulos):
         omitidas = 0
         for sub in suscripciones:
             intereses = sub.get("intereses_rubros") or []
+            if not intereses:
+                intereses = rubros_perfil.get(str(sub.get("user_id") or ""), [])
 
             if not proceso_coincide_con_intereses(proceso, articulos, intereses):
                 omitidas += 1
