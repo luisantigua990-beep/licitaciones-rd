@@ -187,16 +187,19 @@ def guardar_procesos_nuevos(procesos):
     codigos = [p["codigo_proceso"] for p in procesos]
 
     # Obtener cuáles ya existen y si están enriquecidos
+    sin_objeto = set()  # existentes a los que les falta objeto_proceso
     try:
         existentes_data = {}
         for i in range(0, len(codigos), 50):
             bloque = codigos[i:i+50]
             result = supabase.table("procesos") \
-                .select("codigo_proceso, enriquecido_api") \
+                .select("codigo_proceso, enriquecido_api, objeto_proceso") \
                 .in_("codigo_proceso", bloque) \
                 .execute()
             for r in result.data:
                 existentes_data[r["codigo_proceso"]] = r.get("enriquecido_api", False)
+                if not r.get("objeto_proceso"):
+                    sin_objeto.add(r["codigo_proceso"])
     except Exception as e:
         print(f"❌ Error consultando existentes: {e}")
         return []
@@ -204,6 +207,7 @@ def guardar_procesos_nuevos(procesos):
     nuevos = []
     para_insertar = []
     para_actualizar = []
+    para_completar_objeto = []
 
     for p in procesos:
         codigo = p["codigo_proceso"]
@@ -262,6 +266,17 @@ def guardar_procesos_nuevos(procesos):
                 "url":                         p.get("url"),
                 "enriquecido_api":             True,
             })
+        elif codigo in sin_objeto and p.get("objeto_proceso"):
+            # El scraper del portal ya lo marcó enriquecido (tiene artículos),
+            # pero el portal no trae el tipo de objeto: completarlo desde la API.
+            para_completar_objeto.append({
+                "codigo_proceso":    codigo,
+                "objeto_proceso":    p.get("objeto_proceso"),
+                "subobjeto_proceso": p.get("subobjeto_proceso"),
+                "modalidad":         p.get("modalidad"),
+                "tipo_excepcion":    p.get("tipo_excepcion"),
+                "descripcion":       (p.get("descripcion") or "").strip() or None,
+            })
 
     # Insertar nuevos
     if para_insertar:
@@ -285,6 +300,19 @@ def guardar_procesos_nuevos(procesos):
             print(f"🔄 {actualizados} procesos enriquecidos con datos de la API")
         except Exception as e:
             print(f"❌ Error actualizando procesos: {e}")
+
+    # Completar objeto_proceso de los que vinieron del scraper
+    if para_completar_objeto:
+        completados = 0
+        for reg in para_completar_objeto:
+            codigo = reg.pop("codigo_proceso")
+            reg = {k: v for k, v in reg.items() if v is not None}
+            try:
+                supabase.table("procesos").update(reg).eq("codigo_proceso", codigo).execute()
+                completados += 1
+            except Exception as e:
+                print(f"⚠️  Error completando objeto de {codigo}: {e}")
+        print(f"🧩 {completados} procesos con objeto_proceso completado desde la API")
 
     if not nuevos:
         print("ℹ️  Sin procesos nuevos (todos ya existían o fueron enriquecidos)")
