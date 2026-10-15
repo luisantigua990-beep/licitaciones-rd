@@ -574,6 +574,116 @@ def guardar_articulos_portal(codigo_proceso, articulos):
         print(f"⚠️  Error guardando artículos de {codigo_proceso}: {e}")
 
 
+import re
+import unicodedata as _ud
+
+
+def _norm_txt(texto):
+    """minúsculas y sin tildes, para comparar sin sorpresas."""
+    if not texto:
+        return ""
+    t = _ud.normalize("NFKD", str(texto))
+    return "".join(c for c in t if not _ud.combining(c)).lower()
+
+
+# Cómo reconocer el TIPO de objeto cuando el portal no lo trae (objeto_proceso
+# casi siempre llega vacío). Se usa el segmento UNSPSC de los artículos y, como
+# respaldo, palabras clave en el título/descripción.
+REGLAS_OBJETO = {
+    "obras": {
+        # 72 = servicios de edificación, construcción e instalación
+        # 95 = terrenos, edificios y estructuras
+        "segmentos": ("72", "95"),
+        "keywords": (
+            "obras", "obra civil", "construccion", "construir", "remodelacion",
+            "remozamiento", "rehabilitacion", "readecuacion", "adecuacion",
+            "reconstruccion", "ampliacion", "terminacion",
+            "acera", "contenes", "asfalt", "bacheo", "pavimen", "carretera",
+            "camino vecinal", "puente", "acueducto", "alcantarillado",
+            "drenaje", "imbornal", "badén", "baden", "muro", "verja",
+            "edificacion", "impermeabiliz", "techado", "cancha",
+            "infraestructura vial", "infraestructura peatonal", "saneamiento",
+            "pozo tubular", "pozo filtrante", "parque", "plaza", "canaleta",
+            "lona asfaltica", "reparacion de techo", "reparacion de edificio",
+            "electrificacion",
+        ),
+    },
+    "consultoria": {
+        "segmentos": ("80", "81"),
+        "keywords": ("consultoria", "asesoria", "supervision de obra",
+                     "diseno", "estudio de", "auditoria", "fiscalizacion"),
+    },
+    "servicios": {
+        # Segmentos de servicios (70-94) excepto obras (72)
+        "segmentos": tuple(str(n) for n in range(70, 95) if n != 72),
+        "keywords": ("servicio", "contratacion de", "mantenimiento",
+                     "alquiler", "arrendamiento"),
+    },
+    "bienes": {
+        # Segmentos de productos (10-60)
+        "segmentos": tuple(str(n) for n in range(10, 61)),
+        "keywords": ("adquisicion", "compra de", "suministro"),
+    },
+}
+_ALIAS_OBJETO = {"consultoría": "consultoria"}
+
+
+def _codigos_unspsc(articulos):
+    codigos = set()
+    for a in (articulos or []):
+        for campo in ("familia_unspsc", "clase_unspsc", "subclase_unspsc"):
+            v = a.get(campo)
+            if v:
+                codigos.add(str(v).strip())
+    return codigos
+
+
+def _proceso_es_tipo(tipo, proceso, codigos):
+    """True si el proceso corresponde al tipo de objeto (obras/bienes/...)."""
+    objeto_api = _norm_txt(proceso.get("objeto_proceso"))
+    if objeto_api:
+        # Si la API ya trajo el objeto, es la fuente más confiable
+        if tipo in objeto_api:
+            return True
+
+    regla = REGLAS_OBJETO.get(tipo)
+    if not regla:
+        return False
+
+    # 1) Por segmento UNSPSC de los artículos
+    for c in codigos:
+        if c[:2] in regla["segmentos"]:
+            return True
+
+    # 2) Respaldo por palabras clave en el TÍTULO (sirve cuando no hay
+    #    artículos o vienen con un segmento distinto, p. ej. materiales).
+    texto = _norm_txt(proceso.get("titulo", ""))
+    for frase in _FRASES_INSTITUCION:
+        texto = texto.replace(frase, " ")
+    if tipo == "obras" and _RE_INICIO_COMPRA.match(texto):
+        # "Adquisición de materiales para la construcción..." es compra de bienes
+        return False
+    return bool(_regex_keywords(tipo).search(texto))
+
+
+# Nombres de instituciones que contienen palabras de obra y no dicen nada
+# del objeto (Ministerio de Obras Públicas, Instituto de Acueductos...).
+_FRASES_INSTITUCION = (
+    "obras publicas", "acueductos y alcantarillados", "acueducto y alcantarillado",
+    "acueductos y alcantarillado", "edificaciones escolares",
+)
+_RE_INICIO_COMPRA = re.compile(r'^\W*(adquisicion|adquisiciones|compra|suministro)\b')
+_CACHE_REGEX = {}
+
+
+def _regex_keywords(tipo):
+    """Regex con límite de palabra al inicio, para no pegar dentro de otras palabras."""
+    if tipo not in _CACHE_REGEX:
+        kws = sorted({_norm_txt(k) for k in REGLAS_OBJETO[tipo]["keywords"]}, key=len, reverse=True)
+        _CACHE_REGEX[tipo] = re.compile(r"\b(" + "|".join(re.escape(k) for k in kws) + ")")
+    return _CACHE_REGEX[tipo]
+
+
 def proceso_coincide_con_intereses(proceso, articulos, intereses_usuario):
     """
     Determina si un proceso debe notificarse a un usuario según sus intereses.
@@ -581,32 +691,29 @@ def proceso_coincide_con_intereses(proceso, articulos, intereses_usuario):
 
     Soporta dos tipos de filtros:
       - Tipo de objeto: "Obras", "Bienes", "Servicios", "Consultoría"
-      - Familia UNSPSC: código numérico de 8 dígitos (ej. "72100000")
+        → se reconoce por objeto_proceso (si viene), segmento UNSPSC de los
+          artículos o palabras clave del título (el portal no trae el objeto).
+      - Código UNSPSC numérico (ej. "72100000") → coincidencia por prefijo.
     """
     if not intereses_usuario:
         # Sin filtros = quiere todo
         return True
 
-    # Extraer familias UNSPSC del proceso
-    familias_proceso = set()
-    for a in articulos:
-        if a.get("familia_unspsc"):
-            familias_proceso.add(str(a["familia_unspsc"]))
-
-    objeto = (proceso.get("objeto_proceso") or proceso.get("titulo") or "").lower()
+    codigos = _codigos_unspsc(articulos)
 
     for interes in intereses_usuario:
         interes_str = str(interes).strip()
+        clave = _ALIAS_OBJETO.get(interes_str.lower(), interes_str.lower())
 
         # Filtro por tipo de objeto (Obras / Bienes / Servicios / Consultoría)
-        if interes_str.lower() in ["obras", "bienes", "servicios", "consultoría", "consultoria"]:
-            if interes_str.lower() in objeto:
+        if clave in REGLAS_OBJETO:
+            if _proceso_es_tipo(clave, proceso, codigos):
                 return True
 
-        # Filtro por familia UNSPSC (coincidencia de prefijo para cubrir clase/subclase)
+        # Filtro por código UNSPSC (prefijo de 4 dígitos para cubrir clase/subclase)
         elif interes_str.isdigit():
-            for familia in familias_proceso:
-                if familia.startswith(interes_str[:4]) or interes_str.startswith(familia[:4]):
+            for c in codigos:
+                if c.startswith(interes_str[:4]) or interes_str.startswith(c[:4]):
                     return True
 
     return False
