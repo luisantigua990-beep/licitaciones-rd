@@ -28,7 +28,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse, HTMLResponse, Response
 from dotenv import load_dotenv
 from supabase_client import crear_cliente
 from google import genai
@@ -561,17 +561,22 @@ app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), na
 app.mount("/frontend", StaticFiles(directory=os.path.join(BASE_DIR, "frontend"), html=True), name="frontend")
 
 @app.get("/")
-def inicio():
+def inicio(request: Request):
     # PERF: se sirve index.html con ?v=<hash> en sus CSS/JS locales. Así el navegador
     # puede guardarlos 1 año (ver cache_estaticos) y aun así toma la versión nueva
-    # en cuanto cambia el archivo, porque cambia el hash.
+    # en cuanto cambia el archivo, porque cambia el hash. El HTML se revalida en cada
+    # visita con ETag: si no cambió, responde 304 sin cuerpo.
     html = _index_versionado()
     if html is None:
         return FileResponse(os.path.join(BASE_DIR, "frontend", "index.html"))
-    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+    etag = _index_cache["etag"]
+    cab = {"Cache-Control": "no-cache", "ETag": etag}
+    if etag in (request.headers.get("if-none-match") or ""):
+        return Response(status_code=304, headers=cab)
+    return HTMLResponse(html, headers=cab)
 
 
-_index_cache = {"mtime": None, "html": None}
+_index_cache = {"mtime": None, "html": None, "etag": None}
 _RE_ASSET_LOCAL = re.compile(r'(?P<attr>(?:src|href)=")(?P<url>/frontend/[^"?#]+\.(?:js|css))(?P<q>\?[^"]*)?"')
 
 
@@ -604,7 +609,8 @@ def _index_versionado():
             return f'{m.group("attr")}{m.group("url")}?v={h}"'
 
         html = _RE_ASSET_LOCAL.sub(_sub, html)
-        _index_cache.update(mtime=mt, html=html)
+        etag = '"' + _hashlib.md5(html.encode()).hexdigest()[:16] + '"'
+        _index_cache.update(mtime=mt, html=html, etag=etag)
         return html
     except Exception as e:
         print(f"⚠️ index versionado no disponible: {e}")

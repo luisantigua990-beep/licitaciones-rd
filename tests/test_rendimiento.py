@@ -301,3 +301,20 @@ def test_marcar_trazabilidad_respaldo(monkeypatch):
     monkeypatch.setattr(ip, "sb_patch", lambda t, f, c: llamadas.append(f) or len(llamadas) > 1)
     ip._marcar_trazabilidad([("N1", "C1")])
     assert llamadas[1] == 'comprobante_fiscal=in.("N1")'
+
+
+# ══════════════════════════════════════════════════════════════
+# 7) index.html: assets con ?v=<hash>, caché larga y 304 por ETag
+# ══════════════════════════════════════════════════════════════
+def test_index_versionado_y_304(main_mod):
+    from fastapi.testclient import TestClient
+    c = TestClient(main_mod.app)
+    r = c.get("/")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+    assert '/frontend/js/app.js?v=' in r.text
+    assert "d3.min.js" not in r.text and "chart.umd.min.js" not in r.text  # carga diferida
+    assert c.get("/", headers={"If-None-Match": r.headers["etag"]}).status_code == 304
+    import re
+    js = re.search(r'/frontend/js/app\.js\?v=\w+', r.text).group(0)
+    assert "immutable" in c.get(js).headers["cache-control"]
+    assert "must-revalidate" in c.get("/frontend/js/app.js").headers["cache-control"]
