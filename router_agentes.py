@@ -186,7 +186,7 @@ async def run_prospector_endpoint(
 
 
 @agentes_router.get("/prospector/cola")
-async def get_cola_prospectos(
+def get_cola_prospectos(
     limite: int = 20,
     score_min: int = 60,
     x_agent_secret: Optional[str] = Header(None)
@@ -1220,7 +1220,7 @@ async def enviar_carrusel_endpoint(
     return {"success": True, "enviadas": enviadas, "total_slides": len(imagenes_extra)}
 
 @social_router.post("/publicar/{post_id}")
-async def publicar_post(
+def publicar_post(
     post_id: int,
     x_agent_secret: Optional[str] = Header(None)
 ):
@@ -1258,7 +1258,7 @@ async def publicar_post(
 
 
 @social_router.post("/rechazar/{post_id}")
-async def rechazar_post(
+def rechazar_post(
     post_id: int,
     x_agent_secret: Optional[str] = Header(None)
 ):

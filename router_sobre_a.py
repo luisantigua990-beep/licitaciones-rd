@@ -309,7 +309,7 @@ def sincronizar_formularios(referencia: str = Query(..., min_length=3),
 
 
 @sobre_a_router.post("/sobre-a/formularios/{formulario_id}/llenado")
-async def subir_llenado(formulario_id: str,
+def subir_llenado(formulario_id: str,
                         archivo: UploadFile = File(...),
                         authorization: str | None = Header(default=None)):
     """Sube la versión LLENADA de un formulario descargado del portal."""
@@ -322,7 +322,7 @@ async def subir_llenado(formulario_id: str,
     if not reg:
         _err(404, "no_encontrado")
 
-    contenido = await archivo.read()
+    contenido = archivo.file.read()  # sync: el endpoint corre en el threadpool
     try:
         ext, mime = validar_contenido(archivo.filename or "archivo", contenido)
     except ValueError as e:

@@ -41,28 +41,68 @@ bid_manager_router = APIRouter(prefix="/api/bid", tags=["bid-manager"])
 
 
 # ── Auth ───────────────────────────────────────────────────
+import hashlib as _hashlib
+import time as _time
+import base64 as _b64
+import json as _json
+from concurrent.futures import ThreadPoolExecutor as _Pool
+
+_cache_auth: dict = {}      # sha256(token) -> (user_id, expira_ts)
+_cache_empresa: dict = {}   # user_id -> (empresa_id, expira_ts)
+
+
 def _auth(authorization: str | None) -> str:
     """Valida Bearer token y devuelve user_id."""
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, "Falta el token de sesión")
     token = authorization.split(" ", 1)[1].strip()
+    # PERF: la pantalla del Bid Manager lanza ~14 peticiones en paralelo y cada una
+    # validaba el mismo token contra GoTrue (1 ida HTTP extra por petición).
+    # Se recuerda la validación 60 s por token (nunca más allá de su vencimiento).
+    clave = _hashlib.sha256(token.encode()).hexdigest()
+    ahora = _time.time()
+    hit = _cache_auth.get(clave)
+    if hit and hit[1] > ahora:
+        return hit[0]
     try:
         user_resp = _sb.auth.get_user(token)
         if not user_resp or not user_resp.user:
             raise HTTPException(401, "Sesión inválida o expirada")
-        return user_resp.user.id
+        uid = user_resp.user.id
     except HTTPException:
         raise
     except Exception:
         raise HTTPException(401, "Sesión inválida o expirada")
+    if len(_cache_auth) > 2000:
+        _cache_auth.clear()
+    _cache_auth[clave] = (uid, min(ahora + 60, _jwt_exp(token) or ahora + 60))
+    return uid
+
+
+def _jwt_exp(token: str):
+    """Lee el 'exp' del JWT sin verificar firma (ya lo verificó GoTrue)."""
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return float(_json.loads(_b64.urlsafe_b64decode(payload)).get("exp") or 0) or None
+    except Exception:
+        return None
 
 
 # ── Helper: obtener empresa_id del usuario ─────────────────
 def _empresa_id(user_id: str) -> str:
     """Devuelve el ID de perfiles_empresa del usuario. Lanza 404 si no existe."""
+    # PERF: se repetía en cada petición del Bid Manager. Se recuerda 5 min
+    # (solo resultados positivos, para no retrasar a quien recién completa el onboarding).
+    hit = _cache_empresa.get(user_id)
+    if hit and hit[1] > _time.time():
+        return hit[0]
     res = _sb.table("perfiles_empresa").select("id").eq("user_id", user_id).execute()
     if not res.data:
         raise HTTPException(404, "No tienes perfil de empresa. Completa el onboarding primero.")
+    if len(_cache_empresa) > 2000:
+        _cache_empresa.clear()
+    _cache_empresa[user_id] = (res.data[0]["id"], _time.time() + 300)
     return res.data[0]["id"]
 
 
@@ -121,7 +161,7 @@ def get_empresa(authorization: str | None = Header(default=None)):
     return {"empresa": res.data[0] if res.data else None}
 
 @bid_manager_router.put("/empresa")
-async def actualizar_empresa(request: dict, authorization: str | None = Header(default=None)):
+def actualizar_empresa(request: dict, authorization: str | None = Header(default=None)):
     """Actualizar campos del Bid Manager en el perfil de empresa."""
     uid = _auth(authorization)
     data = {k: v for k, v in request.items() if k in CAMPOS_BID_EMPRESA}
@@ -332,7 +372,7 @@ def _verificar_personal_pertenece(personal_id: str, empresa_id: str):
         raise HTTPException(404, "Personal no encontrado")
 
 @bid_manager_router.post("/personal/{personal_id}/certificaciones")
-async def crear_cert_personal(personal_id: str, request: dict, authorization: str | None = Header(default=None)):
+def crear_cert_personal(personal_id: str, request: dict, authorization: str | None = Header(default=None)):
     uid = _auth(authorization)
     eid = _empresa_id(uid)
     _verificar_personal_pertenece(personal_id, eid)
@@ -405,7 +445,7 @@ def _verificar_experiencia_pertenece(exp_id: str, empresa_id: str):
         raise HTTPException(404, "Proyecto no encontrado")
 
 @bid_manager_router.post("/experiencia/{exp_id}/personal")
-async def asignar_personal_proyecto(exp_id: str, request: dict, authorization: str | None = Header(default=None)):
+def asignar_personal_proyecto(exp_id: str, request: dict, authorization: str | None = Header(default=None)):
     uid = _auth(authorization)
     eid = _empresa_id(uid)
     _verificar_experiencia_pertenece(exp_id, eid)
@@ -470,7 +510,7 @@ def eliminar_equipo(id: str, authorization: str | None = Header(default=None)):
 # ══════════════════════════════════════════════════════════════
 
 @bid_manager_router.post("/financieros")
-async def crear_financiero(request: dict, authorization: str | None = Header(default=None)):
+def crear_financiero(request: dict, authorization: str | None = Header(default=None)):
     uid = _auth(authorization)
     eid = _empresa_id(uid)
     periodo = request.get("periodo")
@@ -609,7 +649,7 @@ def eliminar_referencia(id: str, authorization: str | None = Header(default=None
 # ══════════════════════════════════════════════════════════════
 
 @bid_manager_router.post("/ir2")
-async def crear_ir2(request: dict, authorization: str | None = Header(default=None)):
+def crear_ir2(request: dict, authorization: str | None = Header(default=None)):
     uid = _auth(authorization)
     eid = _empresa_id(uid)
     periodo = request.get("periodo_fiscal")
@@ -673,18 +713,35 @@ def resumen_expediente(authorization: str | None = Header(default=None)):
     uid = _auth(authorization)
     eid = _empresa_id(uid)
 
-    # Contar registros por módulo
-    representantes = _sb.table("bid_representantes").select("id", count="exact").eq("empresa_id", eid).execute()
-    socios = _sb.table("bid_socios").select("id", count="exact").eq("empresa_id", eid).execute()
-    certificaciones = _sb.table("bid_certificaciones").select("id", count="exact").eq("empresa_id", eid).execute()
-    cert_vencidas = _sb.table("bid_certificaciones").select("id", count="exact").eq("empresa_id", eid).in_("estado", ["vencido", "por_vencer"]).execute()
-    personal = _sb.table("bid_personal").select("id", count="exact").eq("empresa_id", eid).execute()
-    experiencia = _sb.table("bid_experiencia").select("id", count="exact").eq("empresa_id", eid).execute()
-    equipos = _sb.table("bid_equipos").select("id", count="exact").eq("empresa_id", eid).execute()
-    financieros = _sb.table("bid_financieros").select("id", count="exact").eq("empresa_id", eid).execute()
-    capacidad = _sb.table("bid_capacidad_financiera").select("id", count="exact").eq("empresa_id", eid).execute()
-    referencias = _sb.table("bid_referencias_comerciales").select("id", count="exact").eq("empresa_id", eid).execute()
-    ir2 = _sb.table("bid_ir2").select("id", count="exact").eq("empresa_id", eid).execute()
+    # Contar registros por módulo.
+    # PERF: eran 11 consultas en serie (cada una con su ida y vuelta a Supabase).
+    # Ahora van en paralelo y con limit(1): el conteo exacto sale en la cabecera,
+    # no hace falta traer las filas.
+    def _contar(tabla, estados=None):
+        q = _sb.table(tabla).select("id", count="exact").eq("empresa_id", eid)
+        if estados:
+            q = q.in_("estado", estados)
+        return q.limit(1).execute()
+
+    consultas = {
+        "representantes": ("bid_representantes", None),
+        "socios": ("bid_socios", None),
+        "certificaciones": ("bid_certificaciones", None),
+        "cert_vencidas": ("bid_certificaciones", ["vencido", "por_vencer"]),
+        "personal": ("bid_personal", None),
+        "experiencia": ("bid_experiencia", None),
+        "equipos": ("bid_equipos", None),
+        "financieros": ("bid_financieros", None),
+        "capacidad": ("bid_capacidad_financiera", None),
+        "referencias": ("bid_referencias_comerciales", None),
+        "ir2": ("bid_ir2", None),
+    }
+    with _Pool(max_workers=6) as pool:
+        futuros = {k: pool.submit(_contar, t, e) for k, (t, e) in consultas.items()}
+        r = {k: f.result() for k, f in futuros.items()}
+    representantes, socios, certificaciones, cert_vencidas = r["representantes"], r["socios"], r["certificaciones"], r["cert_vencidas"]
+    personal, experiencia, equipos, financieros = r["personal"], r["experiencia"], r["equipos"], r["financieros"]
+    capacidad, referencias, ir2 = r["capacidad"], r["referencias"], r["ir2"]
 
     return {
         "empresa_id": eid,
@@ -756,7 +813,7 @@ def _validar_path(path: str, empresa_id: str) -> None:
 
 
 @bid_manager_router.post("/upload")
-async def upload_archivo(
+def upload_archivo(
     categoria: str = Form(...),
     file: UploadFile = File(...),
     authorization: str | None = Header(default=None)
@@ -784,7 +841,7 @@ async def upload_archivo(
             f"Categoría inválida. Debe ser una de: {', '.join(sorted(VALID_CATEGORIAS))}"
         )
 
-    contenido = await file.read()
+    contenido = file.file.read()  # sync: el endpoint corre en el threadpool
     if not contenido:
         raise HTTPException(400, "Archivo vacío")
     if len(contenido) > STORAGE_MAX_BYTES:
@@ -968,7 +1025,7 @@ def _gemini_extraer_financieros(contenido: bytes) -> dict:
 
 
 @bid_manager_router.post("/financieros/extraer")
-async def extraer_financieros_ia(
+def extraer_financieros_ia(
     file: UploadFile = File(...),
     authorization: str | None = Header(default=None),
 ):
@@ -979,7 +1036,7 @@ async def extraer_financieros_ia(
     uid = _auth(authorization)
     _empresa_id(uid)  # valida que tenga perfil
 
-    contenido = await file.read()
+    contenido = file.file.read()  # sync: el endpoint corre en el threadpool
     if not contenido:
         raise HTTPException(400, "Archivo vacío")
     if len(contenido) > STORAGE_MAX_BYTES:
@@ -1056,7 +1113,7 @@ def _alertas_cuadre(datos: dict, es_ir2: bool) -> list:
 
 
 @bid_manager_router.post("/financieros/extraer-lote")
-async def extraer_lote_ia(
+def extraer_lote_ia(
     files: List[UploadFile] = File(...),
     authorization: str | None = Header(default=None),
 ):
@@ -1079,7 +1136,7 @@ async def extraer_lote_ia(
     for f in files:
         item = {"archivo": f.filename, "ok": False}
         try:
-            contenido = await f.read()
+            contenido = f.file.read()  # sync: el endpoint corre en el threadpool
             if not contenido:
                 raise ValueError("Archivo vacío")
             if len(contenido) > STORAGE_MAX_BYTES:
@@ -2458,7 +2515,7 @@ def _evaluar_matching(eid: str, requisitos, monto: float | None,
 
 
 @bid_manager_router.post("/matching/analizar")
-async def matching_analizar(
+def matching_analizar(
     file: UploadFile = File(...),
     monto_ofertado: str = Form(None),
     authorization: str | None = Header(default=None),
@@ -2468,7 +2525,7 @@ async def matching_analizar(
     uid = _auth(authorization)
     eid = _empresa_id(uid)
 
-    contenido = await file.read()
+    contenido = file.file.read()  # sync: el endpoint corre en el threadpool
     if not contenido:
         raise HTTPException(400, "Archivo vacío")
     if len(contenido) > STORAGE_MAX_BYTES:
@@ -2580,7 +2637,7 @@ def matching_por_referencia(referencia: str, authorization: str | None = Header(
 
 
 @bid_manager_router.post("/matching/analizar-proceso")
-async def matching_analizar_proceso(request: dict,
+def matching_analizar_proceso(request: dict,
                                     authorization: str | None = Header(default=None)):
     """Compatibilidad Expediente vs proceso del portal, sin subir PDF a mano.
     Body: {"codigo_proceso": "...", "monto_ofertado": opcional, "forzar": opcional}
@@ -2739,7 +2796,7 @@ async def matching_analizar_proceso(request: dict,
 
 
 @bid_manager_router.post("/matching/{id}/reevaluar")
-async def matching_reevaluar(id: str, request: dict = None,
+def matching_reevaluar(id: str, request: dict = None,
                              authorization: str | None = Header(default=None)):
     """Recalcula el matching con los datos ACTUALES del expediente.
     Body opcional: {"monto_ofertado": 123456.78}"""

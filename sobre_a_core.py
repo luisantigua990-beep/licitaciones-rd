@@ -315,16 +315,24 @@ def _adjuntos_entidad(sb, empresa_id: str, entidad: str) -> list[dict]:
     tabla = TABLA_POR_ENTIDAD[entidad]
     registros = (sb.table(tabla).select("*")
                  .eq("empresa_id", empresa_id).execute().data or [])
+    # PERF (N+1): antes se consultaba bid_archivos una vez POR registro (20-40 idas por
+    # carga del Sobre A). Ahora una sola consulta por entidad, agrupada en memoria.
+    por_registro: dict[str, list] = {}
+    if registros:
+        todos = (sb.table("bid_archivos").select("id,nombre,estado,eliminado_en,registro_id")
+                 .eq("empresa_id", empresa_id).eq("entidad", entidad)
+                 .is_("eliminado_en", "null")
+                 .execute().data or [])
+        for a in todos:
+            por_registro.setdefault(str(a.get("registro_id")), []).append(
+                {k: v for k, v in a.items() if k != "registro_id"})
     salida = []
     for r in registros:
         vencido = _vencido(r.get("fecha_vencimiento"))
         etiqueta = (_v(r, "nombre_display", "tipo") or _v(r, "periodo")
                     or _v(r, "nombre_completo") or "Documento")
 
-        adjuntos = (sb.table("bid_archivos").select("id,nombre,estado,eliminado_en")
-                    .eq("empresa_id", empresa_id).eq("entidad", entidad)
-                    .eq("registro_id", r["id"]).is_("eliminado_en", "null")
-                    .execute().data or [])
+        adjuntos = list(por_registro.get(str(r["id"]), []))
         # Legacy: certificaciones con archivo_url directo
         if not adjuntos and entidad == "certificaciones" and r.get("archivo_url"):
             adjuntos = [{"id": f"legacy:{r['id']}", "nombre": r.get("archivo_nombre") or etiqueta,
