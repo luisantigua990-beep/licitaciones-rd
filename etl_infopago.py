@@ -840,9 +840,18 @@ def _marcar_trazabilidad(claves):
     """Checkpoint: marca facturas (comprobante,contrato) ya consultadas."""
     if not claves:
         return
-    lista = ",".join(f'"{c}"' for c, _ in claves)
-    sb_patch("infopago_facturas", f"comprobante_fiscal=in.({lista})",
-             {"trazabilidad_check_at": datetime.utcnow().isoformat()})
+    # PERF + corrección: antes se filtraba solo por comprobante_fiscal. Un mismo NCF se
+    # repite entre proveedores (~13 filas por NCF), así que cada lote de 50 reescribía
+    # ~650 filas de una tabla de 274 MB (1,4 s de media) y marcaba como "consultadas"
+    # facturas de OTROS contratos que nunca se consultaron. Ahora se marca el par exacto.
+    def _q(v):
+        return '"' + str(v).replace("\\", "\\\\").replace('"', '\\"') + '"'
+    pares = ",".join(f"and(comprobante_fiscal.eq.{_q(c)},contrato.eq.{_q(k)})" for c, k in claves)
+    cambios = {"trazabilidad_check_at": datetime.utcnow().isoformat()}
+    if not sb_patch("infopago_facturas", "or=(" + requests.utils.quote(pares, safe="(),.=:") + ")", cambios):
+        # Respaldo: filtro anterior (solo NCF), para no dejar el checkpoint sin marcar
+        lista = ",".join(f'"{c}"' for c, _ in claves)
+        sb_patch("infopago_facturas", f"comprobante_fiscal=in.({lista})", cambios)
 
 
 def modo_trazabilidad(args):

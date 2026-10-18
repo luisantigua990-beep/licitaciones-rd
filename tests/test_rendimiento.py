@@ -278,3 +278,26 @@ def test_bid_empresa_sin_perfil_no_se_cachea(monkeypatch):
         bm._empresa_id("NUEVO")
     db.tablas["perfiles_empresa"].append({"id": "E2", "user_id": "NUEVO"})  # completa onboarding
     assert bm._empresa_id("NUEVO") == "E2"
+
+
+# ══════════════════════════════════════════════════════════════
+# 6) InfoPago: marcar trazabilidad por par exacto (NCF, contrato)
+# ══════════════════════════════════════════════════════════════
+def test_marcar_trazabilidad_por_par(monkeypatch):
+    import urllib.parse
+    import etl_infopago as ip
+    llamadas = []
+    monkeypatch.setattr(ip, "sb_patch", lambda t, f, c: llamadas.append((t, f)) or True)
+    ip._marcar_trazabilidad([("B0100000001", "CAASD-2025-00188"), ('B01 "x"', "INAPA-2024-1")])
+    assert len(llamadas) == 1
+    filtro = urllib.parse.unquote(llamadas[0][1])
+    assert filtro == ('or=(and(comprobante_fiscal.eq."B0100000001",contrato.eq."CAASD-2025-00188"),'
+                      'and(comprobante_fiscal.eq."B01 \\"x\\"",contrato.eq."INAPA-2024-1"))')
+
+
+def test_marcar_trazabilidad_respaldo(monkeypatch):
+    import etl_infopago as ip
+    llamadas = []
+    monkeypatch.setattr(ip, "sb_patch", lambda t, f, c: llamadas.append(f) or len(llamadas) > 1)
+    ip._marcar_trazabilidad([("N1", "C1")])
+    assert llamadas[1] == 'comprobante_fiscal=in.("N1")'
