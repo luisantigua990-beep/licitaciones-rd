@@ -12,6 +12,7 @@ import threading
 import time
 import urllib3
 import json
+import re
 import io
 from pypdf import PdfReader
 from bs4 import BeautifulSoup
@@ -27,7 +28,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse, HTMLResponse
 from dotenv import load_dotenv
 from supabase_client import crear_cliente
 from google import genai
@@ -459,7 +460,7 @@ app.include_router(sobre_a_router)
 
 # ── Semáforo de Pago por institución (InfoPago DGCP) ─────────────
 @app.get("/api/instituciones/semaforo")
-async def semaforo_institucion(nombre: str):
+def semaforo_institucion(nombre: str):
     """Devuelve el historial de pagos de la institución (ranking oficial DGCP).
     Match flexible: prueba el nombre completo y luego sus palabras significativas."""
     if not nombre or len(nombre.strip()) < 3:
@@ -561,7 +562,71 @@ app.mount("/frontend", StaticFiles(directory=os.path.join(BASE_DIR, "frontend"),
 
 @app.get("/")
 def inicio():
-    return FileResponse(os.path.join(BASE_DIR, "frontend", "index.html"))
+    # PERF: se sirve index.html con ?v=<hash> en sus CSS/JS locales. Así el navegador
+    # puede guardarlos 1 año (ver cache_estaticos) y aun así toma la versión nueva
+    # en cuanto cambia el archivo, porque cambia el hash.
+    html = _index_versionado()
+    if html is None:
+        return FileResponse(os.path.join(BASE_DIR, "frontend", "index.html"))
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
+_index_cache = {"mtime": None, "html": None}
+_RE_ASSET_LOCAL = re.compile(r'(?P<attr>(?:src|href)=")(?P<url>/frontend/[^"?#]+\.(?:js|css))(?P<q>\?[^"]*)?"')
+
+
+def _hash_archivo(ruta_url: str) -> str | None:
+    ruta = os.path.join(BASE_DIR, ruta_url.lstrip("/"))
+    try:
+        with open(ruta, "rb") as f:
+            return _hashlib.md5(f.read()).hexdigest()[:10]
+    except OSError:
+        return None
+
+
+def _index_versionado():
+    ruta = os.path.join(BASE_DIR, "frontend", "index.html")
+    try:
+        # mtime de index + assets: si alguno cambia (deploy), se recalcula
+        mt = max(os.path.getmtime(ruta),
+                 *[os.path.getmtime(os.path.join(dp, fn))
+                   for dp, _, fns in os.walk(os.path.join(BASE_DIR, "frontend"))
+                   for fn in fns if fn.endswith((".js", ".css"))])
+        if _index_cache["mtime"] == mt:
+            return _index_cache["html"]
+        with open(ruta, encoding="utf-8") as f:
+            html = f.read()
+
+        def _sub(m):
+            h = _hash_archivo(m.group("url"))
+            if not h or m.group("q"):
+                return m.group(0)
+            return f'{m.group("attr")}{m.group("url")}?v={h}"'
+
+        html = _RE_ASSET_LOCAL.sub(_sub, html)
+        _index_cache.update(mtime=mt, html=html)
+        return html
+    except Exception as e:
+        print(f"⚠️ index versionado no disponible: {e}")
+        return None
+
+
+@app.middleware("http")
+async def cache_estaticos(request: Request, call_next):
+    """Cabeceras de caché para archivos estáticos (antes no tenían ninguna:
+    el navegador revalidaba o volvía a bajar CSS/JS/íconos en cada visita)."""
+    resp = await call_next(request)
+    path = request.url.path
+    if resp.status_code == 200 and path.startswith(("/frontend/", "/static/")) \
+            and "cache-control" not in resp.headers:
+        if "v=" in request.url.query:
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path.endswith((".png", ".ico", ".ttf", ".woff2", ".svg", ".jpg", ".webp")):
+            resp.headers["Cache-Control"] = "public, max-age=604800"
+        else:
+            # sin versión: se puede usar 5 min y luego se revalida con ETag (304)
+            resp.headers["Cache-Control"] = "public, max-age=300, must-revalidate"
+    return resp
 
 
 @app.get("/api/procesos")
@@ -1636,7 +1701,7 @@ async def solicitar_analisis_proceso(request: Request, codigo_proceso: str, back
 
 @app.post("/api/procesos/{codigo_proceso}/reanalizar")
 @limiter.limit("5/minute")
-async def reanalizar_proceso(request: Request, codigo_proceso: str, background_tasks: BackgroundTasks):
+def reanalizar_proceso(request: Request, codigo_proceso: str, background_tasks: BackgroundTasks):
     """
     Re-analiza un proceso usando la última enmienda detectada.
     Usa url_documento de la enmienda directamente como fuente para Gemini.
@@ -1902,11 +1967,36 @@ def procesos_por_rubros(
 # ENDPOINTS — ESTADÍSTICAS
 # ============================================
 
+_cache_stats = {"data": None, "ts": 0.0}
+_STATS_TTL = 300  # 5 min: los conteos cambian pocas veces por hora
+
+
 @app.get("/api/stats")
 @limiter.limit("60/minute")
 def estadisticas(request: Request):
+    # PERF: antes eran 6 consultas count="exact" seguidas en CADA carga de la pantalla
+    # principal (dos recorrían tablas completas: procesos y articulos_proceso, ~700k filas).
+    # Ahora: caché en memoria + una sola ida a la función SQL estadisticas_home().
+    ahora = time.time()
+    if _cache_stats["data"] and ahora - _cache_stats["ts"] < _STATS_TTL:
+        return _cache_stats["data"]
     try:
-        procesos = supabase.table("procesos").select("id", count="exact").execute()
+        r = supabase.rpc("estadisticas_home").execute()
+        if isinstance(r.data, dict) and "procesos_activos" in r.data:
+            data = {**r.data, "ultima_actualizacion": datetime.now().isoformat()}
+            _cache_stats.update(data=data, ts=ahora)
+            return data
+    except Exception as e:
+        print(f"⚠️ estadisticas_home RPC falló, uso consultas separadas: {e}")
+    data = _estadisticas_legacy()
+    _cache_stats.update(data=data, ts=ahora)
+    return data
+
+
+def _estadisticas_legacy():
+    """Método anterior (6 consultas). Solo se usa si la función SQL no está disponible."""
+    try:
+        procesos = supabase.table("procesos").select("id", count="exact").limit(1).execute()
         
         now_iso = datetime.now().isoformat()
         filtro_activo = {"estado_proceso": "eq.Proceso publicado"}
@@ -1915,30 +2005,30 @@ def estadisticas(request: Request):
             .select("id", count="exact") \
             .eq("estado_proceso", "Proceso publicado") \
             .gt("fecha_fin_recepcion_ofertas", now_iso) \
-            .execute()
+            .limit(1).execute()
         
         obras = supabase.table("procesos") \
             .select("id", count="exact") \
             .eq("estado_proceso", "Proceso publicado") \
             .gt("fecha_fin_recepcion_ofertas", now_iso) \
             .ilike("objeto_proceso", "%Obras%") \
-            .execute()
+            .limit(1).execute()
         
         bienes = supabase.table("procesos") \
             .select("id", count="exact") \
             .eq("estado_proceso", "Proceso publicado") \
             .gt("fecha_fin_recepcion_ofertas", now_iso) \
             .ilike("objeto_proceso", "%Bienes%") \
-            .execute()
+            .limit(1).execute()
         
         servicios = supabase.table("procesos") \
             .select("id", count="exact") \
             .eq("estado_proceso", "Proceso publicado") \
             .gt("fecha_fin_recepcion_ofertas", now_iso) \
             .ilike("objeto_proceso", "%Servicios%") \
-            .execute()
+            .limit(1).execute()
         
-        articulos = supabase.table("articulos_proceso").select("id", count="exact").execute()
+        articulos = supabase.table("articulos_proceso").select("id", count="estimated").limit(1).execute()
         
         return {
             "total_procesos": procesos.count,
@@ -2024,7 +2114,7 @@ def get_vapid_public_key():
 
 @app.post("/api/notificaciones/suscribirse")
 @limiter.limit("20/minute")
-async def suscribirse(request: Request, payload: dict):
+def suscribirse(request: Request, payload: dict):
     try:
         data = {
             "user_id": payload.get("user_id", "anonimo"),
@@ -2041,7 +2131,7 @@ async def suscribirse(request: Request, payload: dict):
 
 
 @app.post("/api/notificaciones/actualizar-userid")
-async def actualizar_userid_suscripcion(payload: dict):
+def actualizar_userid_suscripcion(payload: dict):
     """Corrige el user_id de una suscripción existente identificada por endpoint."""
     try:
         endpoint = payload.get("endpoint")
@@ -2057,7 +2147,7 @@ async def actualizar_userid_suscripcion(payload: dict):
 
 
 @app.post("/api/notificaciones/desuscribirse")
-async def desuscribirse(payload: dict):
+def desuscribirse(payload: dict):
     endpoint = payload.get("endpoint")
     supabase_admin.table("user_subscriptions").update({"active": False}).eq("endpoint", endpoint).execute()
     return {"ok": True}
@@ -2130,7 +2220,7 @@ async def admin_etl_contratos(
 
 @app.put("/api/notificaciones/intereses")
 @limiter.limit("20/minute")
-async def actualizar_intereses(request: Request, payload: dict):
+def actualizar_intereses(request: Request, payload: dict):
     """
     Guarda los intereses de notificación del usuario.
     La fuente de verdad para el FILTRO de notificaciones es perfiles_empresa
@@ -2198,7 +2288,7 @@ def obtener_intereses(request: Request, user_id: str = Query(...)):
 
 
 @app.post("/api/notificaciones/enviar-prueba")
-async def enviar_prueba(payload: dict):
+def enviar_prueba(payload: dict):
     endpoint = payload.get("endpoint")
     try:
         result = supabase_admin.table("user_subscriptions").select("*").eq("endpoint", endpoint).single().execute()
@@ -2219,7 +2309,7 @@ async def enviar_prueba(payload: dict):
 
 
 @app.post("/api/admin/notificar-seguimiento")
-async def notificar_seguimiento(_: None = Depends(verificar_admin)):
+def notificar_seguimiento(_: None = Depends(verificar_admin)):
     from notifications import enviar_notificacion
     from datetime import date, timedelta
 
@@ -2317,7 +2407,7 @@ async def notificar_seguimiento(_: None = Depends(verificar_admin)):
 
 
 @app.post("/api/admin/notificar-freemium-nuevos")
-async def notificar_freemium_nuevos(_: None = Depends(verificar_admin)):
+def notificar_freemium_nuevos(_: None = Depends(verificar_admin)):
     """Envía push a usuarios FREEMIUM sobre procesos nuevos del día, invitándolos
     a suscribirse para recibir alertas y análisis. Gancho de conversión.
     Se debe llamar 1 vez al día desde el cron (después de cargar procesos nuevos)."""
@@ -4684,7 +4774,7 @@ def debug_precio_articulo(notice_uid: str = "DO1.NTC.1679301", _: None = Depends
 
 
 @app.post("/api/admin/rellenar-precios-articulos")
-async def rellenar_precios_articulos(background_tasks: BackgroundTasks, _: None = Depends(verificar_admin)):
+def rellenar_precios_articulos(background_tasks: BackgroundTasks, _: None = Depends(verificar_admin)):
     """
     Re-scrapea artículos existentes que tienen precio_total_estimado = NULL.
     Corre en background para no bloquear el servidor.
@@ -5183,6 +5273,7 @@ async def registrar_proveedor(request: Request):
             cats = [{"proveedor_id": proveedor_id, "categoria_nombre": c} for c in categorias if c]
             supabase_admin.table("proveedor_categorias").insert(cats).execute()
 
+        _cache_mercado_stats["ts"] = 0.0  # que los chips del Mercado reflejen el alta
         return {"ok": True, "id": proveedor_id}
     except HTTPException:
         raise
@@ -5223,16 +5314,32 @@ async def registrar_contacto(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+_cache_mercado_stats = {"data": None, "ts": 0.0}
+
+
 @app.get("/api/mercado/stats")
 def stats_mercado():
     """Conteos por tipo para los chips del Mercado."""
+    # PERF: antes 5 count="exact" en bucle (1 por tipo). Ahora 1 consulta que trae solo
+    # la columna tipo de los activos (~100 filas) y se cuenta en memoria; caché de 10 min.
+    ahora = time.time()
+    if _cache_mercado_stats["data"] and ahora - _cache_mercado_stats["ts"] < 600:
+        return _cache_mercado_stats["data"]
     try:
         tipos = ["materiales", "equipos", "mano_obra", "servicios", "subcontratista"]
-        resultado = {}
-        for t in tipos:
-            r = supabase_admin.table("proveedores").select("id", count="exact").eq("activo", True).eq("tipo", t).execute()
-            resultado[t] = r.count or 0
+        filas = supabase_admin.table("proveedores").select("tipo").eq("activo", True) \
+            .in_("tipo", tipos).limit(10000).execute().data or []
+        resultado = {t: 0 for t in tipos}
+        if len(filas) >= 1000:  # tope de filas de PostgREST: contar en la base
+            for t in tipos:
+                r = supabase_admin.table("proveedores").select("id", count="exact") \
+                    .eq("activo", True).eq("tipo", t).limit(1).execute()
+                resultado[t] = r.count or 0
+            filas = []
+        for f in filas:
+            resultado[f["tipo"]] += 1
         resultado["total"] = sum(resultado.values())
+        _cache_mercado_stats.update(data=resultado, ts=ahora)
         return resultado
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -5928,7 +6035,7 @@ def _generar_pdf_analisis_bytes(proceso: dict, analisis: dict) -> bytes:
 
 @app.get("/analisis/{proceso_id}/pdf")
 @limiter.limit("20/minute")
-async def descargar_pdf_analisis(request: Request, proceso_id: str):
+def descargar_pdf_analisis(request: Request, proceso_id: str):
     """Descarga el PDF del análisis de pliego generado por Gemini/IA."""
     # Buscar análisis completado
     res_a = supabase_admin.table("analisis_pliego") \

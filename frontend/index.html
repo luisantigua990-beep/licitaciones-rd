@@ -58,11 +58,14 @@ html:not(.ll-has-session) #desk-sidebar { display: none !important; }
 <title>LicitacionLab</title>
 <link rel="manifest" href="/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- PERF: una sola hoja de fuentes. Antes eran dos: Outfit (6 pesos) + DM Mono aquí, e
+     Inter + JetBrains Mono vía @import dentro de licitacionlab-tokens.css (cadena
+     HTML → CSS → CSS → fuentes). Outfit solo se usa en peso 900 y DM Mono era respaldo. -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@900&display=swap" rel="stylesheet">
+<!-- PERF: d3 (no se usaba), Chart.js y jsPDF ya no se cargan aquí: bloqueaban el primer
+     pintado (~890 KB). Chart.js y jsPDF se cargan bajo demanda con cargarLib() -->
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <style>
 /* ─────────────────────────────────────────────────────────
    LICITACIONES LAB — DESIGN SYSTEM v2

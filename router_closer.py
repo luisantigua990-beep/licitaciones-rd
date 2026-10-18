@@ -1483,7 +1483,7 @@ async def procesar_alerta_individual(alerta: dict):
     if alerta.get("conversation_id"): guardar_mensaje(str(alerta.get("conversation_id")), "agente", mensaje, True)
 
 @closer_router.get("/conversaciones")
-async def listar_conversaciones(x_agent_secret: Optional[str] = Header(None), estado: Optional[str] = None, limit: int = 20):
+def listar_conversaciones(x_agent_secret: Optional[str] = Header(None), estado: Optional[str] = None, limit: int = 20):
     if x_agent_secret != AGENT_SECRET: raise HTTPException(status_code=401)
     query = supabase_admin.table("conversaciones_closer").select("*").not_.in_("etapa", ["cerrado_ganado", "cerrado_perdido", "inactivo"]).order("ultimo_mensaje_en", desc=True).limit(limit)
     if estado: query = query.eq("estado", estado)
@@ -1491,7 +1491,7 @@ async def listar_conversaciones(x_agent_secret: Optional[str] = Header(None), es
     return {"conversaciones": result.data or [], "total": len(result.data or [])}
 
 @closer_router.post("/marcar/{conv_id}")
-async def marcar_conversacion(conv_id: str, payload: MarcarEtapaPayload, x_agent_secret: Optional[str] = Header(None)):
+def marcar_conversacion(conv_id: str, payload: MarcarEtapaPayload, x_agent_secret: Optional[str] = Header(None)):
     if x_agent_secret != AGENT_SECRET: raise HTTPException(status_code=401)
     try:
         update = {"etapa": payload.etapa}

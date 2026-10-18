@@ -128,21 +128,31 @@ def mis_referidos(authorization: str | None = Header(default=None)):
     refs = _sb.table("referrals").select("*") \
         .eq("referrer_id", user_id).order("created_at", desc=True).execute().data or []
 
-    resultado = []
-    for r in refs:
-        # Email parcial del referido
-        email = "***"
+    # PERF (N+1): antes eran 2 idas por cada referido (GoTrue + comisiones).
+    # Comisiones: 1 sola consulta para todos. Emails: en paralelo (GoTrue no admite lote).
+    totales: dict = {}
+    if refs:
+        coms = _sb.table("referral_commissions").select("referral_id, amount") \
+            .in_("referral_id", [r["id"] for r in refs]).execute().data or []
+        for c in coms:
+            totales[c["referral_id"]] = totales.get(c["referral_id"], 0.0) + float(c["amount"])
+
+    def _email_de(ref):
         try:
-            u = _sb.auth.admin.get_user_by_id(r["referred_user_id"])
+            u = _sb.auth.admin.get_user_by_id(ref["referred_user_id"])
             if u and u.user and u.user.email:
-                email = _email_parcial(u.user.email)
+                return _email_parcial(u.user.email)
         except Exception:
             pass
+        return "***"
 
-        # Comisión total generada por este referido
-        coms = _sb.table("referral_commissions").select("amount") \
-            .eq("referral_id", r["id"]).execute().data or []
-        total_com = sum(float(c["amount"]) for c in coms)
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        emails = list(pool.map(_email_de, refs))
+
+    resultado = []
+    for r, email in zip(refs, emails):
+        total_com = totales.get(r["id"], 0.0)
 
         resultado.append({
             "email": email,

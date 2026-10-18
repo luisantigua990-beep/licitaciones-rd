@@ -376,14 +376,29 @@ def cargar_contratos(contratos_raw):
         except Exception as e:
             print(f"❌ Error upsert contratos (lote {i}): {e}")
 
-    # Actualizar caches de totales en empresas_estado
-    for emp_id in empresas_modificadas:
-        try:
-            supabase.rpc("actualizar_cache_empresa", {"p_empresa_id": emp_id}).execute()
-        except Exception as e:
-            print(f"⚠️  actualizar_cache_empresa error: {e}")
+    # Actualizar caches de totales en empresas_estado.
+    # PERF (N+1): antes era 1 RPC por empresa (3,3 millones de llamadas acumuladas en
+    # pg_stat_statements). Ahora 1 RPC por cada 500 empresas con actualizar_cache_empresas().
+    actualizar_caches_empresas(list(empresas_modificadas))
 
     return insertados
+
+
+def actualizar_caches_empresas(ids, lote=500):
+    """Recalcula totales de varias empresas en una sola ida por lote.
+    Si la función por lote no existe o no hay permiso, cae al método anterior (1 por 1)."""
+    for i in range(0, len(ids), lote):
+        parte = ids[i:i + lote]
+        try:
+            supabase.rpc("actualizar_cache_empresas", {"p_ids": parte}).execute()
+            continue
+        except Exception as e:
+            print(f"⚠️  actualizar_cache_empresas (lote) falló, sigo 1 por 1: {e}")
+        for emp_id in parte:
+            try:
+                supabase.rpc("actualizar_cache_empresa", {"p_empresa_id": emp_id}).execute()
+            except Exception as e:
+                print(f"⚠️  actualizar_cache_empresa error: {e}")
 
 
 # ─────────────────────────────────────────────────────────────

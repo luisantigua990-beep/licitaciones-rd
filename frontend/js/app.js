@@ -3,6 +3,32 @@
 // reutiliza el código ya compilado en visitas siguientes. Se carga en el mismo punto
 // del documento y sin defer, así que se ejecuta exactamente igual que antes.
 const API = '';
+// ── PERF: librerías pesadas bajo demanda ──
+// Antes se descargaban y ejecutaban en <head> en cada carga, aunque solo se usan al
+// ver gráficas de Inteligencia (Chart.js) o al descargar un PDF (jsPDF).
+const _LIBS = {
+  chart: ['https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js'],
+  pdf:   ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'],
+};
+const _libPromesas = {};
+function _cargarScript(src) {
+  return new Promise((ok, fallo) => {
+    const s = document.createElement('script');
+    s.src = src; s.async = false;
+    s.onload = () => ok();
+    s.onerror = () => { s.remove(); fallo(new Error('No se pudo cargar ' + src)); };
+    document.head.appendChild(s);
+  });
+}
+function cargarLib(nombre) {
+  if (!_libPromesas[nombre]) {
+    _libPromesas[nombre] = _LIBS[nombre]
+      .reduce((p, src) => p.then(() => _cargarScript(src)), Promise.resolve())
+      .catch(e => { delete _libPromesas[nombre]; throw e; });  // permitir reintento
+  }
+  return _libPromesas[nombre];
+}
 // ── THEME ──
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -1034,6 +1060,7 @@ function cambiarOrdenProcesos(v) {
   if (act) act.value = (v === 'todos') ? 'false' : 'true';
   cargarProcesos(1);
 }
+let _procesosCtrl = null;
 async function cargarProcesos(page = 1) {
   restaurarFiltrosProcesos(); // UX v13: restaurar filtros guardados (solo la primera vez)
   document.getElementById('procesos-container').innerHTML = skeletonCards(6);
@@ -1057,16 +1084,24 @@ async function cargarProcesos(page = 1) {
   if (unspscFiltro) url += `&familia_unspsc=${encodeURIComponent(unspscFiltro.codigo)}`;
   guardarFiltrosProcesos(); // UX v13: recordar filtros entre sesiones
 
+  // PERF: si el usuario cambia filtros rápido, la petición anterior se cancela y su
+  // respuesta ya no se pinta (antes podían llegar desordenadas y re-renderizar la lista
+  // varias veces, a veces dejando resultados viejos en pantalla).
+  if (_procesosCtrl) _procesosCtrl.abort();
+  const controller = new AbortController();
+  _procesosCtrl = controller;
+  let porTimeout = false;
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => { porTimeout = true; controller.abort(); }, 15000);
     const res  = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
     if (!res.ok) throw new Error(`Error del servidor (${res.status})`);
     const data = await res.json();
+    if (_procesosCtrl !== controller) return;  // llegó una búsqueda más nueva
     renderProcesos(data.procesos || [], data, page);
   } catch(e) {
-    const esTimeout = e.name === 'AbortError';
+    if (_procesosCtrl !== controller) return;  // cancelada a propósito: no mostrar error
+    const esTimeout = e.name === 'AbortError' && porTimeout;
     // Si es un error de red (no de servidor), intentar de nuevo en 5 segundos
     const esErrorRed = esTimeout || e.message === 'Load failed' || e.message === 'Failed to fetch' || e.message.includes('NetworkError');
     document.getElementById('procesos-container').innerHTML = `
@@ -1380,12 +1415,43 @@ function limpiarUnspsc() {
 }
 
 // ── UNSPSC BUSCAR ──
+// PERF: estas búsquedas disparaban 1 petición y 1 re-render del desplegable POR TECLA,
+// y una respuesta vieja podía llegar tarde y pisar a la nueva. Ahora: espera 250 ms a
+// que el usuario pare de escribir, recuerda resultados ya pedidos y descarta respuestas
+// obsoletas.
+const _unspscCache = new Map();
+const _unspscPend = {};
+function _cancelarUnspsc(clave) {
+  const p = _unspscPend[clave];
+  if (p) { clearTimeout(p.timer); p.resolve(null); delete _unspscPend[clave]; }
+}
+function _buscarUnspscApi(clave, q) {
+  _cancelarUnspsc(clave);
+  return new Promise(resolve => {
+    const pend = { resolve };
+    pend.timer = setTimeout(async () => {
+      let data = _unspscCache.get(q);
+      if (!data) {
+        try {
+          const res = await fetch(`${API}/api/unspsc/buscar?q=${encodeURIComponent(q)}`);
+          data = await res.json();
+          if (Array.isArray(data)) _unspscCache.set(q, data);
+        } catch (e) { data = []; }
+      }
+      if (_unspscPend[clave] !== pend) return resolve(null);  // llegó otra búsqueda
+      delete _unspscPend[clave];
+      resolve(Array.isArray(data) ? data : []);
+    }, 250);
+    _unspscPend[clave] = pend;
+  });
+}
+
 async function buscarUnspsc() {
   const q  = document.getElementById('filtro-unspsc-text').value.trim();
   const dd = document.getElementById('unspsc-dropdown');
-  if (q.length < 2) { dd.style.display = 'none'; return; }
-  const res  = await fetch(`${API}/api/unspsc/buscar?q=${encodeURIComponent(q)}`);
-  const data = await res.json();
+  if (q.length < 2) { _cancelarUnspsc('filtro'); dd.style.display = 'none'; return; }
+  const data = await _buscarUnspscApi('filtro', q);
+  if (data === null) return;
   if (!data.length) { dd.style.display = 'none'; return; }
   const esCodigo = /^\d+$/.test(q);
   dd.innerHTML = data.map(f =>
@@ -1414,9 +1480,9 @@ let familiasPerfil = JSON.parse(localStorage.getItem('familias_interes') || '[]'
 async function buscarUnspscPerfil() {
   const q  = document.getElementById('perfil-unspsc-text').value.trim();
   const dd = document.getElementById('perfil-unspsc-dropdown');
-  if (q.length < 2) { dd.style.display = 'none'; return; }
-  const res  = await fetch(`${API}/api/unspsc/buscar?q=${encodeURIComponent(q)}`);
-  const data = await res.json();
+  if (q.length < 2) { _cancelarUnspsc('perfil'); dd.style.display = 'none'; return; }
+  const data = await _buscarUnspscApi('perfil', q);
+  if (data === null) return;
   if (!data.length) { dd.style.display = 'none'; return; }
   dd.innerHTML = data.map(f =>
     `<div class="unspsc-dropdown-item" onclick="agregarFamiliaPerfil('${f.familia}','${f.descripcion_familia.replace(/'/g,"\\'")}')">
@@ -5845,6 +5911,7 @@ async function descargarArticulosPDF(codigo) {
     const p    = data.proceso;
     const arts = data.articulos || [];
 
+    await cargarLib('pdf');
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -6980,6 +7047,7 @@ function icDebounce() {
 
 async function icBuscar() {
   if (!(await verificarAccesoPro('empresas'))) return;
+  cargarLib('chart').catch(() => {});  // adelantar la descarga mientras llega la data
   const q = (document.getElementById('ic-search-input')?.value || '').trim();
   if (q.length < 2) return;
   document.getElementById('ic-resultados').innerHTML = '';
@@ -7113,9 +7181,10 @@ function icRenderDashboard(data) {
   document.getElementById('ic-dashboard').style.display = 'block';
 }
 
-function icRenderChartCanvas(canvasId, datos, campo, esMonto) {
+async function icRenderChartCanvas(canvasId, datos, campo, esMonto) {
   const cv = document.getElementById(canvasId);
   if (!cv || !datos || !datos.length) return;
+  try { await cargarLib('chart'); } catch (e) { console.warn(e); return; }
   // Destruir chart anterior si existe
   const existente = Chart.getChart(cv);
   if (existente) existente.destroy();

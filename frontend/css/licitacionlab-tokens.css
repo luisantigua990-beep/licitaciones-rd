@@ -22,7 +22,8 @@
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* ── Fuentes (si no las cargas en <head>) ─────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* PERF: las fuentes se cargan con <link> en el <head> de index.html (un @import aquí
+   encadenaba una petición más antes de poder bajar las fuentes). */
 
 /* ═══ LIGHT (DEFAULT) ═══════════════════════════════════════════════════ */
 :root,

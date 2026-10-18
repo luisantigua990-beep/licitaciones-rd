@@ -88,7 +88,7 @@ def _serializar(a: dict) -> dict:
 # ── Endpoints ──────────────────────────────────────────────
 
 @bid_archivos_router.post("/{entidad}/{registro_id}/archivos", status_code=201)
-async def subir_archivos(
+def subir_archivos(
     entidad: str,
     registro_id: str,
     files: List[UploadFile] | None = File(default=None),
@@ -112,7 +112,7 @@ async def subir_archivos(
     total = 0
     validados = []
     for f in files:
-        contenido = await f.read()
+        contenido = f.file.read()  # sync: el endpoint corre en el threadpool
         total += len(contenido)
         if total > MAX_BYTES_REQUEST:
             _err(413, "REQUEST_MUY_GRANDE")
