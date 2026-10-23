@@ -1,0 +1,55 @@
+/* ============================================================
+   CONTROL DE OBRA — estilos propios (ob-*)
+   Depende de licitacionlab-tokens.css y bid-manager.css (bm-*).
+   ============================================================ */
+
+.ob-header-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-4, 16px); flex-wrap: wrap;
+}
+.ob-header-actions { display: flex; align-items: center; gap: var(--space-2, 8px); flex-wrap: wrap; }
+
+/* Lista de obras */
+.ob-lista { display: grid; gap: var(--space-3, 12px); grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.ob-obra-card { cursor: pointer; }
+.ob-obra-card .ob-obra-meta { color: var(--color-text-tertiary); font-size: var(--text-sm, 13px); margin-top: 2px; }
+.ob-obra-kpis {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2, 8px);
+  margin-top: var(--space-3, 12px); font-size: var(--text-sm, 13px);
+}
+.ob-obra-kpis span { display: block; color: var(--color-text-tertiary); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+.ob-obra-kpis strong { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-weight: 600; }
+
+/* Barra de avance */
+.ob-bar { height: 6px; background: var(--color-bg-subtle); border-radius: 999px; overflow: hidden; margin-top: var(--space-2, 8px); }
+.ob-bar > i { display: block; height: 100%; background: var(--color-brand); border-radius: 999px; transition: width .3s; }
+
+/* Tablas */
+.ob-table-wrap { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px); background: var(--color-surface); margin-bottom: var(--space-5, 20px); }
+.ob-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm, 13px); }
+.ob-table th, .ob-table td { padding: 8px 10px; border-bottom: 1px solid var(--color-border-subtle); text-align: left; white-space: nowrap; }
+.ob-table th { font-weight: 600; color: var(--color-text-secondary); background: var(--color-surface-sunken); position: sticky; top: 0; }
+.ob-table td.ob-desc { white-space: normal; min-width: 260px; }
+.ob-table td.ob-num, .ob-table th.ob-num { text-align: right; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; }
+.ob-table tr.ob-capitulo td { background: var(--color-bg-subtle); font-weight: 600; }
+.ob-table tr.ob-total td { font-weight: 700; border-top: 2px solid var(--color-border-strong); }
+.ob-table tbody tr:hover td { background: var(--color-brand-subtle); }
+.ob-table .ob-acciones { text-align: right; }
+.ob-table .ob-acciones button { margin-left: 4px; }
+
+.ob-neg { color: var(--color-danger, #B42318); }
+.ob-pos { color: var(--color-brand); }
+.ob-muted { color: var(--color-text-muted); }
+
+/* Inputs dentro de tablas (cubicación) */
+.ob-table input.bm-input { width: 110px; padding: 4px 6px; text-align: right; }
+
+/* Modal ancho para pegar listados / cubicar */
+.ob-modal-wide { max-width: 960px; width: 95vw; }
+.ob-paste { width: 100%; min-height: 220px; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 12px; }
+.ob-preview-note { font-size: var(--text-sm, 13px); color: var(--color-text-tertiary); margin: 8px 0; }
+
+@media (max-width: 640px) {
+  .ob-obra-kpis { grid-template-columns: repeat(3, 1fr); }
+  .ob-table th, .ob-table td { padding: 6px 8px; }
+}

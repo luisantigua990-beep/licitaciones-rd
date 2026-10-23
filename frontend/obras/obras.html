@@ -1,0 +1,114 @@
+<!-- ============================================================
+     CONTROL DE OBRA — Markup del módulo
+     ============================================================
+     Se carga dentro de #tab-obras por Obras.init().
+     Reutiliza las clases bm-* de bid-manager.css (botones, cards,
+     modal, inputs) y agrega ob-* para lo propio (obras.css).
+     ============================================================ -->
+
+<div class="bm-container" id="ob-root">
+
+  <!-- ── VISTA 1: LISTA DE OBRAS ───────────────────────────── -->
+  <div id="ob-vista-lista">
+    <div class="bm-header ob-header-row">
+      <div>
+        <h1>Control de Obra</h1>
+        <p>Contratado vs. ejecutado vs. gastado, por partida y por obra.</p>
+      </div>
+      <button class="bm-btn bm-btn-primary" onclick="Obras.nuevaObra()">+ Nueva obra</button>
+    </div>
+
+    <div class="bm-indicators-grid" id="ob-kpis-globales"></div>
+    <div id="ob-lista-obras" class="ob-lista"></div>
+  </div>
+
+  <!-- ── VISTA 2: DETALLE DE OBRA ──────────────────────────── -->
+  <div id="ob-vista-detalle" style="display:none">
+    <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="Obras.volver()">← Obras</button>
+
+    <div class="bm-header ob-header-row">
+      <div>
+        <h1 id="ob-det-nombre">Obra</h1>
+        <p id="ob-det-sub"></p>
+      </div>
+      <div class="ob-header-actions">
+        <span class="bm-badge" id="ob-det-estado"></span>
+        <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="Obras.editarObra()">Editar</button>
+      </div>
+    </div>
+
+    <div class="bm-tabs" id="ob-tabs">
+      <button class="bm-tab bm-active" data-panel="tablero">Tablero</button>
+      <button class="bm-tab" data-panel="partidas">Partidas <span class="bm-tab-badge" id="ob-badge-partidas">0</span></button>
+      <button class="bm-tab" data-panel="cubicaciones">Cubicaciones <span class="bm-tab-badge" id="ob-badge-cubicaciones">0</span></button>
+      <button class="bm-tab" data-panel="gastos">Gastos <span class="bm-tab-badge" id="ob-badge-gastos">0</span></button>
+    </div>
+
+    <!-- TABLERO -->
+    <div class="bm-panel bm-active" data-panel="tablero">
+      <div class="bm-indicators-grid" id="ob-kpis"></div>
+      <div id="ob-alertas"></div>
+      <div class="bm-section-header">
+        <div>
+          <h2 class="bm-section-title">Por capítulo</h2>
+          <p class="bm-section-desc">Ejecutado sale de las cubicaciones presentadas; gastado, de los gastos cargados a cada partida.</p>
+        </div>
+      </div>
+      <div class="ob-table-wrap"><table class="ob-table" id="ob-tabla-capitulos"></table></div>
+      <div class="bm-section-header"><div><h2 class="bm-section-title">Por partida</h2></div></div>
+      <div class="ob-table-wrap"><table class="ob-table" id="ob-tabla-estado"></table></div>
+    </div>
+
+    <!-- PARTIDAS -->
+    <div class="bm-panel" data-panel="partidas">
+      <div class="bm-section-header">
+        <div>
+          <h2 class="bm-section-title">Listado de cantidades contratado</h2>
+          <p class="bm-section-desc">Pega el listado de la oferta (código, descripción, unidad, cantidad, PU) tal cual sale del presupuesto.</p>
+        </div>
+        <div class="ob-header-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="Obras.nuevaPartida()">+ Partida</button>
+          <button class="bm-btn bm-btn-primary bm-btn-sm" onclick="Obras.importarPartidas()">Pegar listado</button>
+        </div>
+      </div>
+      <div class="ob-table-wrap"><table class="ob-table" id="ob-tabla-partidas"></table></div>
+    </div>
+
+    <!-- CUBICACIONES -->
+    <div class="bm-panel" data-panel="cubicaciones">
+      <div class="bm-section-header">
+        <div>
+          <h2 class="bm-section-title">Cubicaciones</h2>
+          <p class="bm-section-desc">Cantidades ejecutadas por periodo. Solo cuentan para el avance desde que se presentan.</p>
+        </div>
+        <button class="bm-btn bm-btn-primary bm-btn-sm" onclick="Obras.nuevaCubicacion()">+ Cubicación</button>
+      </div>
+      <div id="ob-lista-cubicaciones" class="bm-grid"></div>
+    </div>
+
+    <!-- GASTOS -->
+    <div class="bm-panel" data-panel="gastos">
+      <div class="bm-section-header">
+        <div>
+          <h2 class="bm-section-title">Gastos de obra</h2>
+          <p class="bm-section-desc">Cada factura, conduce o pago se carga a una partida. Sin partida = indirecto de obra.</p>
+        </div>
+        <button class="bm-btn bm-btn-primary bm-btn-sm" onclick="Obras.nuevoGasto()">+ Gasto</button>
+      </div>
+      <div class="ob-table-wrap"><table class="ob-table" id="ob-tabla-gastos"></table></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal propio del módulo (misma estructura que el del Bid Manager) -->
+<div class="bm-modal-overlay" id="ob-modal">
+  <div class="bm-modal ob-modal-wide">
+    <div class="bm-modal-header">
+      <h3 class="bm-modal-title" id="ob-modal-title">Título</h3>
+      <button class="bm-modal-close" onclick="Obras.cerrarModal()">✕</button>
+    </div>
+    <div id="ob-modal-body"></div>
+    <div class="bm-modal-footer" id="ob-modal-footer"></div>
+  </div>
+</div>
