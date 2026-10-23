@@ -39,6 +39,7 @@ from router_closer import closer_router
 from router_pagos import pagos_router
 from router_referidos import referidos_router
 from router_bid_manager import bid_manager_router
+from router_obras import obras_router
 from etl_contratos_adjudicados import run_etl
 from competidores_feature import competidores_router
 from reenriquecer_empresas import get_reenriquecimiento_router
@@ -442,6 +443,7 @@ app.include_router(get_agente6_router())
 from router_resend_webhook import resend_webhook_router
 app.include_router(resend_webhook_router)
 app.include_router(bid_manager_router)
+app.include_router(obras_router)
 
 # ── Expediente Digital v2 — Fase 0: adjuntos por registro + auditoría ──
 from router_bid_archivos import bid_archivos_router

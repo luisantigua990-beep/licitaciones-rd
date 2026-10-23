@@ -3026,6 +3026,7 @@ html { background: var(--color-bg, #0A0A0A); }
 <link rel="stylesheet" href="/frontend/css/licitacionlab-tokens.css">
 <link rel="stylesheet" href="/frontend/css/licitacionlab-components.css">
 <link rel="stylesheet" href="/frontend/bid-manager/bid-manager.css">
+<link rel="stylesheet" href="/frontend/obras/obras.css">
 <style>
 /* ── Fix accesibilidad: se habilitó zoom de página (viewport sin user-scalable=no).
    Para que iOS no haga auto-zoom al enfocar inputs, en móvil los campos usan 16px. ── */
@@ -3405,6 +3406,11 @@ html { background: var(--color-bg, #0A0A0A); }
     <button class="dsb-nav-item" id="dsb-nav-bid" onclick="switchTab2('bid')">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
       <span>Expediente Digital</span>
+      <span class="dsb-nav-badge" style="background:rgba(22,163,74,.15);color:var(--green);font-size:9px;padding:1px 6px;border-radius:6px;font-weight:700;">NUEVO</span>
+    </button>
+    <button class="dsb-nav-item" id="dsb-nav-obras" onclick="switchTab2('obras')">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><line x1="9" y1="9" x2="9" y2="9.01"/><line x1="9" y1="13" x2="9" y2="13.01"/><line x1="9" y1="17" x2="9" y2="17.01"/></svg>
+      <span>Control de Obra</span>
       <span class="dsb-nav-badge" style="background:rgba(22,163,74,.15);color:var(--green);font-size:9px;padding:1px 6px;border-radius:6px;font-weight:700;">NUEVO</span>
     </button>
     <button class="dsb-nav-item" id="dsb-nav-referidos" onclick="switchTab2('referidos')">
@@ -4296,6 +4302,7 @@ html { background: var(--color-bg, #0A0A0A); }
        /frontend/bid-manager/bid-manager.html por BidManager.init())
        ══════════════════════════════════════════════════════════ -->
   <div id="tab-bid"></div>
+  <div id="tab-obras"></div>
 
   <div id="tab-referidos" style="position:absolute;inset:0;overflow-y:auto;padding-bottom:calc(76px + env(safe-area-inset-bottom, 0px));display:none;z-index:1;">
     <div style="padding:20px 20px 0;position:sticky;top:0;background:var(--bg);z-index:10;border-bottom:1px solid var(--border);padding-bottom:14px;">
@@ -7634,7 +7641,7 @@ function switchTab2(tab) {
   // FIX: blur del elemento activo (evita que un input enfocado en el tab anterior
   // bloquee la navegación, especialmente en el tab Empresas/Inteligencia).
   try { document.activeElement && document.activeElement.blur && document.activeElement.blur(); } catch(e){}
-  const allTabs = ['dashboard','detalle','perfil','seguimiento','mercado','alertas','analisis','reportes','calendario','inteligencia','semaforo','referidos','bid'];
+  const allTabs = ['dashboard','detalle','perfil','seguimiento','mercado','alertas','analisis','reportes','calendario','inteligencia','semaforo','referidos','bid','obras'];
   allTabs.forEach(t => {
     const el = document.getElementById(`tab-${t}`);
     if (!el) return;
@@ -7666,6 +7673,7 @@ function switchTab2(tab) {
   if (tab==='calendario')  cargarCalendario();
   if (tab==='semaforo')    { if (typeof spInit === 'function') spInit(); }
   if (tab==='bid')         { if (typeof BidManager !== 'undefined') BidManager.init(); }
+  if (tab==='obras')       { if (typeof Obras !== 'undefined') Obras.init(); }
   // Bottom-nav (móvil)
   document.querySelectorAll('.ll-bottom-nav__item').forEach(b => b.classList.remove('is-active'));
   const navMap = { 'dashboard':'nav-dashboard','perfil':'nav-perfil','seguimiento':'nav-seguimiento','mercado':'nav-mercado','inteligencia':'nav-inteligencia' };
@@ -7679,7 +7687,8 @@ function switchTab2(tab) {
     'inteligencia':'dsb-nav-inteligencia',
     'semaforo':'dsb-nav-semaforo',
     'reportes':'dsb-nav-reportes','calendario':'dsb-nav-calendario',
-    'bid':'dsb-nav-bid'
+    'bid':'dsb-nav-bid',
+    'obras':'dsb-nav-obras'
   };
   if(dsbMap[tab]) document.getElementById(dsbMap[tab])?.classList.add('active');
 }
@@ -13131,5 +13140,6 @@ revisarRetornoPago();
 <script src="/frontend/bid-manager/expediente-rail.js" defer></script>
 <script src="/frontend/bid-manager/expediente-tabla.js" defer></script>
 <script src="/frontend/bid-manager/expediente-sobre.js" defer></script>
+<script src="/frontend/obras/obras.js" defer></script>
 </body>
 </html>
