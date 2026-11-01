@@ -16,6 +16,11 @@ on:
           - facturas
           - trazabilidad
           - explorar-trazabilidad
+          - empresa
+      rnc:
+        description: "RNC de la empresa (solo para modo 'empresa'), ej. 123013108"
+        required: false
+        default: ""
   # Automático: todos los días a las 6:00 AM (hora RD)
   schedule:
     - cron: "0 10 * * *"
@@ -36,6 +41,13 @@ jobs:
 
       - run: pip install requests
 
+      # Carga a demanda de una empresa por RNC (contratos + facturas)
+      - name: Cargar empresa por RNC
+        if: ${{ inputs.modo == 'empresa' }}
+        env:
+          RNC: ${{ inputs.rnc }}
+        run: python etl_infopago.py --modo facturas --rnc "$RNC"
+
       # Rápido (~6s)
       - name: Ranking de instituciones 2026
         if: ${{ inputs.modo == 'todo' || inputs.modo == 'ranking' || github.event_name == 'schedule' }}
@@ -49,7 +61,7 @@ jobs:
       # Incremental: solo toma empresas con infopago_id NULL.
       - name: Resolver RNCs reales (RPE → RNC)
         if: ${{ inputs.modo == 'todo' || inputs.modo == 'resolver-rnc' || github.event_name == 'schedule' }}
-        run: python etl_infopago.py --modo resolver-rnc --limit 100
+        run: python etl_infopago.py --modo resolver-rnc --limit 400 --budget-min 10
 
       # Descubre los contratos InfoPago de cada empresa.
       # Incremental: salta empresas con infopago_contratos_at marcado.

@@ -25,7 +25,7 @@ import json
 import time
 import hashlib
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 
@@ -381,24 +381,32 @@ def resolver_empresa(rpe, nombre, rnc_conocido=None):
 
 
 def modo_resolver_rnc(args):
+    """Resuelve Id InfoPago + RNC real de empresas_estado.
+    Cada intento queda marcado en infopago_resolver_at: las empresas sin match
+    se reintentan a los 30 días en vez de bloquear la cola todos los días."""
+    dl = _deadline(args)
     print(f"▶ Resolviendo Id InfoPago + RNC de hasta {args.limit} empresas (más activas primero)")
+    hace_30 = (datetime.utcnow() - timedelta(days=30)).isoformat()
     empresas = sb_select(
         "empresas_estado",
         "select=id,rnc,rnc_real,nombre&infopago_id=is.null&nombre=not.is.null"
+        f"&or=(infopago_resolver_at.is.null,infopago_resolver_at.lt.{hace_30})"
         f"&order=total_contratos.desc.nullslast&limit={args.limit}")
     if not empresas:
         print("✔ No hay empresas pendientes de resolver (o falló la consulta)")
         return
     ok = fail = 0
     for i, e in enumerate(empresas, 1):
+        if _vencido(dl):
+            print(f"⏱ Presupuesto de tiempo agotado tras {i - 1} empresas — continúa en la próxima corrida")
+            break
         iid, doc = resolver_empresa(e.get("rnc"), e.get("nombre"), e.get("rnc_real"))
-        cambios = {}
+        cambios = {"infopago_resolver_at": datetime.utcnow().isoformat()}
         if iid:
             cambios["infopago_id"] = iid
         if doc and not e.get("rnc_real"):
             cambios["rnc_real"] = doc
-        if cambios:
-            sb_patch("empresas_estado", f"id=eq.{e['id']}", cambios)
+        sb_patch("empresas_estado", f"id=eq.{e['id']}", cambios)
         if iid:
             ok += 1
         else:
@@ -406,9 +414,8 @@ def modo_resolver_rnc(args):
         if i % 20 == 0 or i == len(empresas):
             print(f"  [{i}/{len(empresas)}] resueltos={ok} sin_match={fail}")
     print(f"✅ {ok} Ids InfoPago resueltos, {fail} sin match")
-    if ok == 0:
-        print("✖ No se resolvió ningún Id — revisar GetReferenciaProveedor con --explorar")
-        sys.exit(1)
+    if ok == 0 and fail >= 50:
+        print("⚠ No se resolvió ningún Id en un lote grande — revisar GetReferenciaProveedor con --explorar")
 
 
 def modo_contratos(args):
@@ -458,24 +465,54 @@ def modo_contratos(args):
 
 def modo_facturas(args):
     if args.rnc:
-        # Un solo proveedor: resolver Id, traer sus contratos y las facturas de cada uno
-        iid, doc = _match_referencia(_referencia_proveedor("rnc", args.rnc))
+        # Un solo proveedor (carga a demanda): resolver Id, guardar sus contratos
+        # y traer las facturas de cada uno. Así aparece en el Semáforo sin esperar la cola.
+        rnc_arg = _solo_digitos(args.rnc) or args.rnc
+        iid, doc = _match_referencia(_referencia_proveedor("rnc", rnc_arg))
         if not iid:
-            print(f"\u2716 No se encontr\u00f3 el proveedor en InfoPago para RNC {args.rnc}")
+            print(f"\u2716 No se encontr\u00f3 el proveedor en InfoPago para RNC {rnc_arg}")
             sys.exit(1)
         prov, contratos = _contratos_por_id(iid)
-        rnc = doc or args.rnc
-        tot = 0
-        for c in contratos[: args.max_contratos or len(contratos)]:
+        rnc = _solo_digitos(doc) or rnc_arg
+        nombre = pick(prov, "razonSocial")
+        print(f"\u25b6 {nombre or rnc}: {len(contratos)} contratos en InfoPago")
+        pc = [{
+            "rnc": rnc,
+            "rpe": pick(prov, "rpe"),
+            "razon_social": nombre,
+            "estado_rpe": pick(prov, "estadoRPE"),
+            "monto_total_contratado": pick(prov, "montoTotalContratado"),
+            "contrato": c.get("contrato"),
+            "proceso_compra": c.get("procesoCompra"),
+            "notice_uid": c.get("noticeUID"),
+            "periodo": str(c.get("periodo") or ""),
+            "fecha_contrato": parse_fecha(c.get("fecha")),
+            "raw": c,
+        } for c in contratos if c.get("contrato")]
+        if pc:
+            sb_upsert("infopago_proveedor_contratos", _dedup(pc, ["rnc", "contrato"]), "rnc,contrato")
+        tope = args.max_contratos or len(contratos)
+        tot, hechos = 0, []
+        for c in contratos[:tope]:
             num = c.get("contrato")
             if not num:
                 continue
             filas = [f for f in facturas_por_contrato(num) if f["comprobante_fiscal"]]
-            filas = [dict(f, rnc_proveedor=f["rnc_proveedor"] or rnc) for f in filas]
+            filas = [dict(f,
+                          rnc_proveedor=f["rnc_proveedor"] or rnc,
+                          nombre_proveedor=f["nombre_proveedor"] or nombre)
+                     for f in filas]
             tot += sb_upsert("infopago_facturas",
                              _dedup(filas, ["comprobante_fiscal", "contrato"]),
                              "comprobante_fiscal,contrato")
-        print(f"\u2705 {tot} facturas guardadas de {len(contratos)} contratos")
+            hechos.append(num)
+        for i in range(0, len(hechos), 50):
+            _marcar_contratos(hechos[i:i + 50])
+        sb_patch("empresas_estado", f"rnc_real=eq.{rnc}",
+                 {"infopago_id": iid, "infopago_resolver_at": datetime.utcnow().isoformat(),
+                  "infopago_contratos_at": datetime.utcnow().isoformat()})
+        print(f"\u2705 {tot} facturas guardadas de {len(hechos)} contratos")
+        refrescar_vista()
         return
 
     if args.contrato:
@@ -882,6 +919,21 @@ def modo_trazabilidad(args):
     print(f"✅ TOTAL: {tot} trazabilidades de {hechas} facturas consultadas")
 
 
+# ── Vista de búsqueda del Semáforo ──────────────────────────────
+def refrescar_vista():
+    """Refresca infopago_proveedores (lo que consulta el buscador del Semáforo).
+    La BD ya la refresca sola cada hora (pg_cron); esto solo la adelanta.
+    Puede fallar por el límite de 8 s de la API: no es fatal."""
+    url = f"{SUPABASE_URL}/rest/v1/rpc/refrescar_infopago_proveedores"
+    h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
+         "Content-Type": "application/json"}
+    r = requests.post(url, headers=h, data="{}", timeout=300)
+    if r.status_code in (200, 204):
+        print("✅ Vista infopago_proveedores refrescada")
+    else:
+        print(f"  ⚠ No se pudo refrescar ahora ({r.status_code}); se refresca sola en menos de 1 hora")
+
+
 # ── MODO PROVEEDOR (búsqueda/prueba) ────────────────────────────
 def modo_proveedor(args):
     data = api_post("Proveedor/GetReferenciaProveedor", {"type": "name", "value": args.nombre})
@@ -892,7 +944,7 @@ def modo_proveedor(args):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="ETL InfoPago DGCP → Supabase")
     ap.add_argument("--explorar", action="store_true", help="Imprimir estructura real de cada endpoint")
-    ap.add_argument("--modo", choices=["facturas", "contratos", "ranking", "proveedor", "trazabilidad", "resolver-rnc", "explorar-trazabilidad"])
+    ap.add_argument("--modo", choices=["facturas", "contratos", "ranking", "proveedor", "trazabilidad", "resolver-rnc", "explorar-trazabilidad", "refrescar-vista"])
     ap.add_argument("--rnc", help="RNC del proveedor")
     ap.add_argument("--contrato", help="Código de contrato (ej. CAASD-2025-00188)")
     ap.add_argument("--desde-contratos", action="store_true",
@@ -902,7 +954,7 @@ if __name__ == "__main__":
                     help="Minutos máx. de trabajo; al agotarse para limpio y guarda checkpoint (0 = sin límite)")
     ap.add_argument("--shard", default=None,
                     help="Reparto para corridas paralelas, formato N/M (ej: 2/5). Cada shard procesa un grupo disjunto de contratos.")
-    ap.add_argument("--max-contratos", type=int, default=30, help="Máx. contratos por empresa a consultar facturas")
+    ap.add_argument("--max-contratos", type=int, default=0, help="Máx. contratos a consultar con --rnc (0 = todos)")
     ap.add_argument("--periodo", default="todos")
     ap.add_argument("--codes", help="unidadCompraCode separados por coma (ranking)")
     ap.add_argument("--nombre", default="CONSER", help="Nombre a buscar (modo proveedor)")
@@ -926,5 +978,7 @@ if __name__ == "__main__":
         modo_proveedor(args)
     elif args.modo == "trazabilidad":
         modo_trazabilidad(args)
+    elif args.modo == "refrescar-vista":
+        refrescar_vista()
     else:
         ap.print_help()
