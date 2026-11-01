@@ -9124,7 +9124,7 @@ function renderSeguimiento() {
         <p class="ll-body-sm ll-u-text-subtle" style="margin-bottom:16px;">${segFiltroActivo === 'todos'
           ? 'Entra al detalle de una licitación y presiona <b>\"Seguir proceso\"</b> para agregarlo aquí y recibir alertas automáticas.'
           : 'Cambia el filtro para ver otros estados.'}</p>
-        ${segFiltroActivo === 'todos' ? `<button class="ll-btn ll-btn--primary" onclick="navTo('licitaciones')">Ver licitaciones activas →</button>` : ''}
+        ${segFiltroActivo === 'todos' ? `<button class="ll-btn ll-btn--primary" onclick="switchTab2('dashboard')">Ver licitaciones activas →</button>` : ''}
       </div>`;
     return;
   }
