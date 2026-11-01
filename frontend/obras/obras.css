@@ -3,6 +3,25 @@
    Depende de licitacionlab-tokens.css y bid-manager.css (bm-*).
    ============================================================ */
 
+/* Contenedor del tab: misma capa y posición que #tab-bid (Expediente Digital).
+   Sin esto el módulo queda en el flujo normal, debajo del menú lateral
+   y tapado por otras capas que bloquean los clics. */
+#tab-obras {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  display: none;
+  z-index: 1;
+  background: var(--bg);
+}
+@media (min-width: 900px) {
+  html.ll-has-session #tab-obras { left: 220px; }
+}
+@media (min-width: 1400px) {
+  html.ll-has-session #tab-obras { left: 260px; }
+}
+
 .ob-header-row {
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: var(--space-4, 16px); flex-wrap: wrap;
