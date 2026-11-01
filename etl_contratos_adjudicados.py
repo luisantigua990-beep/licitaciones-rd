@@ -16,6 +16,7 @@ Variables de entorno (mismas que monitor.py):
 
 import os
 import sys
+import json
 import time
 import argparse
 import requests
@@ -115,14 +116,23 @@ def obtener_contratos_api(fecha_desde, fecha_hasta, page=1):
 
 def obtener_todas_las_paginas_contratos(fecha_desde, fecha_hasta):
     """Pagina hasta agotar resultados — igual que obtener_todas_las_paginas()."""
+    # La API a veces devuelve 999 filas en páginas llenas (no 1000): cortar por
+    # "len < PAGE_SIZE" dejaba fuera todo lo que venía después de la página 1.
+    # Ahora se pagina hasta recibir una página vacía o repetida.
     todos = []
     page  = 1
-    while True:
+    primera_anterior = None
+    while page <= 500:
         contratos = obtener_contratos_api(fecha_desde, fecha_hasta, page=page)
         if not contratos:
             break
+        primera = json.dumps(contratos[0], sort_keys=True, default=str)
+        if primera == primera_anterior:
+            print(f"⚠️  La API repitió la página {page - 1}; se detiene la paginación")
+            break
+        primera_anterior = primera
         todos.extend(contratos)
-        if len(contratos) < PAGE_SIZE:
+        if len(contratos) < PAGE_SIZE * 0.9:
             break
         page += 1
         time.sleep(DELAY_BETWEEN_PAGES)

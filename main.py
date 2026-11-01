@@ -1940,7 +1940,8 @@ def estadisticas(request: Request):
             .ilike("objeto_proceso", "%Servicios%") \
             .execute()
         
-        articulos = supabase.table("articulos_proceso").select("id", count="exact").execute()
+        # Conteo estimado: el exacto sobre ~800 mil filas pasaba de 8 s y tumbaba todo /api/stats
+        articulos = supabase.table("articulos_proceso").select("id", count="estimated").limit(1).execute()
         
         return {
             "total_procesos": procesos.count,
