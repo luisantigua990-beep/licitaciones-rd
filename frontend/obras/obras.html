@@ -64,12 +64,20 @@
       <div class="bm-section-header">
         <div>
           <h2 class="bm-section-title">Listado de cantidades contratado</h2>
-          <p class="bm-section-desc">Pega el listado de la oferta (código, descripción, unidad, cantidad, PU) tal cual sale del presupuesto.</p>
+          <p class="bm-section-desc">Sube el Excel del presupuesto tal cual: la app encuentra las partidas, los capítulos, tu costo de ejecución y los indirectos.</p>
         </div>
         <div class="ob-header-actions">
           <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="Obras.nuevaPartida()">+ Partida</button>
-          <button class="bm-btn bm-btn-primary bm-btn-sm" onclick="Obras.importarPartidas()">Pegar listado</button>
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="Obras.importarPartidas()">Pegar</button>
+          <button class="bm-btn bm-btn-primary bm-btn-sm" onclick="Obras.subirPresupuesto()">Subir Excel</button>
         </div>
+      </div>
+      <div class="ob-drop" id="ob-partidas-vacio" onclick="Obras.subirPresupuesto()"
+           ondragover="event.preventDefault();this.classList.add('ob-drop-on')" ondragleave="this.classList.remove('ob-drop-on')"
+           ondrop="event.preventDefault();this.classList.remove('ob-drop-on');Obras.subirPresupuesto(event.dataTransfer.files[0])">
+        <div class="ob-drop-icon">📊</div>
+        <div class="ob-drop-titulo">Arrastra aquí el Excel del presupuesto</div>
+        <div class="ob-muted">o haz clic para buscarlo · .xlsx</div>
       </div>
       <div class="ob-table-wrap"><table class="ob-table" id="ob-tabla-partidas"></table></div>
     </div>
@@ -91,9 +99,13 @@
       <div class="bm-section-header">
         <div>
           <h2 class="bm-section-title">Gastos de obra</h2>
-          <p class="bm-section-desc">Cada factura, conduce o pago se carga a una partida. Sin partida = indirecto de obra.</p>
+          <p class="bm-section-desc">Cada factura, conduce o pago se carga a una partida, para saber qué se gastó en qué.</p>
         </div>
-        <button class="bm-btn bm-btn-primary bm-btn-sm" onclick="Obras.nuevoGasto()">+ Gasto</button>
+        <div class="ob-header-actions">
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="Obras.nuevoGasto()">+ Gasto</button>
+          <button class="bm-btn bm-btn-ghost bm-btn-sm" onclick="Obras.subirGastosExcel()">Subir Excel</button>
+          <button class="bm-btn bm-btn-primary bm-btn-sm" onclick="Obras.fotoFactura()">📷 Foto de factura</button>
+        </div>
       </div>
       <div class="ob-table-wrap"><table class="ob-table" id="ob-tabla-gastos"></table></div>
     </div>

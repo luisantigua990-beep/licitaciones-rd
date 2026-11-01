@@ -72,3 +72,65 @@
   .ob-obra-kpis { grid-template-columns: repeat(3, 1fr); }
   .ob-table th, .ob-table td { padding: 6px 8px; }
 }
+
+/* ── Carga automática (Excel / factura) ─────────────────────── */
+.ob-oculto { display: none !important; }
+.ob-drop {
+  border: 2px dashed var(--color-border-strong, #D4D4D4); border-radius: var(--radius-md, 8px);
+  padding: 40px 20px; text-align: center; cursor: pointer; background: var(--color-surface, #fff);
+  transition: border-color .15s, background .15s; margin-bottom: var(--space-5, 20px);
+}
+.ob-drop:hover, .ob-drop.ob-drop-on { border-color: var(--color-brand); background: var(--color-brand-subtle); }
+.ob-drop-icon { font-size: 32px; margin-bottom: 6px; }
+.ob-drop-titulo { font-weight: 600; margin-bottom: 4px; }
+
+.ob-imp-cab {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  font-size: var(--text-sm, 13px); margin: 4px 0 10px;
+}
+.ob-imp-tabla { max-height: 52vh; overflow: auto; }
+.ob-imp-tabla .ob-table th { z-index: 1; }
+.ob-imp-totales {
+  display: flex; gap: 18px; flex-wrap: wrap; font-size: var(--text-sm, 13px);
+  padding: 10px 12px; border-radius: var(--radius-md, 8px); background: var(--color-surface-sunken, #FAFAFA);
+  border: 1px solid var(--color-border); margin-bottom: 10px;
+}
+.ob-inline-select { width: auto; display: inline-block; padding: 4px 8px; font-size: 13px; }
+.ob-check { display: flex; gap: 8px; align-items: center; font-size: 13px; margin: 6px 0; cursor: pointer; }
+#ob-imp-mapeo, #ob-gx-mapeo { padding: 10px 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px); margin-bottom: 10px; }
+
+.ob-partida-cel { min-width: 280px; white-space: normal !important; }
+.ob-input-partida { width: 100%; }
+.ob-input-partida.ob-falta { border-color: var(--color-warning, #D97706); background: var(--color-warning-subtle, rgba(217,119,6,.08)); }
+.ob-hint { font-size: 11px; color: var(--color-warning, #D97706); margin-top: 2px; }
+.ob-todo-una { display: flex; gap: 6px; align-items: center; flex: 1; justify-content: flex-end; min-width: 260px; }
+.ob-todo-una .ob-input-partida { max-width: 380px; }
+.ob-table td input.bm-input { min-width: 0; }
+.ob-table td.ob-desc input.bm-input { width: 100%; text-align: left; }
+.ob-table input.ob-num-input { width: 130px; text-align: right; }
+
+.ob-fac { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 12px; }
+.ob-fac-img { flex: 0 0 180px; display: block; border: 1px solid var(--color-border); border-radius: var(--radius-md, 8px); overflow: hidden; }
+.ob-fac-img img { width: 100%; display: block; max-height: 260px; object-fit: cover; object-position: top; }
+.ob-fac-datos { flex: 1; min-width: 0; }
+
+@media (max-width: 640px) {
+  .ob-fac { flex-direction: column; }
+  .ob-fac-img { flex-basis: auto; width: 100%; }
+  .ob-todo-una { justify-content: stretch; }
+  .ob-partida-cel { min-width: 200px; }
+}
+.ob-table input.bm-input.ob-input-partida { width: 100%; text-align: left; }
+.ob-table td.ob-desc input.bm-input { width: 100%; text-align: left; }
+.ob-todo-una .ob-input-partida.ob-falta { border-color: var(--color-border); background: var(--color-surface-sunken, #FAFAFA); }
+@media (max-width: 640px) {
+  .ob-apilada thead { display: none; }
+  .ob-apilada, .ob-apilada tbody { display: block; }
+  .ob-apilada tr { display: block; padding: 8px 10px; border-bottom: 1px solid var(--color-border-subtle); }
+  .ob-apilada td { display: block; border: 0 !important; padding: 3px 0 !important; white-space: normal !important; min-width: 0 !important; }
+  .ob-apilada td.ob-num { text-align: left; }
+  .ob-table.ob-apilada input.ob-num-input { width: 100%; text-align: left; }
+  .ob-todo-una { flex-wrap: wrap; }
+  .ob-todo-una .ob-input-partida { max-width: none; }
+  .ob-imp-tabla { max-height: none; }
+}
