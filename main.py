@@ -204,8 +204,8 @@ def scraper_loop():
 def ejecutar_analisis_gemini_sin_email(proceso_id: str):
     """
     Variante del análisis Gemini para uso interno (reproceso automático).
-    NO envía email al completar — el email solo se manda cuando el usuario
-    lo solicita manualmente desde la app.
+    Al completar envía el email solo a los seguidores que todavía no lo recibieron
+    (candado por usuario en seguimiento_procesos.analisis_email_at).
     """
     try:
         print(f"🔄 Reprocesando (sin email): {proceso_id}")
@@ -218,8 +218,10 @@ def ejecutar_analisis_gemini_sin_email(proceso_id: str):
         if existente.data:
             print(f"⚡ {proceso_id} ya completado, saltando reproceso.")
             return
-        # Correr el análisis completo pero sin enviar email al final
-        ejecutar_analisis_gemini(proceso_id, enviar_email=False)
+        # Ahora el candado del email es por usuario (seguimiento_procesos.analisis_email_at):
+        # solo lo reciben los seguidores que todavía no lo tienen, así que no hay spam.
+        # Antes este reintento terminaba el análisis pero el usuario nunca recibía el correo.
+        ejecutar_analisis_gemini(proceso_id, enviar_email=True)
     except Exception as e:
         print(f"❌ Error en reproceso sin email {proceso_id}: {e}")
 
@@ -230,7 +232,7 @@ def reprocesar_pendientes_loop():
     Ocurre cuando Gemini estuvo con 503 o el PDF era muy grande.
     También rescata registros 'procesando' con más de 2h de antigüedad
     (huérfanos por reinicios de Railway).
-    NO envía emails — solo completa el análisis en BD.
+    Al completar, manda el email a los seguidores que todavía no lo recibieron.
     """
     time.sleep(180)  # esperar 3 min al arranque
     while True:
@@ -3438,31 +3440,49 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
         print("⚠️ RESEND_API_KEY no configurada — email no enviado")
         return
 
+    from datetime import timezone as _tz
+
+    def _liberar_envio(uids):
+        """Si el envío a un usuario falla, se le quita la marca para que lo reciba en el próximo intento."""
+        if not uids:
+            return
+        try:
+            supabase_admin.table("seguimiento_procesos") \
+                .update({"analisis_email_at": None}) \
+                .eq("proceso_codigo", proceso_id) \
+                .in_("user_id", list(uids)) \
+                .execute()
+        except Exception as e_lib:
+            print(f"⚠️ No se pudo liberar la marca de email de {proceso_id}: {e_lib}")
+
+    user_ids = []
+    enviados = set()
     try:
-        # Guard anti-duplicado: UPDATE atómico — solo procede si email_enviado_at es NULL
-        # Si dos invocaciones concurrentes llegan aquí, solo la primera actualiza la fila
-        from datetime import timezone as _tz
-        lock_result = supabase_admin.table("analisis_pliego") \
-            .update({"email_enviado_at": datetime.now(_tz.utc).isoformat()}) \
-            .eq("proceso_id", proceso_id) \
-            .is_("email_enviado_at", "null") \
+        # Guard anti-duplicado POR USUARIO: UPDATE atómico en seguimiento_procesos.
+        # Antes el candado era uno por proceso (analisis_pliego.email_enviado_at), así que
+        # quien seguía un proceso que otro usuario ya había recibido, o que se volvía a
+        # seguir, nunca recibía el análisis. Ahora cada seguidor lo recibe una sola vez.
+        ahora = datetime.now(_tz.utc).isoformat()
+        lock_result = supabase_admin.table("seguimiento_procesos") \
+            .update({"analisis_email_at": ahora}) \
+            .eq("proceso_codigo", proceso_id) \
+            .is_("analisis_email_at", "null") \
             .execute()
         if not lock_result.data:
-            print(f"⚡ Email ya enviado para {proceso_id} — saltando duplicado")
+            print(f"⚡ Todos los seguidores de {proceso_id} ya recibieron el análisis — nada que enviar")
             return
 
-        # 1. Buscar el user_id que siguió este proceso
-        seg = supabase_admin.table("seguimiento_procesos")\
-            .select("user_id")\
-            .eq("proceso_codigo", proceso_id)\
-            .execute()
+        # Registro informativo del último envío (ya no es el candado)
+        try:
+            supabase_admin.table("analisis_pliego") \
+                .update({"email_enviado_at": ahora}) \
+                .eq("proceso_id", proceso_id) \
+                .execute()
+        except Exception as e_reg:
+            print(f"⚠️ No se pudo registrar email_enviado_at de {proceso_id}: {e_reg}")
 
-        if not seg.data:
-            print(f"⚠️ No hay seguimiento para {proceso_id}, no se envía email")
-            return
-
-        # Obtener emails de todos los usuarios que siguen este proceso
-        user_ids = list(set(s["user_id"] for s in seg.data))
+        # 1. Usuarios que siguen el proceso y todavía no habían recibido el análisis
+        user_ids = list(set(s["user_id"] for s in lock_result.data))
         emails_destino = []
         nombres_destino = []
         uids_destino = []
@@ -3493,6 +3513,9 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
                     print(f"⚠️ Auth API {resp_auth.status_code} para user {uid}: {resp_auth.text[:100]}")
             except Exception as e:
                 print(f"⚠️ No se pudo obtener email de user {uid}: {e}")
+
+        # Los que no se pudieron resolver quedan pendientes para el próximo intento
+        _liberar_envio(set(user_ids) - set(uids_destino))
 
         # MODO PRUEBA: si hay RESEND_TEST_EMAIL, redirigir todos los emails ahí
         # (Resend free tier solo permite enviar al email registrado sin dominio verificado)
@@ -3551,12 +3574,17 @@ def enviar_email_analisis(proceso_id: str, analisis: dict):
                 except Exception as e_req:
                     print(f"⚠️ Intento {intento+1} error conexión: {e_req}")
                     time.sleep(2)
-            if not enviado:
+            if enviado:
+                enviados.add(uid_dest)
+            else:
                 print(f"❌ No se pudo enviar email a {email} tras 3 intentos")
+                _liberar_envio([uid_dest])
 
     except Exception as e:
         # El email no debe romper el flujo principal
         print(f"⚠️ Error en envío de email para {proceso_id}: {e}")
+        # Quien quedó marcado pero no recibió el correo vuelve a quedar pendiente
+        _liberar_envio(set(user_ids) - enviados)
 
 
 def construir_html_compatibilidad(user_id: str, proceso_id: str) -> str:
@@ -4364,6 +4392,12 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
                         }, on_conflict="proceso_id").execute()
                         print(f"⚠️ Gemini 503 persistente — {proceso_id} marcado como pendiente_analisis")
                         return
+                elif (isinstance(e, json.JSONDecodeError)
+                      or "respuesta vacía" in msg
+                      or "No se encontró JSON válido" in msg) and intento < MAX_REINTENTOS - 1:
+                    # Respuesta cortada o mal formada: suele salir bien al repetir
+                    print(f"⚠️ Gemini devolvió JSON inválido/vacío ({msg[:120]}) — reintentando ({intento+1}/{MAX_REINTENTOS})...")
+                    time.sleep(5)
                 else:
                     raise  # error no recuperable
 
@@ -4396,6 +4430,7 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
         }
         # Eliminar None para no sobreescribir datos existentes con NULL
         fila_supabase = {k: v for k, v in fila_supabase.items() if v is not None}
+        fila_supabase["error_detalle"] = None  # análisis bueno: borrar el motivo de fallos anteriores
 
         # UPDATE condicional: solo actualiza si el estado TODAVÍA es 'procesando'
         # (es decir, nadie más llegó primero). Si otra instancia ya guardó el
@@ -4442,13 +4477,39 @@ def ejecutar_analisis_gemini(proceso_id: str, enviar_email: bool = True, url_ove
         print(f"❌ Error de IA en {proceso_id}: {msg}")
         # Si el error es por documento OLE2 (.doc), marcar como sin_pliego
         # para que el loop de reproceso NO lo reintente jamás.
-        estado_error = "sin_pliego" if "__DOC_OLE2__" in msg else "error"
-        supabase_admin.table("analisis_pliego").upsert({
-            "proceso_id": proceso_id,
-            "estado": estado_error
-        }, on_conflict="proceso_id").execute()
+        # Los demás fallos (portal caído, PDF que no baja, Gemini) suelen ser pasajeros:
+        # se marcan pendiente_analisis para que reprocesar_pendientes_loop lo reintente
+        # (y mande el correo al terminar). Tras MAX_INTENTOS_ANALISIS fallos queda en 'error'.
+        MAX_INTENTOS_ANALISIS = 3
+        try:
+            _prev = supabase_admin.table("analisis_pliego").select("intentos") \
+                .eq("proceso_id", proceso_id).execute().data or []
+            intentos = int((_prev[0].get("intentos") if _prev else 0) or 0) + 1
+        except Exception:
+            intentos = MAX_INTENTOS_ANALISIS
+        if "__DOC_OLE2__" in msg:
+            estado_error = "sin_pliego"
+        elif intentos < MAX_INTENTOS_ANALISIS:
+            estado_error = "pendiente_analisis"
+        else:
+            estado_error = "error"
+        try:
+            supabase_admin.table("analisis_pliego").upsert({
+                "proceso_id": proceso_id,
+                "estado": estado_error,
+                "intentos": intentos,
+                "error_detalle": msg[:500],
+            }, on_conflict="proceso_id").execute()
+        except Exception as e_up:
+            print(f"⚠️ No se pudo guardar intentos/error_detalle ({e_up}) — guardando solo el estado")
+            supabase_admin.table("analisis_pliego").upsert({
+                "proceso_id": proceso_id,
+                "estado": "sin_pliego" if estado_error == "sin_pliego" else "error",
+            }, on_conflict="proceso_id").execute()
         if estado_error == "sin_pliego":
             print(f"🚫 {proceso_id} marcado como sin_pliego (OLE2/.doc — no reintentable)")
+        elif estado_error == "pendiente_analisis":
+            print(f"🔁 {proceso_id} queda en cola para reintento ({intentos}/{MAX_INTENTOS_ANALISIS})")
 
 @app.get("/api/admin/test-pliego")
 def test_pliego(codigo: str = Query(..., description="Ej: DO1.NTC.1234567"), _: None = Depends(verificar_admin)):
